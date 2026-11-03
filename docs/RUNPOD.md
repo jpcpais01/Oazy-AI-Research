@@ -6,8 +6,10 @@ terminal with one command, and the command resumes after any interruption.
 ## 1. Create the pod
 
 1. Go to **RunPod → Pods → Deploy**.
-2. **GPU:** pick **H200 SXM (141 GB)**. An **H100 80 GB** or **A100 80 GB**
-   also works for the `final` preset; `ultra` needs the H200.
+2. **GPU:** pick **RTX 6000 Ada (48 GB)**. It has RT cores, so Cycles/OptiX
+   renders much faster per dollar than an H100/H200/B300 (those have no RT
+   cores), and 48 GB is enough for the `final` flame grid. `ultra` needs an
+   H200 or B300 for the simulation.
 3. **Template:** the official **RunPod PyTorch** template, for example
    `runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04`. Any recent tag
    is fine because we only use its Python, CUDA driver, SSH and JupyterLab.
@@ -125,30 +127,22 @@ These are estimates, not measurements on the target GPU (the development
 machine had no GPU). The look test in step 4 tells you the real per-frame
 render time after about 10 minutes.
 
-| stage | H200 estimate |
-|---|---|
-| setup | 3–5 min |
-| flame sim (256×256×768, about 40–70 k steps) | 1–2 h |
-| wax + vdb | 10–20 min |
-| render, 384 frames at 4K | about 1–2.5 min per frame, so 7–16 h |
-| encode | 5 min |
+**Option A, one RTX 6000 Ada pod (recommended for a first run):** about
+10–16 h in total, nearly all of it rendering, so roughly **$10–16** at
+$0.99/h.
 
-At roughly $3.5–4 per hour for an H200 that is about **$35–75 in total**,
-nearly all of it rendering. Check the current price on the deploy page.
-
-**Faster and cheaper rendering (optional).** The H200 is ideal for the
-simulation, but it has no RT cores, and Cycles renders 2–4× faster per GPU on
-RTX cards. The cheapest high-quality path is two pods sharing one Network
-Volume:
+**Option B, faster (about 4–6 h, $15–25):**
 
 1. Create a **Network Volume** (Storage → Network Volumes, 150 GB) in a data
-   centre that has both H200 and RTX 4090 or RTX 5090.
-2. Deploy the H200 pod with that volume attached and run the steps above with
-   `--stages flame,wax,vdb`.
-3. Stop it. Deploy a pod with **4× RTX 4090** or **4× RTX 5090** on the same
-   volume, run `bash runpod/setup.sh`, then
-   `python run.py --quality final --work /workspace/candle --stages render,encode`.
-   It renders one frame per GPU in parallel automatically.
+   centre that has both H100 SXM and RTX 6000 Ada.
+2. On an **H100 SXM** pod with that volume, run setup, then
+   `python run.py --quality final --work /workspace/candle --stages flame,wax,vdb`.
+   Stop the pod when it finishes.
+3. Deploy **three RTX 6000 Ada** pods on the same volume. On each, run
+   `bash runpod/setup.sh`, then on pod *i* (0, 1, 2):
+   `python run.py --quality final --work /workspace/candle --stages render --worker i --workers 3`
+4. When all three finish, on any one pod:
+   `python run.py --quality final --work /workspace/candle --stages encode`
 
 ## Troubleshooting
 
