@@ -79,6 +79,7 @@ PHYS = dict(
     T_cond=540.0, k_cond=60.0,
     # extinction by strain
     u_extinct=2.8,
+    v_max=7.0,             # m/s, above the blow-out jet peak; numerical safety clamp
     # ambient draft
     draft_speed=0.025,
 )
@@ -456,6 +457,14 @@ def k_wick_solid(u: wp.array3d(dtype=float), v: wp.array3d(dtype=float), w: wp.a
         v[i, j + 1, k] = 0.0
         w[i, j, k] = 0.0
         w[i, j, k + 1] = 0.0
+
+
+@wp.kernel
+def k_clamp_speed(f: wp.array3d(dtype=float), vmax: float):
+    # safety net: no gas in this shot moves faster than the blow-out jet, so a
+    # local numerical spike is clipped instead of collapsing the CFL time step
+    i, j, k = wp.tid()
+    f[i, j, k] = wp.clamp(f[i, j, k], -vmax, vmax)
 
 
 @wp.kernel
@@ -968,6 +977,8 @@ class FlameSolver:
             for c, off in (("u", vec3(0.0, 0.5, 0.5)), ("v", vec3(0.5, 0.0, 0.5)), ("w", vec3(0.5, 0.5, 0.0))):
                 self._diffuse(getattr(self, c), PHYS["nu0"], dt, off=off, iters=max(2, self.p.diffusion_iters // 2))
 
+        for f in (self.u, self.v, self.w):
+            wp.launch(k_clamp_speed, dim=f.shape, inputs=[f, PHYS["v_max"]], device=d)
         wp.launch(k_wick_solid, dim=S, inputs=[self.u, self.v, self.w, self.wick_solid], device=d)
         wp.launch(k_floor, dim=(S[0], S[1]), inputs=[self.w], device=d)
 
@@ -1197,7 +1208,7 @@ def run(out_dir, quality="preview", device=None, checkpoint_every=600.0, max_fra
         if dt > 1e-7:
             solver.step(dt)
             steps_since += 1
-            if solver.step_count % 4 == 0:
+            if True:  # every step: a stale umax lets one oversized step go unstable
                 umax = max(solver.max_speed(), 0.3)
                 if not math.isfinite(umax):
                     raise FloatingPointError(f"solver blew up at t={solver.t}")
