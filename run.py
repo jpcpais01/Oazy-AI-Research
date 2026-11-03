@@ -139,6 +139,11 @@ def stage_render(a):
     if a.frames:
         sh(base + ["--frames"] + [str(f) for f in a.frames], os.path.join(a.work, "logs", "render.log"))
         return
+    if a.workers:
+        # several pods sharing one network volume: this pod renders every N-th frame
+        sh(base + ["--worker", str(a.worker), "--workers", str(a.workers)],
+           os.path.join(a.work, "logs", f"render_pod{a.worker}.log"))
+        return
     n = a.gpus if a.gpus is not None else max(1, gpu_count())
     if a.render_device.upper() == "CPU":
         n = 1
@@ -219,6 +224,8 @@ def main():
     ap.add_argument("--samples", type=int, default=None)
     ap.add_argument("--resolution", type=int, nargs=2, default=None)
     ap.add_argument("--step", type=int, default=None, help="render every Nth frame")
+    ap.add_argument("--worker", type=int, default=0, help="this pod's index when splitting the render over pods")
+    ap.add_argument("--workers", type=int, default=None, help="number of pods splitting the render")
     ap.add_argument("--status", action="store_true")
     a = ap.parse_args()
     a.work = os.path.abspath(a.work or os.path.join(ROOT, "work", a.quality))
