@@ -46,6 +46,14 @@ def convert_frame(args):
         em[..., c] = (soot * np.interp(T, _TEMPS, _LUT[:, c]) * look["soot_gain"]
                       + np.maximum(react, 0) * _CH[c] * look["blue_gain"])
     em[em < 0.05] = 0.0
+    # Exposure guard: a transient (breath gust, coarse-grid soot burst) must not
+    # flood the shot. Cap the frame's total emitted power at a few times the
+    # steady flame, scaling the volume and its light proxies together.
+    cap = look.get("max_power_ratio", 2.0) * (look.get("flame_power") or 0.0)
+    if cap > 0:
+        pw = float((em @ np.array([0.2126, 0.7152, 0.0722], np.float32)).sum()) * dx ** 3 * 4 * math.pi
+        if pw > cap:
+            em *= cap / pw
     trans = origin + (lo + 0.5) * dx
     write_vdb(dst_vdb, {"emission": em, "soot": soot, "smoke": smoke}, dx, trans, threshold=1e-4)
 
@@ -100,8 +108,11 @@ def normalised_look(flame_dir, look):
         ref = float(np.median(lums))
         gain = look["flame_power"] / (4 * math.pi * ref)
         ratio = gain / look["soot_gain"]
-        look["soot_gain"] = gain
-        look["blue_gain"] *= ratio
+        # a few-x correction is expected between grids; anything beyond that
+        # means the soot statistic is unreliable, so do not trust it blindly
+        ratio = min(max(ratio, 0.33), 3.0)
+        gain = look["soot_gain"] * ratio
+        look["soot_gain"] = gain   # blue CH* light is a separate emitter: left as is
         print(f"[vdb] exposure normalisation: soot_gain={gain:.0f} (x{ratio:.2f})", flush=True)
     return look
 

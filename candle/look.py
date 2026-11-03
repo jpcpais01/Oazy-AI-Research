@@ -14,6 +14,8 @@ LOOK = dict(
     # flame emits this total power (W, Blender units). Keeps exposure the same
     # at every grid resolution. Set to None to use the raw gains.
     flame_power=1.3,
+    # per-frame cap on emitted power, as a multiple of flame_power
+    max_power_ratio=2.0,
     # Blue CH*/C2* chemiluminescence per unit of the exported reaction field.
     blue_gain=30.0,
     # absorption of soot (per metre per unit soot) -- dark wisps when blown out
