@@ -1052,6 +1052,7 @@ class Exporter:
         while True:
             item = self.q.get()
             if item is None:
+                self.q.task_done()
                 return
             try:
                 self._write(*item)
@@ -1131,6 +1132,9 @@ class Exporter:
         self.flush()
         for _ in self.threads:
             self.q.put(None)
+        for t in self.threads:
+            t.join()
+        self.threads = []
 
 
 # =========================================================================== #
@@ -1225,8 +1229,8 @@ def run(out_dir, quality="preview", device=None, checkpoint_every=600.0, max_fra
             save_ck(next_frame)
             exporter.close()
             sys.exit(130)
-    exporter.close()
     save_ck(next_frame)
+    exporter.close()
     with open(os.path.join(out_dir, "DONE"), "w") as f:
         f.write(json.dumps(dict(frames=n_frames, t=solver.t, steps=solver.step_count,
                                 wall_min=(time.time() - wall0) / 60, grid=list(solver.shape), dx=solver.dx,
