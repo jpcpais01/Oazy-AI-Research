@@ -579,7 +579,7 @@ def camera_track(work, n_frames):
         smoke_w = TL._smooth((f - (TL.BLOW_F + 8)) / 70.0)
         tgt_flame = flame_c * 0.75 + wick_tip * 0.25
         tgt_drip = notch if fp is None else notch * 0.35 + fp * 0.65
-        rise = g.pool_level + 0.03 + 0.10 * TL._smooth((f - TL.BLOW_F) / (n_frames - TL.BLOW_F))
+        rise = g.pool_level + 0.022 + 0.045 * TL._smooth((f - TL.BLOW_F) / (n_frames - TL.BLOW_F))
         tgt_smoke = np.array([0.0, g.wick_lean, rise])
         target = tgt_flame * (1 - drip_w) + tgt_drip * drip_w
         target = target * (1 - smoke_w) + tgt_smoke * smoke_w
