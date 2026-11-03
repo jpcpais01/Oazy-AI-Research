@@ -197,7 +197,7 @@ def stage_encode(a):
     inp = ["-y", "-framerate", f"{fps:g}", "-i", os.path.join(seq, "%05d.png")]
     color = ["-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709"]
     w, h = C.get_preset(a.quality)[2].resolution if not a.resolution else a.resolution
-    if a.quality in ("final", "ultra"):
+    if a.quality in ("hd", "final", "ultra"):
         sh(["ffmpeg"] + inp + ["-c:v", "prores_ks", "-profile:v", "3", "-pix_fmt", "yuv422p10le",
                                "-vendor", "apl0"] + color + [os.path.join(out, f"candle_{tag}_prores422hq.mov")])
         sh(["ffmpeg"] + inp + ["-c:v", "libx265", "-preset", "slow", "-crf", "12", "-pix_fmt", "yuv420p10le",

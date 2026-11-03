@@ -90,6 +90,17 @@ PRESETS = {
         render=RenderPreset(resolution=(960, 540), samples=48, frame_step=2,
                             png_depth="8"),
     ),
+    # HD: 1080p, tuned so nothing is spent on detail a 1080p frame cannot show
+    # (flame voxels ~0.4 mm, denoised 192 spp). Fits a 24-32 GB card.
+    "hd": dict(
+        flame=FlamePreset(res=(160, 160, 480), dx=0.000375, mg_levels=5, cfl=2.0,
+                          cg_tol=1e-4, cg_maxiter=50, diffusion_iters=6,
+                          vorticity=0.32),
+        wax=WaxPreset(ntheta=768, nz=576, top_rings=120, history_events=13),
+        render=RenderPreset(resolution=(1920, 1080), samples=192,
+                            adaptive_threshold=0.01, volume_step_rate=1.0,
+                            max_bounces=8, volume_bounces=1),
+    ),
     # Final: 4K UHD, intended for one H200 / H100 / A100 80GB.
     "final": dict(
         flame=FlamePreset(res=(256, 256, 768), dx=0.000235, mg_levels=6, cfl=1.6,
