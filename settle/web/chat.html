@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settle chat</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .wrap { max-width: 1400px; }
+  .stage { padding: 0; overflow: hidden; }
+  .stagehead { display: flex; gap: 16px; align-items: center; padding: 12px 16px 0; flex-wrap: wrap; }
+  .thinking { font-variant-numeric: tabular-nums; color: var(--text-2); font-size: 13px; display: flex; gap: 8px; align-items: center; }
+  .pulse { width: 9px; height: 9px; border-radius: 50%; background: var(--axis); transition: background .2s, box-shadow .2s; }
+  .pulse.on { background: var(--settle); box-shadow: 0 0 12px var(--settle); }
+  .pulse.lens { background: var(--lens); box-shadow: 0 0 12px var(--lens); }
+  #scroller { overflow-x: auto; overflow-y: hidden; padding: 0 16px 8px; scroll-behavior: smooth; }
+  #sheet { display: block; }
+  .composer { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; }
+  .composer textarea { flex: 1; min-width: 240px; min-height: 64px; resize: vertical; background: var(--surface-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font: inherit; font-size: 15px; }
+  .composer textarea:focus { outline: none; border-color: var(--axis); }
+  .controls { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 10px; align-items: center; font-size: 12.5px; color: var(--text-2); min-width: 260px; }
+  .controls output { font-variant-numeric: tabular-nums; color: var(--text); min-width: 42px; text-align: right; }
+  .btns { display: flex; flex-direction: column; gap: 6px; }
+  #story { font-size: 17px; line-height: 1.85; min-height: 80px; }
+  #story .tok { cursor: default; transition: background .3s; border-bottom: 2px solid transparent; }
+  #story .tok.you { color: var(--text); }
+  #story .tok.model { color: #ffd9c2; }
+  #story .tok.hot { outline: 1px solid #fff8; }
+  #story .tok.pending { color: var(--muted); }
+  .preds .p { display: grid; grid-template-columns: 110px 1fr 54px; gap: 8px; align-items: center; font-size: 13px; margin: 5px 0; }
+  .preds .p .w { white-space: pre; overflow: hidden; text-overflow: ellipsis; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; }
+  .preds .p .b { height: 10px; background: var(--surface-2); border-radius: 99px; overflow: hidden; }
+  .preds .p .b div { height: 100%; background: var(--settle); border-radius: 99px; transition: width .25s; }
+  .preds .p .n { text-align: right; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .kv { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: 13px; }
+  .kv b { font-variant-numeric: tabular-nums; }
+  .key { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--muted); padding: 0 16px 12px; }
+  .key span { display: inline-flex; gap: 6px; align-items: center; }
+  .key i { display: inline-block; width: 18px; height: 10px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>Settle <span class="muted" style="font-weight:400">· watch it think</span></h1>
+    <span class="sub" id="meta"></span>
+  </div>
+
+  <div class="grid">
+    <div class="card span12 stage">
+      <div class="stagehead">
+        <h2 style="margin:0">The sheet</h2>
+        <div class="thinking"><span class="pulse" id="pulse"></span><span id="thinking">idle</span></div>
+        <div style="margin-left:auto" class="small muted">hover a column to inspect it</div>
+      </div>
+      <div id="scroller"><canvas id="sheet"></canvas></div>
+      <div class="key">
+        <span><i style="background:linear-gradient(90deg,#c76b9a,#6aa7d8,#79c48f)"></i>cell colour = what the cell is thinking (similar colour, similar thought)</span>
+        <span><i style="border:1.5px solid #fff"></i>bright outline = still changing</span>
+        <span><i style="background:var(--lens);opacity:.8"></i>lens: the last few words re-read both ways (pencil, not ink)</span>
+        <span><i style="background:linear-gradient(90deg,#d9592600,#d95926)"></i>arcs = long-range links reaching back</span>
+        <span><i style="background:linear-gradient(90deg,#555,#bbb)"></i>thin strip = gist, the slow mood of the text</span>
+      </div>
+    </div>
+
+    <div class="card span8">
+      <div class="composer">
+        <textarea id="input" placeholder="Start a story, e.g. “Once upon a time, there was a little fox who”"></textarea>
+        <div class="btns">
+          <button class="btn primary" id="write">Write ▸</button>
+          <button class="btn" id="read" title="Only read your text, without writing more">Just read</button>
+          <button class="btn" id="reset" title="Start with an empty sheet">New sheet</button>
+        </div>
+      </div>
+      <div class="row" style="margin-top:12px; gap:22px">
+        <div class="controls">
+          <span>words to write</span><input type="range" id="n" min="5" max="200" value="60"><output id="nOut"></output>
+          <span>creativity</span><input type="range" id="temp" min="0" max="1.5" step="0.05" value="0.8"><output id="tempOut"></output>
+          <span>animation</span><input type="range" id="speed" min="0" max="6" step="1" value="3"><output id="speedOut"></output>
+        </div>
+      </div>
+      <div style="margin-top:16px" id="story"><span class="muted">The text appears here. Your words are white, Settle's are warm. The background of each word shows how long it thought about it.</span></div>
+    </div>
+
+    <div class="card span4">
+      <h2>What it expects next</h2>
+      <p class="explain">After each word settles, Settle reads its guess for the next word from the frontier of the lens.</p>
+      <div class="preds" id="preds"></div>
+      <h2 style="margin-top:16px">This sheet so far</h2>
+      <div class="kv" id="stats"></div>
+    </div>
+  </div>
+</div>
+
+<script src="common.js"></script>
+<script>
+"use strict";
+const S = Settle;
+const $ = (id) => document.getElementById(id);
+let info = null;
+const cols = [];            // per word: {text, source, cells[R], steps, lens, gist, links, top, moving[R], settled}
+let lensOverlay = null;     // {start, cells[W*R]} while the lens is re-reading
+let queue = [], playing = false, es = null, hover = -1;
+const SPEEDS = [400, 200, 110, 60, 30, 12, 0];       // ms per settle step
+const SPEED_LABEL = ["very slow", "slow", "calm", "normal", "quick", "fast", "instant"];
+
+async function init() {
+  info = await (await fetch("/api/info")).json();
+  $("meta").textContent = `${(info.params / 1e6).toFixed(1)}M parameters · trained on ${S.fmtTokens(info.tokens || 0)} words · ${info.rows} scales × ${info.channels} numbers per cell`;
+  draw(); renderStats();
+}
+
+// ------------------------------------------------------------------ drawing
+const CW = 32, CH = 21, ARC = 110, TOP = ARC + 8;
+function layout() {
+  const R = info.rows;
+  return { R, gridH: R * CH, gistY: TOP + R * CH + 6, barY: TOP + R * CH + 18, barH: 34, labY: TOP + R * CH + 60 };
+}
+
+function draw() {
+  if (!info) return;
+  const L = layout();
+  const cv = $("sheet");
+  const n = cols.length;
+  const width = Math.max($("scroller").clientWidth - 32, 70 + (n + 2) * CW);
+  cv.style.width = width + "px";
+  const { ctx, w, h } = S.fitCanvas(cv, L.labY + 70);
+  ctx.clearRect(0, 0, w, h);
+  const x0 = 64;
+  // row labels
+  ctx.font = "11px Inter, system-ui"; ctx.fillStyle = S.css("--muted"); ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (let r = 0; r < L.R; r++) ctx.fillText(`↶ ${info.dil[r]}`, x0 - 8, TOP + (L.R - 1 - r) * CH + CH / 2);
+  ctx.fillText("gist", x0 - 8, L.gistY + 3);
+  ctx.fillText("steps", x0 - 8, L.barY + L.barH - 8);
+  if (!n) {
+    ctx.textAlign = "left"; ctx.fillStyle = S.css("--muted"); ctx.font = "13px Inter";
+    ctx.fillText("An empty sheet. Type something below and press Write.", x0, TOP + L.gridH / 2);
+    for (let r = 0; r < L.R; r++) for (let t = 0; t < 30; t++) {
+      ctx.fillStyle = "#1d1d1b"; ctx.beginPath(); ctx.roundRect(x0 + 360 + t * CW + 1, TOP + r * CH + 1, CW - 2, CH - 2, 3); ctx.fill();
+    }
+    return;
+  }
+  // long-range links from the newest settled (or hovered) column
+  const focus = hover >= 0 ? hover : n - 1;
+  const fc = cols[focus];
+  if (fc && fc.links) {
+    const seen = {};
+    for (const head of fc.links) for (const [j, wgt] of head) { seen[j] = Math.max(seen[j] || 0, wgt); }
+    for (const [j, wgt] of Object.entries(seen)) {
+      if (+j === focus || wgt < 0.05) continue;
+      const xa = x0 + focus * CW + CW / 2, xb = x0 + (+j) * CW + CW / 2;
+      const lift = Math.min(ARC - 6, 18 + Math.abs(xa - xb) * 0.35);
+      ctx.strokeStyle = `rgba(217,89,38,${0.25 + 0.75 * wgt})`;
+      ctx.lineWidth = 1 + 3 * wgt;
+      ctx.beginPath(); ctx.moveTo(xa, TOP - 2); ctx.bezierCurveTo(xa, TOP - lift, xb, TOP - lift, xb, TOP - 2); ctx.stroke();
+      ctx.fillStyle = `rgba(217,89,38,${0.4 + 0.6 * wgt})`; ctx.beginPath(); ctx.arc(xb, TOP - 3, 2.5, 0, 7); ctx.fill();
+    }
+  }
+  // cells
+  const maxSteps = Math.max(4, ...cols.map((c) => c.steps || 0));
+  for (let t = 0; t < n; t++) {
+    const c = cols[t];
+    const x = x0 + t * CW;
+    const inLens = lensOverlay && t >= lensOverlay.start && t <= lensOverlay.i;
+    for (let r = 0; r < L.R; r++) {
+      let col = c.cells ? c.cells[r] : "#1d1d1b";
+      if (inLens) { const k = (t - lensOverlay.start) * L.R + r; if (lensOverlay.cells[k]) col = lensOverlay.cells[k]; }
+      ctx.fillStyle = col;
+      const y = TOP + (L.R - 1 - r) * CH;
+      ctx.beginPath(); ctx.roundRect(x + 1, y + 1, CW - 2, CH - 2, 3); ctx.fill();
+      if (c.moving && c.moving[r] > 0) {
+        const a = Math.min(1, c.moving[r] / 0.03);
+        ctx.strokeStyle = `rgba(255,245,230,${0.2 + 0.8 * a})`; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.roundRect(x + 1.5, y + 1.5, CW - 3, CH - 3, 3); ctx.stroke();
+      }
+    }
+    if (t === hover) { ctx.strokeStyle = "#fff"; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, TOP - 0.5, CW - 1, L.gridH + 1); }
+    // gist ribbon
+    if (c.gist) { ctx.fillStyle = c.gist; ctx.fillRect(x, L.gistY, CW, 6); }
+    // steps bar
+    const s = c.steps || c.k || 0;
+    const bh = Math.max(2, (L.barH - 4) * s / Math.max(maxSteps, s));
+    ctx.fillStyle = c.settled ? S.heat(s / maxSteps) : S.css("--settle");
+    ctx.beginPath(); ctx.roundRect(x + 4, L.barY + L.barH - bh, CW - 8, bh, [3, 3, 0, 0]); ctx.fill();
+    // label
+    ctx.save(); ctx.translate(x + CW / 2, L.labY); ctx.rotate(-Math.PI / 3);
+    ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.font = (c.source === "model" ? "" : "600 ") + "12px Inter, system-ui";
+    ctx.fillStyle = c.source === "model" ? "#ffd9c2" : S.css("--text");
+    ctx.fillText(c.text.replace(/\n/g, "⏎").trim() || "␣", 0, 0); ctx.restore();
+  }
+  // lens bracket
+  if (lensOverlay) {
+    const xs = x0 + Math.max(0, lensOverlay.start) * CW, xe = x0 + (lensOverlay.i + 1) * CW;
+    ctx.strokeStyle = S.css("--lens"); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.roundRect(xs - 1, TOP - 4, xe - xs + 2, L.gridH + 8, 6); ctx.stroke();
+    ctx.fillStyle = S.css("--lens"); ctx.font = "600 11px Inter"; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    ctx.fillText("lens: re-reading", xs, TOP - 8);
+  }
+}
+
+$("sheet").addEventListener("mousemove", (e) => {
+  const t = Math.floor((e.offsetX - 64) / CW);
+  const nh = t >= 0 && t < cols.length ? t : -1;
+  if (nh !== hover) { hover = nh; draw(); highlightStory(); if (nh >= 0) showPreds(cols[nh]); else if (cols.length) showPreds(cols[cols.length - 1]); }
+});
+$("sheet").addEventListener("mouseleave", () => { hover = -1; draw(); highlightStory(); if (cols.length) showPreds(cols[cols.length - 1]); });
+
+// ------------------------------------------------------------------ text + side panels
+function renderStory() {
+  const maxSteps = Math.max(4, ...cols.map((c) => c.steps || 0));
+  $("story").innerHTML = cols.map((c, i) => {
+    const v = c.settled ? (c.steps || 0) / maxSteps : 0;
+    return `<span class="tok ${c.source} ${c.settled ? "" : "pending"}" data-i="${i}" style="background:rgba(217,89,38,${(0.06 + 0.5 * v).toFixed(2)})" title="${c.steps || "…"} steps">${S.escapeHtml(c.text)}</span>`;
+  }).join("") || `<span class="muted">Empty sheet.</span>`;
+  $("story").querySelectorAll(".tok").forEach((el) => {
+    el.onmouseenter = () => { hover = +el.dataset.i; draw(); showPreds(cols[hover]); highlightStory(); };
+    el.onmouseleave = () => { hover = -1; draw(); highlightStory(); };
+  });
+}
+function highlightStory() { $("story").querySelectorAll(".tok").forEach((el) => el.classList.toggle("hot", +el.dataset.i === hover)); }
+
+function showPreds(c) {
+  if (!c || !c.top) { $("preds").innerHTML = `<div class="muted small">…</div>`; return; }
+  const next = cols[cols.indexOf(c) + 1];
+  $("preds").innerHTML = `<div class="small muted" style="margin-bottom:4px">after “${S.escapeHtml(c.text.trim())}”${next ? `, it actually got “${S.escapeHtml(next.text.trim())}”` : ""}</div>` +
+    c.top.map(([wd, p]) => `<div class="p"><span class="w" title="${S.escapeHtml(wd)}">${S.escapeHtml(JSON.stringify(wd).slice(1, -1))}</span><span class="b"><div style="width:${(p * 100).toFixed(1)}%"></div></span><span class="n">${(p * 100).toFixed(1)}%</span></div>`).join("");
+}
+
+function renderStats() {
+  const done = cols.filter((c) => c.settled);
+  const avg = done.length ? done.reduce((a, c) => a + c.steps, 0) / done.length : 0;
+  const hard = [...done].sort((a, b) => b.steps - a.steps).slice(0, 3);
+  const ms = done.length ? done.reduce((a, c) => a + (c.ms || 0), 0) / done.length : 0;
+  $("stats").innerHTML = `<span>words on the sheet</span><b>${cols.length}</b>
+    <span>average thinking steps</span><b>${avg.toFixed(1)}</b>
+    <span>hardest words</span><b>${hard.map((c) => `“${S.escapeHtml(c.text.trim())}” ${c.steps}`).join(", ") || "–"}</b>
+    <span>compute per word</span><b>${ms ? ms.toFixed(1) + " ms" : "–"}</b>
+    <span>step cap</span><b>${info ? info.cap : ""}</b>`;
+}
+
+// ------------------------------------------------------------------ event playback
+function setThinking(text, mode) {
+  $("thinking").textContent = text;
+  $("pulse").className = "pulse" + (mode ? " " + mode : "");
+}
+
+function delayFor(ev) {
+  const base = SPEEDS[+$("speed").value];
+  if (ev.type === "step") return base;
+  if (ev.type === "lens") return 0;
+  if (ev.type === "settled") return base * 1.5;
+  return 0;
+}
+
+async function playLens(ev) {
+  const base = SPEEDS[+$("speed").value];
+  const W = info.lens_width;
+  const frames = ev.frames.length ? ev.frames : [ev.final];
+  for (let f = 0; f < frames.length; f++) {
+    lensOverlay = { start: ev.start, i: ev.i, cells: frames[f] };
+    setThinking(`“${cols[ev.i].text.trim()}”: lens re-reading the last ${W} words, step ${f + 1}`, "lens");
+    draw();
+    if (base) await new Promise((r) => setTimeout(r, base * 0.9));
+  }
+  if (base) await new Promise((r) => setTimeout(r, base * 2));
+  lensOverlay = null;
+}
+
+async function pump() {
+  if (playing) return;
+  playing = true;
+  while (queue.length) {
+    const ev = queue.shift();
+    if (ev.type === "word") {
+      cols.push({ text: ev.text, source: ev.source, cells: null, k: 0, settled: false });
+      setThinking(`reading “${ev.text.trim()}”`, "on");
+      renderStory();
+      const sc = $("scroller"); sc.scrollLeft = sc.scrollWidth;
+    } else if (ev.type === "step") {
+      const c = cols[ev.i]; c.cells = ev.col; c.moving = ev.change; c.k = ev.k;
+      setThinking(`“${c.text.trim()}”: settling, step ${ev.k}`, "on");
+    } else if (ev.type === "lens") {
+      cols[ev.i].moving = null;
+      await playLens(ev);
+    } else if (ev.type === "settled") {
+      const c = cols[ev.i];
+      Object.assign(c, { cells: ev.final, steps: ev.steps, lens: ev.lens_steps, gist: ev.gist, links: ev.links, top: ev.top, ms: ev.ms, settled: true, moving: null });
+      setThinking(`“${c.text.trim()}” settled in ${ev.steps} steps`, "");
+      renderStory(); showPreds(c); renderStats();
+    } else if (ev.type === "end" || ev.type === "eos") {
+      setThinking(ev.type === "eos" ? "the story ended (end-of-text)" : "idle", "");
+      setBusy(false);
+    }
+    draw();
+    const d = delayFor(ev);
+    if (d) await new Promise((r) => setTimeout(r, d));
+  }
+  playing = false;
+}
+
+function setBusy(b) { ["write", "read", "reset"].forEach((id) => ($(id).disabled = b)); }
+
+function go(n) {
+  if (es) es.close();
+  const text = $("input").value;
+  $("input").value = "";
+  setBusy(true);
+  const qs = new URLSearchParams({ text, n, temp: $("temp").value, top_k: 40 });
+  es = new EventSource("/api/stream?" + qs);
+  es.onmessage = (m) => {
+    const ev = JSON.parse(m.data);
+    queue.push(ev);
+    if (ev.type === "end") es.close();
+    pump();
+  };
+  es.onerror = () => { es.close(); setBusy(false); };
+}
+
+$("write").onclick = () => go(+$("n").value);
+$("read").onclick = () => go(0);
+$("reset").onclick = async () => { await fetch("/api/reset"); cols.length = 0; queue = []; lensOverlay = null; renderStory(); renderStats(); showPreds(null); draw(); setThinking("idle"); };
+$("input").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("write").click(); } });
+for (const [id, fmt] of [["n", (v) => v], ["temp", (v) => (+v).toFixed(2)], ["speed", (v) => SPEED_LABEL[v]]]) {
+  const upd = () => ($(id + "Out").textContent = fmt($(id).value));
+  $(id).addEventListener("input", upd); upd();
+}
+window.addEventListener("resize", draw);
+init();
+</script>
+</body>
+</html>

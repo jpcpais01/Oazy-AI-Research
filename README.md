@@ -77,3 +77,13 @@ python -m candle.peek /workspace/candle/flame --frames 60 130 300 --out peek.png
 ```
 
 **RunPod step-by-step:** see [docs/RUNPOD.md](docs/RUNPOD.md).
+
+---
+
+# Settle: a language model that thinks by settling
+
+A second project in this repo: [`settle/`](settle/README.md) is an experimental
+language model whose hidden state is a 2D sheet that settles to rest on each
+word, trained on TinyStories against a matched GPT baseline, with a live
+training dashboard and a chat app that shows the sheet thinking. RunPod steps:
+[`docs/SETTLE_RUNPOD.md`](docs/SETTLE_RUNPOD.md).

@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settle training</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  #sheetTip, #heatTip { position: absolute; }
+  .snaprow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .snaprow input[type=range] { flex: 1; min-width: 160px; }
+  .facts { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12.5px; color: var(--text-2); margin-top: 8px; }
+  .facts b { color: var(--text); font-variant-numeric: tabular-nums; }
+  .rowlabels { font-size: 11px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>Settle <span class="muted" style="font-weight:400">· training live</span></h1>
+    <span class="sub" id="updated">connecting…</span>
+  </div>
+
+  <div class="runs" id="runs"></div>
+
+  <div class="grid">
+    <div class="card span7">
+      <h2>How wrong the models still are (loss)</h2>
+      <p class="explain">Loss is how surprised a model is by the real next word. Lower is better. Solid lines are measured on stories the models never train on; the faint lines are the training batches. Both models have the same number of parameters and see the same data.</p>
+      <div class="row" style="justify-content:space-between">
+        <div class="legend" id="lossLegend"></div>
+        <div class="seg" id="xmode"><button data-x="tokens" class="on">by words seen</button><button data-x="minutes">by training minutes</button></div>
+      </div>
+      <div class="chart"><canvas id="loss" style="height:280px"></canvas><div class="tip" id="lossTip"></div></div>
+    </div>
+
+    <div class="card span5">
+      <h2>How long Settle thinks per word</h2>
+      <p class="explain">Each word's column keeps updating until it stops changing. These are the steps it needed, averaged over each training batch. The lens is the short two-way re-read of the last few words before predicting.</p>
+      <div class="legend">
+        <span><i class="sw" style="background:var(--settle)"></i>average word</span>
+        <span><i class="sw dash" style="border-color:var(--settle)"></i>slowest 10% of words</span>
+        <span><i class="sw" style="background:var(--lens)"></i>lens</span>
+      </div>
+      <div class="chart"><canvas id="steps" style="height:180px"></canvas><div class="tip" id="stepsTip"></div></div>
+      <div class="legend" style="margin-top:10px"><span>Words that never settled (hit the step cap)</span></div>
+      <div class="chart"><canvas id="cap" style="height:90px"></canvas><div class="tip" id="capTip"></div></div>
+    </div>
+
+    <div class="card span12">
+      <h2>The sheet, live</h2>
+      <p class="explain">Every few minutes the trainer reads a test passage word by word, exactly as the chat app does, and photographs Settle's sheet. One column per word, one row per scale: the bottom row looks one or two words back, each row above looks twice as far, and the top row spans the whole passage. Colour is the direction of each cell's state, so similar thoughts share a colour. The bars show how many steps each word took to settle. <b>Watch it settle</b> replays the training-time view, where all the columns settle at once.</p>
+      <div class="snaprow">
+        <div class="seg" id="sheetMode"><button data-m="sheet" class="on">settled sheet</button><button data-m="movie">watch it settle</button></div>
+        <input type="range" id="snap" min="0" max="0" value="0">
+        <label class="small muted"><input type="checkbox" id="follow" checked> follow latest</label>
+        <span class="small" id="snapLabel"></span>
+      </div>
+      <div class="sheetbox" id="sheetBox"><canvas id="sheet"></canvas><div class="tip" id="sheetTip"></div></div>
+      <div class="facts" id="facts"></div>
+    </div>
+
+    <div class="card span7">
+      <h2>Which words are hard, as training goes on</h2>
+      <p class="explain">Each row is one photograph of the test passage (oldest at the top), and each column one word. Brighter means more thinking steps. As the model learns, you can watch it learn where to spend its effort.</p>
+      <div class="sheetbox"><canvas id="heat"></canvas><div class="tip" id="heatTip"></div></div>
+    </div>
+
+    <div class="card span5">
+      <h2>Does generation match training?</h2>
+      <p class="explain">The trainer settles the whole passage at once, while chat adds one word at a time. Settle is built so both give the same answer. This checks it on every photograph: the largest difference between the two in the model's scores (should stay near zero), and how often both pick the same top word (should be 100%).</p>
+      <div class="chart"><canvas id="gap" style="height:150px"></canvas><div class="tip" id="gapTip"></div></div>
+    </div>
+
+    <div class="card span12">
+      <h2>What the models write</h2>
+      <p class="explain">Both models continue the same prompts with the same randomness. In Settle's text, each word is tinted by how long it thought about it: brighter means more steps.</p>
+      <div class="snaprow"><span class="small muted">written at</span><input type="range" id="sampleStep" min="0" max="0" value="0"><label class="small muted"><input type="checkbox" id="sampleFollow" checked> latest</label><span class="small" id="sampleLabel"></span></div>
+      <div id="samples"></div>
+    </div>
+  </div>
+</div>
+
+<script src="common.js"></script>
+<script>
+"use strict";
+const S = Settle;
+const $ = (id) => document.getElementById(id);
+const COLORS = { settle: "var(--settle)", gpt: "var(--gpt)" };
+const colorOf = (run) => S.css(run.config && run.config.model === "gpt" ? "--gpt" : "--settle");
+const label = (run) => (run.config && run.config.model === "gpt" ? "GPT baseline" : "Settle") + (run.name !== (run.config && run.config.model) ? ` (${run.name})` : "");
+
+let runs = [], metrics = {}, samples = {}, snaps = {}, snapCache = {};
+let xmode = "tokens", sheetMode = "sheet", movieFrame = 0, movieTimer = null;
+
+const lossChart = S.lineChart($("loss"), $("lossTip"), { series: [] });
+const stepsChart = S.lineChart($("steps"), $("stepsTip"), { series: [] });
+const capChart = S.lineChart($("cap"), $("capTip"), { series: [] });
+const gapChart = S.lineChart($("gap"), $("gapTip"), { series: [] });
+
+async function getJSON(u) { const r = await fetch(u); return r.json(); }
+
+function fmtMin(s) { if (s == null || !isFinite(s)) return "–"; const m = s / 60; return m < 1 ? Math.round(s) + " s" : m < 90 ? m.toFixed(1) + " min" : (m / 60).toFixed(1) + " h"; }
+
+function renderRuns() {
+  $("runs").innerHTML = runs.map((r) => {
+    const st = r.status || {}, cfg = r.config || {};
+    const ev = (metrics[r.name] || []).filter((m) => m.kind === "eval");
+    const vl = ev.length ? ev[ev.length - 1].val_loss : null;
+    const prog = cfg.total_tokens ? Math.min(1, (st.tokens || 0) / cfg.total_tokens) : 0;
+    const stale = st.state === "running" && st.updated && Date.now() / 1000 - st.updated > 120;
+    const state = stale ? "quiet" : (st.state || "starting");
+    return `<div class="card run">
+      <div class="name"><span class="dot" style="background:${colorOf(r)}"></span>${label(r)}<span class="badge ${state}">${state}</span></div>
+      <div class="small muted">${(cfg.params / 1e6).toFixed(1)}M parameters (${(cfg.params_non_embedding / 1e6).toFixed(2)}M outside the word table) · ${cfg.gpu || ""}</div>
+      <div class="bar"><div style="width:${(prog * 100).toFixed(1)}%;background:${colorOf(r)}"></div></div>
+      <div class="stats">
+        <div class="stat"><div class="k">words seen</div><div class="v">${S.fmtTokens(st.tokens || 0)} <span class="muted small">/ ${S.fmtTokens(cfg.total_tokens || 0)}</span></div></div>
+        <div class="stat"><div class="k">validation loss</div><div class="v">${vl != null ? vl.toFixed(3) : "–"}</div></div>
+        <div class="stat"><div class="k">speed</div><div class="v">${st.tok_s ? S.fmtTokens(st.tok_s) + "/s" : "–"}</div></div>
+        <div class="stat"><div class="k">training time</div><div class="v">${fmtMin(st.elapsed)}</div></div>
+        <div class="stat"><div class="k">time left</div><div class="v">${st.state === "running" ? fmtMin(st.eta_s) : st.state === "done" ? "done" : "–"}</div></div>
+        <div class="stat"><div class="k">step</div><div class="v">${st.step || 0}</div></div>
+      </div></div>`;
+  }).join("") || `<div class="card muted">No runs yet in this folder. Start one with <span class="kbd">python -m settle.train</span>.</div>`;
+}
+
+function xOf(m) { return xmode === "tokens" ? m.tokens : m.elapsed / 60; }
+const xFmt = (v) => (xmode === "tokens" ? S.fmtTokens(v) : v.toFixed(v < 10 ? 1 : 0) + " min");
+const xTip = (v) => (xmode === "tokens" ? S.fmtTokens(v) + " words seen" : v.toFixed(1) + " min of training");
+
+function smooth(points, k) {
+  const out = []; let acc = null;
+  for (const p of points) { acc = acc == null ? p[1] : acc * k + p[1] * (1 - k); out.push([p[0], acc]); }
+  return out;
+}
+
+function renderCharts() {
+  const series = [], legend = [];
+  for (const r of runs) {
+    const ms = metrics[r.name] || [];
+    const c = colorOf(r);
+    const ev = ms.filter((m) => m.kind === "eval").map((m) => [xOf(m), m.val_loss]);
+    const tr = smooth(ms.filter((m) => m.kind === "train").map((m) => [xOf(m), m.loss]), 0.8);
+    series.push({ name: label(r) + " · train", color: c, points: tr, width: 1.5, alpha: 0.35, noTip: false });
+    series.push({ name: label(r) + " · validation", color: c, points: ev, width: 2, dots: ev.length < 40 });
+    legend.push(`<span><i class="sw" style="background:${c}"></i>${label(r)}</span>`);
+  }
+  $("lossLegend").innerHTML = legend.join("") + `<span class="muted">faint: training batches</span>`;
+  lossChart.set({ series, xFmt, xTip, yFmt: (v) => v.toFixed(2), tipFmt: (v) => v.toFixed(3),
+    yClip: (ys) => { const s = [...ys].sort((a, b) => a - b); return s[Math.floor(s.length * 0.97)] || s[s.length - 1]; } });
+
+  const sr = runs.find((r) => r.config && r.config.model === "settle");
+  const sm = sr ? (metrics[sr.name] || []).filter((m) => m.kind === "train" && m.col_steps_mean != null) : [];
+  const set = S.css("--settle"), lens = S.css("--lens");
+  stepsChart.set({ xFmt, xTip, yMin: 0, yFmt: (v) => v.toFixed(0), tipFmt: (v) => v.toFixed(1) + " steps", empty: "Settle has not logged yet",
+    series: [
+      { name: "average word", color: set, points: smooth(sm.map((m) => [xOf(m), m.col_steps_mean]), 0.7) },
+      { name: "slowest 10%", color: set, dash: [5, 4], points: smooth(sm.map((m) => [xOf(m), m.col_steps_p90]), 0.7) },
+      { name: "lens", color: lens, points: smooth(sm.map((m) => [xOf(m), m.lens_steps]), 0.7) },
+    ] });
+  capChart.set({ xFmt, xTip, yMin: 0, yMax: Math.max(5, ...sm.map((m) => 100 * m.cap_frac)), yFmt: (v) => v.toFixed(0) + "%", tipFmt: (v) => v.toFixed(1) + "%", empty: "",
+    series: [{ name: "never settled", color: S.css("--warn"), points: smooth(sm.map((m) => [xOf(m), 100 * m.cap_frac]), 0.7) }] });
+
+  const sn = sr ? snaps[sr.name] || [] : [];
+  gapChart.set({ xFmt: (v) => S.fmtTokens(v), xTip: (v) => S.fmtTokens(v) + " words seen", yMin: 0,
+    yMax: Math.max(1e-4, ...sn.map((s) => s.gap)), yFmt: (v) => (v === 0 ? "0" : v.toExponential(0)), empty: "waiting for the first photograph",
+    series: [{ name: "largest score difference", color: set, dots: true, points: sn.map((s) => [s.tokens, s.gap]),
+               tipFmt: (v) => v.toExponential(1) }],
+    tipFmt: (v) => v.toExponential(1) });
+}
+
+// ---------------------------------------------------------------- the sheet
+async function loadSnap(runName, file) {
+  const key = runName + "/" + file;
+  if (!snapCache[key]) {
+    const d = await getJSON(`/api/run/${runName}/snapshot/${file}`);
+    d.sheetBytes = S.b64bytes(d.sheet);
+    d.frameBytes = S.b64bytes(d.frames);
+    snapCache[key] = d;
+  }
+  return snapCache[key];
+}
+
+let currentSnap = null, sheetLayout = null;
+
+function drawSheet() {
+  const d = currentSnap;
+  const cv = $("sheet");
+  if (!d) { const { ctx, w } = S.fitCanvas(cv, 60); ctx.fillStyle = S.css("--muted"); ctx.font = "13px Inter"; ctx.fillText("The first photograph appears a few seconds after Settle starts training.", 0, 30); return; }
+  const T = d.tokens.length, R = d.rows;
+  const box = $("sheetBox").clientWidth;
+  const left = 64;
+  const cw = Math.max(16, Math.floor((box - left - 4) / T));
+  const ch = Math.max(14, Math.min(22, Math.round(cw * 0.75)));
+  const gridH = R * ch;
+  const barH = 46, labH = 70;
+  cv.style.width = left + cw * T + 4 + "px";
+  const { ctx, w, h } = S.fitCanvas(cv, gridH + barH + labH + 26);
+  ctx.clearRect(0, 0, w, h);
+  const top = 6;
+  const movie = sheetMode === "movie";
+  const K = d.n_frames;
+  const f = Math.min(movieFrame, K - 1);
+  const bytes = movie ? d.frameBytes : d.sheetBytes;
+  const off = movie ? f * T * R * 3 : 0;
+  for (let t = 0; t < T; t++) {
+    for (let r = 0; r < R; r++) {
+      const i = off + (t * R + r) * 3;
+      ctx.fillStyle = `rgb(${bytes[i]},${bytes[i + 1]},${bytes[i + 2]})`;
+      const x = left + t * cw + 1, y = top + (R - 1 - r) * ch + 1;
+      ctx.beginPath(); ctx.roundRect(x, y, cw - 2, ch - 2, 3); ctx.fill();
+    }
+    if (movie && d.par_change[f]) {
+      const m = d.par_change[f][t];
+      if (m > 0) {   // still moving: glow
+        const a = Math.min(1, m / 0.02);
+        ctx.strokeStyle = `rgba(255,240,220,${0.25 + 0.75 * a})`;
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(left + t * cw + 0.75, top + 0.75, cw - 1.5, gridH - 1.5);
+      }
+    }
+  }
+  // row labels: how far back each row looks
+  ctx.fillStyle = S.css("--muted"); ctx.font = "11px Inter, system-ui"; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (let r = 0; r < R; r++) ctx.fillText(`↶ ${2 ** r}`, left - 8, top + (R - 1 - r) * ch + ch / 2);
+  ctx.save(); ctx.translate(12, top + gridH / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = "center"; ctx.fillText("looks back", 0, 0); ctx.restore();
+  // steps bars
+  const cap = Math.max(...d.steps, 1);
+  const by = top + gridH + 8;
+  for (let t = 0; t < T; t++) {
+    const s = d.steps[t];
+    const bh = Math.max(2, (barH - 6) * s / cap);
+    ctx.fillStyle = S.heat(s / cap);
+    ctx.beginPath(); ctx.roundRect(left + t * cw + 2, by + barH - bh, cw - 4, bh, [3, 3, 0, 0]); ctx.fill();
+  }
+  ctx.fillStyle = S.css("--muted"); ctx.textAlign = "right";
+  ctx.fillText("steps", left - 8, by + barH - 10);
+  // token labels
+  ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.fillStyle = S.css("--text-2"); ctx.font = "12px Inter, system-ui";
+  for (let t = 0; t < T; t++) {
+    ctx.save(); ctx.translate(left + t * cw + cw / 2, by + barH + 8); ctx.rotate(-Math.PI / 3);
+    ctx.fillText(d.tokens[t].replace(/\n/g, "⏎").trim() || "␣", 0, 0); ctx.restore();
+  }
+  if (movie) {
+    ctx.textAlign = "left"; ctx.fillStyle = S.css("--text"); ctx.font = "600 12px Inter";
+    ctx.fillText(`step ${f + 1} / ${K}`, left, h - 8);
+  }
+  sheetLayout = { left, cw, top, T, gridH, barH, by };
+}
+
+$("sheet").addEventListener("mousemove", (e) => {
+  const L = sheetLayout, d = currentSnap, tip = $("sheetTip");
+  if (!L || !d) return;
+  const t = Math.floor((e.offsetX - L.left) / L.cw);
+  if (t < 0 || t >= L.T) { tip.style.display = "none"; return; }
+  const pn = d.p_next[t];
+  tip.innerHTML = `<div class="tiphead">word ${t + 1}</div><div style="font-weight:600;font-size:14px">“${S.escapeHtml(d.tokens[t])}”</div>
+    <div class="tiprow">thinking steps<b>${d.steps[t]}</b></div><div class="tiprow">lens steps<b>${d.lens_steps[t]}</b></div>
+    ${pn != null ? `<div class="tiprow">chance it gave the real next word “${S.escapeHtml(d.tokens[t + 1] || "")}”<b>${(pn * 100).toFixed(1)}%</b></div>` : ""}`;
+  tip.style.display = "block";
+  const x = L.left + t * L.cw + L.cw + 8 - $("sheetBox").scrollLeft;
+  tip.style.left = Math.min(x, $("sheetBox").clientWidth - tip.offsetWidth - 4) + "px";
+  tip.style.top = "10px";
+});
+$("sheet").addEventListener("mouseleave", () => ($("sheetTip").style.display = "none"));
+
+async function showSnap() {
+  const sr = runs.find((r) => r.config && r.config.model === "settle");
+  const list = sr ? snaps[sr.name] || [] : [];
+  const sl = $("snap");
+  sl.max = Math.max(0, list.length - 1);
+  if ($("follow").checked) sl.value = sl.max;
+  const item = list[+sl.value];
+  if (!item) { currentSnap = null; drawSheet(); return; }
+  currentSnap = await loadSnap(sr.name, item.file);
+  const d = currentSnap;
+  $("snapLabel").textContent = `photo ${+sl.value + 1} of ${list.length} · after ${S.fmtTokens(d.tokens_seen || item.tokens)} words`;
+  const mean = d.steps.reduce((a, b) => a + b, 0) / d.steps.length;
+  let hard = d.steps.map((s, i) => [s, i]).sort((a, b) => b[0] - a[0]).slice(0, 4).map(([s, i]) => `“${S.escapeHtml(d.tokens[i].trim())}” ${s}`);
+  $("facts").innerHTML = `<span>average <b>${mean.toFixed(1)}</b> steps per word</span><span>hardest words: <b>${hard.join(", ")}</b></span>
+    <span>generation vs training difference <b>${d.gap.toExponential(1)}</b></span><span>same top word <b>${(d.agree * 100).toFixed(0)}%</b></span>`;
+  drawSheet();
+  drawHeat(list, sr);
+}
+
+function setMovie(on) {
+  clearInterval(movieTimer);
+  if (on) {
+    movieFrame = 0;
+    movieTimer = setInterval(() => {
+      if (!currentSnap) return;
+      movieFrame = movieFrame + 1 >= currentSnap.n_frames + 6 ? 0 : movieFrame + 1;   // hold the last frame a moment
+      drawSheet();
+    }, 160);
+  }
+  drawSheet();
+}
+
+function drawHeat(list, sr) {
+  const cv = $("heat");
+  if (!list.length) { S.fitCanvas(cv, 30); return; }
+  const T = Math.max(...list.map((s) => s.steps.length));
+  const cap = (sr.config.config && sr.config.config.settle_cap) || 24;
+  const box = cv.parentElement.clientWidth;
+  const cw = Math.max(6, Math.floor(box / T));
+  const rh = Math.max(4, Math.min(14, Math.floor(260 / list.length)));
+  cv.style.width = cw * T + "px";
+  const { ctx, w, h } = S.fitCanvas(cv, rh * list.length);
+  ctx.clearRect(0, 0, w, h);
+  list.forEach((s, i) => s.steps.forEach((v, t) => { ctx.fillStyle = S.heat(v / cap); ctx.fillRect(t * cw, i * rh, cw - 1, rh - (rh > 5 ? 1 : 0)); }));
+  const sel = +$("snap").value;
+  ctx.strokeStyle = "#fff"; ctx.lineWidth = 1; ctx.strokeRect(0.5, sel * rh + 0.5, cw * T - 1, rh - 1);
+  cv.onmousemove = (e) => {
+    const t = Math.floor(e.offsetX / cw), i = Math.floor(e.offsetY / rh), tip = $("heatTip");
+    const s = list[i];
+    if (!s || t >= s.steps.length || !currentSnap) { tip.style.display = "none"; return; }
+    tip.innerHTML = `<div class="tiphead">after ${S.fmtTokens(s.tokens)} words</div><div class="tiprow">“${S.escapeHtml(currentSnap.tokens[t] || "")}”<b>${s.steps[t]} steps</b></div>`;
+    tip.style.display = "block"; tip.style.left = Math.min(e.offsetX + 12, box - tip.offsetWidth) + "px"; tip.style.top = e.offsetY + 12 + "px";
+  };
+  cv.onmouseleave = () => ($("heatTip").style.display = "none");
+  cv.onclick = (e) => { const i = Math.floor(e.offsetY / rh); if (list[i]) { $("follow").checked = false; $("snap").value = i; showSnap(); } };
+}
+
+// ---------------------------------------------------------------- samples
+function renderSamples() {
+  const groups = {};      // step key -> run -> prompt -> sample
+  const steps = new Set();
+  for (const r of runs) for (const s of samples[r.name] || []) steps.add(s.tokens);
+  const keys = [...steps].sort((a, b) => a - b);
+  const sl = $("sampleStep");
+  sl.max = Math.max(0, keys.length - 1);
+  if ($("sampleFollow").checked) sl.value = sl.max;
+  const key = keys[+sl.value];
+  $("sampleLabel").textContent = key != null ? `after ${S.fmtTokens(key)} words` : "";
+  if (key == null) { $("samples").innerHTML = `<p class="muted">Samples appear when training starts.</p>`; return; }
+  const prompts = [...new Set(runs.flatMap((r) => (samples[r.name] || []).map((s) => s.prompt)))];
+  // for each run, the latest sample at or before this point
+  const pick = (r, p) => { let best = null; for (const s of samples[r.name] || []) if (s.prompt === p && s.tokens <= key) best = s; return best; };
+  const cap = 12;
+  $("samples").innerHTML = prompts.map((p) => `<div class="samples" style="margin-bottom:12px">${runs.map((r) => {
+    const s = pick(r, p);
+    let body = "<span class='muted'>–</span>";
+    if (s) {
+      if (s.steps && s.pieces) {
+        const mx = Math.max(4, ...s.steps);
+        body = s.pieces.map((pc, i) => { const v = (s.steps[i] || 0) / mx; return `<span class="tok" style="background:rgba(217,89,38,${(0.08 + 0.55 * v).toFixed(2)})">${S.escapeHtml(pc)}</span>`; }).join("");
+      } else body = S.escapeHtml(s.text);
+    }
+    return `<div class="sample"><div class="who"><span class="dot" style="width:8px;height:8px;border-radius:50%;background:${colorOf(r)}"></span>${label(r)}${s ? ` · after ${S.fmtTokens(s.tokens)} words` : ""}</div><span class="prompt">${S.escapeHtml(p)}</span><span class="gen">${body}</span></div>`;
+  }).join("")}</div>`).join("");
+}
+
+// ---------------------------------------------------------------- polling
+async function refresh() {
+  try {
+    runs = await getJSON("/api/runs");
+    await Promise.all(runs.map(async (r) => {
+      [metrics[r.name], samples[r.name], snaps[r.name]] = await Promise.all([
+        getJSON(`/api/run/${r.name}/metrics`), getJSON(`/api/run/${r.name}/samples`), getJSON(`/api/run/${r.name}/snapshots`)]);
+    }));
+    renderRuns(); renderCharts(); renderSamples(); await showSnap();
+    $("updated").textContent = "updated " + new Date().toLocaleTimeString();
+  } catch (e) {
+    $("updated").textContent = "cannot reach the dashboard server (" + e.message + ")";
+  }
+}
+
+document.querySelectorAll("#xmode button").forEach((b) => b.onclick = () => {
+  xmode = b.dataset.x; document.querySelectorAll("#xmode button").forEach((x) => x.classList.toggle("on", x === b)); renderCharts();
+});
+document.querySelectorAll("#sheetMode button").forEach((b) => b.onclick = () => {
+  sheetMode = b.dataset.m; document.querySelectorAll("#sheetMode button").forEach((x) => x.classList.toggle("on", x === b)); setMovie(sheetMode === "movie");
+});
+$("snap").oninput = () => { $("follow").checked = false; showSnap(); };
+$("follow").onchange = showSnap;
+$("sampleStep").oninput = () => { $("sampleFollow").checked = false; renderSamples(); };
+$("sampleFollow").onchange = renderSamples;
+window.addEventListener("resize", () => { renderCharts(); drawSheet(); });
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>
