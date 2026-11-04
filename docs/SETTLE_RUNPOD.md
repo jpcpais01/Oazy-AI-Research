@@ -56,7 +56,12 @@ tokens.
 bash runpod/train_settle.sh                    # or: bash runpod/train_settle.sh --tokens 1e8
 ```
 
-This opens a tmux session called `settle` with three windows: the dashboard,
+To train **only Settle**, without the GPT baseline, use
+`bash runpod/train_settle.sh --solo` instead (it also takes `--tokens`, e.g.
+`bash runpod/train_settle.sh --solo --tokens 1e8`). The dashboard then shows
+Settle alone.
+
+The normal command opens a tmux session called `settle` with three windows: the dashboard,
 Settle training, and the GPT baseline training (both models share the GPU;
 the GPT is much faster and finishes first). To watch the terminal output:
 
