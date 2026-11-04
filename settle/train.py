@@ -44,6 +44,13 @@ PRESETS = {
         batch=64, lr=1.5e-3, warmup=400, tokens=150_000_000, eval_tokens=4_000_000, eval_batches=20,
         sample_tokens=10_000_000, snap_tokens=4_000_000, sample_len=120,
     ),
+    # about 5x the compute of "full": a 2.2x bigger rule (wider cells) and 2.3x more tokens (~2 h on one B200)
+    "big": dict(
+        settle=dict(d_embed=512, channels=192, hidden=1536, gist_dim=192, link_heads=6, link_dim=32,
+                    lens_hidden=768),
+        batch=64, lr=1.2e-3, warmup=600, tokens=350_000_000, eval_tokens=8_000_000, eval_batches=20,
+        sample_tokens=20_000_000, snap_tokens=8_000_000, sample_len=160,
+    ),
 }
 
 SAMPLE_PROMPTS = ["Once upon a time", "The little dog was", "Tom and Mia went to the"]

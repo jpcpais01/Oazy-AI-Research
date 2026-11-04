@@ -129,3 +129,21 @@ python -m settle.data --out ./settle_data
 python -m settle.train --model settle --preset tiny --data ./settle_data --runs ./settle_runs
 python -m settle.dashboard --runs ./settle_runs
 ```
+
+## The bigger run (about 2 hours on one B200)
+
+The `big` preset uses about 5× the compute of the default run. Settle's rule
+is about 2.2× bigger (192 numbers per cell instead of 128, a wider hidden
+layer, 6 long-range links, word size 512), and it trains on 350M tokens
+instead of 150M. That is about three quarters of TinyStories, so no story is
+seen twice. Settle has 31.8M parameters and the matched GPT 32.2M.
+
+```bash
+python -m settle.train --bench --preset big        # check the projected time first
+bash runpod/train_settle.sh --preset big           # Settle + matched GPT on the same GPU
+bash runpod/train_settle.sh --solo --preset big    # Settle only
+```
+
+If the bench projects much more than about 110 minutes for Settle, add
+`--tokens 2.5e8` (or whatever fits). Data, setup and dashboard are the same
+as above.
