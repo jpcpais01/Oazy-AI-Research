@@ -126,6 +126,17 @@ def fetch_hellaswag(out: Path):
         urllib.request.urlretrieve(HELLASWAG_URL, dst.with_suffix(".tmp"))
         os.replace(dst.with_suffix(".tmp"), dst)
         print(f"HellaSwag -> {dst}")
+        return
+    except Exception as e:
+        print(f"GitHub download of HellaSwag failed ({e}); trying the Hugging Face copy")
+    try:
+        from datasets import load_dataset
+        ds = load_dataset("Rowan/hellaswag", split="validation")
+        with open(dst.with_suffix(".tmp"), "w") as f:
+            for ex in ds:
+                f.write(json.dumps({"ctx": ex["ctx"], "endings": ex["endings"], "label": int(ex["label"])}) + "\n")
+        os.replace(dst.with_suffix(".tmp"), dst)
+        print(f"HellaSwag ({len(ds)} questions) -> {dst}")
     except Exception as e:
         print(f"could not download HellaSwag ({e}); training will skip it")
 
@@ -201,7 +212,11 @@ def main():
     ap.add_argument("--val-tokens", type=float, default=1e7)
     ap.add_argument("--sample", default="sample-10BT", help="FineWeb-Edu sample: sample-10BT, sample-100BT, ...")
     ap.add_argument("--workers", type=int, default=0)
+    ap.add_argument("--hellaswag-only", action="store_true", help="only fetch the HellaSwag file")
     a = ap.parse_args()
+    if a.hellaswag_only:
+        Path(a.out).mkdir(parents=True, exist_ok=True)
+        return fetch_hellaswag(Path(a.out))
     prepare(Path(a.out), int(a.tokens), int(a.val_tokens), a.sample, a.workers)
 
 
