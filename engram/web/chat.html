@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Engram · Watch it remember</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .topbar .pills { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill b { color: var(--text); font-weight: 600; }
+  .status { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); padding: 3px 10px; border-radius: 99px; border: 1px solid var(--border); }
+  .status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+  .status.on { color: var(--text-2); } .status.on .dot { background: var(--brand); animation: ping 1.4s infinite; }
+
+  .story { font-size: 18px; line-height: 2; min-height: 200px; max-height: 50vh; overflow-y: auto; padding: 2px 2px 8px; }
+  .story .w { border-radius: 5px; padding: 2px 0; cursor: pointer; box-decoration-break: clone; -webkit-box-decoration-break: clone; transition: background .3s; }
+  .story .you { color: var(--text); }
+  .story .model { color: #f6d9c6; }
+  .story .sel { outline: 1.5px solid rgba(255,255,255,.85); outline-offset: 1px; }
+  .story .fresh { animation: pop .5s ease-out; }
+  @keyframes pop { from { background: rgba(255, 230, 200, .45); } }
+  .story .caret { display: inline-block; width: 9px; height: 18px; background: var(--brand); vertical-align: -3px; margin-left: 3px; border-radius: 2px; animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .story .hint { color: var(--muted); font-size: 15px; line-height: 1.7; }
+
+  .composer { margin-top: 14px; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: 14px; padding: 12px 12px 10px 16px; }
+  .composer:focus-within { border-color: rgba(232, 100, 44, .6); box-shadow: 0 0 0 3px rgba(232, 100, 44, .12); }
+  .composer textarea { width: 100%; background: transparent; border: 0; color: var(--text); font: 15.5px/1.6 var(--sans); resize: none; outline: none; min-height: 52px; }
+  .composer .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .composer .row .spacer { flex: 1; }
+  .controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 22px; margin-top: 18px; }
+  @media (max-width: 760px) { .controls { grid-template-columns: 1fr; } }
+  .ctl .top { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-2); margin-bottom: 4px; }
+  .ctl .top b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .ctl input[type=range] { width: 100%; }
+  .ctl .h { font-size: 11.5px; color: var(--muted); margin-top: 4px; line-height: 1.45; }
+
+  .ins h4 { font-size: 11.5px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); margin: 20px 0 10px; font-weight: 600; }
+  .ins h4:first-child { margin-top: 0; }
+  .bigword { font-size: 24px; font-weight: 650; letter-spacing: -0.01em; font-family: var(--mono); }
+  .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+  .tile { background: var(--surface-2); border: 1px solid var(--border); border-radius: 11px; padding: 9px 12px; }
+  .tile .k { font-size: 11.5px; color: var(--muted); } .tile .v { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .guess { display: grid; grid-template-columns: 110px 1fr 50px; gap: 10px; align-items: center; font-size: 13px; margin: 7px 0; }
+  .guess .gw { font-family: var(--mono); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .guess .gt { height: 6px; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
+  .guess .gt div { height: 100%; background: var(--brand); border-radius: 99px; }
+  .guess b { text-align: right; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--text-2); }
+
+  .mempair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .mempair .m { text-align: center; }
+  .mempair canvas { width: 100%; aspect-ratio: 1; image-rendering: pixelated; border-radius: 10px; border: 1px solid var(--border); display: block; background: #131316; }
+  .mempair .k { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .pick { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 12.5px; color: var(--text-2); margin-bottom: 12px; }
+  .pick select { background: var(--surface-2); color: var(--text); border: 1px solid var(--border-2); border-radius: 8px; padding: 4px 8px; font: inherit; }
+  .gridwrap { position: relative; }
+  .gridwrap canvas { width: 100%; display: block; cursor: pointer; }
+  .keyrow { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .keyrow .ramp { width: 80px; height: 8px; border-radius: 99px; display: inline-block; vertical-align: middle; margin: 0 6px; }
+  .stripbox { position: relative; overflow-x: auto; }
+  .stripbox canvas { display: block; }
+</style>
+</head>
+<body>
+<header class="topbar"><div class="inner">
+  <div class="brand"><div class="logo"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <h1>Engram <span class="tag">Watch it remember</span></h1></div>
+  <div class="spacer"></div>
+  <div class="pills" id="pills"></div>
+  <button class="btn" id="reset" title="Wipe the memories and start a new text"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 8a5 5 0 1 0 1.6-3.7"/><path d="M3 2.5v3h3"/></svg>New text</button>
+</div></header>
+
+<div class="wrap">
+  <div class="grid">
+    <div class="card span7">
+      <div class="cardhead">
+        <div class="titles"><h2>The text so far</h2><div class="sub">Your words in white, Engram's in peach. Each word is shaded by how much it surprised the memories.</div></div>
+        <div class="tools"><div class="seg" id="colorBy"><button data-c="surprise" class="on">Memory surprise</button><button data-c="p">Word surprise</button><button data-c="none">Plain</button></div><span class="status" id="status"><span class="dot"></span><span>ready</span></span></div>
+      </div>
+      <details class="why"><summary>How does Engram read?</summary><div class="body">
+        <p>Engram never looks back at the text. Every block holds a few small <b>memories</b> (grids of 64 × 64 numbers), blank when a text starts. For each word, every memory <b>guesses</b> what goes with it, compares with the truth, and is <b>fixed by its surprise</b>. Then it is asked "what comes next?" and answers from the updated memory.</p>
+        <p><b>Memory surprise</b> shades each word by how wrong the memories' guesses were (bright = new to them). <b>Word surprise</b> shades by how unlikely the model thought the word was. Click any word to inspect it. The text continues between messages; <b>New text</b> wipes the memories.</p>
+      </div></details>
+      <div class="story" id="story"><div class="hint">Type the start of a text below and press <b>Continue</b>. Try writing a fact early on ("My cat is called Pepper.") and see whether Engram can use it later.</div></div>
+      <div class="composer">
+        <textarea id="input" placeholder="Write the beginning, or leave it empty to let Engram carry on…" rows="2"></textarea>
+        <div class="row"><span class="small muted">Enter to send · Shift+Enter for a new line</span><div class="spacer"></div>
+          <button class="btn ghost" id="stop" disabled>Stop</button><button class="btn primary" id="go">Continue</button></div>
+      </div>
+      <div class="controls">
+        <div class="ctl"><div class="top"><span>Words to write</span><b id="nv">60</b></div><input type="range" id="n" min="0" max="300" value="60"><div class="h">0 = only read what you typed</div></div>
+        <div class="ctl"><div class="top"><span>Temperature</span><b id="tv">0.8</b></div><input type="range" id="temp" min="0" max="1.5" step="0.05" value="0.8"><div class="h">Low = safe and repetitive · high = adventurous</div></div>
+        <div class="ctl"><div class="top"><span>Choices per word</span><b id="kv">40</b></div><input type="range" id="topk" min="1" max="200" value="40"><div class="h">Only the top few words can be picked</div></div>
+      </div>
+    </div>
+
+    <div class="card span5 ins">
+      <h4>The selected word</h4>
+      <div class="bigword" id="word">–</div>
+      <div class="tiles">
+        <div class="tile"><div class="k">chance it gave</div><div class="v" id="tp">–</div></div>
+        <div class="tile"><div class="k">memory surprise</div><div class="v" id="ts">–</div></div>
+        <div class="tile"><div class="k">trust</div><div class="v" id="tt">–</div></div>
+      </div>
+      <h4>What it expected next</h4>
+      <div id="guesses"><div class="muted small">–</div></div>
+      <h4>Which memories this word wrote into</h4>
+      <div class="gridwrap"><canvas id="push" style="height:150px"></canvas><div class="tip" id="pushTip"></div></div>
+      <div class="keyrow"><span>untouched<span class="ramp" id="ramp1"></span>rewritten</span><span>rows: blocks · columns: memories · click to watch one</span></div>
+    </div>
+
+    <div class="card span7">
+      <div class="cardhead"><div class="titles"><h2>Surprise in every block</h2><div class="sub">Rows are blocks (bottom: first), columns are words. Bright = the memories did not see it coming.</div></div></div>
+      <div class="stripbox" id="stripbox"><canvas id="strip" style="height:160px"></canvas><div class="tip" id="stripTip"></div></div>
+    </div>
+    <div class="card span5">
+      <div class="cardhead"><div class="titles"><h2>One memory, live</h2><div class="sub">The 64 × 64 numbers of one memory, and what the selected word wrote into it.</div></div></div>
+      <details class="why"><summary>What do the colors mean?</summary><div class="body">
+        <p><b>Orange</b> numbers are positive, <b>blue</b> negative, dark near zero. Rows are "situations" (keys), columns are "answers" (values). The right picture is the <b>stamp</b>: exactly what this one word added, which is its key times its surprise, scaled by trust. A word the memory already knew leaves a faint stamp.</p>
+      </div></details>
+      <div class="pick">Block <select id="layer"></select> Memory <select id="head"></select></div>
+      <div class="mempair"><div class="m"><canvas id="mem" width="64" height="64"></canvas><div class="k" id="memk">the memory after this word</div></div>
+        <div class="m"><canvas id="stamp" width="64" height="64"></canvas><div class="k">what this word wrote</div></div></div>
+    </div>
+  </div>
+</div>
+
+<script src="common.js"></script>
+<script>
+"use strict";
+let INFO = null, WORDS = [], SEL = null, es = null, colorBy = "surprise";
+const $ = (id) => document.getElementById(id);
+const layerSel = $("layer"), headSel = $("head");
+
+async function init() {
+  INFO = await (await fetch("api/info")).json();
+  $("pills").innerHTML = `<span class="pill"><b>${(INFO.params / 1e6).toFixed(0)}M</b> parameters</span>
+    <span class="pill"><b>${INFO.layers} × ${INFO.heads}</b> memories of ${INFO.k} × ${INFO.v}</span>
+    ${INFO.tokens ? `<span class="pill">trained on <b>${UI.fmtTokens(INFO.tokens)}</b> tokens</span>` : ""}`;
+  layerSel.innerHTML = Array.from({ length: INFO.layers }, (_, i) => `<option value="${i}">${i + 1}</option>`).join("");
+  headSel.innerHTML = Array.from({ length: INFO.heads }, (_, i) => `<option value="${i}">${i + 1}</option>`).join("");
+  layerSel.value = INFO.layers - 1;
+  ["ramp1"].forEach((id) => ($(id).style.background = UI.heatCSS()));
+  UI.watchRanges();
+  [["n", "nv"], ["temp", "tv"], ["topk", "kv"]].forEach(([a, b]) => $(a).addEventListener("input", () => ($(b).textContent = $(a).value)));
+}
+
+function shade(w) {
+  if (colorBy === "none") return "";
+  let u;
+  if (colorBy === "p") { if (w.p == null) return ""; u = Math.min(1, -Math.log(Math.max(w.p, 1e-9)) / 10); }
+  else { const s = w.surprise.reduce((a, b) => a + b, 0) / w.surprise.length; u = Math.max(0, Math.min(1, (s - 0.3) / 0.9)); }
+  const [r, g, b] = UI.heatRGB(u);
+  return `background:rgba(${r},${g},${b},${0.12 + 0.6 * u})`;
+}
+
+function renderStory(last) {
+  const box = $("story");
+  box.innerHTML = WORDS.map((w, i) => `<span class="w ${w.source}${i === SEL ? " sel" : ""}${last && i === WORDS.length - 1 ? " fresh" : ""}" data-i="${i}" style="${shade(w)}">${UI.escapeHtml(w.text).replace(/\n/g, "⏎<br>")}</span>`).join("") + (es ? `<span class="caret"></span>` : "");
+  box.scrollTop = box.scrollHeight;
+}
+
+function drawMatrix(cv, b64, k = 64, v = 64) {
+  const ctx = cv.getContext("2d");
+  if (!b64) { ctx.clearRect(0, 0, cv.width, cv.height); return; }
+  const bytes = UI.b64bytes(b64), img = ctx.createImageData(v, k);
+  const pos = [232, 100, 44], neg = [75, 147, 236], bg = [19, 19, 22];
+  for (let i = 0; i < k * v; i++) {
+    let x = bytes[i]; if (x > 127) x -= 256;
+    const u = Math.min(1, Math.abs(x) / 127) ** 0.6, c = x >= 0 ? pos : neg;
+    for (let j = 0; j < 3; j++) img.data[4 * i + j] = bg[j] + (c[j] - bg[j]) * u;
+    img.data[4 * i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+function inspect(i) {
+  SEL = i; const w = WORDS[i]; if (!w) return;
+  $("word").textContent = UI.pieceLabel(w.text);
+  $("tp").textContent = w.p == null ? "–" : (w.p * 100).toFixed(w.p < 0.01 ? 2 : 1) + "%";
+  const avg = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+  $("ts").textContent = avg(w.surprise).toFixed(2);
+  $("tt").textContent = avg(w.trust).toFixed(2);
+  const next = WORDS[i + 1];
+  $("guesses").innerHTML = w.top.map(([t, p]) => `<div class="guess"><span class="gw" style="${next && next.text === t ? "color:var(--good)" : ""}">${UI.escapeHtml(UI.pieceLabel(t))}</span><div class="gt"><div style="width:${(p * 100).toFixed(1)}%"></div></div><b>${(p * 100).toFixed(1)}%</b></div>`).join("");
+  drawPush(w);
+  if (w.mem) { drawMatrix($("mem"), w.mem, INFO.k, INFO.v); drawMatrix($("stamp"), w.stamp, INFO.k, INFO.v); $("memk").textContent = `the memory after “${UI.pieceLabel(w.text)}”`; }
+  else { drawMatrix($("mem"), null); drawMatrix($("stamp"), null); $("memk").textContent = "(read before you picked this memory)"; }
+  renderStory(false);
+}
+
+function drawPush(w) {
+  const cv = $("push"), L = w.push.length, H = w.push[0].length;
+  const { ctx, w: W, h } = UI.fitCanvas(cv, Math.max(90, Math.min(220, L * 14)));
+  ctx.clearRect(0, 0, W, h);
+  const padL = 30, cw = (W - padL) / H, ch = h / L;
+  const mx = Math.max(...w.push.flat()) || 1;
+  for (let l = 0; l < L; l++) for (let j = 0; j < H; j++) {
+    ctx.fillStyle = UI.heat(w.push[l][j] / mx);
+    ctx.fillRect(padL + j * cw + 1, (L - 1 - l) * ch + 1, cw - 2, ch - 2);
+    if (l === +layerSel.value && j === +headSel.value) { ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5; ctx.strokeRect(padL + j * cw + 1, (L - 1 - l) * ch + 1, cw - 2, ch - 2); }
+  }
+  ctx.fillStyle = UI.css("--muted"); ctx.font = UI.font(10.5); ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (let l = 0; l < L; l += L > 8 ? 2 : 1) ctx.fillText(l + 1, padL - 8, (L - 1 - l + 0.5) * ch);
+  cv.onclick = (e) => {
+    const j = Math.floor((e.offsetX - padL) / cw), l = L - 1 - Math.floor(e.offsetY / ch);
+    if (j < 0 || j >= H || l < 0 || l >= L) return;
+    layerSel.value = l; headSel.value = j; changeView();
+  };
+  const tip = $("pushTip");
+  cv.onmousemove = (e) => {
+    const j = Math.floor((e.offsetX - padL) / cw), l = L - 1 - Math.floor(e.offsetY / ch);
+    if (j < 0 || j >= H || l < 0 || l >= L) { tip.style.display = "none"; return; }
+    tip.innerHTML = `<div class="tiphead">block ${l + 1}, memory ${j + 1}</div><div class="tiprow">change written<b>${w.push[l][j].toFixed(3)}</b></div>`;
+    UI.placeTip(tip, e.offsetX, e.offsetY, W);
+  };
+  cv.onmouseleave = () => (tip.style.display = "none");
+}
+
+function drawStrip() {
+  const cv = $("strip"); if (!WORDS.length) return;
+  const L = WORDS[0].surprise.length, T = WORDS.length, cw = 9;
+  const boxW = $("stripbox").clientWidth;
+  cv.style.width = Math.max(boxW, 50 + T * cw) + "px";
+  const { ctx, w, h } = UI.fitCanvas(cv, Math.max(100, Math.min(220, L * 14)));
+  ctx.clearRect(0, 0, w, h);
+  const padL = 50, ch = h / L;
+  for (let l = 0; l < L; l++) {
+    for (let t = 0; t < T; t++) {
+      ctx.fillStyle = UI.heat(Math.max(0, Math.min(1, (WORDS[t].surprise[l] - 0.3) / 0.9)));
+      ctx.fillRect(padL + t * cw, (L - 1 - l) * ch, cw - 1, ch - 1);
+    }
+    if (L <= 12 || l % 2 === 0) { ctx.fillStyle = UI.css("--muted"); ctx.font = UI.font(10.5); ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.fillText("block " + (l + 1), padL - 6, (L - 1 - l + 0.5) * ch); }
+  }
+  const tip = $("stripTip");
+  cv.onmousemove = (e) => {
+    const t = Math.floor((e.offsetX - padL) / cw), l = L - 1 - Math.floor(e.offsetY / ch);
+    if (t < 0 || t >= T || l < 0 || l >= L) { tip.style.display = "none"; return; }
+    tip.innerHTML = `<div class="tipword">${UI.escapeHtml(UI.pieceLabel(WORDS[t].text))}</div><div class="tiprow">block<b>${l + 1}</b></div><div class="tiprow">memory surprise<b>${WORDS[t].surprise[l].toFixed(3)}</b></div><div class="tiprow">trust<b>${WORDS[t].trust[l].toFixed(3)}</b></div>`;
+    UI.placeTip(tip, e.offsetX - $("stripbox").scrollLeft, e.offsetY, boxW);
+  };
+  cv.onmouseleave = () => (tip.style.display = "none");
+  cv.onclick = (e) => { const t = Math.floor((e.offsetX - padL) / cw); if (t >= 0 && t < T) inspect(t); };
+  $("stripbox").scrollLeft = 1e9;
+}
+
+function setBusy(b) {
+  $("go").disabled = b; $("stop").disabled = !b; $("reset").disabled = b;
+  $("status").className = "status" + (b ? " on" : ""); $("status").lastElementChild.textContent = b ? "reading & writing" : "ready";
+}
+
+function go() {
+  if (es) return;
+  const text = $("input").value;
+  $("input").value = "";
+  const q = new URLSearchParams({ text, n: $("n").value, temp: $("temp").value, top_k: $("topk").value, layer: layerSel.value, head: headSel.value });
+  es = new EventSource("api/stream?" + q);
+  setBusy(true);
+  let pending = 0;
+  es.onmessage = (m) => {
+    const ev = JSON.parse(m.data);
+    if (ev.type === "word") {
+      WORDS.push(ev);
+      if (++pending % 3 === 0 || ev.source === "model") { renderStory(true); inspect(WORDS.length - 1); drawStrip(); }
+    } else if (ev.type === "end" || ev.type === "eos") {
+      es.close(); es = null; setBusy(false); renderStory(false); if (WORDS.length) inspect(WORDS.length - 1); drawStrip();
+    }
+  };
+  es.onerror = () => { if (es) { es.close(); es = null; } setBusy(false); };
+}
+
+async function changeView() {
+  if (SEL != null) drawPush(WORDS[SEL]);
+  // past words were read with another memory selected: show the current state of the new choice
+  for (const w of WORDS) { w.mem = null; w.stamp = null; }
+  const r = await (await fetch(`api/view?layer=${layerSel.value}&head=${headSel.value}`)).json();
+  drawMatrix($("mem"), r.mem || null, INFO.k, INFO.v); drawMatrix($("stamp"), null);
+  $("memk").textContent = "the memory now (new words will show their stamps)";
+}
+
+$("go").onclick = go;
+$("stop").onclick = () => { if (es) { es.close(); es = null; setBusy(false); renderStory(false); } };
+$("input").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); go(); } });
+$("reset").onclick = async () => { await fetch("api/reset"); WORDS = []; SEL = null; $("story").innerHTML = `<div class="hint">Memories wiped. Start a new text below.</div>`; $("strip").getContext("2d").clearRect(0, 0, 1e4, 1e4); drawMatrix($("mem"), null); drawMatrix($("stamp"), null); };
+$("story").addEventListener("click", (e) => { const s = e.target.closest(".w"); if (s) inspect(+s.dataset.i); });
+$("colorBy").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; colorBy = b.dataset.c; document.querySelectorAll("#colorBy button").forEach((x) => x.classList.toggle("on", x === b)); renderStory(false); });
+layerSel.onchange = changeView; headSel.onchange = changeView;
+window.addEventListener("resize", () => { if (SEL != null) drawPush(WORDS[SEL]); drawStrip(); });
+init();
+</script>
+</body>
+</html>

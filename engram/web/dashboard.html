@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Engram · Training</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .runs { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+  .run .head { display: flex; align-items: center; gap: 10px; }
+  .run .name { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 9px; }
+  .run .chip { width: 10px; height: 10px; border-radius: 3px; }
+  .run .head .badge { margin-left: auto; }
+  .run .meta { color: var(--muted); font-size: 12.5px; margin-top: 3px; }
+  .run .prog { margin: 18px 0 16px; }
+  .run .prog .labels { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 7px; }
+  .run .prog .labels b { color: var(--text); font-weight: 600; }
+  .bar { height: 6px; background: var(--surface-3); border-radius: 99px; overflow: hidden; }
+  .bar > div { height: 100%; border-radius: 99px; transition: width .8s cubic-bezier(.2,.8,.2,1); position: relative; }
+  .bar.live > div::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent); animation: shimmer 2.2s infinite; }
+  @keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+  .run .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 14px; }
+
+  /* the scoreboard */
+  .board { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+  .score .t { font-size: 13px; color: var(--muted); }
+  .score .big { font-size: 15px; font-weight: 600; margin: 4px 0 12px; }
+  .score .row { display: grid; grid-template-columns: 120px 1fr 62px; gap: 10px; align-items: center; font-size: 12.5px; color: var(--text-2); margin: 7px 0; }
+  .score .row b { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+  .score .track { height: 9px; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
+  .score .track div { height: 100%; border-radius: 99px; transition: width .8s cubic-bezier(.2,.8,.2,1); }
+  .score .note { font-size: 11.5px; color: var(--muted); margin-top: 8px; }
+  .win { color: var(--good); } .lose { color: var(--warn); }
+
+  /* inside the memory */
+  .snaprow { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+  .snaprow input[type=range] { flex: 1; min-width: 160px; }
+  .snaprow .label { font-size: 12.5px; color: var(--text-2); font-variant-numeric: tabular-nums; min-width: 170px; text-align: right; }
+  .passage { font-size: 15px; line-height: 2.05; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .passage .tok { border-radius: 4px; padding: 2px 0; cursor: default; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+  .stripbox { position: relative; margin-top: 14px; }
+  .stripbox canvas { display: block; width: 100%; }
+  .keyrow { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--muted); margin-top: 10px; }
+  .keyrow .ramp { width: 96px; height: 8px; border-radius: 99px; display: inline-block; vertical-align: middle; margin: 0 6px; }
+  .mems { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
+  .mem { text-align: center; }
+  .mem canvas { width: 100%; max-width: 220px; aspect-ratio: 1; image-rendering: pixelated; border-radius: 10px; border: 1px solid var(--border); display: block; margin: 0 auto 6px; }
+  .mem .k { font-size: 12px; color: var(--muted); }
+  .hl { display: grid; gap: 4px; }
+  .hlrow { display: grid; grid-template-columns: 58px 1fr; gap: 10px; align-items: center; font-size: 12px; color: var(--muted); }
+  .hlrow .dots { position: relative; height: 16px; border-radius: 99px; background: var(--surface-2); }
+  .hlrow .dots i { position: absolute; top: 4px; width: 8px; height: 8px; margin-left: -4px; border-radius: 50%; background: var(--brand); opacity: .85; }
+  .hlaxis { display: grid; grid-template-columns: 58px 1fr; gap: 10px; font-size: 11px; color: var(--muted); }
+  .hlaxis div:last-child { display: flex; justify-content: space-between; }
+
+  .samples { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 760px) { .samples { grid-template-columns: 1fr; } }
+  .sample { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; font-size: 14px; line-height: 1.75; position: relative; overflow: hidden; }
+  .sample::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--c); }
+  .sample .who { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .sample .who b { color: var(--text-2); }
+  .sample .prompt { color: var(--text); font-weight: 600; }
+  .sample .gen { color: var(--text-2); white-space: pre-wrap; }
+  .prompt-block { margin-bottom: 18px; } .prompt-block:last-child { margin-bottom: 0; }
+  .prompt-block .ph { font-size: 12px; color: var(--muted); margin: 0 0 8px 2px; }
+</style>
+</head>
+<body>
+<header class="topbar"><div class="inner">
+  <div class="brand">
+    <div class="logo"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <h1>Engram <span class="tag">Training</span></h1></div>
+  <div class="spacer"></div>
+  <span class="pill" id="updated"><span class="dot"></span><span>connecting…</span></span>
+</div></header>
+
+<div class="wrap">
+  <div class="runs" id="runs"></div>
+
+  <div class="section-title"><h3>The finish line</h3><div class="line"></div></div>
+  <div class="board" id="board"></div>
+
+  <div class="section-title"><h3>Learning</h3><div class="line"></div></div>
+  <div class="grid">
+    <div class="card span7">
+      <div class="cardhead">
+        <div class="titles"><h2>How wrong the models still are</h2><div class="sub">Next-word loss on web pages they never train on. Lower is better.</div></div>
+        <div class="tools"><div class="seg" id="xmode"><button data-x="tokens" class="on">Words read</button><button data-x="minutes">Training time</button></div></div>
+      </div>
+      <details class="why"><summary>What is loss?</summary><div class="body">
+        <p>At every word, a model gives each possible next word a chance. <b>Loss</b> measures how surprised it was by the word that really came next. Lower means it saw it coming.</p>
+        <p>A loss of <b>L</b> is as hard as picking the right word out of about <b>e<sup>L</sup></b> equally likely ones: 3.3 is like choosing among 27 words.</p>
+        <p><b>Solid lines</b> are held-out text, <b>faint lines</b> are training batches. The dashed line is OpenAI's own GPT-2 (124M) measured on the same text, if you ran <span class="kbd">engram.compare</span>.</p>
+      </div></details>
+      <div class="legend" id="lossLegend" style="margin-bottom:10px"></div>
+      <div class="chart"><canvas id="loss" style="height:300px"></canvas><div class="tip" id="lossTip"></div></div>
+    </div>
+    <div class="card span5">
+      <div class="cardhead"><div class="titles"><h2>HellaSwag</h2><div class="sub">Picking the sensible ending of a scene, out of 4. Higher is better.</div></div></div>
+      <details class="why"><summary>What is HellaSwag?</summary><div class="body">
+        <p>A standard test of common sense: "A woman is outside with a bucket and a dog. The dog is running around trying to avoid a bath. She…" followed by four endings, three of them silly.</p>
+        <p>The model picks the ending it finds least surprising. Guessing gives <b>25%</b>. OpenAI's GPT-2 small scores <b>29.6%</b> this way: that is the line to beat. During training a quick check uses the first 1,000 questions; the final score uses all 10,042.</p>
+      </div></details>
+      <div class="legend" id="hsLegend" style="margin-bottom:10px"></div>
+      <div class="chart"><canvas id="hs" style="height:300px"></canvas><div class="tip" id="hsTip"></div></div>
+    </div>
+  </div>
+
+  <div class="section-title"><h3>Is the memory really used?</h3><div class="line"></div></div>
+  <div class="grid">
+    <div class="card span6">
+      <div class="cardhead"><div class="titles"><h2>What memory buys</h2><div class="sub">Loss when a model may only use the last few words, versus all of them.</div></div></div>
+      <details class="why"><summary>How to read this</summary><div class="body">
+        <p>We cut the same texts into pieces of <b>4, 32, 256</b> words and let each model read every piece on its own, so it can only use what is inside the piece. At the right edge it reads the whole text.</p>
+        <p>A model that ignores its memory gives a <b>flat line</b>. The steeper the drop, the more it is using what it read earlier. For Engram, everything beyond the last 3 words has to come through the 64×64 memories, so a drop here is the memory at work.</p>
+      </div></details>
+      <div class="legend" id="ctxLegend" style="margin-bottom:10px"></div>
+      <div class="chart"><canvas id="ctx" style="height:260px"></canvas><div class="tip" id="ctxTip"></div></div>
+    </div>
+    <div class="card span6">
+      <div class="cardhead"><div class="titles"><h2>Later words get easier</h2><div class="sub">Loss of words by where they sit in a text.</div></div></div>
+      <details class="why"><summary>How to read this</summary><div class="body">
+        <p>The first words of a text are hard to guess: nothing has been said yet. As the text goes on, a model that remembers what it read can guess better. This shows the average loss for words 1–4, 4–16, … up to 256–1,024.</p>
+        <p>The honest weak spot of a fixed-size memory would show as the Engram line <b>flattening or rising</b> at the far right while the GPT keeps going down.</p>
+      </div></details>
+      <div class="legend" id="posLegend" style="margin-bottom:10px"></div>
+      <div class="chart"><canvas id="pos" style="height:260px"></canvas><div class="tip" id="posTip"></div></div>
+    </div>
+    <div class="card span12">
+      <div class="cardhead"><div class="titles"><h2>Exact recall</h2><div class="sub">A passage of 128 tokens, then the very same passage again: how much of the repeat does each model get exactly right?</div></div></div>
+      <details class="why"><summary>Why this test?</summary><div class="body">
+        <p>This is the hardest test for a memory of fixed size. A transformer keeps every past word and can look back and copy. Engram has to have <b>stored</b> the passage in its memories as it read. The first time through, the passage is new to both models; the second time, a perfect memory gets almost every word.</p>
+      </div></details>
+      <div class="legend" id="recLegend" style="margin-bottom:10px"></div>
+      <div class="chart"><canvas id="rec" style="height:220px"></canvas><div class="tip" id="recTip"></div></div>
+    </div>
+  </div>
+
+  <div class="section-title"><h3>Inside Engram's memory</h3><div class="line"></div></div>
+  <div class="grid">
+    <div class="card span12">
+      <div class="cardhead">
+        <div class="titles"><h2>Reading a text with the lid off</h2><div class="sub">Each word colored by how much it surprised the memories. Repeated facts at the end should glow less.</div></div>
+        <div class="tools"><div class="seg" id="colorBy"><button data-c="surprise" class="on">Memory surprise</button><button data-c="trust">Trust</button><button data-c="word_loss">Word loss</button></div></div>
+      </div>
+      <details class="why"><summary>What am I looking at?</summary><div class="body">
+        <p>For every word, each memory first <b>guesses</b> what goes with it, then compares with the truth. The gap is the <b>surprise</b>, and the memory is fixed by that much (times its <b>trust</b> in the word). That is the whole learning rule.</p>
+        <p><b>Memory surprise</b> is the size of that gap, averaged over all memories: bright = new, dark = "I knew that". <b>Trust</b> is how much each word was allowed to change the memory. <b>Word loss</b> is how unexpected the word was to the whole model.</p>
+        <p>The strip below splits the surprise by block: the bottom row is the first block (spelling, grammar), the top row the last (meaning). Drag the slider to see how this changed during training.</p>
+      </div></details>
+      <div class="snaprow"><input type="range" id="snapSlider" min="0" max="0" value="0"><span class="label" id="snapLabel">waiting for the first snapshot</span></div>
+      <div class="passage" id="passage"><span class="muted">Waiting for the first snapshot…</span></div>
+      <div class="stripbox"><canvas id="strip" style="height:140px"></canvas><div class="tip" id="stripTip"></div></div>
+      <div class="keyrow"><span>dark<span class="ramp" id="ramp"></span>bright</span><span id="stripNote"></span></div>
+    </div>
+    <div class="card span6">
+      <div class="cardhead"><div class="titles"><h2>How long each memory remembers</h2><div class="sub">Half-life in words: after how many words half of what a memory holds has faded.</div></div></div>
+      <details class="why"><summary>Why do they differ?</summary><div class="body">
+        <p>Every memory learns its own <b>fade</b>. Some forget within a few words (useful for grammar: "what was the last noun?"), some hold on for thousands (useful for "who is this text about?"). Each dot is one memory, one row per block. The scale is logarithmic.</p>
+      </div></details>
+      <div id="halflife"><div class="empty">Waiting for the first snapshot</div></div>
+    </div>
+    <div class="card span6">
+      <div class="cardhead"><div class="titles"><h2>What a memory looks like</h2><div class="sub">One 64 × 64 memory after reading the text, in the first, middle and last block.</div></div></div>
+      <details class="why"><summary>What do the colors mean?</summary><div class="body">
+        <p>Each square is one of the 4,096 numbers of the memory: <b>orange</b> positive, <b>blue</b> negative, dark near zero. Rows are the "situations" (keys), columns are the "answers" (values). A memory full of structure is one that is being written to; a blank one is not used.</p>
+      </div></details>
+      <div class="mems" id="mems"><div class="empty">Waiting for the first snapshot</div></div>
+    </div>
+  </div>
+
+  <div class="section-title"><h3>What they write</h3><div class="line"></div></div>
+  <div class="card"><div id="samples"><div class="empty">Waiting for the first samples</div></div></div>
+</div>
+
+<script src="common.js"></script>
+<script>
+"use strict";
+const C = { engram: UI.css("--brand"), gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
+const NAMES = { engram: "Engram", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };
+const colorOf = (n) => n.startsWith("engram") ? C.engram : n.startsWith("gpt") ? C.gpt : C.ref;
+const nameOf = (n) => n === "engram" ? "Engram" : n === "gpt" ? NAMES.gpt : n === "openai-gpt2" ? NAMES.openai : n;
+const HS_GPT2 = 0.2955;
+let RUNS = [], DATA = {}, SNAPS = [], SNAP = null, xmode = "tokens", colorBy = "surprise", POSLAB = [];
+
+const fmtL = (v) => v.toFixed(3);
+const pct = (v) => (v * 100).toFixed(1) + "%";
+const fmtTime = (s) => s < 3600 ? Math.round(s / 60) + " min" : (s / 3600).toFixed(1) + " h";
+
+const charts = {
+  loss: UI.lineChart(document.getElementById("loss"), document.getElementById("lossTip"), { series: [] }),
+  hs: UI.lineChart(document.getElementById("hs"), document.getElementById("hsTip"), { series: [] }),
+  ctx: UI.lineChart(document.getElementById("ctx"), document.getElementById("ctxTip"), { series: [] }),
+  pos: UI.lineChart(document.getElementById("pos"), document.getElementById("posTip"), { series: [] }),
+  rec: UI.lineChart(document.getElementById("rec"), document.getElementById("recTip"), { series: [] }),
+};
+
+function legend(id, items) {
+  document.getElementById(id).innerHTML = items.map(([n, c, dash]) =>
+    `<span><i class="sw${dash ? " dash" : ""}" style="${dash ? "border-color:" + c : "background:" + c}"></i>${n}</span>`).join("");
+}
+
+async function getJSON(u) { const r = await fetch(u, { cache: "no-store" }); if (!r.ok) throw new Error(u); return r.json(); }
+
+function runCard(r) {
+  const st = r.status || {}, cf = r.config || {};
+  const state = st.state || "starting";
+  const quiet = state === "running" && st.updated && Date.now() / 1000 - st.updated > 300;
+  const badge = quiet ? "quiet" : state;
+  const frac = cf.total_tokens ? Math.min(1, (st.tokens || 0) / cf.total_tokens) : 0;
+  const latest = st.latest || {};
+  const col = colorOf(r.name);
+  const mem = cf.memory_numbers ? `memory ${UI.fmtTokens(cf.memory_numbers)} numbers (fixed)` : `remembers by looking back at every word`;
+  const stat = (k, v, h) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div>${h ? `<div class="h">${h}</div>` : ""}</div>`;
+  const hs = latest.hellaswag_full != null ? pct(latest.hellaswag_full) : latest.hellaswag != null ? pct(latest.hellaswag) : "–";
+  const hsH = latest.hellaswag_full != null ? "all 10,042" : latest.hellaswag != null ? "first 1,000" : "";
+  if (r.name === "openai-gpt2") {
+    return `<div class="card run"><div class="head"><div class="name"><span class="chip" style="background:${col}"></span>${nameOf(r.name)}</div><span class="badge done">reference</span></div>
+      <div class="meta">OpenAI's 2019 release · ${(cf.params / 1e6).toFixed(0)}M parameters · trained on ~${cf.trained_tokens_note || "WebText"}</div>
+      <div class="stats" style="margin-top:18px">${stat("val loss", latest.val_loss != null ? fmtL(latest.val_loss) : "–", "on the same text")}
+      ${stat("HellaSwag", hs, hsH)}${stat("exact recall", latest.recall_acc != null ? pct(latest.recall_acc) : "–", "of a repeated passage")}</div></div>`;
+  }
+  return `<div class="card run"><div class="head"><div class="name"><span class="chip" style="background:${col}"></span>${nameOf(r.name)}</div><span class="badge ${badge}">${badge}</span></div>
+    <div class="meta">${(cf.params / 1e6).toFixed(1)}M parameters · ${mem}</div>
+    <div class="prog"><div class="labels"><span><b>${UI.fmtTokens(st.tokens || 0)}</b> of ${UI.fmtTokens(cf.total_tokens || 0)} tokens</span>
+      <span>${state === "running" && st.eta_s != null ? "about " + fmtTime(st.eta_s) + " left" : state}</span></div>
+      <div class="bar ${state === "running" ? "live" : ""}"><div style="width:${(frac * 100).toFixed(1)}%;background:${col}"></div></div></div>
+    <div class="stats">${stat("val loss", latest.val_loss != null ? fmtL(latest.val_loss) : "–", latest.val_loss != null ? "like 1 of " + UI.fmtChoices(latest.val_loss) + " words" : "")}
+      ${stat("HellaSwag", hs, hsH)}
+      ${stat("speed", st.tok_s ? (st.tok_s / 1e3).toFixed(0) + "k" : "–", "tokens per second")}</div></div>`;
+}
+
+function lastOf(name, kind) {
+  const m = (DATA[name] || {}).metrics || [];
+  for (let i = m.length - 1; i >= 0; i--) if (m[i].kind === kind) return m[i];
+  return null;
+}
+
+function scoreboard() {
+  const box = document.getElementById("board");
+  const names = RUNS.map((r) => r.name);
+  const val = {}, hs = {};
+  for (const n of names) {
+    const e = lastOf(n, "eval"); if (e) val[n] = e.val_loss;
+    const m = DATA[n]?.metrics || [];
+    const full = m.filter((x) => x.kind === "hellaswag" && x.full).pop(), quick = m.filter((x) => x.kind === "hellaswag").pop();
+    if (full || quick) hs[n] = (full || quick).acc_norm;
+  }
+  if (!Object.keys(val).length) { box.innerHTML = `<div class="card"><div class="empty">The scoreboard fills in after the first evaluation.</div></div>`; return; }
+  const ref = (obj) => obj["openai-gpt2"];
+  const lossRows = Object.entries(val).map(([n, v]) => [n, v]);
+  const lo = Math.min(...lossRows.map((r) => r[1])) - 0.3, hi = Math.max(...lossRows.map((r) => r[1])) + 0.05;
+  const row = (n, v, w, fmt) => `<div class="row"><span>${nameOf(n)}</span><div class="track"><div style="width:${Math.max(2, w * 100).toFixed(1)}%;background:${colorOf(n)}"></div></div><b>${fmt(v)}</b></div>`;
+  let verdictL = "", verdictH = "";
+  const target = ref(val) != null ? ["OpenAI GPT-2", ref(val)] : val.gpt != null ? [NAMES.gpt, val.gpt] : null;
+  if (val.engram != null && target) {
+    const d = val.engram - target[1];
+    verdictL = d < 0 ? `<span class="win">Engram is ahead of ${target[0]} by ${(-d).toFixed(3)}</span>` : `<span class="lose">Engram is ${d.toFixed(3)} behind ${target[0]}</span>`;
+  }
+  if (hs.engram != null) {
+    const d = hs.engram - HS_GPT2;
+    verdictH = d > 0 ? `<span class="win">Engram beats GPT-2's 29.6% by ${(d * 100).toFixed(1)} points</span>` : `<span class="lose">${(-d * 100).toFixed(1)} points below GPT-2's 29.6%</span>`;
+  }
+  const hsRows = Object.entries(hs);
+  if (!("openai-gpt2" in hs)) hsRows.push(["openai-gpt2", HS_GPT2]);
+  box.innerHTML = `
+    <div class="card score"><div class="t">Validation loss (lower is better)</div><div class="big">${verdictL || "&nbsp;"}</div>
+      ${lossRows.map(([n, v]) => row(n, v, (hi - v) / (hi - lo), fmtL)).join("")}
+      <div class="note">Same held-out FineWeb-Edu text for every model.</div></div>
+    <div class="card score"><div class="t">HellaSwag (higher is better)</div><div class="big">${verdictH || "&nbsp;"}</div>
+      ${hsRows.map(([n, v]) => row(n, v, (v - 0.2) / 0.2, pct)).join("")}
+      <div class="note">Random guessing is 25%. OpenAI GPT-2's 29.6% is the published-style score (nanoGPT scoring).</div></div>
+    <div class="card score"><div class="t">Size</div><div class="big">${RUNS.filter((r) => r.config?.params).map((r) => `${nameOf(r.name)} ${(r.config.params / 1e6).toFixed(0)}M`).join(" · ")}</div>
+      ${RUNS.filter((r) => r.config?.params).map((r) => row(r.name, r.config.params, r.config.params / 130e6, (v) => (v / 1e6).toFixed(0) + "M")).join("")}
+      <div class="note">Engram's memory of the text is a fixed ${RUNS.find((r) => r.name === "engram")?.config?.memory_numbers ? UI.fmtTokens(RUNS.find((r) => r.name === "engram").config.memory_numbers) : "590k"} numbers, however long the text. A GPT's grows with every word (18.9M numbers at 1,024 words).</div></div>`;
+}
+
+function drawLearning() {
+  const xOf = (r) => xmode === "tokens" ? r.tokens : r.elapsed / 60;
+  const series = [], hsS = [], leg = [], hleg = [];
+  for (const r of RUNS) {
+    const m = DATA[r.name]?.metrics || [], col = colorOf(r.name);
+    if (r.name === "openai-gpt2") {
+      const e = lastOf(r.name, "eval");
+      if (e) { series.push({ name: NAMES.openai, color: col, dash: [6, 5], width: 1.5, points: [], hline: e.val_loss }); leg.push([NAMES.openai, col, true]); }
+      continue;
+    }
+    const tr = m.filter((x) => x.kind === "train"), ev = m.filter((x) => x.kind === "eval"), hs = m.filter((x) => x.kind === "hellaswag");
+    const step = Math.max(1, Math.floor(tr.length / 400));
+    series.push({ name: nameOf(r.name) + " (train)", color: col, alpha: 0.3, width: 1.2, noTip: true, points: tr.filter((_, i) => i % step === 0).map((x) => [xOf(x), x.loss]) });
+    series.push({ name: nameOf(r.name), color: col, width: 2.4, dots: ev.length < 40, endLabel: true, points: ev.map((x) => [xOf(x), x.val_loss]) });
+    hsS.push({ name: nameOf(r.name), color: col, width: 2.4, dots: true, endLabel: true, points: hs.map((x) => [xOf(x), x.acc_norm]) });
+    leg.push([nameOf(r.name), col]); hleg.push([nameOf(r.name), col]);
+  }
+  // reference lines span the x range
+  const xs = series.flatMap((s) => s.points.map((p) => p[0]));
+  const x0 = xs.length ? Math.min(...xs) : 0, x1 = xs.length ? Math.max(...xs) : 1;
+  for (const s of series) if (s.hline != null) s.points = [[x0, s.hline], [x1, s.hline]];
+  const hx = hsS.flatMap((s) => s.points.map((p) => p[0]));
+  const h0 = hx.length ? Math.min(...hx) : 0, h1 = hx.length ? Math.max(...hx) : 1;
+  const hsRef = DATA["openai-gpt2"] ? (lastOf("openai-gpt2", "hellaswag")?.acc_norm ?? HS_GPT2) : HS_GPT2;
+  if (hx.length) {
+    hsS.push({ name: "OpenAI GPT-2", color: C.ref, dash: [6, 5], width: 1.5, points: [[h0, hsRef], [h1, hsRef]] });
+    hsS.push({ name: "guessing", color: C.muted, dash: [2, 4], width: 1, points: [[h0, 0.25], [h1, 0.25]] });
+  }
+  hleg.push(["OpenAI GPT-2 (29.6%)", C.ref, true], ["guessing (25%)", C.muted, true]);
+  legend("lossLegend", leg); legend("hsLegend", hleg);
+  const xf = xmode === "tokens" ? UI.fmtTokens : (v) => Math.round(v) + " min";
+  charts.loss.set({ series, xFmt: xf, yFmt: (v) => v.toFixed(2), tipFmt: fmtL, yClip: (ys) => Math.min(...ys) + 2.5,
+    tipNote: () => "solid: held-out text · faint: training batches" });
+  charts.hs.set({ series: hsS, xFmt: xf, yFmt: (v) => (v * 100).toFixed(0) + "%", tipFmt: pct, empty: "Waiting for the first HellaSwag check" });
+}
+
+function drawMemoryUse() {
+  const ctxS = [], posS = [], recS = [], leg = [];
+  for (const r of RUNS) {
+    const m = lastOf(r.name, "memory"); if (!m) continue;
+    const col = colorOf(r.name), dash = r.name === "openai-gpt2" ? [6, 5] : null;
+    ctxS.push({ name: nameOf(r.name), color: col, dash, width: 2.4, dots: true, endLabel: true, points: m.context.map(([s, l]) => [Math.log2(s), l]) });
+    posS.push({ name: nameOf(r.name), color: col, dash, width: 2.4, dots: true, endLabel: true, points: m.by_pos.map(([a, b, l], i) => [i, l]) });
+    POSLAB = m.by_pos.map(([a, b]) => `words ${a + 1}–${b}`);
+    const hist = (DATA[r.name]?.metrics || []).filter((x) => x.kind === "memory");
+    if (r.name === "openai-gpt2") recS.push({ name: nameOf(r.name), color: col, dash, width: 1.5, points: [], hline: m.recall_acc });
+    else recS.push({ name: nameOf(r.name), color: col, width: 2.4, dots: true, endLabel: true, points: hist.map((x) => [x.tokens, x.recall_acc]) });
+    leg.push([nameOf(r.name), col, !!dash]);
+  }
+  const rx = recS.flatMap((s) => s.points.map((p) => p[0]));
+  for (const s of recS) if (s.hline != null) s.points = rx.length ? [[Math.min(...rx), s.hline], [Math.max(...rx), s.hline]] : [];
+  legend("ctxLegend", leg); legend("posLegend", leg); legend("recLegend", leg);
+  charts.ctx.set({ series: ctxS, xFmt: (v) => Math.round(2 ** v) + " words", xTip: (v) => "may use the last " + Math.round(2 ** v) + " words", yFmt: (v) => v.toFixed(2), tipFmt: fmtL, empty: "Waiting for the first memory check" });
+  const posLab = (v) => POSLAB[Math.round(v)] || "";
+  charts.pos.set({ series: posS, xFmt: posLab, xTip: posLab, yFmt: (v) => v.toFixed(2), tipFmt: fmtL, empty: "Waiting for the first memory check" });
+  charts.rec.set({ series: recS, xFmt: UI.fmtTokens, xTip: (v) => UI.fmtTokens(v) + " tokens read", yMin: 0, yFmt: (v) => (v * 100).toFixed(0) + "%", tipFmt: pct,
+    empty: "Waiting for the first memory check", tipNote: () => "share of the repeated passage predicted exactly" });
+}
+
+// ---------------------------------------------------------------- inside the memory
+function drawSnapshot() {
+  const p = document.getElementById("passage");
+  if (!SNAP) return;
+  const vals = colorBy === "word_loss" ? SNAP.word_loss : SNAP[colorBy][0].map((_, t) => SNAP[colorBy].reduce((a, row) => a + row[t], 0) / SNAP[colorBy].length);
+  const fin = vals.filter((v) => v != null && isFinite(v));
+  const lo = colorBy === "word_loss" ? 0 : Math.min(...fin), hi = colorBy === "word_loss" ? 10 : Math.max(...fin);
+  p.innerHTML = SNAP.pieces.map((w, t) => {
+    const v = vals[t], u = v != null && isFinite(v) ? (v - lo) / (hi - lo || 1) : 0;
+    const [r, g, b] = UI.heatRGB(u);
+    const fg = u > 0.62 ? "#1a120e" : "var(--text)";
+    return `<span class="tok" style="background:rgba(${r},${g},${b},${0.25 + 0.75 * u});color:${fg}" title="${v != null && isFinite(v) ? v.toFixed(3) : ""}">${UI.escapeHtml(w).replace(/\n/g, "⏎")}</span>`;
+  }).join("");
+  // block x word strip
+  const cv = document.getElementById("strip"), L = SNAP.surprise.length, T = SNAP.pieces.length;
+  const { ctx, w, h } = UI.fitCanvas(cv, Math.max(90, Math.min(220, L * 16 + 24)));
+  ctx.clearRect(0, 0, w, h);
+  const padL = 64, padB = 18, cw = (w - padL) / T, ch = (h - padB) / L;
+  const S = SNAP[colorBy === "word_loss" ? "surprise" : colorBy];
+  for (let l = 0; l < L; l++) {
+    const row = S[l], rl = Math.min(...row), rh = Math.max(...row);
+    for (let t = 0; t < T; t++) {
+      ctx.fillStyle = UI.heat((row[t] - rl) / (rh - rl || 1));
+      ctx.fillRect(padL + t * cw, (L - 1 - l) * ch, Math.ceil(cw), Math.ceil(ch) - 1);
+    }
+    if (L <= 16 || l % 2 === 0) { ctx.fillStyle = C.muted; ctx.font = UI.font(11); ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.fillText("block " + (l + 1), padL - 8, (L - 1 - l + 0.5) * ch); }
+  }
+  ctx.fillStyle = C.muted; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText("← start of the text", padL, h - padB + 4);
+  ctx.textAlign = "right"; ctx.fillText("end →", w, h - padB + 4);
+  document.getElementById("stripNote").textContent = `${colorBy === "trust" ? "trust" : "memory surprise"} per block (rows) and word (columns); each row scaled on its own`;
+  const tip = document.getElementById("stripTip");
+  cv.onmousemove = (e) => {
+    const t = Math.floor((e.offsetX - padL) / cw), l = L - 1 - Math.floor(e.offsetY / ch);
+    if (t < 0 || t >= T || l < 0 || l >= L) { tip.style.display = "none"; return; }
+    tip.innerHTML = `<div class="tipword">${UI.escapeHtml(UI.pieceLabel(SNAP.pieces[t]))}</div><div class="tiprow">block<b>${l + 1}</b></div><div class="tiprow">memory surprise<b>${SNAP.surprise[l][t].toFixed(3)}</b></div><div class="tiprow">trust<b>${SNAP.trust[l][t].toFixed(3)}</b></div><div class="tiprow">kept after fade<b>${(SNAP.fade[l][t] * 100).toFixed(1)}%</b></div>`;
+    UI.placeTip(tip, e.offsetX, e.offsetY, w);
+  };
+  cv.onmouseleave = () => (tip.style.display = "none");
+  // half-lives
+  const hl = SNAP.half_life, lmax = 4;
+  const X = (v) => Math.max(0, Math.min(1, Math.log10(Math.max(1, v)) / lmax)) * 100;
+  document.getElementById("halflife").innerHTML = `<div class="hl">${hl.map((row, l) => `<div class="hlrow"><span>block ${l + 1}</span><div class="dots">${row.map((v) => `<i style="left:${X(v)}%" title="${v.toFixed(0)} words"></i>`).join("")}</div></div>`).join("")}</div>
+    <div class="hlaxis" style="margin-top:6px"><div></div><div><span>1 word</span><span>10</span><span>100</span><span>1,000</span><span>10,000+</span></div></div>`;
+  // memory pictures
+  document.getElementById("mems").innerHTML = SNAP.memories.map((m, i) => `<div class="mem"><canvas id="mem${i}" width="${m.v}" height="${m.k}"></canvas><div class="k">block ${m.layer + 1}, memory ${m.head + 1}</div></div>`).join("");
+  SNAP.memories.forEach((m, i) => drawMatrix(document.getElementById("mem" + i), m));
+}
+
+function drawMatrix(cv, m) {
+  const bytes = UI.b64bytes(m.data), ctx = cv.getContext("2d"), img = ctx.createImageData(m.v, m.k);
+  const pos = [232, 100, 44], neg = [75, 147, 236], bg = [19, 19, 22];
+  for (let i = 0; i < m.k * m.v; i++) {
+    let v = bytes[i]; if (v > 127) v -= 256;
+    const u = Math.min(1, Math.abs(v) / 127) ** 0.6, c = v >= 0 ? pos : neg;
+    img.data[4 * i] = bg[0] + (c[0] - bg[0]) * u; img.data[4 * i + 1] = bg[1] + (c[1] - bg[1]) * u; img.data[4 * i + 2] = bg[2] + (c[2] - bg[2]) * u; img.data[4 * i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+async function loadSnap(i) {
+  const s = SNAPS[i]; if (!s) return;
+  document.getElementById("snapLabel").textContent = `after ${UI.fmtTokens(s.tokens)} tokens (step ${s.step})`;
+  SNAP = await getJSON(`api/run/engram/snapshot/${s.file}`);
+  drawSnapshot();
+}
+
+function drawSamples() {
+  const box = document.getElementById("samples");
+  const by = {};
+  for (const r of RUNS) for (const s of DATA[r.name]?.samples || []) (by[s.prompt] ||= {})[r.name] = s;
+  const prompts = Object.keys(by);
+  if (!prompts.length) return;
+  box.innerHTML = prompts.map((p) => `<div class="prompt-block"><div class="ph">Prompt: <b>${UI.escapeHtml(p)}</b></div><div class="samples">${
+    Object.entries(by[p]).map(([n, s]) => `<div class="sample" style="--c:${colorOf(n)}"><div class="who"><b>${nameOf(n)}</b> · after ${UI.fmtTokens(s.tokens)} tokens</div><span class="prompt">${UI.escapeHtml(p)}</span><span class="gen">${UI.escapeHtml(s.text)}</span></div>`).join("")}</div></div>`).join("");
+}
+
+async function refresh() {
+  const pill = document.getElementById("updated");
+  try {
+    RUNS = await getJSON("api/runs");
+    RUNS.sort((a, b) => ["engram", "gpt", "openai-gpt2"].indexOf(a.name) - ["engram", "gpt", "openai-gpt2"].indexOf(b.name));
+    for (const r of RUNS) {
+      const [metrics, samples] = await Promise.all([getJSON(`api/run/${r.name}/metrics`), getJSON(`api/run/${r.name}/samples`)]);
+      DATA[r.name] = { metrics, samples };
+    }
+    document.getElementById("runs").innerHTML = RUNS.length ? RUNS.map(runCard).join("") : `<div class="card"><div class="empty">No runs yet. Start training and this page fills in by itself.</div></div>`;
+    scoreboard(); drawLearning(); drawMemoryUse(); drawSamples();
+    if (RUNS.some((r) => r.name === "engram")) {
+      const snaps = await getJSON("api/run/engram/snapshots");
+      const slider = document.getElementById("snapSlider");
+      const atEnd = +slider.value >= SNAPS.length - 1;
+      if (snaps.length !== SNAPS.length) {
+        SNAPS = snaps; slider.max = Math.max(0, SNAPS.length - 1);
+        if (atEnd || !SNAP) { slider.value = SNAPS.length - 1; await loadSnap(SNAPS.length - 1); }
+        UI.syncRange(slider);
+      }
+    }
+    pill.className = "pill live"; pill.lastElementChild.textContent = "live · " + new Date().toLocaleTimeString();
+  } catch (e) {
+    pill.className = "pill err"; pill.lastElementChild.textContent = "can't reach the trainer";
+  }
+}
+
+document.getElementById("xmode").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  xmode = b.dataset.x; document.querySelectorAll("#xmode button").forEach((x) => x.classList.toggle("on", x === b)); drawLearning();
+});
+document.getElementById("colorBy").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  colorBy = b.dataset.c; document.querySelectorAll("#colorBy button").forEach((x) => x.classList.toggle("on", x === b)); drawSnapshot();
+});
+const slider = document.getElementById("snapSlider");
+slider.addEventListener("input", () => { UI.syncRange(slider); loadSnap(+slider.value); });
+document.getElementById("ramp").style.background = UI.heatCSS();
+window.addEventListener("resize", () => { Object.values(charts).forEach((c) => c.draw()); drawSnapshot(); });
+refresh(); setInterval(refresh, 15000);
+</script>
+</body>
+</html>

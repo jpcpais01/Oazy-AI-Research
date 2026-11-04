@@ -1,0 +1,8 @@
+tiktoken>=0.7
+numpy>=1.24
+datasets>=2.18
+huggingface_hub>=0.23
+pyarrow>=14
+hf_transfer
+transformers>=4.40
+einops
