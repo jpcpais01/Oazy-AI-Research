@@ -3,91 +3,154 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Settle chat</title>
+<title>Settle · Chat</title>
 <link rel="stylesheet" href="style.css">
 <style>
-  .wrap { max-width: 1400px; }
+  .wrap { max-width: 1440px; }
+  .meta { display: flex; gap: 8px; flex-wrap: wrap; }
+  .meta .pill b { color: var(--text); font-weight: 600; }
+  @media (max-width: 900px) { .meta { display: none; } }
+
+  /* stage */
   .stage { padding: 0; overflow: hidden; }
-  .stagehead { display: flex; gap: 16px; align-items: center; padding: 12px 16px 0; flex-wrap: wrap; }
-  .thinking { font-variant-numeric: tabular-nums; color: var(--text-2); font-size: 13px; display: flex; gap: 8px; align-items: center; }
-  .pulse { width: 9px; height: 9px; border-radius: 50%; background: var(--axis); transition: background .2s, box-shadow .2s; }
-  .pulse.on { background: var(--settle); box-shadow: 0 0 12px var(--settle); }
-  .pulse.lens { background: var(--lens); box-shadow: 0 0 12px var(--lens); }
-  #scroller { overflow-x: auto; overflow-y: hidden; padding: 0 16px 8px; scroll-behavior: smooth; }
+  .stagehead { display: flex; gap: 14px; align-items: center; padding: 18px 22px 4px; flex-wrap: wrap; }
+  .thinking { display: inline-flex; align-items: center; gap: 9px; height: 30px; padding: 0 13px 0 11px; border-radius: 99px; background: var(--surface-2);
+    border: 1px solid var(--border); font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; max-width: 100%; overflow: hidden; }
+  .thinking span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); transition: background .2s, box-shadow .2s; flex: none; }
+  .pulse.on { background: var(--settle); box-shadow: 0 0 0 4px var(--settle-soft), 0 0 14px var(--settle); }
+  .pulse.lens { background: var(--lens); box-shadow: 0 0 0 4px var(--lens-soft), 0 0 14px var(--lens); }
+  .stagehead .hint { margin-left: auto; font-size: 12px; color: var(--muted); }
+  #scroller { overflow-x: auto; overflow-y: hidden; padding: 0 22px 6px; scroll-behavior: smooth; }
   #sheet { display: block; }
-  .composer { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; }
-  .composer textarea { flex: 1; min-width: 240px; min-height: 64px; resize: vertical; background: var(--surface-2); color: var(--text);
-    border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font: inherit; font-size: 15px; }
-  .composer textarea:focus { outline: none; border-color: var(--axis); }
-  .controls { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 10px; align-items: center; font-size: 12.5px; color: var(--text-2); min-width: 260px; }
-  .controls output { font-variant-numeric: tabular-nums; color: var(--text); min-width: 42px; text-align: right; }
-  .btns { display: flex; flex-direction: column; gap: 6px; }
-  #story { font-size: 17px; line-height: 1.85; min-height: 80px; }
-  #story .tok { cursor: default; transition: background .3s; border-bottom: 2px solid transparent; }
+  .sheetwrap { position: relative; }
+  #gutter { position: absolute; left: 0; top: 0; pointer-events: none; opacity: 0; transition: opacity .2s; }
+  #gutter.on { opacity: 1; }
+  .stagefoot { display: flex; gap: 10px 22px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--muted); padding: 12px 22px 16px; border-top: 1px solid var(--border); background: rgba(0,0,0,.12); }
+  .stagefoot span { display: inline-flex; gap: 7px; align-items: center; }
+  .stagefoot i { display: inline-block; width: 18px; height: 10px; border-radius: 3px; flex: none; }
+  .stagefoot .why { margin: 0 0 0 auto; }
+  .stagefoot .why .body { position: absolute; right: 22px; left: 22px; bottom: 52px; z-index: 10; max-width: none; box-shadow: 0 20px 40px -10px rgba(0,0,0,.8); }
+  .stagefoot .why .body .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px 22px; }
+  .stagefoot .why .body h4 { margin: 0 0 3px; font-size: 13px; color: var(--text); font-weight: 600; display: flex; gap: 8px; align-items: center; }
+
+  /* story + composer */
+  .storycard { display: flex; flex-direction: column; min-height: 460px; }
+  #story { flex: 1; font-size: 18px; line-height: 1.95; padding: 4px 2px 18px; letter-spacing: -0.005em; overflow-wrap: anywhere; }
+  #story .tok { cursor: default; transition: background .3s, box-shadow .15s; border-radius: 5px; padding: 2px 0; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
   #story .tok.you { color: var(--text); }
-  #story .tok.model { color: #ffd9c2; }
-  #story .tok.hot { outline: 1px solid #fff8; }
+  #story .tok.model { color: #ffd7bf; }
+  #story .tok.hot { box-shadow: 0 0 0 1.5px rgba(255,255,255,.7); }
   #story .tok.pending { color: var(--muted); }
-  .preds .p { display: grid; grid-template-columns: 110px 1fr 54px; gap: 8px; align-items: center; font-size: 13px; margin: 5px 0; }
-  .preds .p .w { white-space: pre; overflow: hidden; text-overflow: ellipsis; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; }
-  .preds .p .b { height: 10px; background: var(--surface-2); border-radius: 99px; overflow: hidden; }
-  .preds .p .b div { height: 100%; background: var(--settle); border-radius: 99px; transition: width .25s; }
-  .preds .p .n { text-align: right; color: var(--text-2); font-variant-numeric: tabular-nums; }
-  .kv { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: 13px; }
-  .kv b { font-variant-numeric: tabular-nums; }
-  .key { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--muted); padding: 0 16px 12px; }
-  .key span { display: inline-flex; gap: 6px; align-items: center; }
-  .key i { display: inline-block; width: 18px; height: 10px; border-radius: 3px; }
+  #story .placeholder { color: var(--muted); font-size: 15px; line-height: 1.7; max-width: 560px; }
+  #story .placeholder .eg { display: inline-flex; margin: 10px 8px 0 0; }
+  .composer { border: 1px solid var(--border-2); background: var(--surface-2); border-radius: 16px; padding: 6px; transition: border-color .15s, box-shadow .15s; }
+  .composer:focus-within { border-color: rgba(232, 100, 44, .55); box-shadow: 0 0 0 4px var(--settle-soft); }
+  .composer textarea { width: 100%; min-height: 56px; max-height: 220px; resize: none; background: transparent; color: var(--text); border: 0;
+    padding: 10px 12px 4px; font: inherit; font-size: 15.5px; line-height: 1.55; outline: none; }
+  .composer textarea::placeholder { color: var(--faint); }
+  .composer .bar { display: flex; align-items: center; gap: 6px; padding: 2px 4px 2px 6px; }
+  .composer .bar .k { font-size: 11.5px; color: var(--faint); margin-right: auto; }
+  @media (max-width: 640px) { .composer .bar .k { visibility: hidden; } }
+  .settings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 22px; margin-top: 16px; }
+  @media (max-width: 720px) { .settings { grid-template-columns: 1fr; } }
+  .setting .top { display: flex; justify-content: space-between; align-items: baseline; font-size: 12.5px; color: var(--text-2); margin-bottom: 4px; }
+  .setting output { font-variant-numeric: tabular-nums; color: var(--text); font-weight: 600; }
+  .setting input { width: 100%; }
+  .setting .h { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+
+  /* inspector */
+  .insp .word { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 2px 0 14px; }
+  .insp .word .w { font-size: 26px; font-weight: 650; letter-spacing: -0.02em; }
+  .insp .word .src { font-size: 12px; color: var(--muted); }
+  .insp .chips { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 18px; }
+  .insp .chip { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 9px 11px; }
+  .insp .chip .k { font-size: 11.5px; color: var(--muted); }
+  .insp .chip .v { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .insp h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; margin: 0 0 8px; }
+  .insp .ctx { font-size: 12.5px; color: var(--muted); margin: -2px 0 8px; }
+  .insp .ctx b { color: var(--text-2); font-weight: 600; }
+  .preds .p { display: grid; grid-template-columns: minmax(70px, 120px) 1fr 50px; gap: 10px; align-items: center; font-size: 13px; padding: 4px 6px; margin: 0 -6px; border-radius: 8px; }
+  .preds .p.real { background: var(--lens-soft); }
+  .preds .p .w { white-space: pre; overflow: hidden; text-overflow: ellipsis; font-family: var(--mono); font-size: 12.5px; color: var(--text); }
+  .preds .p .b { height: 8px; background: var(--surface-3); border-radius: 99px; overflow: hidden; }
+  .preds .p .b div { height: 100%; background: linear-gradient(90deg, #c94f1f, var(--settle)); border-radius: 99px; transition: width .3s cubic-bezier(.2,.8,.2,1); }
+  .preds .p.real .b div { background: linear-gradient(90deg, #178a61, var(--lens)); }
+  .preds .p .n { text-align: right; color: var(--text-2); font-variant-numeric: tabular-nums; font-size: 12.5px; }
+  .links { display: flex; flex-wrap: wrap; gap: 6px; }
+  .links .l { display: inline-flex; align-items: center; gap: 7px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 3px 9px; font-size: 13px; }
+  .links .l i { width: 26px; height: 4px; border-radius: 99px; background: var(--surface-3); overflow: hidden; display: inline-block; font-style: normal; }
+  .links .l i::after { content: ""; display: block; height: 100%; width: var(--w); background: var(--settle); }
+  .links .l small { color: var(--muted); font-size: 11px; }
+  .divider { height: 1px; background: var(--border); margin: 20px 0 18px; }
+  .kv { display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; font-size: 13px; color: var(--text-2); }
+  .kv b { font-variant-numeric: tabular-nums; color: var(--text); font-weight: 600; text-align: right; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="top">
-    <h1>Settle <span class="muted" style="font-weight:400">· watch it think</span></h1>
-    <span class="sub" id="meta"></span>
-  </div>
+<header class="topbar"><div class="inner">
+  <div class="brand"><div class="logo"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <h1>Settle <span class="tag">Watch it think</span></h1></div>
+  <div class="spacer"></div>
+  <div class="meta" id="meta"></div>
+  <button class="btn" id="reset" title="Start again with an empty sheet">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8a5.5 5.5 0 1 0 1.7-4"/><path d="M2.5 2.5v3h3"/></svg>New sheet</button>
+</div></header>
 
+<div class="wrap">
   <div class="grid">
     <div class="card span12 stage">
       <div class="stagehead">
-        <h2 style="margin:0">The sheet</h2>
-        <div class="thinking"><span class="pulse" id="pulse"></span><span id="thinking">idle</span></div>
-        <div style="margin-left:auto" class="small muted">hover a column to inspect it</div>
+        <h2>The sheet</h2>
+        <div class="thinking"><span class="pulse" id="pulse"></span><span id="thinking">Idle</span></div>
+        <div class="hint">Hover a column or a word to inspect it</div>
       </div>
-      <div id="scroller"><canvas id="sheet"></canvas></div>
-      <div class="key">
-        <span><i style="background:linear-gradient(90deg,#c76b9a,#6aa7d8,#79c48f)"></i>cell colour = what the cell is thinking (similar colour, similar thought)</span>
-        <span><i style="border:1.5px solid #fff"></i>bright outline = still changing</span>
-        <span><i style="background:var(--lens);opacity:.8"></i>lens: the last few words re-read both ways (pencil, not ink)</span>
-        <span><i style="background:linear-gradient(90deg,#d9592600,#d95926)"></i>arcs = long-range links reaching back</span>
-        <span><i style="background:linear-gradient(90deg,#555,#bbb)"></i>thin strip = gist, the slow mood of the text</span>
+      <div class="sheetwrap"><div id="scroller"><canvas id="sheet"></canvas></div><canvas id="gutter"></canvas></div>
+      <div class="stagefoot">
+        <span><i style="background:linear-gradient(90deg,#c76b9a,#6aa7d8,#79c48f)"></i>Colour: what a cell is thinking</span>
+        <span><i style="border:1.5px solid #fff"></i>Outline: still settling</span>
+        <span><i style="background:var(--lens)"></i>Lens: re-reading the last words</span>
+        <span><i style="background:linear-gradient(90deg,transparent,var(--settle))"></i>Arcs: reaching back</span>
+        <span><i style="background:linear-gradient(90deg,#444,#bbb)"></i>Strip: the gist</span>
+        <details class="why"><summary>What am I looking at?</summary><div class="body"><div class="cols">
+          <div><h4><i style="width:14px;height:14px;border-radius:4px;background:linear-gradient(135deg,#c76b9a,#6aa7d8)"></i>Columns and rows</h4>
+            Each word you or Settle write becomes a <b>column of cells</b>. Each row reaches a different distance back: the bottom row looks one or two words back, every row above twice as far. The top rows hold the big picture.</div>
+          <div><h4><i style="width:14px;height:14px;border-radius:4px;border:1.5px solid #fff"></i>Settling is thinking</h4>
+            A new column updates again and again, listening to its neighbours, until it <b>stops changing</b>. A bright outline means it is still moving. Hard words take more steps; the bars underneath count them.</div>
+          <div><h4><i style="width:14px;height:14px;border-radius:4px;background:var(--lens)"></i>The lens (pencil, not ink)</h4>
+            Once a column settles it is fixed, like ink. Then Settle re-reads the last few words <b>both ways</b> in a scratch copy, so the newest word can reshape how the previous ones are read. Then the pencil is erased.</div>
+          <div><h4><i style="width:14px;height:14px;border-radius:4px;background:var(--settle)"></i>Links and gist</h4>
+            <b>Arcs</b> show which earlier words the column reached back to, for example a character's name. The thin <b>strip</b> is the gist: a slow-moving summary of the mood of the whole text.</div>
+        </div></div></details>
       </div>
     </div>
 
-    <div class="card span8">
+    <div class="card span8 storycard">
+      <div class="cardhead" style="margin-bottom:8px">
+        <div class="titles"><h2>The story</h2><div class="sub">Your words are white, Settle's are warm. A brighter glow means Settle thought longer about that word than about the others.</div></div>
+      </div>
+      <div id="story"></div>
       <div class="composer">
-        <textarea id="input" placeholder="Start a story, e.g. “Once upon a time, there was a little fox who”"></textarea>
-        <div class="btns">
-          <button class="btn primary" id="write">Write ▸</button>
-          <button class="btn" id="read" title="Only read your text, without writing more">Just read</button>
-          <button class="btn" id="reset" title="Start with an empty sheet">New sheet</button>
+        <textarea id="input" rows="2" placeholder="Start a story, e.g. “Once upon a time, there was a little fox who”"></textarea>
+        <div class="bar">
+          <span class="k"><span class="kbd">Enter</span> to write · <span class="kbd">Shift</span>+<span class="kbd">Enter</span> for a new line</span>
+          <button class="btn ghost" id="read" title="Only read your text, without writing more">Just read</button>
+          <button class="btn primary" id="write">Write
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10M9 4l4 4-4 4"/></svg></button>
         </div>
       </div>
-      <div class="row" style="margin-top:12px; gap:22px">
-        <div class="controls">
-          <span>words to write</span><input type="range" id="n" min="5" max="200" value="60"><output id="nOut"></output>
-          <span>creativity</span><input type="range" id="temp" min="0" max="1.5" step="0.05" value="0.8"><output id="tempOut"></output>
-          <span>animation</span><input type="range" id="speed" min="0" max="6" step="1" value="3"><output id="speedOut"></output>
-        </div>
+      <div class="settings">
+        <div class="setting"><div class="top"><span>Words to write</span><output id="nOut"></output></div><input type="range" id="n" min="5" max="200" value="60"><div class="h">How far Settle continues each time.</div></div>
+        <div class="setting"><div class="top"><span>Creativity</span><output id="tempOut"></output></div><input type="range" id="temp" min="0" max="1.5" step="0.05" value="0.8"><div class="h">0 always picks the likeliest word; higher takes more chances.</div></div>
+        <div class="setting"><div class="top"><span>Animation</span><output id="speedOut"></output></div><input type="range" id="speed" min="0" max="6" step="1" value="3"><div class="h">Slow it down to watch each step settle.</div></div>
       </div>
-      <div style="margin-top:16px" id="story"><span class="muted">The text appears here. Your words are white, Settle's are warm. The background of each word shows how long it thought about it.</span></div>
     </div>
 
-    <div class="card span4">
-      <h2>What it expects next</h2>
-      <p class="explain">After each word settles, Settle reads its guess for the next word from the frontier of the lens.</p>
-      <div class="preds" id="preds"></div>
-      <h2 style="margin-top:16px">This sheet so far</h2>
+    <div class="card span4 insp">
+      <div class="cardhead" style="margin-bottom:6px"><div class="titles"><h2>Inspector</h2><div class="sub" id="inspSub">The newest word, or the one under your pointer.</div></div></div>
+      <div id="insp"></div>
+      <div class="divider"></div>
+      <h3>This sheet so far</h3>
       <div class="kv" id="stats"></div>
     </div>
   </div>
@@ -103,19 +166,24 @@ const cols = [];            // per word: {text, source, cells[R], steps, lens, g
 let lensOverlay = null;     // {start, cells[W*R]} while the lens is re-reading
 let queue = [], playing = false, es = null, hover = -1;
 const SPEEDS = [400, 200, 110, 60, 30, 12, 0];       // ms per settle step
-const SPEED_LABEL = ["very slow", "slow", "calm", "normal", "quick", "fast", "instant"];
+const SPEED_LABEL = ["Very slow", "Slow", "Calm", "Normal", "Quick", "Fast", "Instant"];
+const MODEL_INK = "#ffd7bf";
+const EXAMPLES = ["Once upon a time, there was a little fox who", "Tom and Mia found a box in the garden.", "The sun was hot, so the cat"];
 
 async function init() {
   info = await (await fetch("/api/info")).json();
-  $("meta").textContent = `${(info.params / 1e6).toFixed(1)}M parameters · trained on ${S.fmtTokens(info.tokens || 0)} words · ${info.rows} scales × ${info.channels} numbers per cell`;
-  draw(); renderStats();
+  await fetch("/api/reset");   // a freshly opened page starts with a fresh sheet, so the server and the page agree on word numbers
+  $("meta").innerHTML = `<span class="pill"><b>${(info.params / 1e6).toFixed(1)}M</b> parameters</span>` +
+    `<span class="pill">trained on <b>${S.fmtTokens(info.tokens || 0)}</b> words</span>` +
+    `<span class="pill"><b>${info.rows}</b> rows × <b>${info.channels}</b> numbers per cell</span>`;
+  draw(); renderStory(); renderStats(); showInspector(null);
 }
 
 // ------------------------------------------------------------------ drawing
-const CW = 32, CH = 21, ARC = 110, TOP = ARC + 8;
+const CW = 34, CH = 22, ARC = 112, TOP = ARC + 10, X0 = 76;
 function layout() {
   const R = info.rows;
-  return { R, gridH: R * CH, gistY: TOP + R * CH + 6, barY: TOP + R * CH + 18, barH: 34, labY: TOP + R * CH + 60 };
+  return { R, gridH: R * CH, gistY: TOP + R * CH + 7, barY: TOP + R * CH + 20, barH: 36, labY: TOP + R * CH + 66 };
 }
 
 function draw() {
@@ -123,108 +191,189 @@ function draw() {
   const L = layout();
   const cv = $("sheet");
   const n = cols.length;
-  const width = Math.max($("scroller").clientWidth - 32, 70 + (n + 2) * CW);
+  const width = Math.max($("scroller").clientWidth - 44, X0 + (n + 2) * CW);
   cv.style.width = width + "px";
-  const { ctx, w, h } = S.fitCanvas(cv, L.labY + 70);
+  const { ctx, w, h } = S.fitCanvas(cv, L.labY + 64);
   ctx.clearRect(0, 0, w, h);
-  const x0 = 64;
+  drawGutter();
   // row labels
-  ctx.font = "11px Inter, system-ui"; ctx.fillStyle = S.css("--muted"); ctx.textAlign = "right"; ctx.textBaseline = "middle";
-  for (let r = 0; r < L.R; r++) ctx.fillText(`↶ ${info.dil[r]}`, x0 - 8, TOP + (L.R - 1 - r) * CH + CH / 2);
-  ctx.fillText("gist", x0 - 8, L.gistY + 3);
-  ctx.fillText("steps", x0 - 8, L.barY + L.barH - 8);
+  ctx.font = S.font(11); ctx.fillStyle = S.css("--muted"); ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (let r = 0; r < L.R; r++) ctx.fillText(`${info.dil[r]}, ${2 * info.dil[r]} back`, X0 - 10, TOP + (L.R - 1 - r) * CH + CH / 2);
+  ctx.fillText("gist", X0 - 10, L.gistY + 3);
+  ctx.fillText("steps", X0 - 10, L.barY + L.barH - 10);
   if (!n) {
-    ctx.textAlign = "left"; ctx.fillStyle = S.css("--muted"); ctx.font = "13px Inter";
-    ctx.fillText("An empty sheet. Type something below and press Write.", x0, TOP + L.gridH / 2);
-    for (let r = 0; r < L.R; r++) for (let t = 0; t < 30; t++) {
-      ctx.fillStyle = "#1d1d1b"; ctx.beginPath(); ctx.roundRect(x0 + 360 + t * CW + 1, TOP + r * CH + 1, CW - 2, CH - 2, 3); ctx.fill();
+    const ghost = Math.floor((w - X0) / CW);
+    for (let r = 0; r < L.R; r++) for (let t = 0; t < ghost; t++) {
+      ctx.fillStyle = `rgba(255,255,255,${0.035 - 0.025 * (t / ghost)})`;
+      ctx.beginPath(); ctx.roundRect(X0 + t * CW + 1, TOP + r * CH + 1, CW - 3, CH - 3, 4); ctx.fill();
     }
+    ctx.textAlign = "center"; ctx.fillStyle = S.css("--text-2"); ctx.font = S.font(14, 500);
+    ctx.fillText("An empty sheet", X0 + (w - X0) / 2, TOP - 38);
+    ctx.fillStyle = S.css("--muted"); ctx.font = S.font(13);
+    ctx.fillText(w > 640 ? "Type the start of a story below and press Write. Each word becomes a column here." : "Type below and press Write.", X0 + (w - X0) / 2, TOP - 16);
     return;
   }
-  // long-range links from the newest settled (or hovered) column
   const focus = hover >= 0 ? hover : n - 1;
+  // hovered column backdrop
+  if (hover >= 0) {
+    ctx.fillStyle = "rgba(255,255,255,0.06)";
+    ctx.beginPath(); ctx.roundRect(X0 + hover * CW - 2, TOP - 6, CW + 3, L.labY - TOP + 54, 8); ctx.fill();
+  }
+  // long-range links from the newest settled (or hovered) column
   const fc = cols[focus];
   if (fc && fc.links) {
     const seen = {};
     for (const head of fc.links) for (const [j, wgt] of head) { seen[j] = Math.max(seen[j] || 0, wgt); }
     for (const [j, wgt] of Object.entries(seen)) {
       if (+j === focus || wgt < 0.05) continue;
-      const xa = x0 + focus * CW + CW / 2, xb = x0 + (+j) * CW + CW / 2;
-      const lift = Math.min(ARC - 6, 18 + Math.abs(xa - xb) * 0.35);
-      ctx.strokeStyle = `rgba(217,89,38,${0.25 + 0.75 * wgt})`;
-      ctx.lineWidth = 1 + 3 * wgt;
-      ctx.beginPath(); ctx.moveTo(xa, TOP - 2); ctx.bezierCurveTo(xa, TOP - lift, xb, TOP - lift, xb, TOP - 2); ctx.stroke();
-      ctx.fillStyle = `rgba(217,89,38,${0.4 + 0.6 * wgt})`; ctx.beginPath(); ctx.arc(xb, TOP - 3, 2.5, 0, 7); ctx.fill();
+      const xa = X0 + focus * CW + CW / 2, xb = X0 + (+j) * CW + CW / 2;
+      const lift = Math.min(ARC - 8, 20 + Math.abs(xa - xb) * 0.35);
+      const g = ctx.createLinearGradient(xb, 0, xa, 0);
+      g.addColorStop(0, S.alpha(S.css("--settle"), 0.35 + 0.65 * wgt)); g.addColorStop(1, S.alpha(S.css("--settle"), 0.15));
+      ctx.strokeStyle = g; ctx.lineWidth = 1 + 3 * wgt; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(xa, TOP - 3); ctx.bezierCurveTo(xa, TOP - lift, xb, TOP - lift, xb, TOP - 3); ctx.stroke();
+      ctx.fillStyle = S.alpha(S.css("--settle"), 0.5 + 0.5 * wgt); ctx.beginPath(); ctx.arc(xb, TOP - 4, 2.5 + 1.5 * wgt, 0, 7); ctx.fill();
     }
   }
   // cells
   const maxSteps = Math.max(4, ...cols.map((c) => c.steps || 0));
+  const settledSteps = cols.filter((c) => c.settled).map((c) => c.steps);
+  const minSteps = settledSteps.length ? Math.min(...settledSteps) : 0, span = Math.max(1, maxSteps - minSteps);
   for (let t = 0; t < n; t++) {
     const c = cols[t];
-    const x = x0 + t * CW;
+    const x = X0 + t * CW;
     const inLens = lensOverlay && t >= lensOverlay.start && t <= lensOverlay.i;
     for (let r = 0; r < L.R; r++) {
-      let col = c.cells ? c.cells[r] : "#1d1d1b";
+      let col = c.cells ? c.cells[r] : "#1e1e22";
       if (inLens) { const k = (t - lensOverlay.start) * L.R + r; if (lensOverlay.cells[k]) col = lensOverlay.cells[k]; }
       ctx.fillStyle = col;
       const y = TOP + (L.R - 1 - r) * CH;
-      ctx.beginPath(); ctx.roundRect(x + 1, y + 1, CW - 2, CH - 2, 3); ctx.fill();
+      ctx.beginPath(); ctx.roundRect(x + 1, y + 1, CW - 3, CH - 3, 4); ctx.fill();
       if (c.moving && c.moving[r] > 0) {
         const a = Math.min(1, c.moving[r] / 0.03);
         ctx.strokeStyle = `rgba(255,245,230,${0.2 + 0.8 * a})`; ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.roundRect(x + 1.5, y + 1.5, CW - 3, CH - 3, 3); ctx.stroke();
+        ctx.beginPath(); ctx.roundRect(x + 1.5, y + 1.5, CW - 4, CH - 4, 4); ctx.stroke();
       }
     }
-    if (t === hover) { ctx.strokeStyle = "#fff"; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, TOP - 0.5, CW - 1, L.gridH + 1); }
     // gist ribbon
-    if (c.gist) { ctx.fillStyle = c.gist; ctx.fillRect(x, L.gistY, CW, 6); }
+    if (c.gist) {
+      ctx.fillStyle = c.gist;
+      ctx.beginPath(); ctx.roundRect(x + (t === 0 ? 1 : 0), L.gistY, CW - (t === 0 || t === n - 1 ? 1 : 0), 6, t === 0 ? [3, 0, 0, 3] : t === n - 1 ? [0, 3, 3, 0] : 0); ctx.fill();
+    }
     // steps bar
     const s = c.steps || c.k || 0;
     const bh = Math.max(2, (L.barH - 4) * s / Math.max(maxSteps, s));
-    ctx.fillStyle = c.settled ? S.heat(s / maxSteps) : S.css("--settle");
-    ctx.beginPath(); ctx.roundRect(x + 4, L.barY + L.barH - bh, CW - 8, bh, [3, 3, 0, 0]); ctx.fill();
+    ctx.fillStyle = c.settled ? S.heat(0.45 + 0.55 * (s - minSteps) / span) : S.css("--settle");
+    ctx.beginPath(); ctx.roundRect(x + 6, L.barY + L.barH - bh, CW - 13, bh, [3, 3, 0, 0]); ctx.fill();
+    if (t === hover && s) { ctx.fillStyle = S.css("--text"); ctx.font = S.font(10.5, 600); ctx.textAlign = "center"; ctx.textBaseline = "bottom"; ctx.fillText(s, x + CW / 2 - 1, L.barY + L.barH - bh - 2); }
     // label
-    ctx.save(); ctx.translate(x + CW / 2, L.labY); ctx.rotate(-Math.PI / 3);
-    ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.font = (c.source === "model" ? "" : "600 ") + "12px Inter, system-ui";
-    ctx.fillStyle = c.source === "model" ? "#ffd9c2" : S.css("--text");
-    ctx.fillText(c.text.replace(/\n/g, "⏎").trim() || "␣", 0, 0); ctx.restore();
+    ctx.save(); ctx.translate(x + CW / 2 + 2, L.labY - 4); ctx.rotate(-Math.PI / 3.2);
+    ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.font = S.font(12, c.source === "model" ? 400 : 600);
+    ctx.fillStyle = t === hover ? "#fff" : c.source === "model" ? MODEL_INK : S.css("--text");
+    ctx.fillText(S.pieceLabel(c.text), 0, 0); ctx.restore();
   }
+  ctx.strokeStyle = S.css("--grid"); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(X0, L.barY + L.barH + 0.5); ctx.lineTo(X0 + n * CW, L.barY + L.barH + 0.5); ctx.stroke();
   // lens bracket
   if (lensOverlay) {
-    const xs = x0 + Math.max(0, lensOverlay.start) * CW, xe = x0 + (lensOverlay.i + 1) * CW;
-    ctx.strokeStyle = S.css("--lens"); ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.roundRect(xs - 1, TOP - 4, xe - xs + 2, L.gridH + 8, 6); ctx.stroke();
-    ctx.fillStyle = S.css("--lens"); ctx.font = "600 11px Inter"; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
-    ctx.fillText("lens: re-reading", xs, TOP - 8);
+    const xs = X0 + Math.max(0, lensOverlay.start) * CW, xe = X0 + (lensOverlay.i + 1) * CW;
+    const lc = S.css("--lens");
+    ctx.fillStyle = S.alpha(lc, 0.08);
+    ctx.beginPath(); ctx.roundRect(xs - 3, TOP - 5, xe - xs + 4, L.gridH + 8, 8); ctx.fill();
+    ctx.strokeStyle = lc; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.roundRect(xs - 3, TOP - 5, xe - xs + 4, L.gridH + 8, 8); ctx.stroke();
+    ctx.font = S.font(11, 600);
+    const tw = ctx.measureText("lens · re-reading").width + 16;
+    ctx.fillStyle = lc; ctx.beginPath(); ctx.roundRect(xs - 3, TOP - 27, tw, 19, 6); ctx.fill();
+    ctx.fillStyle = "#04140e"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillText("lens · re-reading", xs + 5, TOP - 17);
   }
 }
 
+// row labels that stay put while the sheet scrolls sideways
+function drawGutter() {
+  if (!info) return;
+  const L = layout(), g = $("gutter"), sc = $("scroller");
+  const gw = 22 + X0 + 4;
+  g.style.width = gw + "px";
+  const { ctx, w, h } = S.fitCanvas(g, L.labY + 64);
+  ctx.clearRect(0, 0, w, h);
+  g.classList.toggle("on", sc.scrollLeft > 4);
+  const bg = S.css("--surface");
+  const grad = ctx.createLinearGradient(0, 0, w, 0);
+  grad.addColorStop(0, bg); grad.addColorStop(0.82, bg); grad.addColorStop(1, S.alpha(bg, 0));
+  ctx.fillStyle = grad; ctx.fillRect(0, TOP - 8, w, L.barY + L.barH + 4 - (TOP - 8));
+  ctx.font = S.font(11); ctx.fillStyle = S.css("--muted"); ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  const x = 22 + X0 - 10;
+  for (let r = 0; r < L.R; r++) ctx.fillText(`${info.dil[r]}, ${2 * info.dil[r]} back`, x, TOP + (L.R - 1 - r) * CH + CH / 2);
+  ctx.fillText("gist", x, L.gistY + 3);
+  ctx.fillText("steps", x, L.barY + L.barH - 10);
+}
+$("scroller").addEventListener("scroll", drawGutter);
+
+function setHover(i) {
+  if (i === hover) return;
+  hover = i; draw(); highlightStory();
+  showInspector(hover >= 0 ? cols[hover] : cols[cols.length - 1]);
+}
 $("sheet").addEventListener("mousemove", (e) => {
-  const t = Math.floor((e.offsetX - 64) / CW);
-  const nh = t >= 0 && t < cols.length ? t : -1;
-  if (nh !== hover) { hover = nh; draw(); highlightStory(); if (nh >= 0) showPreds(cols[nh]); else if (cols.length) showPreds(cols[cols.length - 1]); }
+  const t = Math.floor((e.offsetX - X0) / CW);
+  setHover(t >= 0 && t < cols.length ? t : -1);
 });
-$("sheet").addEventListener("mouseleave", () => { hover = -1; draw(); highlightStory(); if (cols.length) showPreds(cols[cols.length - 1]); });
+$("sheet").addEventListener("mouseleave", () => setHover(-1));
 
 // ------------------------------------------------------------------ text + side panels
 function renderStory() {
-  const maxSteps = Math.max(4, ...cols.map((c) => c.steps || 0));
+  if (!cols.length) {
+    $("story").innerHTML = `<div class="placeholder">Settle was trained on simple children's stories, so it writes best when you begin like one. Try:<br>` +
+      EXAMPLES.map((e, i) => `<button class="btn eg" data-eg="${i}">${S.escapeHtml(e)}</button>`).join("") + `</div>`;
+    $("story").querySelectorAll("[data-eg]").forEach((b) => (b.onclick = () => { $("input").value = EXAMPLES[+b.dataset.eg]; $("input").focus(); autosize(); }));
+    return;
+  }
+  const done = cols.filter((c) => c.settled).map((c) => c.steps || 0);
+  const lo = done.length ? Math.min(...done) : 0, hi = Math.max(lo + 2, ...done);
   $("story").innerHTML = cols.map((c, i) => {
-    const v = c.settled ? (c.steps || 0) / maxSteps : 0;
-    return `<span class="tok ${c.source} ${c.settled ? "" : "pending"}" data-i="${i}" style="background:rgba(217,89,38,${(0.06 + 0.5 * v).toFixed(2)})" title="${c.steps || "…"} steps">${S.escapeHtml(c.text)}</span>`;
-  }).join("") || `<span class="muted">Empty sheet.</span>`;
+    const v = c.settled ? ((c.steps || 0) - lo) / (hi - lo) : 0;
+    const [r, g, b] = S.heatRGB(0.35 + 0.65 * v);
+    return `<span class="tok ${c.source} ${c.settled ? "" : "pending"}" data-i="${i}" style="background:rgba(${r},${g},${b},${c.settled ? (0.03 + 0.4 * v * v).toFixed(3) : 0})">${S.escapeHtml(c.text)}</span>`;
+  }).join("");
   $("story").querySelectorAll(".tok").forEach((el) => {
-    el.onmouseenter = () => { hover = +el.dataset.i; draw(); showPreds(cols[hover]); highlightStory(); };
-    el.onmouseleave = () => { hover = -1; draw(); highlightStory(); };
+    el.onmouseenter = () => setHover(+el.dataset.i);
+    el.onmouseleave = () => setHover(-1);
   });
 }
 function highlightStory() { $("story").querySelectorAll(".tok").forEach((el) => el.classList.toggle("hot", +el.dataset.i === hover)); }
 
-function showPreds(c) {
-  if (!c || !c.top) { $("preds").innerHTML = `<div class="muted small">…</div>`; return; }
-  const next = cols[cols.indexOf(c) + 1];
-  $("preds").innerHTML = `<div class="small muted" style="margin-bottom:4px">after “${S.escapeHtml(c.text.trim())}”${next ? `, it actually got “${S.escapeHtml(next.text.trim())}”` : ""}</div>` +
-    c.top.map(([wd, p]) => `<div class="p"><span class="w" title="${S.escapeHtml(wd)}">${S.escapeHtml(JSON.stringify(wd).slice(1, -1))}</span><span class="b"><div style="width:${(p * 100).toFixed(1)}%"></div></span><span class="n">${(p * 100).toFixed(1)}%</span></div>`).join("");
+function showInspector(c) {
+  const box = $("insp");
+  if (!c) {
+    $("inspSub").textContent = "The newest word, or the one under your pointer.";
+    box.innerHTML = `<div class="empty" style="text-align:left;padding:8px 0">Nothing on the sheet yet. When Settle reads a word, you will see here how long it thought, what it expects next, and which earlier words it looked back at.</div>`;
+    return;
+  }
+  const i = cols.indexOf(c);
+  const next = cols[i + 1];
+  $("inspSub").textContent = hover >= 0 ? `Word ${i + 1} of ${cols.length}, under your pointer.` : `Word ${i + 1} of ${cols.length}, the newest.`;
+  let html = `<div class="word"><span class="w" style="color:${c.source === "model" ? MODEL_INK : "var(--text)"}">${S.escapeHtml(S.pieceLabel(c.text))}</span><span class="src">${c.source === "model" ? "written by Settle" : "written by you"}</span></div>`;
+  html += `<div class="chips">
+    <div class="chip"><div class="k">Thinking</div><div class="v">${c.settled ? c.steps : c.k || "…"}<small class="muted" style="font-weight:400;font-size:11.5px"> steps</small></div></div>
+    <div class="chip"><div class="k">Lens</div><div class="v">${c.settled ? c.lens : "…"}<small class="muted" style="font-weight:400;font-size:11.5px"> steps</small></div></div>
+    <div class="chip"><div class="k">Time</div><div class="v">${c.ms != null ? c.ms.toFixed(0) : "…"}<small class="muted" style="font-weight:400;font-size:11.5px"> ms</small></div></div></div>`;
+  html += `<h3>What it expects next</h3>`;
+  if (c.top) {
+    const real = next ? next.text : null;
+    html += `<div class="ctx">${next ? `The real next word was <b>“${S.escapeHtml(next.text.trim())}”</b>${c.top.some(([wd]) => wd === real) ? " (green)" : ", not in its top guesses"}.` : "Its guesses for the word that comes next."}</div>`;
+    html += `<div class="preds">` + c.top.map(([wd, p]) => `<div class="p ${wd === real ? "real" : ""}"><span class="w" title="${S.escapeHtml(wd)}">${S.escapeHtml(JSON.stringify(wd).slice(1, -1))}</span><span class="b"><div style="width:${(p * 100).toFixed(1)}%"></div></span><span class="n">${(p * 100).toFixed(1)}%</span></div>`).join("") + `</div>`;
+  } else html += `<div class="muted small">Still settling…</div>`;
+  if (c.links && c.links.length) {
+    const seen = {};
+    for (const head of c.links) for (const [j, wgt] of head) seen[j] = Math.max(seen[j] || 0, wgt);
+    const top = Object.entries(seen).filter(([j, wgt]) => +j !== i && wgt >= 0.05).sort((a, b) => b[1] - a[1]).slice(0, 6);
+    html += `<h3 style="margin-top:20px">Reached back to</h3>`;
+    html += top.length ? `<div class="links">${top.map(([j, wgt]) => `<span class="l">${S.escapeHtml(S.pieceLabel(cols[+j] ? cols[+j].text : "?"))}<i style="--w:${(wgt * 100).toFixed(0)}%"></i><small>${(wgt * 100).toFixed(0)}%</small></span>`).join("")}</div>`
+      : `<div class="muted small">Only its own neighbourhood this time.</div>`;
+  }
+  box.innerHTML = html;
 }
 
 function renderStats() {
@@ -232,11 +381,12 @@ function renderStats() {
   const avg = done.length ? done.reduce((a, c) => a + c.steps, 0) / done.length : 0;
   const hard = [...done].sort((a, b) => b.steps - a.steps).slice(0, 3);
   const ms = done.length ? done.reduce((a, c) => a + (c.ms || 0), 0) / done.length : 0;
-  $("stats").innerHTML = `<span>words on the sheet</span><b>${cols.length}</b>
-    <span>average thinking steps</span><b>${avg.toFixed(1)}</b>
-    <span>hardest words</span><b>${hard.map((c) => `“${S.escapeHtml(c.text.trim())}” ${c.steps}`).join(", ") || "–"}</b>
-    <span>compute per word</span><b>${ms ? ms.toFixed(1) + " ms" : "–"}</b>
-    <span>step cap</span><b>${info ? info.cap : ""}</b>`;
+  const yours = cols.filter((c) => c.source === "you").length;
+  $("stats").innerHTML = `<span>Words on the sheet</span><b>${cols.length}${cols.length ? ` <span class="muted" style="font-weight:400">(${yours} yours)</span>` : ""}</b>
+    <span>Average thinking steps</span><b>${done.length ? avg.toFixed(1) : "–"}</b>
+    <span>Hardest words</span><b>${hard.map((c) => `${S.escapeHtml(S.pieceLabel(c.text))} <span class="muted" style="font-weight:400">${c.steps}</span>`).join(", ") || "–"}</b>
+    <span>Compute per word</span><b>${ms ? ms.toFixed(1) + " ms" : "–"}</b>
+    <span>Step cap</span><b>${info ? info.cap : ""}</b>`;
 }
 
 // ------------------------------------------------------------------ event playback
@@ -259,7 +409,7 @@ async function playLens(ev) {
   const frames = ev.frames.length ? ev.frames : [ev.final];
   for (let f = 0; f < frames.length; f++) {
     lensOverlay = { start: ev.start, i: ev.i, cells: frames[f] };
-    setThinking(`“${cols[ev.i].text.trim()}”: lens re-reading the last ${W} words, step ${f + 1}`, "lens");
+    setThinking(`“${cols[ev.i].text.trim()}” · lens re-reading the last ${W} words, step ${f + 1}`, "lens");
     draw();
     if (base) await new Promise((r) => setTimeout(r, base * 0.9));
   }
@@ -274,12 +424,12 @@ async function pump() {
     const ev = queue.shift();
     if (ev.type === "word") {
       cols.push({ text: ev.text, source: ev.source, cells: null, k: 0, settled: false });
-      setThinking(`reading “${ev.text.trim()}”`, "on");
+      setThinking(`Reading “${ev.text.trim()}”`, "on");
       renderStory();
       const sc = $("scroller"); sc.scrollLeft = sc.scrollWidth;
     } else if (ev.type === "step") {
       const c = cols[ev.i]; c.cells = ev.col; c.moving = ev.change; c.k = ev.k;
-      setThinking(`“${c.text.trim()}”: settling, step ${ev.k}`, "on");
+      setThinking(`“${c.text.trim()}” · settling, step ${ev.k}`, "on");
     } else if (ev.type === "lens") {
       cols[ev.i].moving = null;
       await playLens(ev);
@@ -287,9 +437,9 @@ async function pump() {
       const c = cols[ev.i];
       Object.assign(c, { cells: ev.final, steps: ev.steps, lens: ev.lens_steps, gist: ev.gist, links: ev.links, top: ev.top, ms: ev.ms, settled: true, moving: null });
       setThinking(`“${c.text.trim()}” settled in ${ev.steps} steps`, "");
-      renderStory(); showPreds(c); renderStats();
+      renderStory(); highlightStory(); if (hover < 0) showInspector(c); renderStats();
     } else if (ev.type === "end" || ev.type === "eos") {
-      setThinking(ev.type === "eos" ? "the story ended (end-of-text)" : "idle", "");
+      setThinking(ev.type === "eos" ? "The story ended (end of text)" : "Idle", "");
       setBusy(false);
     }
     draw();
@@ -304,7 +454,7 @@ function setBusy(b) { ["write", "read", "reset"].forEach((id) => ($(id).disabled
 function go(n) {
   if (es) es.close();
   const text = $("input").value;
-  $("input").value = "";
+  $("input").value = ""; autosize();
   setBusy(true);
   const qs = new URLSearchParams({ text, n, temp: $("temp").value, top_k: 40 });
   es = new EventSource("/api/stream?" + qs);
@@ -317,15 +467,20 @@ function go(n) {
   es.onerror = () => { es.close(); setBusy(false); };
 }
 
+function autosize() { const t = $("input"); t.style.height = "auto"; t.style.height = Math.min(220, Math.max(56, t.scrollHeight)) + "px"; }
+
 $("write").onclick = () => go(+$("n").value);
 $("read").onclick = () => go(0);
-$("reset").onclick = async () => { await fetch("/api/reset"); cols.length = 0; queue = []; lensOverlay = null; renderStory(); renderStats(); showPreds(null); draw(); setThinking("idle"); };
-$("input").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("write").click(); } });
+$("reset").onclick = async () => { await fetch("/api/reset"); cols.length = 0; queue = []; lensOverlay = null; hover = -1; renderStory(); renderStats(); showInspector(null); draw(); setThinking("Idle"); };
+$("input").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!$("write").disabled) $("write").click(); } });
+$("input").addEventListener("input", autosize);
 for (const [id, fmt] of [["n", (v) => v], ["temp", (v) => (+v).toFixed(2)], ["speed", (v) => SPEED_LABEL[v]]]) {
   const upd = () => ($(id + "Out").textContent = fmt($(id).value));
   $(id).addEventListener("input", upd); upd();
 }
+S.watchRanges();
 window.addEventListener("resize", draw);
+if (document.fonts) document.fonts.ready.then(draw);
 init();
 </script>
 </body>
