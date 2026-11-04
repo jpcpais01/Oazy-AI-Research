@@ -20,7 +20,7 @@ EXTRA="$*"
 mkdir -p "$RUNS"
 
 # with 2 or more GPUs, Settle gets GPU 0 and the GPT baseline GPU 1; with one GPU they share it
-NGPU=$(nvidia-smi -L 2>/dev/null | wc -l || echo 1)
+NGPU=$( (nvidia-smi -L 2>/dev/null || true) | grep -c "^GPU" || true)
 if [ "${NGPU:-1}" -ge 2 ]; then GPU_S=0; GPU_G=1; else GPU_S=0; GPU_G=0; fi
 echo "GPUs found: ${NGPU}. Settle on GPU ${GPU_S}, GPT on GPU ${GPU_G}."
 
