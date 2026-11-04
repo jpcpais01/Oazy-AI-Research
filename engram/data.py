@@ -98,8 +98,9 @@ def fineweb_edu_batches(sample: str, batch_docs: int = 2048):
     from huggingface_hub import HfApi, hf_hub_download
     import pyarrow.parquet as pq
     repo = "HuggingFaceFW/fineweb-edu"
+    folder = sample.removeprefix("sample-")          # "sample-10BT" lives in sample/10BT/
     files = sorted(f for f in HfApi().list_repo_files(repo, repo_type="dataset")
-                   if f.startswith(f"sample/{sample}/") and f.endswith(".parquet"))
+                   if f.startswith(f"sample/{folder}/") and f.endswith(".parquet"))
     if not files:
         raise SystemExit(f"no parquet files found for sample {sample}")
     print(f"{len(files)} parquet files in {repo} sample/{sample}", flush=True)
