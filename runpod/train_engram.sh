@@ -22,6 +22,10 @@ SOLO=0
 if [ "${1:-}" = "--solo" ]; then SOLO=1; shift; fi
 EXTRA="$*"
 mkdir -p "$RUNS"
+if [ ! -f "$DATA/train.bin" ]; then
+    echo "no training data in $DATA yet: run  bash runpod/setup_engram.sh  first"
+    exit 1
+fi
 
 NGPU=$( (nvidia-smi -L 2>/dev/null || true) | grep -c "^GPU" || true)
 if [ "${NGPU:-1}" -ge 2 ]; then GPU_E=0; GPU_G=1; else GPU_E=0; GPU_G=0; fi
