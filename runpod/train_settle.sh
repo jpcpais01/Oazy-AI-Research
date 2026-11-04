@@ -31,10 +31,10 @@ fi
 
 tmux new-session -d -s settle -n dash -c "$REPO"
 tmux send-keys -t settle:dash "python3 -m settle.dashboard --runs $RUNS --port 8000" C-m
-tmux new-window -t settle -n settle -c "$REPO"
+tmux new-window -t settle: -n settle -c "$REPO"
 tmux send-keys -t settle:settle "CUDA_VISIBLE_DEVICES=$GPU_S python3 -m settle.train --model settle --data $DATA --runs $RUNS $EXTRA 2>&1 | tee -a $RUNS/settle.log" C-m
 if [ "$SOLO" = 0 ]; then
-    tmux new-window -t settle -n gpt -c "$REPO"
+    tmux new-window -t settle: -n gpt -c "$REPO"
     tmux send-keys -t settle:gpt "CUDA_VISIBLE_DEVICES=$GPU_G python3 -m settle.train --model gpt --data $DATA --runs $RUNS $EXTRA 2>&1 | tee -a $RUNS/gpt.log" C-m
 else
     echo "solo mode: training only Settle (no GPT baseline)"
