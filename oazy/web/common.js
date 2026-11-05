@@ -67,7 +67,7 @@ const UI = (() => {
   }
 
   // Line chart with a crosshair tooltip.
-  // series: [{name, color, dash, width, alpha, area, dots, noTip, endLabel, points: [[x,y],...]}]
+  // series: [{name, color, dash, width, alpha, area, dots, noTip, tipRange, endDot, endLabel, labelAlpha, points: [[x,y],...]}]
   function lineChart(cv, tip, opt) {
     const state = { opt, hoverX: null, hoverY: 0 };
     function draw() {
@@ -148,6 +148,11 @@ const UI = (() => {
         pts.forEach((p, i) => (i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1]))));
         ctx.stroke();
         ctx.setLineDash([]);
+        if (s.endDot && pts.length) {                     // a hollow ring where a forecast lands
+          const p = pts[pts.length - 1];
+          ctx.fillStyle = css("--solid"); ctx.lineWidth = 1.4;
+          ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), 3.6, 0, 7); ctx.fill(); ctx.stroke();
+        }
         ctx.globalAlpha = 1;
       }
       ctx.restore();
@@ -156,14 +161,15 @@ const UI = (() => {
       for (const s of o.series) {
         if (!s.endLabel || !s.points.length) continue;
         const p = s.points[s.points.length - 1];
-        labels.push({ y: Y(p[1]), x: X(p[0]), text: s.endLabel === true ? (o.endFmt || o.tipFmt || o.yFmt || ((x) => x))(p[1]) : s.endLabel, color: s.color });
+        labels.push({ y: Y(p[1]), x: X(p[0]), text: s.endLabel === true ? (o.endFmt || o.tipFmt || o.yFmt || ((x) => x))(p[1]) : s.endLabel, color: s.color, alpha: s.labelAlpha || 1 });
       }
       labels.sort((a, b) => a.y - b.y);
       for (let i = 1; i < labels.length; i++) if (labels[i].y - labels[i - 1].y < 15) labels[i].y = labels[i - 1].y + 15;
       for (const L of labels) {
-        ctx.fillStyle = L.color;
+        ctx.fillStyle = L.color; ctx.globalAlpha = L.alpha;
         ctx.font = font(11.5, 600); ctx.textAlign = "left"; ctx.textBaseline = "middle";
         ctx.fillText(L.text, w - pad.r + 8, Math.max(pad.t, Math.min(bottom, L.y)));
+        ctx.globalAlpha = 1;
       }
       // crosshair
       if (state.hoverX != null && state.hoverX >= pad.l && state.hoverX <= w - pad.r) {
@@ -175,6 +181,7 @@ const UI = (() => {
         const rows = [];
         for (const s of o.series) {
           if (!s.points.length || s.noTip) continue;
+          if (s.tipRange && (xv < s.points[0][0] || xv > s.points[s.points.length - 1][0])) continue;
           let best = s.points[0];
           for (const p of s.points) if (Math.abs(p[0] - xv) < Math.abs(best[0] - xv)) best = p;
           if (!s.ghost) {
@@ -194,6 +201,43 @@ const UI = (() => {
     cv.addEventListener("mousemove", (e) => { state.hoverX = e.offsetX; draw(); });
     cv.addEventListener("mouseleave", () => { state.hoverX = null; draw(); });
     return { draw, set(opt) { state.opt = opt; draw(); } };
+  }
+
+
+  // Fit y = a + b * x^-c, the usual shape of a learning curve (loss falls fast, then ever slower toward a floor a).
+  // For each c on a grid, a and b come from ordinary least squares; the best c is then refined.
+  // Returns {a, b, c, f, rmse} or null. x must be > 0.
+  function fitPowerLaw(pts) {
+    pts = pts.filter((p) => p[0] > 0 && isFinite(p[1]));
+    if (pts.length < 4) return null;
+    const xs = Math.max(...pts.map((p) => p[0]));           // scale x to (0, 1] for stable numbers
+    const solve = (c) => {
+      let n = 0, su = 0, sy = 0, suu = 0, suy = 0;
+      for (const [x, y] of pts) { const u = Math.pow(x / xs, -c); n++; su += u; sy += y; suu += u * u; suy += u * y; }
+      const d = n * suu - su * su;
+      if (Math.abs(d) < 1e-12) return null;
+      const b = (n * suy - su * sy) / d, a = (sy - b * su) / n;
+      let e = 0;
+      for (const [x, y] of pts) { const r = y - (a + b * Math.pow(x / xs, -c)); e += r * r; }
+      return { a, b, c, e };
+    };
+    let best = null;
+    for (let i = 0; i <= 80; i++) {
+      const r = solve(0.02 * Math.pow(100, i / 80));          // c from 0.02 to 2
+      if (r && (!best || r.e < best.e)) best = r;
+    }
+    if (!best) return null;
+    let lo = best.c / 1.06, hi = best.c * 1.06;                // golden-section polish
+    for (let k = 0; k < 30; k++) {
+      const m1 = hi - (hi - lo) * 0.618, m2 = lo + (hi - lo) * 0.618;
+      const r1 = solve(m1), r2 = solve(m2);
+      if (!r1 || !r2) break;
+      if (r1.e < r2.e) hi = m2; else lo = m1;
+    }
+    const r = solve((lo + hi) / 2);
+    if (r && r.e < best.e) best = r;
+    const { a, b, c } = best;
+    return { a, b, c, xs, rmse: Math.sqrt(best.e / pts.length), f: (x) => a + b * Math.pow(x / xs, -c) };
   }
 
   // Colour ramp: deep sea -> blue -> aqua -> white foam
@@ -231,5 +275,5 @@ const UI = (() => {
   const fmtChoices = (loss) => { const n = choices(loss); return n < 10 ? n.toFixed(1) : n < 1000 ? Math.round(n).toString() : fmtTokens(n); };
 
   return { css, font, fitCanvas, b64bytes, lineChart, fmtTokens, heat, heatRGB, heatCSS, escapeHtml, niceTicks, alpha,
-           placeTip, syncRange, watchRanges, pieceLabel, choices, fmtChoices };
+           placeTip, fitPowerLaw, syncRange, watchRanges, pieceLabel, choices, fmtChoices };
 })();
