@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs><filter id="sh" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#0a2a80" flood-opacity="0.45"/></filter>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.85"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <linearGradient id="st" x1="0.2" y1="0" x2="0.8" y2="1"><stop offset="0" stop-color="#b6f8ff"/><stop offset="0.45" stop-color="#3cc0ff"/><stop offset="0.8" stop-color="#2a6cff"/><stop offset="1" stop-color="#8a5cff"/></linearGradient>
+    <linearGradient id="st2" x1="0.8" y1="0" x2="0.2" y2="1"><stop offset="0" stop-color="#a6ffe0"/><stop offset="1" stop-color="#1fb8a0"/></linearGradient>
+    <linearGradient id="vi" x1="0.2" y1="0" x2="0.8" y2="1"><stop offset="0" stop-color="#d7c9ff"/><stop offset="1" stop-color="#7a4dff"/></linearGradient>
+    <radialGradient id="node" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#fff"/><stop offset="0.5" stop-color="#dffaff"/><stop offset="1" stop-color="#7fe0ff"/></radialGradient></defs>
+  <g filter="url(#sh)">
+    <path d="M50 12 L84 31 L50 50 L16 31 Z" fill="url(#st)" fill-opacity="0.95"/>
+    <path d="M16 31 L50 50 L50 90 L16 70 Z" fill="url(#vi)" fill-opacity="0.85"/>
+    <path d="M84 31 L50 50 L50 90 L84 70 Z" fill="url(#st2)" fill-opacity="0.8"/>
+  </g>
+  <g fill="none" stroke="#fff" stroke-opacity="0.75" stroke-width="1.4" stroke-linejoin="round">
+    <path d="M50 12 L84 31 L84 70 L50 90 L16 70 L16 31 Z"/><path d="M16 31 L50 50 L84 31 M50 50 V90"/>
+  </g>
+  <g stroke="#fff" stroke-opacity="0.5" stroke-width="1.2"><path d="M33 21.5 L67 40.5 M67 21.5 L33 40.5"/></g>
+  <circle cx="50" cy="31" r="6" fill="url(#node)"/>
+  <path d="M24 30 L46 18" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-opacity="0.85"/>
+</svg>
