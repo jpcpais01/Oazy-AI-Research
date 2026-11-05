@@ -126,7 +126,7 @@
         <p>At every word, a model gives each possible next word a chance. <b>Loss</b> measures how surprised it was by the word that really came next. Lower means it saw it coming.</p>
         <p>A loss of <b>L</b> is as hard as picking the right word out of about <b>e<sup>L</sup></b> equally likely ones: 3.3 is like choosing among 27 words.</p>
         <p>The <b>lines</b> are the loss on the training batches as they go by. Hover to also see the loss on <b>held-out</b> text the models never train on (the "finish line" scores above use those). The dashed line is OpenAI's own GPT-2 (124M) measured on the same text, if you ran <span class="kbd">oazy.compare</span>.</p>
-        <p>The faint <b>dashed</b> line is a forecast: while a model trains, a learning curve (loss = a + b × words<sup>−c</sup>, the shape loss curves usually follow) is fitted to its points so far and drawn out to the planned number of words, with the predicted end value at its tip. It is a rough guess, and appears once there are enough points. The run card's "heading for" is the same forecast for the held-out loss.</p>
+        <p>The faint <b>dashed</b> line is a forecast: while a model trains, a learning curve (loss = a + b × words<sup>−c</sup>, the shape loss curves usually follow) is fitted to its points so far and drawn out to the planned number of words, with the predicted end value at its tip. The forecast is also replayed from earlier moments of the run: the small dots stacked at the end are those earlier forecasts (older ones fainter), and the shaded cone is how much the forecast has swung lately, so a wide cone means "don't trust the number yet". Hover past the end of a line to read how it has moved. It is a rough guess, and appears once there are enough points. The run card's "heading for" is the same forecast for the held-out loss.</p>
       </div></details>
       <div class="legend" id="lossLegend" style="margin-bottom:10px"></div>
       <div class="chart"><canvas id="loss" style="height:300px"></canvas><div class="tip" id="lossTip"></div></div>
@@ -352,7 +352,7 @@ function runCard(r) {
     <div class="prog"><div class="labels"><span><b>${UI.fmtTokens(st.tokens || 0)}</b> of ${UI.fmtTokens(cf.total_tokens || 0)} tokens</span>
       <span>${state === "running" && st.eta_s != null ? "about " + fmtTime(st.eta_s) + " left" : state}</span></div>
       <div class="bar ${state === "running" ? "live" : ""}"><div style="width:${(frac * 100).toFixed(1)}%;background-color:${col};color:${col}"></div></div></div>
-    <div class="stats">${stat("val loss", latest.val_loss != null ? fmtL(latest.val_loss) : "–", FORE[r.name]?.val ? "heading for ≈" + fmtL(FORE[r.name].val.yEnd) : latest.val_loss != null ? "like 1 of " + UI.fmtChoices(latest.val_loss) + " words" : "")}
+    <div class="stats">${stat("val loss", latest.val_loss != null ? fmtL(latest.val_loss) : "–", FORE[r.name]?.val ? "heading for ≈" + fmtL(FORE[r.name].val.yEnd) + (FORE[r.name].val.range ? ` (${fmtL(FORE[r.name].val.range[0])}–${fmtL(FORE[r.name].val.range[1])})` : "") : latest.val_loss != null ? "like 1 of " + UI.fmtChoices(latest.val_loss) + " words" : "")}
       ${stat("HellaSwag", hs, hsH)}
       ${stat("speed", st.tok_s ? (st.tok_s / 1e3).toFixed(0) + "k" : "–", "tokens per second")}</div>
     ${controls(r.name, state)}</div>`;
@@ -496,27 +496,22 @@ function scoreboard() {
 // ---- forecasts: fit a learning curve (y = a + b * tokens^-c) to the points so far and extend it to the planned end
 // Only for runs still training, once there are enough points. The early rush is left out of the fit, and the
 // noisy training loss is first smoothed into ~40 bins (medians). The curve is anchored to where the line is now.
-function forecast(r, pts, { minPts = 8, skip = 0.2, bins = 40, lo = -Infinity, hi = Infinity, dir = -1 } = {}) {
-  const st = r.status || {}, end = r.config?.total_tokens;
+function forecast(r, pts, opt = {}) {
+  const end = r.config?.total_tokens;
   if (!end || !isLive(r) || !pts.length) return null;
   const xl = pts[pts.length - 1][0];
   if (!(xl > 0) || xl >= end * 0.98 || xl < end * 0.03) return null;
-  let use = pts.filter((p) => p[0] >= xl * skip && p[0] > 0);
-  if (use.length > bins) {                             // log-spaced bins, median of each
-    const l0 = Math.log(use[0][0]), l1 = Math.log(xl) + 1e-9, B = Array.from({ length: bins }, () => []);
-    for (const p of use) B[Math.min(bins - 1, Math.floor((Math.log(p[0]) - l0) / (l1 - l0) * bins))].push(p);
-    use = B.filter((b) => b.length).map((b) => { const ys = b.map((p) => p[1]).sort((u, v) => u - v); return [b[b.length >> 1][0], ys[ys.length >> 1]]; });
-  }
-  if (use.length < minPts) return null;
-  const fit = UI.fitPowerLaw(use);
-  if (!fit || Math.sign(fit.b) !== -dir) return null;      // loss must be falling, accuracy rising
-  const last = use[use.length - 1], shift = last[1] - fit.f(last[0]);       // start from where the line is now
-  const g = (x) => Math.max(lo, Math.min(hi, fit.f(x) + shift));
-  const yEnd = g(end);
-  if (!isFinite(yEnd)) return null;
-  const n = 48, curve = [];
-  for (let i = 0; i <= n; i++) { const x = last[0] + (end - last[0]) * i / n; curve.push([x, g(x)]); }
-  return { curve, yEnd, end, at: last[0], spread: fit.rmse, wsd: r.config?.schedule === "wsd" };
+  const f = UI.forecastEnd(pts, end, opt);
+  if (!f) return null;
+  const n = 48, curve = [], at = f.last[0];
+  for (let i = 0; i <= n; i++) { const x = at + (end - at) * i / n; curve.push([x, f.g(x)]); }
+  // how the forecast has been moving: replay it from earlier in the run. Its recent swing is the range shown.
+  const hist = UI.forecastHistory(pts, end, opt).filter((h) => h[0] < at);
+  const recent = hist.filter((h) => h[0] >= at * 0.6).map((h) => h[1]).concat(f.yEnd);
+  const range = recent.length >= 3 ? [Math.min(...recent), Math.max(...recent)] : null;
+  const band = range && curve.map(([x, y]) => { const u = (x - at) / (end - at); return [x, y + (range[0] - f.yEnd) * u, y + (range[1] - f.yEnd) * u]; });
+  const was = hist.filter((h) => h[0] >= at * 0.6)[0] || null;      // the forecast from a while back, to say which way it moves
+  return { curve, band, range, hist, was, yEnd: f.yEnd, end, at, wsd: r.config?.schedule === "wsd" };
 }
 // tokens -> training minutes, from the recent pace (for the "Training time" axis)
 function minutesAt(r) {
@@ -544,6 +539,16 @@ function computeForecasts() {
   }
 }
 
+// "Fern3's forecast: 3.07 → 3.04 → 3.01 since 1.2B": how each model's predicted end has been moving
+function trails(key, fmt) {
+  return VIS().map((r) => {
+    const F = FORE[r.name]?.[key]; if (!F || !F.was) return "";
+    const H = F.hist.filter((h) => h[0] >= F.was[0]), mid = H[H.length >> 1];
+    const seq = [F.was[1], ...(mid && mid !== F.was ? [mid[1]] : []), F.yEnd].map(fmt).join(" → ");
+    return `<br><span style="color:${colorOf(r.name)}">${nameOf(r.name)}</span>: ${seq} since ${UI.fmtTokens(F.was[0])}`;
+  }).join("");
+}
+
 function drawLearning() {
   const xOf = (r) => xmode === "tokens" ? r.tokens : r.elapsed / 60;
   const series = [], hsS = [], leg = [], hleg = [];
@@ -563,17 +568,20 @@ function drawLearning() {
     // the dashed forecasts, out to the planned number of words
     const F = FORE[r.name] || {}, mx = xmode === "tokens" ? (t) => t : minutesAt(r);
     const fc = (f) => f.curve.map(([t, y]) => [mx(t), y]);
+    const fcb = (b) => b.map(([t, l, h]) => [mx(t), l, h]);
+    // earlier forecasts, stacked at the end line like a trail: older ones fainter
+    const marks = (f, mx) => f.hist.map(([t, y], i) => [mx(f.end), y, 0.15 + 0.6 * (i + 1) / f.hist.length]);
     if (mx && F.loss) {          // past the line's end, the tooltip shows the forecast instead; its tip carries the label
       series[series.length - 2].endLabel = false; series[series.length - 2].tipRange = true; series[series.length - 1].tipRange = true;
       series.push({ name: nameOf(r.name) + " · forecast", color: col, alpha: 0.55, width: 2, dash: [5, 5], tipRange: true, endDot: true,
-        endLabel: "≈" + fmtL(F.loss.yEnd), labelAlpha: 0.7, points: fc(F.loss) });
+        endLabel: "≈" + fmtL(F.loss.yEnd), labelAlpha: 0.7, points: fc(F.loss), band: F.loss.band && fcb(F.loss.band), marks: marks(F.loss, mx) });
       if (F.val) series.push({ name: nameOf(r.name) + " · held-out forecast", color: col, ghost: true, tipRange: true, points: fc(F.val) });
       anyFore = true; foreFrom = Math.min(foreFrom, series[series.length - (F.val ? 2 : 1)].points[0][0]);
     }
     if (mx && F.hs) {
       Object.assign(hsS[hsS.length - 1], { endLabel: false, tipRange: true });
       hsS.push({ name: nameOf(r.name) + " · forecast", color: col, alpha: 0.55, width: 2, dash: [5, 5], tipRange: true, endDot: true,
-        endLabel: "≈" + pct(F.hs.yEnd), labelAlpha: 0.7, points: fc(F.hs) });
+        endLabel: "≈" + pct(F.hs.yEnd), labelAlpha: 0.7, points: fc(F.hs), band: F.hs.band && fcb(F.hs.band), marks: marks(F.hs, mx) });
       anyHsFore = true;
     }
     leg.push([nameOf(r.name), col]); hleg.push([nameOf(r.name), col]);
@@ -596,10 +604,11 @@ function drawLearning() {
   const xf = xmode === "tokens" ? UI.fmtTokens : (v) => Math.round(v) + " min";
   charts.loss.set({ series, xFmt: xf, yFmt: (v) => v.toFixed(2), tipFmt: fmtL, yClip: (ys) => Math.min(...ys) + 2.5,
     tipNote: (xv) => xv > foreFrom
-      ? "dashed: a learning curve fitted to the points so far, a rough guess" + (VIS().some((r) => FORE[r.name]?.loss?.wsd) ? "; the final cool-down usually pulls loss lower still" : "")
+      ? "dashed: forecast · dots: earlier forecasts · shade: their recent swing"
+        + trails("loss", fmtL) + (VIS().some((r) => FORE[r.name]?.loss?.wsd) ? "<br>the final cool-down usually pulls it lower still" : "")
       : "lines: training batches · held-out: text never trained on" });
   charts.hs.set({ series: hsS, xFmt: xf, yFmt: (v) => (v * 100).toFixed(0) + "%", tipFmt: pct, empty: "Waiting for the first HellaSwag check",
-    tipNote: () => anyHsFore ? "dashed: a curve fitted to the checks so far, a rough guess" : "" });
+    tipNote: () => anyHsFore ? "dashed: forecast · dots: earlier forecasts · shade: their recent swing" + trails("hs", pct) : "" });
 }
 
 function drawMemoryUse() {

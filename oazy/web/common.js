@@ -67,7 +67,7 @@ const UI = (() => {
   }
 
   // Line chart with a crosshair tooltip.
-  // series: [{name, color, dash, width, alpha, area, dots, noTip, tipRange, endDot, endLabel, labelAlpha, points: [[x,y],...]}]
+  // series: [{name, color, dash, width, alpha, area, dots, noTip, tipRange, endDot, band: [[x,lo,hi]], marks: [[x,y,alpha]], endLabel, labelAlpha, points: [[x,y],...]}]
   function lineChart(cv, tip, opt) {
     const state = { opt, hoverX: null, hoverY: 0 };
     function draw() {
@@ -77,6 +77,7 @@ const UI = (() => {
       const hasEnd = o.series.some((s) => s.endLabel && s.points.length);
       const pad = { l: 44, r: hasEnd ? 58 : 12, t: 12, b: 26 };
       const all = o.series.flatMap((s) => s.points);
+      const extra = o.series.flatMap((s) => [...(s.band || []).flatMap((b) => [[b[0], b[1]], [b[0], b[2]]]), ...(s.marks || [])]);
       if (!all.length) {
         ctx.fillStyle = css("--muted");
         ctx.font = font(13);
@@ -87,7 +88,7 @@ const UI = (() => {
       }
       let x0 = Math.min(...all.map((p) => p[0])), x1 = Math.max(...all.map((p) => p[0]));
       if (x1 === x0) x1 = x0 + 1;
-      const ys = all.map((p) => p[1]).filter((v) => isFinite(v));
+      const ys = all.concat(extra).map((p) => p[1]).filter((v) => isFinite(v));
       let y0 = o.yMin != null ? o.yMin : Math.min(...ys), y1 = o.yMax != null ? o.yMax : Math.max(...ys);
       if (o.yClip) y1 = Math.min(y1, o.yClip(ys));
       if (y1 === y0) { y1 += 1; y0 -= o.yMin != null ? 0 : 1; }
@@ -148,6 +149,18 @@ const UI = (() => {
         pts.forEach((p, i) => (i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1]))));
         ctx.stroke();
         ctx.setLineDash([]);
+        if (s.band && s.band.length > 1) {                // a faint cone: how sure the forecast is
+          ctx.fillStyle = alpha(s.color, 0.1);
+          ctx.beginPath();
+          s.band.forEach((b, i) => (i ? ctx.lineTo(X(b[0]), Y(b[2])) : ctx.moveTo(X(b[0]), Y(b[2]))));
+          for (let i = s.band.length - 1; i >= 0; i--) ctx.lineTo(X(s.band[i][0]), Y(s.band[i][1]));
+          ctx.closePath(); ctx.fill();
+        }
+        if (s.marks) for (const [mx, my, ma] of s.marks) {   // earlier forecasts, older ones fainter
+          ctx.globalAlpha = (s.alpha || 1) * ma; ctx.fillStyle = s.color;
+          ctx.beginPath(); ctx.arc(X(mx), Y(my), 2, 0, 7); ctx.fill();
+        }
+        ctx.globalAlpha = s.alpha || 1;
         if (s.endDot && pts.length) {                     // a hollow ring where a forecast lands
           const p = pts[pts.length - 1];
           ctx.fillStyle = css("--solid"); ctx.lineWidth = 1.4;
@@ -243,6 +256,39 @@ const UI = (() => {
     return { a, b, c, xs, rmse: Math.sqrt(best.e / pts.length), f: (x) => a + b * Math.pow(x / xs, -c) };
   }
 
+  // Where a learning curve is headed: smooth the points (log-spaced bins, medians), leave out the early rush,
+  // fit y = a + b * x^-c, and anchor it to where the line is now. Returns {g, last, yEnd, rmse} or null.
+  function forecastEnd(pts, end, { minPts = 8, skip = 0.2, bins = 40, lo = -Infinity, hi = Infinity, dir = -1 } = {}) {
+    if (!pts.length) return null;
+    const xl = pts[pts.length - 1][0];
+    if (!(xl > 0)) return null;
+    let use = pts.filter((p) => p[0] >= xl * skip && p[0] > 0);
+    if (use.length > bins) {
+      const l0 = Math.log(use[0][0]), l1 = Math.log(xl) + 1e-9, B = Array.from({ length: bins }, () => []);
+      for (const p of use) B[Math.min(bins - 1, Math.floor((Math.log(p[0]) - l0) / (l1 - l0) * bins))].push(p);
+      use = B.filter((b) => b.length).map((b) => { const ys = b.map((p) => p[1]).sort((u, v) => u - v); return [b[b.length >> 1][0], ys[ys.length >> 1]]; });
+    }
+    if (use.length < minPts) return null;
+    const fit = fitPowerLaw(use);
+    if (!fit || Math.sign(fit.b) !== -dir) return null;      // loss must fall, accuracy rise
+    const last = use[use.length - 1], shift = last[1] - fit.f(last[0]);
+    const g = (x) => Math.max(lo, Math.min(hi, fit.f(x) + shift));
+    const yEnd = g(end);
+    return isFinite(yEnd) ? { g, last, yEnd, rmse: fit.rmse } : null;
+  }
+
+  // The same forecast replayed from earlier moments of the run (using only the points known then):
+  // how the predicted end value has been moving. Returns [[tokens then, predicted end], ...], oldest first.
+  function forecastHistory(pts, end, opt, n = 12) {
+    const xl = pts.length ? pts[pts.length - 1][0] : 0, out = [];
+    for (let i = 0; i < n; i++) {
+      const t = xl * (0.25 + 0.75 * i / (n - 1));
+      const f = forecastEnd(pts.filter((p) => p[0] <= t), end, opt);
+      if (f && (!out.length || f.last[0] > out[out.length - 1][0])) out.push([f.last[0], f.yEnd]);
+    }
+    return out;
+  }
+
   // Colour ramp: deep sea -> blue -> aqua -> white foam
   const HEAT = [[10, 22, 44], [22, 64, 150], [38, 140, 240], [90, 220, 255], [228, 252, 255]];
   function heatRGB(t) {
@@ -278,5 +324,5 @@ const UI = (() => {
   const fmtChoices = (loss) => { const n = choices(loss); return n < 10 ? n.toFixed(1) : n < 1000 ? Math.round(n).toString() : fmtTokens(n); };
 
   return { css, font, fitCanvas, b64bytes, lineChart, fmtTokens, heat, heatRGB, heatCSS, escapeHtml, niceTicks, alpha,
-           placeTip, fitPowerLaw, syncRange, watchRanges, pieceLabel, choices, fmtChoices };
+           placeTip, fitPowerLaw, forecastEnd, forecastHistory, syncRange, watchRanges, pieceLabel, choices, fmtChoices };
 })();
