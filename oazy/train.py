@@ -1,4 +1,4 @@
-"""Train Engram or the GPT-2 baseline on FineWeb-Edu. Resumable: re-run the same command.
+"""Train Engram, Tide, Ember or the GPT-2 baseline on FineWeb-Edu. Resumable: re-run the same command.
 
     python -m oazy.train --model engram --data /workspace/oazy_data --runs /workspace/oazy_runs
     python -m oazy.train --model gpt    --data /workspace/oazy_data --runs /workspace/oazy_runs
@@ -32,8 +32,8 @@ from engram.model import Engram, EngramConfig
 from engram import memory
 from . import hellaswag, probes
 
-KINDS = ["engram", "tide", "fern", "gpt"]
-NICE = {"engram": "Engram", "tide": "Tide", "fern": "Fern", "gpt": "GPT"}
+KINDS = ["engram", "tide", "fern", "ember", "gpt"]
+NICE = {"engram": "Engram", "tide": "Tide", "fern": "Fern", "ember": "Ember", "gpt": "GPT"}
 
 
 def say(*a, **k):
@@ -53,6 +53,11 @@ def _fern():
     from fern.model import Fern, FernConfig          # fern/ reads with Engram's memories
     return Fern, FernConfig
 
+
+def _ember():
+    from ember.model import Ember, EmberConfig       # ember/ builds on this package
+    return Ember, EmberConfig
+
 PRESETS = {
     # a laptop-CPU test of the whole pipeline (minutes)
     "tiny": dict(
@@ -60,6 +65,7 @@ PRESETS = {
         gpt=dict(d_model=128, n_layer=4, n_head=2, max_len=256),
         tide=dict(refine_hidden=256, lookahead=4),
         fern=dict(n_layer=4, unfold_layers=2, unfold_heads=2, unfold_hidden=256),
+        ember=dict(grow="1:0,2:0.1,4:0.25"), mentor="none",
         micro=16, accum=1, lr=3e-3, warmup=50, tokens=3_000_000,
         eval_every=250_000, probe_every=1_000_000, hs_every=1_000_000, sample_every=1_000_000,
         val_windows=64, hs_quick=200, sample_len=40,
@@ -70,6 +76,7 @@ PRESETS = {
         gpt=dict(d_model=64, n_layer=2, n_head=1, max_len=128),
         tide=dict(refine_hidden=128, lookahead=4),
         fern=dict(n_layer=2, unfold_layers=1, unfold_heads=1, unfold_hidden=128),
+        ember=dict(grow="1:0,2:0.3"), mentor="none",
         micro=8, accum=2, lr=3e-3, warmup=10, tokens=60_000,
         eval_every=20_000, probe_every=30_000, hs_every=30_000, sample_every=30_000,
         val_windows=16, hs_quick=20, sample_len=10,
@@ -117,6 +124,10 @@ def build(kind, preset, overrides=None):
         Fern, FernConfig = _fern()
         cfg = FernConfig(**{**p["engram"], **p.get("fern", {}), **(overrides or {})})
         return Fern(cfg), cfg
+    if kind == "ember":
+        Ember, EmberConfig = _ember()
+        cfg = EmberConfig(**{**p["engram"], **p.get("ember", {}), **(overrides or {})})
+        return Ember(cfg), cfg
     cfg = GPTConfig(**{**p["gpt"], **(overrides or {})})
     return GPT(cfg), cfg
 
@@ -132,6 +143,9 @@ def load_model(ckpt: Path, device):
     elif kind == "fern":
         Fern, FernConfig = _fern()
         model = Fern(FernConfig.from_dict(st["config"]))
+    elif kind == "ember":
+        Ember, EmberConfig = _ember()
+        model = Ember(EmberConfig.from_dict(st["config"]))
     else:
         model = GPT(GPTConfig.from_dict(st["config"]))
     model.load_state_dict(st["model"])
@@ -144,14 +158,43 @@ def lr_at(progress, step, base, warmup):
     return base * (0.05 + 0.95 * 0.5 * (1 + math.cos(math.pi * min(1.0, progress))))
 
 
-def make_optimizer(model, lr, device):
-    decay = [p for n, p in model.named_parameters() if p.dim() >= 2 and "conv_w" not in n]
-    no_decay = [p for n, p in model.named_parameters() if p.dim() < 2 or "conv_w" in n]
+MUON_GRIDS = ("mem.qkv.weight", "mem.gate.weight", "mem.out.weight", "mlp.up.weight", "mlp.down.weight")
+
+
+def make_optimizer(model, lr, device, kind="adamw", muon_lr=0.02):
+    """AdamW for everything, or (kind="muon") Muon for the blocks' weight grids + AdamW for the rest.
+    Every group's learning rate follows the same schedule: lr_scale is its size relative to --lr."""
+    named = list(model.named_parameters())
+    grids = [(n, p) for n, p in named if kind == "muon" and p.dim() == 2 and n.endswith(MUON_GRIDS)]
+    gids = {id(p) for _, p in grids}
+    rest = [(n, p) for n, p in named if id(p) not in gids]
+    decay = [p for n, p in rest if p.dim() >= 2 and "conv_w" not in n]
+    no_decay = [p for n, p in rest if p.dim() < 2 or "conv_w" in n]
     kw = dict(lr=lr, betas=(0.9, 0.95), eps=1e-8)
     if device.type == "cuda":
         kw["fused"] = True
-    return torch.optim.AdamW([{"params": decay, "weight_decay": 0.1},
-                              {"params": no_decay, "weight_decay": 0.0}], **kw)
+    adam = torch.optim.AdamW([{"params": decay, "weight_decay": 0.1, "lr_scale": 1.0},
+                              {"params": no_decay, "weight_decay": 0.0, "lr_scale": 1.0}], **kw)
+    if not grids:
+        return adam
+    from .muon import Muon, Combined
+    for n, p in grids:                       # fused grids are straightened part by part
+        if n.endswith("mem.qkv.weight"):
+            H, K, V = model.cfg.n_head, model.cfg.head_k, model.cfg.head_v
+            p.muon_split = [H * K, H * K, H * V]
+        elif n.endswith("mlp.up.weight"):
+            p.muon_split = [p.shape[0] // 2] * 2
+    muon = Muon([{"params": [p for _, p in grids], "lr_scale": muon_lr / lr}], lr=muon_lr)
+    return Combined(muon, adam)
+
+
+def carry_state(old, new):
+    """After the model grew: keep the optimizer memory (momentum etc.) of the parameters that existed."""
+    olds = old.opts if hasattr(old, "opts") else [old]
+    news = new.opts if hasattr(new, "opts") else [new]
+    for o, n in zip(olds, news):
+        for p, st in o.state.items():
+            n.state[p] = st
 
 
 def amp(device):
@@ -212,6 +255,8 @@ def bench(args, device):
     kinds = [args.model, "gpt"] if args.model != "gpt" else ["engram", "gpt"]
     for kind in kinds:
         model, cfg = build(kind, args.preset, parse_overrides(args.set) if kind != "gpt" else None)
+        if hasattr(model, "grow_to"):
+            model.grow_to(1.0)                         # Ember: measure it fully grown
         model.to(device).train()
         memory.fla_check(device)
         if args.compile and device.type == "cuda":
@@ -277,6 +322,11 @@ def main():
     ap.add_argument("--bench", action="store_true")
     ap.add_argument("--bench-steps", type=int, default=10)
     ap.add_argument("--hours", type=float, default=None, help="with --bench: suggest --tokens for this many hours")
+    ap.add_argument("--opt", choices=["adamw", "muon"], default=None, help="optimizer (default: muon for ember, adamw otherwise)")
+    ap.add_argument("--muon-lr", type=float, default=0.02)
+    ap.add_argument("--mentor", default=None, help="Ember's mentor: gpt2-medium (default), gpt2-large, gpt2-xl or none")
+    ap.add_argument("--mentor-weight", type=float, default=0.6, help="mentor's share of the lesson at the start")
+    ap.add_argument("--mentor-until", type=float, default=0.5, help="fraction of training after which the mentor is silent")
     ap.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE",
                     help="change a model setting, e.g. --set n_layer=8 (applies to the model being trained)")
     args = ap.parse_args()
@@ -303,7 +353,10 @@ def main():
     micro = args.micro or p["micro"]
     accum = max(1, (args.batch_tokens or p["micro"] * p["accum"] * T) // (micro * T))
     B = micro * accum
-    opt = make_optimizer(model, lr, device)
+    opt_kind = args.opt or ("muon" if args.model == "ember" else "adamw")
+    new_opt = lambda: make_optimizer(model, lr, device, opt_kind, args.muon_lr)   # noqa: E731
+    opt = new_opt()
+    mentor_name = args.mentor or (p.get("mentor", "gpt2-medium") if args.model == "ember" else "none")
     train = Windows(data / "train.bin", T, micro, seed=args.seed)
     vwin = val_set(data / "val.bin", T, p["val_windows"])
     pwin = vwin[: min(32, len(vwin))]
@@ -314,7 +367,8 @@ def main():
     ck = run.dir / "ckpt.pt"
     if ck.exists() and not args.fresh:
         state = torch.load(ck, map_location=device, weights_only=False)
-        model.load_state_dict(state["model"])
+        model.load_state_dict(state["model"])            # (Ember grows to the checkpoint's depth here)
+        opt = new_opt()
         opt.load_state_dict(state["opt"])
         step, tokens, elapsed, nxt = state["step"], state["tokens"], state["elapsed"], state["next"]
         train.set_state(state["data"])
@@ -327,8 +381,10 @@ def main():
             f.unlink()
 
     info = {
-        "model": args.model, "preset": args.preset, "config": cfg.to_dict(), "params": model.num_params(),
-        "params_non_embedding": model.num_params(non_embedding=True), "batch_tokens": B * T, "micro": micro,
+        "model": args.model, "preset": args.preset, "config": cfg.to_dict(),
+        "params": model.full_params() if hasattr(model, "full_params") else model.num_params(),
+        "params_non_embedding": (model.full_params() if hasattr(model, "full_params") else model.num_params())
+        - model.embed.weight.numel(), "optimizer": opt_kind, "mentor": mentor_name, "batch_tokens": B * T, "micro": micro,
         "context": T, "lr": lr, "total_tokens": total, "device": str(device),
         "gpu": torch.cuda.get_device_name() if device.type == "cuda" else "cpu",
         "memory_numbers": model.memory_numbers() if hasattr(model, "memory_numbers") else None,
@@ -350,6 +406,11 @@ def main():
     memory.fla_check(device)
     if args.compile and device.type == "cuda":
         model.enable_compile()
+    mentor = None
+    if mentor_name != "none" and tokens < args.mentor_until * total:
+        from ember.mentor import Mentor
+        say(f"loading the mentor {mentor_name} ...", flush=True)
+        mentor = Mentor(mentor_name, device, args.mentor_weight, args.mentor_until, compile=bool(args.compile))
 
     stop = {"flag": False}
 
@@ -472,25 +533,48 @@ def main():
         evaluations()
         t_eval = time.time() - t0
 
+        if hasattr(model, "grow_to") and model.grow_to(tokens / total):     # Ember: time to grow
+            old, opt = opt, new_opt()
+            carry_state(old, opt)
+            say(f"[grow] {tokens / 1e6:.0f}M tokens: Ember is now {model.depth} blocks deep", flush=True)
+            run.log("metrics.jsonl", {"kind": "grow", "step": step, "tokens": tokens, "elapsed": elapsed,
+                                      "depth": model.depth})
+        mw = mentor.weight_at(tokens / total) if mentor is not None else 0.0
+        if mentor is not None and mw <= 0:
+            say(f"[mentor] {tokens / 1e6:.0f}M tokens: the mentor steps back; Ember learns alone now", flush=True)
+            mentor = None
+            if device.type == "cuda":
+                torch.cuda.empty_cache()
+
         cur_lr = lr_at(tokens / total, step, lr, p["warmup"])
         for g in opt.param_groups:
-            g["lr"] = cur_lr
-        loss_sum = 0.0
+            g["lr"] = cur_lr * g.get("lr_scale", 1.0)
+        loss_sum, kd_sum = 0.0, 0.0
+
+        def lesson(x, y):
+            with amp(device):
+                logits, loss, st = model(x, y)
+                if mw > 0:
+                    from ember.mentor import mentor_loss
+                    kd = mentor_loss(logits, mentor.guess(x))
+                    st = {**st, "kd": kd}
+                    loss = (1 - mw) * loss + mw * kd
+            (loss / accum).backward()
+            return loss, st
+
         for _ in range(accum):
             x, y = train.get(device)
             try:
-                with amp(device):
-                    _, loss, st = model(x, y)
-                (loss / accum).backward()
+                loss, st = lesson(x, y)
             except Exception as e:
                 if model._compiled is None:
                     raise
                 say(f"torch.compile failed ({type(e).__name__}: {e}); continuing without compile", flush=True)
                 model._compiled = None
-                with amp(device):
-                    _, loss, st = model(x, y)
-                (loss / accum).backward()
+                loss, st = lesson(x, y)
             loss_sum += st.get("ce", loss).detach()       # the next-word loss (Tide also trains its far drafts)
+            if "kd" in st:
+                kd_sum += st["kd"].detach()
         gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         opt.step()
         opt.zero_grad(set_to_none=True)
@@ -506,6 +590,10 @@ def main():
             t_log, tok_log = now, tokens
             rec = {"kind": "train", "step": step, "tokens": tokens, "elapsed": elapsed,
                    "loss": float(acc_loss) / acc_n, "lr": cur_lr, "tok_s": tps, "grad_norm": float(gnorm)}
+            if hasattr(model, "grow_to"):
+                rec["depth"] = model.depth
+            if mw > 0:
+                rec["mentor_w"], rec["mentor_kl"] = mw, float(kd_sum) / accum
             acc_loss, acc_n = 0.0, 0
             run.log("metrics.jsonl", rec)
             eta = (total - tokens) / max(tps, 1)

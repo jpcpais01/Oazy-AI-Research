@@ -114,15 +114,17 @@ class GPT(nn.Module):
         return out, None
 
 
-def load_openai_gpt2(device="cpu") -> GPT:
-    """OpenAI's released GPT-2 124M, loaded from Hugging Face ("gpt2") into this class."""
+def load_openai_gpt2(device="cpu", name="gpt2") -> GPT:
+    """OpenAI's released GPT-2 (124M "gpt2", or "gpt2-medium"/"-large"/"-xl"), loaded from Hugging Face into this class."""
     from transformers import GPT2LMHeadModel
-    hf = GPT2LMHeadModel.from_pretrained("gpt2").state_dict()
-    m = GPT(GPTConfig(vocab_size=50257))
+    hfm = GPT2LMHeadModel.from_pretrained(name)
+    c = hfm.config
+    hf = hfm.state_dict()
+    m = GPT(GPTConfig(vocab_size=50257, n_layer=c.n_layer, n_head=c.n_head, d_model=c.n_embd, max_len=c.n_positions))
     sd = {"embed.weight": hf["transformer.wte.weight"], "pos.weight": hf["transformer.wpe.weight"],
           "ln_f.weight": hf["transformer.ln_f.weight"], "ln_f.bias": hf["transformer.ln_f.bias"]}
     names = {"ln_1": "ln1", "ln_2": "ln2", "attn.c_attn": "qkv", "attn.c_proj": "proj", "mlp.c_fc": "fc", "mlp.c_proj": "out"}
-    for i in range(12):
+    for i in range(c.n_layer):
         for a, b in names.items():
             for kind in ("weight", "bias"):
                 w = hf[f"transformer.h.{i}.{a}.{kind}"]

@@ -5,6 +5,7 @@
 #   bash runpod/train.sh fern --tokens 2e9          # train Fern (writes passages coarse to fine)
 #   bash runpod/train.sh engram --tokens 2e9        # extra arguments go to the trainer
 #   bash runpod/train.sh tide --gpt                 # also train the GPT-2 baseline next to it
+#   bash runpod/train.sh ember --tokens 2e9         # Ember (grows, learns from GPT-2 medium, Muon)
 #
 # Each model gets its own tmux window; the app (dashboard, port 8000) gets one too, and OpenAI's
 # GPT-2 is measured once as the reference line. Running it again for another model adds that model.
@@ -15,7 +16,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 REPO="$(pwd)"
 MODEL="${1:-}"
-case "$MODEL" in engram|tide|fern|gpt) shift ;; *) echo "usage: bash runpod/train.sh engram|tide|fern|gpt [--gpt] [trainer options]"; exit 1 ;; esac
+case "$MODEL" in engram|tide|fern|ember|gpt) shift ;; *) echo "usage: bash runpod/train.sh engram|tide|fern|ember|gpt [--gpt] [trainer options]"; exit 1 ;; esac
 WITH_GPT=0
 ARGS=()
 for a in "$@"; do if [ "$a" = "--gpt" ]; then WITH_GPT=1; else ARGS+=("$a"); fi; done

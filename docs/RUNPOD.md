@@ -30,6 +30,14 @@ python3 -m oazy.train --bench --model tide --hours 2   # how many tokens fit in 
 bash runpod/train.sh tide --tokens 2e9                 # train (add --gpt to train the GPT-2 baseline too)
 ```
 
+Ember (the fast-learning model, `ember/README.md`) trains the same way and downloads its mentor,
+GPT-2 medium, from Hugging Face on first start:
+
+```bash
+python3 -m ember.tests --device cuda
+bash runpod/train.sh ember --tokens 2e9
+```
+
 Open the pod's **8000** link: the app shows the models training now, with their own graphs, and a
 library of every model trained so far. `tmux attach -t oazy` shows the logs.
 
@@ -39,6 +47,7 @@ Talk to a model (works during training, from its latest checkpoint):
 python3 -m engram.chat --port 8002
 python3 -m tide.chat --port 8002
 python3 -m fern.chat --port 8002
+python3 -m engram.chat --run ember --port 8002
 ```
 
 ## Fern (200M, writes passages coarse to fine)
