@@ -1,59 +1,24 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <!-- Oazy mark, liquid-glass edition: an open glass ring and an orbiting bubble on an aqua sky squircle -->
+  <!-- Oazy mark: a liquid-glass orb holding an oasis horizon (sky, water, a sun) -->
   <defs>
-    <linearGradient id="oz-sky" x1="0.1" y1="1" x2="0.9" y2="0">
-      <stop offset="0" stop-color="#061a4a"/>
-      <stop offset="0.45" stop-color="#0d5fd6"/>
-      <stop offset="0.8" stop-color="#1fb8f0"/>
-      <stop offset="1" stop-color="#7ff3e6"/>
-    </linearGradient>
-    <radialGradient id="oz-violet" cx="0.12" cy="0.95" r="0.6">
-      <stop offset="0" stop-color="#8b6bff" stop-opacity="0.75"/>
-      <stop offset="1" stop-color="#8b6bff" stop-opacity="0"/>
+    <radialGradient id="b-sky" cx="0.35" cy="0.25" r="0.9">
+      <stop offset="0" stop-color="#d6fbff"/><stop offset="0.35" stop-color="#6fd8ff"/><stop offset="0.75" stop-color="#2d72ff"/><stop offset="1" stop-color="#3a2fb0"/>
     </radialGradient>
-    <radialGradient id="oz-caustic" cx="0.5" cy="1.05" r="0.55">
-      <stop offset="0" stop-color="#9ff8ff" stop-opacity="0.55"/>
-      <stop offset="1" stop-color="#9ff8ff" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="oz-gloss" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#fff" stop-opacity="0.5"/>
-      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    <linearGradient id="b-sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5ef2c2"/><stop offset="1" stop-color="#0b6fd0"/>
     </linearGradient>
-    <linearGradient id="oz-edge" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#fff" stop-opacity="0.85"/>
-      <stop offset="0.5" stop-color="#fff" stop-opacity="0.12"/>
-      <stop offset="1" stop-color="#fff" stop-opacity="0.45"/>
+    <linearGradient id="b-gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.85"/><stop offset="1" stop-color="#fff" stop-opacity="0"/>
     </linearGradient>
-    <linearGradient id="oz-glass" x1="0.2" y1="0" x2="0.8" y2="1">
-      <stop offset="0" stop-color="#fff" stop-opacity="0.95"/>
-      <stop offset="0.5" stop-color="#e6fbff" stop-opacity="0.42"/>
-      <stop offset="1" stop-color="#bff4ff" stop-opacity="0.85"/>
-    </linearGradient>
-    <radialGradient id="oz-bubble" cx="0.36" cy="0.32" r="0.75">
-      <stop offset="0" stop-color="#fff"/>
-      <stop offset="0.35" stop-color="#d9fbff"/>
-      <stop offset="1" stop-color="#5fdcff"/>
-    </radialGradient>
-    <filter id="oz-soft" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur in="SourceAlpha" stdDeviation="2.2"/>
-      <feOffset dy="2.2" result="b"/>
-      <feFlood flood-color="#031040" flood-opacity="0.45"/>
-      <feComposite in2="b" operator="in"/>
-      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
-    <clipPath id="oz-sq"><rect width="100" height="100" rx="24"/></clipPath>
+    <clipPath id="b-c"><circle cx="50" cy="50" r="42"/></clipPath>
+    <filter id="b-sh" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#0a2a80" flood-opacity="0.45"/></filter>
   </defs>
-  <g clip-path="url(#oz-sq)">
-    <rect width="100" height="100" fill="url(#oz-sky)"/>
-    <rect width="100" height="100" fill="url(#oz-violet)"/>
-    <rect width="100" height="100" fill="url(#oz-caustic)"/>
-    <path d="M0 0 H100 V34 C68 52 30 50 0 40 Z" fill="url(#oz-gloss)"/>
+  <g filter="url(#b-sh)"><circle cx="50" cy="50" r="42" fill="url(#b-sky)"/></g>
+  <g clip-path="url(#b-c)">
+    <path d="M0 58 C16 50 30 50 44 57 C58 64 72 64 100 54 V100 H0 Z" fill="url(#b-sea)" opacity="0.92"/>
+    <path d="M0 66 C18 60 32 61 46 67 C60 73 76 72 100 64" fill="none" stroke="#fff" stroke-opacity="0.5" stroke-width="1.6"/>
+    <ellipse cx="44" cy="25" rx="27" ry="15" fill="url(#b-gloss)"/>
   </g>
-  <rect x="0.75" y="0.75" width="98.5" height="98.5" rx="23.3" fill="none" stroke="url(#oz-edge)" stroke-width="1.5"/>
-  <g filter="url(#oz-soft)">
-    <path d="M68.2 41 A22 22 0 1 1 48.3 31.2" fill="none" stroke="url(#oz-glass)" stroke-width="9.5" stroke-linecap="round"/>
-    <circle cx="63" cy="29.6" r="6.6" fill="url(#oz-bubble)"/>
-  </g>
-  <path d="M38.2 37.6 A16 16 0 0 1 46.6 33.6" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" opacity="0.95"/>
-  <circle cx="60.9" cy="27.5" r="1.9" fill="#fff"/>
+  <circle cx="50" cy="50" r="41.2" fill="none" stroke="#fff" stroke-opacity="0.6" stroke-width="1.6"/>
+  <circle cx="68" cy="38" r="5" fill="#fff" fill-opacity="0.95"/>
 </svg>
