@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Oazy AI Research · Watch Fern unfold</title>
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="stylesheet" href="style.css">
+<style>
+  :root { --r1: #ffd36e; --r2: #a6e86a; --r3: #5ef2c2; --r4: #4fd8ff; --r5: #a9b9d6; }
+  .topbar .pills { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill b { color: var(--text); font-weight: 600; }
+  .status { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); padding: 3px 10px; border-radius: 99px; border: 1px solid var(--border); }
+  .status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+  .status.on { color: var(--text-2); } .status.on .dot { background: var(--fern); animation: ping 1.4s infinite; }
+
+  /* the frond: one row per round, one column per word of the passage */
+  .frond { display: grid; grid-template-columns: 74px repeat(var(--p), minmax(0, 1fr)); gap: 5px 4px; align-items: center; }
+  .frond .lab { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; line-height: 1.25; }
+  .frond .lab b { display: block; color: var(--text-2); font-size: 12px; letter-spacing: 0; text-transform: none; font-weight: 600; }
+  .frond .num { font-size: 10.5px; color: var(--faint); text-align: center; font-family: var(--mono); }
+  .cell { height: 34px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font: 12px/1 var(--mono);
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 3px; border: 1px solid transparent; }
+  .cell.empty { background: var(--surface); border-color: var(--border); }
+  .cell.empty::after { content: ""; width: 4px; height: 4px; border-radius: 50%; background: var(--faint); }
+  .cell.known { color: var(--muted); background: transparent; border-color: var(--border); opacity: .75; }
+  .cell.new { color: #06101e; font-weight: 600; cursor: pointer; animation: grow .45s ease-out; }
+  .cell.new.sel { outline: 2px solid #fff; outline-offset: 1px; }
+  @keyframes grow { from { transform: scale(.4); opacity: 0; } }
+  @media (max-width: 760px) { .frond { grid-template-columns: 44px repeat(var(--p), minmax(0, 1fr)); } .cell { font-size: 9px; height: 28px; } .frond .lab b { display: none; } }
+  .frondnav { display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--muted); }
+
+  .story { font-size: 18px; line-height: 2; min-height: 170px; max-height: 44vh; overflow-y: auto; padding: 2px 2px 8px; }
+  .story .w { border-radius: 5px; padding: 2px 0; cursor: pointer; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+  .story .you { color: var(--text); cursor: default; }
+  .story .sel { outline: 1.5px solid rgba(255,255,255,.85); outline-offset: 1px; }
+  .story .brk { display: inline-block; width: 1px; height: 15px; background: var(--border-2); vertical-align: -2px; margin: 0 2px; }
+  .story .hint { color: var(--muted); font-size: 15px; line-height: 1.7; }
+  .story .eot { color: var(--faint); font-size: 12px; font-family: var(--mono); }
+
+  .composer { margin-top: 14px; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: 14px; padding: 12px 12px 10px 16px; }
+  .composer:focus-within { border-color: rgba(166, 232, 106, .6); box-shadow: 0 0 0 3px rgba(166, 232, 106, .12); }
+  .composer textarea { width: 100%; background: transparent; border: 0; color: var(--text); font: 15.5px/1.6 var(--sans); resize: none; outline: none; min-height: 52px; }
+  .composer .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .composer .row .spacer { flex: 1; }
+  .controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 22px; margin-top: 18px; }
+  @media (max-width: 760px) { .controls { grid-template-columns: 1fr; } }
+  .ctl .top { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-2); margin-bottom: 4px; }
+  .ctl .top b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .ctl input[type=range] { width: 100%; }
+  .ctl .h { font-size: 11.5px; color: var(--muted); margin-top: 4px; line-height: 1.45; }
+
+  .ins h4 { font-size: 11.5px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); margin: 20px 0 10px; font-weight: 600; }
+  .ins h4:first-child { margin-top: 0; }
+  .bigword { font-size: 24px; font-weight: 650; letter-spacing: -0.01em; font-family: var(--mono); }
+  .alt { display: grid; grid-template-columns: 1fr 120px 54px; gap: 10px; align-items: center; font-size: 13px; margin: 7px 0; }
+  .alt span { font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .alt .t { height: 7px; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
+  .alt .t div { height: 100%; border-radius: 99px; }
+  .alt b { text-align: right; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .alt.hit span { color: var(--text); font-weight: 600; }
+  .keyrow { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--muted); margin-top: 12px; }
+  .keyrow i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+</style>
+</head>
+<body>
+<header class="topbar"><div class="inner">
+  <div class="brand"><img class="logo" src="icon.svg" alt="">
+    <h1>Oazy AI Research <span class="tag">Watch Fern unfold</span></h1></div>
+  <div class="spacer"></div>
+  <div class="pills" id="pills"></div>
+  <button class="btn" id="reset" title="Forget the text, start a new one"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 8a5 5 0 1 0 1.6-3.7"/><path d="M3 2.5v3h3"/></svg>New text</button>
+</div></header>
+
+<div class="wrap">
+  <div class="grid">
+    <div class="card span12">
+      <div class="cardhead">
+        <div class="titles"><h2>The passage unfolding</h2><div class="sub">Fern writes 16 words at a time in 5 rounds. Each row is a round; a word appears in the round Fern decided it, and stays (grey) for the rounds after.</div></div>
+        <div class="tools"><div class="frondnav"><button class="btn ghost" id="prev">‹</button><span id="which">–</span><button class="btn ghost" id="next">›</button></div>
+          <span class="status" id="status"><span class="dot"></span><span>ready</span></span></div>
+      </div>
+      <details class="why"><summary>What am I looking at?</summary><div class="body">
+        <p>Fern is <b>not a next-word model</b>. It never writes left to right. For every passage of 16 words it first decides <b>where the passage is going</b> (word 16), then the <b>middle of the way there</b> (word 8), then the middle of each half (4 and 12), then of each quarter, and in the last round it fills every remaining gap. One rule, five times: <i>decide the middle of every stretch whose two ends are known.</i></p>
+        <p>So a word in round 5 is chosen knowing the words on <b>both</b> sides of it, and a round-1 word is chosen from the past alone. Everything before the passage is held by Fern's reader, Engram's learn-while-reading memory, so long texts cost the same per word.</p>
+      </div></details>
+      <div class="frond" id="frond"></div>
+      <div class="keyrow" id="key"></div>
+    </div>
+
+    <div class="card span7">
+      <div class="cardhead">
+        <div class="titles"><h2>The text so far</h2><div class="sub">Your words in white. Fern's are colored by the round they were decided in. Thin bars mark passages.</div></div>
+      </div>
+      <div class="story" id="story"><div class="hint">Type the start of a text below and press <b>Continue</b>. Click any of Fern's words to see the round it was decided in and what else it considered.</div></div>
+      <div class="composer">
+        <textarea id="input" placeholder="Write the beginning, or leave it empty to let Fern carry on…" rows="2"></textarea>
+        <div class="row"><span class="small muted">Enter to send · Shift+Enter for a new line</span><div class="spacer"></div>
+          <button class="btn ghost" id="stop" disabled>Stop</button><button class="btn primary" id="go">Continue</button></div>
+      </div>
+      <div class="controls">
+        <div class="ctl"><div class="top"><span>Passages to write</span><b id="nv">4</b></div><input type="range" id="n" min="0" max="16" value="4"><div class="h">16 words each · 0 = only read what you typed</div></div>
+        <div class="ctl"><div class="top"><span>Temperature</span><b id="tv">0.8</b></div><input type="range" id="temp" min="0" max="1.5" step="0.05" value="0.8"><div class="h">Low = safe and repetitive · high = adventurous</div></div>
+        <div class="ctl"><div class="top"><span>Choices per word</span><b id="kv">40</b></div><input type="range" id="topk" min="1" max="200" value="40"><div class="h">Only the top few words can be picked</div></div>
+      </div>
+    </div>
+
+    <div class="card span5 ins">
+      <h4>The selected word</h4>
+      <div class="bigword" id="word">–</div>
+      <div class="small muted" id="wordwhen" style="margin-top:6px"></div>
+      <h4>What Fern considered</h4>
+      <div id="alts"><div class="muted small">Click a word in the passage or in the text.</div></div>
+    </div>
+  </div>
+</div>
+
+<script src="common.js"></script>
+<script>
+"use strict";
+let INFO = null, P = 16, R = 5, PASS = [], CUR = -1, SEL = null, es = null, queue = Promise.resolve();
+const $ = (id) => document.getElementById(id);
+const RC = [1, 2, 3, 4, 5].map((r) => getComputedStyle(document.documentElement).getPropertyValue("--r" + r).trim());
+const WHAT = ["where it's going", "the middle", "the quarters", "the eighths", "the last details"];
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const vis = (w) => w === "<|endoftext|>" ? "¶" : UI.escapeHtml(UI.pieceLabel ? UI.pieceLabel(w) : w);
+
+async function init() {
+  INFO = await (await fetch("api/info")).json();
+  P = INFO.passage || 16; R = INFO.rounds || 5;
+  $("frond").style.setProperty("--p", P);
+  $("pills").innerHTML = `<span class="pill"><b>${(INFO.params / 1e6).toFixed(0)}M</b> parameters</span>
+    <span class="pill"><b>${P}</b> words in <b>${R}</b> rounds</span>
+    ${INFO.tokens ? `<span class="pill">trained on <b>${UI.fmtTokens(INFO.tokens)}</b> tokens</span>` : ""}`;
+  $("key").innerHTML = RC.slice(0, R).map((c, r) => `<span><i style="background:${c}"></i>round ${r + 1}: ${WHAT[r] || ""}</span>`).join("");
+  if (UI.watchRanges) UI.watchRanges();
+  [["n", "nv"], ["temp", "tv"], ["topk", "kv"]].forEach(([a, b]) => $(a).addEventListener("input", () => ($(b).textContent = $(a).value)));
+  drawFrond(null, 0);
+}
+
+// a passage = rounds[r].words[{at, w, p, alts}] ; draw its first `upto` rounds
+function drawFrond(ps, upto) {
+  const f = $("frond");
+  let h = `<div></div>` + Array.from({ length: P }, (_, i) => `<div class="num">${i + 1}</div>`).join("");
+  const known = {};
+  for (let r = 0; r < R; r++) {
+    h += `<div class="lab">round ${r + 1}<b>${WHAT[r] || ""}</b></div>`;
+    const here = {};
+    if (ps && r < upto) for (const w of ps.rounds[r].words) here[w.at] = w;
+    for (let i = 1; i <= P; i++) {
+      if (here[i]) {
+        const w = here[i], sel = SEL && SEL.ps === ps && SEL.w === w;
+        h += `<div class="cell new${sel ? " sel" : ""}" data-r="${r}" data-i="${i}" style="background:${RC[r]}" title="${UI.escapeHtml(w.w)} · ${(w.p * 100).toFixed(1)}%">${vis(w.w)}</div>`;
+      } else if (known[i]) {
+        h += `<div class="cell known">${vis(known[i].w)}</div>`;
+      } else {
+        h += `<div class="cell empty"></div>`;
+      }
+    }
+    Object.assign(known, here);
+  }
+  f.innerHTML = h;
+  f.querySelectorAll(".cell.new").forEach((c) => c.addEventListener("click", () => {
+    const w = ps.rounds[+c.dataset.r].words.find((x) => x.at === +c.dataset.i);
+    select(ps, +c.dataset.r, w);
+  }));
+  $("which").textContent = PASS.length ? `passage ${CUR + 1} of ${PASS.length}` : "–";
+}
+
+function select(ps, r, w) {
+  SEL = { ps, r, w };
+  $("word").textContent = UI.pieceLabel ? UI.pieceLabel(w.w) : w.w;
+  $("wordwhen").innerHTML = `decided in <b style="color:${RC[r]}">round ${r + 1}</b> (${WHAT[r]}), word ${w.at} of the passage, with a ${(w.p * 100).toFixed(1)}% chance`;
+  $("alts").innerHTML = w.alts.map(([a, p]) => `<div class="alt${a === w.w ? " hit" : ""}"><span>${vis(a)}</span><div class="t"><div style="width:${(p * 100).toFixed(1)}%;background:${RC[r]}"></div></div><b>${(p * 100).toFixed(1)}%</b></div>`).join("");
+  drawFrond(PASS[CUR], R);
+  document.querySelectorAll(".story .w.sel").forEach((e) => e.classList.remove("sel"));
+  const s = document.querySelector(`.story .w[data-p="${PASS.indexOf(ps)}"][data-i="${w.at}"]`);
+  if (s) s.classList.add("sel");
+}
+
+function addYou(words) {
+  const st = $("story");
+  if (st.querySelector(".hint")) st.innerHTML = "";
+  st.insertAdjacentHTML("beforeend", words.map((w) => w === "<|endoftext|>" ? `<span class="eot">¶</span> ` : `<span class="w you">${UI.escapeHtml(w)}</span>`).join(""));
+  st.scrollTop = st.scrollHeight;
+}
+
+function addPassage(ps) {
+  const st = $("story"), k = PASS.indexOf(ps);
+  const by = {};
+  ps.rounds.forEach((rd, r) => rd.words.forEach((w) => (by[w.at] = [r, w])));
+  let h = `<span class="brk"></span>`;
+  for (let i = 1; i <= P; i++) {
+    const [r, w] = by[i];
+    h += w.eot ? `<span class="eot">¶</span> ` : `<span class="w" data-p="${k}" data-i="${i}" style="color:${RC[r]}">${UI.escapeHtml(w.w)}</span>`;
+  }
+  st.insertAdjacentHTML("beforeend", h);
+  st.querySelectorAll(`.w[data-p="${k}"]`).forEach((e) => e.addEventListener("click", () => {
+    CUR = k; const i = +e.dataset.i; const [r, w] = by[i]; select(ps, r, w);
+  }));
+  st.scrollTop = st.scrollHeight;
+}
+
+async function playPassage(ps) {
+  PASS.push(ps); CUR = PASS.length - 1;
+  for (let r = 1; r <= R; r++) { drawFrond(ps, r); await sleep(420); }
+  addPassage(ps);
+}
+
+function setBusy(b, label) {
+  $("go").disabled = b; $("stop").disabled = !b;
+  $("status").classList.toggle("on", b);
+  $("status").lastElementChild.textContent = label || (b ? "unfolding…" : "ready");
+}
+
+function go() {
+  if (es) return;
+  const text = $("input").value;
+  $("input").value = "";
+  setBusy(true, "reading…");
+  const q = new URLSearchParams({ text, n: $("n").value, temp: $("temp").value, top_k: $("topk").value });
+  es = new EventSource("api/stream?" + q);
+  es.onmessage = (m) => {
+    const ev = JSON.parse(m.data);
+    if (ev.type === "read") queue = queue.then(() => { addYou(ev.words); setBusy(true); });
+    else if (ev.type === "passage") queue = queue.then(() => playPassage(ev));
+    else if (ev.type === "end") { es.close(); es = null; queue = queue.then(() => setBusy(false)); }
+  };
+  es.onerror = () => { if (es) es.close(); es = null; setBusy(false, "connection lost"); };
+}
+
+$("go").addEventListener("click", go);
+$("stop").addEventListener("click", () => { if (es) { es.close(); es = null; } setBusy(false); });
+$("input").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); go(); } });
+$("reset").addEventListener("click", async () => {
+  await fetch("api/reset"); PASS = []; CUR = -1; SEL = null;
+  $("story").innerHTML = `<div class="hint">New text. Type the start below and press <b>Continue</b>.</div>`;
+  $("word").textContent = "–"; $("wordwhen").textContent = ""; $("alts").innerHTML = `<div class="muted small">Click a word in the passage or in the text.</div>`;
+  drawFrond(null, 0);
+});
+$("prev").addEventListener("click", () => { if (CUR > 0) { CUR--; drawFrond(PASS[CUR], R); } });
+$("next").addEventListener("click", () => { if (CUR < PASS.length - 1) { CUR++; drawFrond(PASS[CUR], R); } });
+init();
+</script>
+</body>
+</html>

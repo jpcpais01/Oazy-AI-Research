@@ -63,7 +63,13 @@ def evaluate(model, path: Path, device, limit: int | None = None, batch_examples
             mask[i, a - 1:b - 1] = 1.0                    # positions whose next token is an ending token
         x, mask = x.to(device), mask.to(device)
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=x.is_cuda):
-            logits = model._body(x)          # uncompiled: these shapes change every batch
+            if hasattr(model, "seq_logits"):     # Fern writes in passages: start one where the ending starts
+                st = torch.tensor([a - 1 for a, _ in spans], device=device)
+                en = torch.tensor([b - 1 for _, b in spans], device=device)
+                logits = model.seq_logits(x, st, en)
+                logits = torch.cat([logits, logits[:, -1:]], 1)
+            else:
+                logits = model._body(x)          # uncompiled: these shapes change every batch
         loss = F.cross_entropy(logits[:, :-1].float().reshape(-1, logits.size(-1)), x[:, 1:].reshape(-1),
                                reduction="none").view(len(seqs), L - 1)
         tot = (loss * mask).sum(1).view(-1, 4)

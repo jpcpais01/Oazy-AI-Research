@@ -31,13 +31,18 @@ from engram.model import Engram, EngramConfig
 from engram import memory
 from . import hellaswag, probes
 
-KINDS = ["engram", "tide", "gpt"]
-NICE = {"engram": "Engram", "tide": "Tide", "gpt": "GPT"}
+KINDS = ["engram", "tide", "fern", "gpt"]
+NICE = {"engram": "Engram", "tide": "Tide", "fern": "Fern", "gpt": "GPT"}
 
 
 def _tide():
     from tide.model import Tide, TideConfig          # tide/ builds on this package
     return Tide, TideConfig
+
+
+def _fern():
+    from fern.model import Fern, FernConfig          # fern/ reads with Engram's memories
+    return Fern, FernConfig
 
 PRESETS = {
     # a laptop-CPU test of the whole pipeline (minutes)
@@ -45,6 +50,7 @@ PRESETS = {
         engram=dict(d_model=128, n_layer=4, n_head=2, head_k=64, head_v=64, mlp_hidden=256, max_len=256),
         gpt=dict(d_model=128, n_layer=4, n_head=2, max_len=256),
         tide=dict(refine_hidden=256, lookahead=4),
+        fern=dict(n_layer=4, unfold_layers=2, unfold_heads=2, unfold_hidden=256),
         micro=16, accum=1, lr=3e-3, warmup=50, tokens=3_000_000,
         eval_every=250_000, probe_every=1_000_000, hs_every=1_000_000, sample_every=1_000_000,
         val_windows=64, hs_quick=200, sample_len=40,
@@ -54,6 +60,7 @@ PRESETS = {
         engram=dict(d_model=64, n_layer=2, n_head=1, head_k=64, head_v=64, mlp_hidden=128, max_len=128),
         gpt=dict(d_model=64, n_layer=2, n_head=1, max_len=128),
         tide=dict(refine_hidden=128, lookahead=4),
+        fern=dict(n_layer=2, unfold_layers=1, unfold_heads=1, unfold_hidden=128),
         micro=8, accum=2, lr=3e-3, warmup=10, tokens=60_000,
         eval_every=20_000, probe_every=30_000, hs_every=30_000, sample_every=30_000,
         val_windows=16, hs_quick=20, sample_len=10,
@@ -97,6 +104,10 @@ def build(kind, preset, overrides=None):
         Tide, TideConfig = _tide()
         cfg = TideConfig(**{**p["engram"], **p.get("tide", {}), **(overrides or {})})
         return Tide(cfg), cfg
+    if kind == "fern":
+        Fern, FernConfig = _fern()
+        cfg = FernConfig(**{**p["engram"], **p.get("fern", {}), **(overrides or {})})
+        return Fern(cfg), cfg
     cfg = GPTConfig(**{**p["gpt"], **(overrides or {})})
     return GPT(cfg), cfg
 
@@ -109,6 +120,9 @@ def load_model(ckpt: Path, device):
     elif kind == "tide":
         Tide, TideConfig = _tide()
         model = Tide(TideConfig.from_dict(st["config"]))
+    elif kind == "fern":
+        Fern, FernConfig = _fern()
+        model = Fern(FernConfig.from_dict(st["config"]))
     else:
         model = GPT(GPTConfig.from_dict(st["config"]))
     model.load_state_dict(st["model"])
@@ -308,7 +322,7 @@ def main():
         "params_non_embedding": model.num_params(non_embedding=True), "batch_tokens": B * T, "micro": micro,
         "context": T, "lr": lr, "total_tokens": total, "device": str(device),
         "gpu": torch.cuda.get_device_name() if device.type == "cuda" else "cpu",
-        "memory_numbers": model.memory_numbers() if isinstance(model, Engram) else None,
+        "memory_numbers": model.memory_numbers() if hasattr(model, "memory_numbers") else None,
         "data": json.loads((data / "meta.json").read_text()) if (data / "meta.json").exists() else None,
     }
     (run.dir / "config.json").write_text(json.dumps(info, indent=1))
@@ -370,6 +384,13 @@ def main():
                 latest["draft_acc"] = r["draft_acc"]
                 print(f"[drafts] loss by words ahead {[round(v, 3) for v in r['draft_loss']]} | "
                       f"top-1 {[round(v * 100, 1) for v in r['draft_acc']]}%", flush=True)
+            if hasattr(model, "unfold"):
+                from fern.model import round_report
+                r = round_report(model, pwin, device, batch=min(micro, 16))
+                run.log("metrics.jsonl", {"kind": "rounds", **base, **r})
+                latest["round_loss"] = r["round_loss"]
+                print(f"[rounds] loss by round {[round(v, 3) for v in r['round_loss']]} | "
+                      f"top-1 {[round(v * 100, 1) for v in r['round_acc']]}%", flush=True)
             if isinstance(model, Engram):
                 snap = probes.snapshot(model, enc)
                 if hasattr(model, "belt"):

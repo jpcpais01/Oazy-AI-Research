@@ -7,6 +7,7 @@ GPT-2 small (124M) on the same text, with the same budget, by the same tests.
 |---|---|---|
 | **Engram** | learns while it reads: every block holds small memories (64 × 64 numbers) that are fixed by their own surprise at each word; no attention, fixed memory however long the text | [`engram/`](engram/) |
 | **Tide** | Engram plus a belt of drafts of the next 8 words, each cleaned up once per word as it moves towards "now" | [`tide/`](tide/) |
+| **Fern** | writes 16 words at a time, coarse to fine, in 5 rounds: where the passage is going first, then the middle, then the details; **not a next-word model**. Reads the past with Engram's memories | [`fern/`](fern/) |
 | GPT-2 | the baseline: GPT-2 small, trained here exactly like our models | [`oazy/gpt.py`](oazy/gpt.py) |
 
 **The lab** ([`oazy/`](oazy/)) is shared by every model: the data pipeline, training (same text in
@@ -17,6 +18,7 @@ OpenAI's GPT-2, and the app: a live dashboard of the models in training, plus ea
 oazy/          the lab: data.py, train.py, hellaswag.py, probes.py, compare.py, dashboard.py, web/ (the app)
 engram/        Engram: memory.py (the one rule), model.py, chat.py, tests.py
 tide/          Tide: model.py, chat.py, tests.py
+fern/          Fern: model.py, chat.py, tests.py
 runpod/        setup.sh (once per pod), train.sh <model>
 docs/RUNPOD.md how to run everything on a RunPod GPU
 ```
