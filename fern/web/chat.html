@@ -123,7 +123,7 @@ const $ = (id) => document.getElementById(id);
 const RC = [1, 2, 3, 4, 5].map((r) => getComputedStyle(document.documentElement).getPropertyValue("--r" + r).trim());
 const WHAT = ["where it's going", "the middle", "the quarters", "the eighths", "the last details"];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const vis = (w) => UI.escapeHtml(UI.pieceLabel ? UI.pieceLabel(w) : w);
+const vis = (w) => w === "<|endoftext|>" ? "¶" : UI.escapeHtml(UI.pieceLabel ? UI.pieceLabel(w) : w);
 
 async function init() {
   INFO = await (await fetch("api/info")).json();

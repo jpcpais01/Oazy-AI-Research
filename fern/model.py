@@ -58,6 +58,7 @@ class FernConfig(EngramConfig):
     unfold_heads: int = 12
     unfold_hidden: int = 2048    # width of the unfolder's per-slot layer
     shift: bool = True           # training: start the passage grid at a random place in each window
+    rope: bool = True            # the glance knows how far apart two words are (rotary positions)
 
 
 def level_of(i: int, P: int) -> int:
@@ -67,6 +68,12 @@ def level_of(i: int, P: int) -> int:
         return 0
     tz = (i & -i).bit_length() - 1          # trailing zeros
     return L - tz
+
+
+def rotary(x, cos, sin):
+    """Rotate pairs of channels by an angle proportional to the word's place (x: G, H, S, hd)."""
+    a, b = x.chunk(2, dim=-1)
+    return torch.cat([a * cos - b * sin, a * sin + b * cos], -1)
 
 
 class Glance(nn.Module):
@@ -80,8 +87,9 @@ class Glance(nn.Module):
         self.kn = RMSNorm(D // H)
         self.out = nn.Linear(D, D, bias=False)
 
-    def forward(self, x, past, mask):
-        """x (G, S, D) slots; past (G, Pp, D) reader words; mask (G, 1, S, Pp + S) bool."""
+    def forward(self, x, past, mask, rope=None):
+        """x (G, S, D) slots; past (G, Pp, D) reader words; mask (G, 1, S, Pp + S) bool.
+        rope: (cos, sin) for the Pp + S places (past words, then slots), or None."""
         G, S, D = x.shape
         H, hd = self.H, D // self.H
         q, k, v = self.qkv(x).split(D, dim=-1)
@@ -90,6 +98,10 @@ class Glance(nn.Module):
         q = self.qn(q.view(G, S, H, hd)).transpose(1, 2)
         k = self.kn(k.view(G, -1, H, hd)).transpose(1, 2)
         v = v.view(G, -1, H, hd).transpose(1, 2)
+        if rope is not None:
+            cos, sin = rope
+            q = rotary(q, cos[:, -S:].to(q.dtype), sin[:, -S:].to(q.dtype))
+            k = rotary(k, cos.to(k.dtype), sin.to(k.dtype))
         y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
         return self.out(y.transpose(1, 2).reshape(G, S, D))
 
@@ -105,8 +117,8 @@ class UnfoldBlock(nn.Module):
         self.up = nn.Linear(D, 2 * cfg.unfold_hidden, bias=False)
         self.down = nn.Linear(cfg.unfold_hidden, D, bias=False)
 
-    def forward(self, x, past, mask):
-        x = x + self.glance(self.n1(x), self.np(past), mask)
+    def forward(self, x, past, mask, rope=None):
+        x = x + self.glance(self.n1(x), self.np(past), mask, rope)
         a, b = self.up(self.n2(x)).chunk(2, dim=-1)
         return x + self.down(F.silu(a) * b)
 
@@ -148,6 +160,13 @@ class Fern(nn.Module):
         # the slot that decides each local position 1..P
         tgt = [next(s for s in range(S) if pos[s] == i and not known[s]) for i in range(1, P + 1)]
         self.register_buffer("target_slot", torch.tensor(tgt), persistent=False)
+        # places for the rotary positions: the reader's words at -P+1..0, the slots at 1..P
+        places = torch.cat([torch.arange(-P + 1, 1), torch.tensor(pos)]).float()
+        hd = D // cfg.unfold_heads
+        freq = 1.0 / (64.0 ** (torch.arange(hd // 2).float() / (hd // 2)))
+        ang = places[:, None] * freq[None]
+        self.register_buffer("rope_cos", ang.cos()[None], persistent=False)    # (1, P + S, hd / 2)
+        self.register_buffer("rope_sin", ang.sin()[None], persistent=False)
         self.register_buffer("pos_round", torch.tensor([level_of(i, P) for i in range(1, P + 1)]), persistent=False)
 
         self.apply(self._init)
@@ -219,8 +238,9 @@ class Fern(nn.Module):
         mask[..., P:] |= torch.eye(S, dtype=torch.bool, device=dev)         # a slot always sees itself
         G = B * J
         x, past, mask = x.reshape(G, S, D), past.reshape(G, P, D), mask.reshape(G, 1, S, P + S)
+        rope = (self.rope_cos, self.rope_sin) if self.cfg.rope else None
         for blk in self.unfold:
-            x = blk(x, past, mask)
+            x = blk(x, past, mask, rope)
         x = x.view(B, J, S, D)[:, :, self.target_slot]                      # (B, J, P, D) in word order
         return self.out_norm(x), base
 
