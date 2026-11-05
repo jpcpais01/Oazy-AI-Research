@@ -88,6 +88,8 @@
   .lib .blurb { color: var(--muted); font-size: 12px; margin-top: 2px; max-width: 360px; }
   .lib .num { text-align: right; }
   .lib tr.off td { opacity: .55; }
+  .lib tr.off td:last-child { opacity: 1; }
+  .showseg button { padding: 4px 10px; font-size: 12px; white-space: nowrap; }
   .libwrap { overflow-x: auto; }
   .nowhint { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
   .nowhint .t { font-weight: 600; font-size: 15px; }
@@ -247,7 +249,7 @@
 
   <div class="section-title"><h3>All our models</h3><div class="line"></div></div>
   <div class="card">
-    <div class="cardhead"><div class="titles"><h2>Model library</h2><div class="sub">Every model trained in this lab. The page shows the ones training right now; tick "show" to bring a finished one back into the charts.</div></div></div>
+    <div class="cardhead"><div class="titles"><h2>Model library</h2><div class="sub">Every model trained in this lab. The page shows the ones training right now; use "Show" to bring a finished one back. "Plots only" keeps a model's lines in the charts but hides its own cards (like Tide's drafts or Inside Engram).</div></div></div>
     <div class="libwrap"><table class="lib" id="library"></table></div>
   </div>
 </div>
@@ -282,9 +284,16 @@ function defaultShown(r) {
   const last = ours.reduce((a, b) => ((b.status?.updated || 0) > (a?.status?.updated || 0) ? b : a), null);
   return last && last.name === r.name;
 }
-const shown = (n) => { const r = RUNS.find((x) => x.name === n); if (!r) return false; return n in OVERRIDE ? OVERRIDE[n] : defaultShown(r); };
+// how a model is shown: "all" (lines in the charts + its own cards), "plots" (only its lines), "off"
+function mode(n) {
+  const r = RUNS.find((x) => x.name === n); if (!r) return "off";
+  const v = n in OVERRIDE ? OVERRIDE[n] : defaultShown(r);
+  return v === true ? "all" : v === false ? "off" : v;
+}
+const shown = (n) => mode(n) !== "off";
+const full = (n) => mode(n) === "all";
 const VIS = () => RUNS.filter((r) => shown(r.name));
-const showsKind = (k) => VIS().some((r) => kindOf(r) === k);
+const showsKind = (k) => RUNS.some((r) => kindOf(r) === k && full(r.name));    // its own cards (drafts, rounds, inside…)
 const HS_GPT2 = 0.2955;
 // HellaSwag points worth drawing: full scores, and quick checks on the evenly spread sample.
 // Runs before Nov 5 took the first 1,000 questions (easier, ~5 points too high); those are hidden.
@@ -414,14 +423,16 @@ function library() {
     const m = modelOf(r.name), st = r.status || {}, cf = r.config || {}, L = st.latest || {};
     const state = r.name === "openai-gpt2" ? "reference" : (st.state || "starting");
     const hs = L.hellaswag_full ?? L.hellaswag;
-    const on = shown(r.name);
+    const on = shown(r.name), md = mode(r.name);
+    const opts = m.role === "ours" ? [["all", "All"], ["plots", "Plots only"], ["off", "Off"]] : [["all", "Show"], ["off", "Off"]];
+    const seg = `<div class="seg showseg">${opts.map(([v, t]) => `<button data-run="${r.name}" data-mode="${v}" class="${(md === v || (v === "all" && md === "plots" && m.role !== "ours")) ? "on" : ""}">${t}</button>`).join("")}</div>`;
     return `<tr class="${on ? "" : "off"}"><td><div class="mname"><span class="chip" style="background:${m.color}"></span>${nameOf(r.name)}</div><div class="blurb">${m.blurb}</div></td>
       <td><span class="badge ${state === "reference" ? "done" : state}">${state}</span></td>
       <td class="num">${cf.params ? (cf.params / 1e6).toFixed(0) + "M" : "–"}</td>
       <td class="num">${r.name === "openai-gpt2" ? "~10B" : UI.fmtTokens(st.tokens || 0)}</td>
       <td class="num">${L.val_loss != null ? fmtL(L.val_loss) : "–"}</td>
       <td class="num">${hs != null ? pct(hs) + (L.hellaswag_full != null ? "" : "*") : "–"}</td>
-      <td><label class="check"><input type="checkbox" data-run="${r.name}" ${on ? "checked" : ""}></label></td></tr>`;
+      <td>${seg}</td></tr>`;
   }).join("");
   document.getElementById("library").innerHTML = RUNS.length ? head + rows : `<tr><td class="empty">No models trained yet.</td></tr>`;
 }
@@ -697,7 +708,7 @@ async function refresh() {
       DATA[r.name] = { metrics, samples };
     }
     draw();
-    const hasT = RUNS.some((r) => r.name === "tide") && shown("tide"), hasE = RUNS.some((r) => r.name === "engram") && shown("engram");
+    const hasT = RUNS.some((r) => r.name === "tide") && full("tide"), hasE = RUNS.some((r) => r.name === "engram") && full("engram");
     document.getElementById("tideInside").style.display = hasT ? "" : "none";
     document.getElementById("engramInside").style.display = hasE ? "" : "none";
     if (hasT) {
@@ -736,9 +747,10 @@ document.getElementById("colorBy").addEventListener("click", (e) => {
 const tSlider = document.getElementById("tSnapSlider");
 tSlider.addEventListener("input", () => { UI.syncRange(tSlider); loadTSnap(+tSlider.value); });
 document.getElementById("tRamp").style.background = UI.heatCSS();
-document.getElementById("library").addEventListener("change", (e) => {
-  const n = e.target.dataset.run; if (!n) return;
-  OVERRIDE[n] = e.target.checked;
+document.getElementById("library").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-mode]"); if (!b) return;
+  const n = b.dataset.run;
+  OVERRIDE[n] = b.dataset.mode;
   try { localStorage.setItem("oazy.show", JSON.stringify(OVERRIDE)); } catch (err) { /* private window */ }
   refresh();
 });
