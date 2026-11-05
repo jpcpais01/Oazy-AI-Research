@@ -2,7 +2,7 @@
 
 *Working name.* Still a **next-word** model, scored exactly like GPT-2 (loss, HellaSwag).
 
-Ember's body is Engram's learn-while-reading memory, unchanged (117M once fully grown, vs GPT-2's
+Ember's body is Memtrix's learn-while-reading memory, unchanged (117M once fully grown, vs GPT-2's
 124M). What changes is how it is *raised*, because the cost we want to cut is training:
 
 ```
@@ -23,7 +23,7 @@ Ember's body is Engram's learn-while-reading memory, unchanged (117M once fully 
 
 Honest expectations: each idea is known to give roughly 1.3-2x on its own (Muon ~1.35x in the
 nanoGPT speedrun, stacking ~1.5x in G_stack, distillation 1.5-3x when the mentor is clearly better).
-Together, maybe 2-4x fewer GPU-hours to reach Engram's loss. Not 1000x: no honest method gives that.
+Together, maybe 2-4x fewer GPU-hours to reach Memtrix's loss. Not 1000x: no honest method gives that.
 The mentor is GPT-2 medium, so beating GPT-2 *small* with it is a fair but assisted win (Gemma 3
 270M was trained the same way, from a bigger Gemma).
 
@@ -44,4 +44,4 @@ python3 -m oazy.train --model ember --name ember-adamw     --opt adamw
 
 Options: `--mentor gpt2-large` (stronger, ~2x the mentor cost), `--mentor-weight 0.6`,
 `--mentor-until 0.5`, `--muon-lr 0.02`, `--set grow=4:0,8:0.1,12:0.25 grow_mode=stack|quiet`.
-Chat: `python3 -m engram.chat --run ember --port 8002` (same lid-off view as Engram).
+Chat: `python3 -m memtrix.chat --run ember --port 8002` (same lid-off view as Memtrix).

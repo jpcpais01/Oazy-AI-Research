@@ -33,20 +33,29 @@ def default_dir(what: str) -> str:
     """Where the lab keeps its text ("data") and its training runs ("runs") on the pod.
 
     $OAZY_DATA / $OAZY_RUNS win; otherwise /workspace/oazy_data and /workspace/oazy_runs, except that
-    the folders from the Engram days (/workspace/oazy_data, /workspace/oazy_runs) keep being used
+    the folders from before Memtrix was renamed (/workspace/engram_data, /workspace/engram_runs) keep being used
     while they are the only ones there, so nothing has to be moved."""
     env = os.environ.get("OAZY_" + what.upper())
     if env:
         return env
-    new, old = f"/workspace/oazy_{what}", f"/workspace/engram_{what}"
+    new, old = f"/workspace/oazy_{what}", f"/workspace/engram_{what}"   # folders from before the rename to Memtrix
     return old if (os.path.exists(old) and not os.path.exists(new)) else new
+
+def run_dir(runs, name: str):
+    """A model's run folder. Memtrix was called Engram until Nov 5: its old folder (runs/engram) keeps working."""
+    from pathlib import Path
+    d = Path(runs) / name
+    old = Path(runs) / "engram"
+    return old if (name == "memtrix" and not d.exists() and old.exists()) else d
+
+
 HELLASWAG_URL = "https://raw.githubusercontent.com/rowanz/hellaswag/master/data/hellaswag_val.jsonl"
 
 
 @functools.lru_cache(maxsize=None)
 def get_tokenizer():
     import tiktoken
-    path = os.environ.get("ENGRAM_GPT2_TIKTOKEN") or os.environ.get("SETTLE_GPT2_TIKTOKEN")
+    path = os.environ.get("OAZY_GPT2_TIKTOKEN") or os.environ.get("ENGRAM_GPT2_TIKTOKEN") or os.environ.get("SETTLE_GPT2_TIKTOKEN")
     try:
         if path:
             raise RuntimeError("use the local copy")

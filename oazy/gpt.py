@@ -2,7 +2,7 @@
 
 Same architecture as OpenAI's GPT-2: learned positions, pre-norm LayerNorm blocks, causal
 self-attention (PyTorch's fused attention), tanh-GELU MLP, biases, tied input/output words.
-It is trained here on exactly the same data, with the same schedule, as Engram.
+It is trained here on exactly the same data, with the same schedule, as Memtrix.
 
 load_openai_gpt2() also loads OpenAI's own released GPT-2 124M weights into this class, so the
 published model can be measured on our validation text and on HellaSwag with the same code.

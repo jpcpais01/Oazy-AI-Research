@@ -5,10 +5,10 @@ vs three endings that are grammatical but silly. Random guessing scores 25%.
 
 A model "chooses" the ending it finds least surprising: we measure its average loss on the
 ending's tokens after reading the context and pick the lowest (the "acc_norm" scoring used by
-nanoGPT / llm.c). OpenAI's GPT-2 124M scores 29.6% this way (see engram/compare.py to measure it
+nanoGPT / llm.c). OpenAI's GPT-2 124M scores 29.6% this way (see memtrix/compare.py to measure it
 on this machine). Works for any model with the forward(idx) -> logits interface.
 
-    python -m oazy.hellaswag --ckpt /workspace/oazy_runs/engram/ckpt.pt
+    python -m oazy.hellaswag --ckpt /workspace/oazy_runs/memtrix/ckpt.pt
 """
 from __future__ import annotations
 

@@ -1,12 +1,12 @@
-"""Is the memory really used? Checks that work the same way for Engram and the GPT.
+"""Is the memory really used? Checks that work the same way for Memtrix and the GPT.
 
 context curve   the loss when the model may only use the last 4, 32, 256 or all 1,024 words. A model
                 that ignores its memory has a flat curve; the drop from 4 to 1,024 is what memory buys.
 by position     the loss of word 1-4, 4-16, ..., 256-1024 of a text: later words are easier only if
                 what was read earlier is being remembered.
 recall          a passage of 128 tokens, then the same passage again: how well is the repeat
-                predicted? (a transformer can look back and copy; Engram must have stored it)
-snapshot        (Engram only) one probe text read with the lid off: each word's surprise, trust
+                predicted? (a transformer can look back and copy; Memtrix must have stored it)
+snapshot        (Memtrix only) one probe text read with the lid off: each word's surprise, trust
                 and fade in every block, each memory's forgetting speed, and pictures of memories.
 """
 from __future__ import annotations
@@ -107,7 +107,7 @@ def token_strings(enc, ids):
 
 @torch.no_grad()
 def snapshot(model, enc, text=PROBE_TEXT):
-    """Read the probe text with the lid off (Engram only)."""
+    """Read the probe text with the lid off (Memtrix only)."""
     was = model.training
     model.eval()
     dev = model.embed.weight.device

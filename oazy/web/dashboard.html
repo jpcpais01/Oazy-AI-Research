@@ -164,7 +164,7 @@
       <div class="cardhead"><div class="titles"><h2>What memory buys</h2><div class="sub">Loss when a model may only use the last few words, versus all of them.</div></div></div>
       <details class="why"><summary>How to read this</summary><div class="body">
         <p>We cut the same texts into pieces of <b>4, 32, 256</b> words and let each model read every piece on its own, so it can only use what is inside the piece. At the right edge it reads the whole text.</p>
-        <p>A model that ignores its memory gives a <b>flat line</b>. The steeper the drop, the more it is using what it read earlier. For Engram, everything beyond the last 3 words has to come through the 64×64 memories, so a drop here is the memory at work.</p>
+        <p>A model that ignores its memory gives a <b>flat line</b>. The steeper the drop, the more it is using what it read earlier. For Memtrix, everything beyond the last 3 words has to come through the 64×64 memories, so a drop here is the memory at work.</p>
       </div></details>
       <div class="legend" id="ctxLegend" style="margin-bottom:10px"></div>
       <div class="chart"><canvas id="ctx" style="height:260px"></canvas><div class="tip" id="ctxTip"></div></div>
@@ -173,16 +173,16 @@
       <div class="cardhead"><div class="titles"><h2>Later words get easier</h2><div class="sub">Loss of words by where they sit in a text.</div></div></div>
       <details class="why"><summary>How to read this</summary><div class="body">
         <p>The first words of a text are hard to guess: nothing has been said yet. As the text goes on, a model that remembers what it read can guess better. This shows the average loss for words 1–4, 4–16, … up to 256–1,024.</p>
-        <p>The honest weak spot of a fixed-size memory would show as the Engram line <b>flattening or rising</b> at the far right while the GPT keeps going down.</p>
+        <p>The honest weak spot of a fixed-size memory would show as the Memtrix line <b>flattening or rising</b> at the far right while the GPT keeps going down.</p>
       </div></details>
       <div class="legend" id="posLegend" style="margin-bottom:10px"></div>
       <div class="chart"><canvas id="pos" style="height:260px"></canvas><div class="tip" id="posTip"></div></div>
     </div>
     <div class="card span12">
-      <div class="cardhead"><div class="titles"><h2>Exact recall</h2><div class="sub">A passage of 128 tokens, then the very same passage again: how much of the repeat does each model get exactly right? It applies to every model: Tide reads with the same kind of memories as Engram.</div></div></div>
+      <div class="cardhead"><div class="titles"><h2>Exact recall</h2><div class="sub">A passage of 128 tokens, then the very same passage again: how much of the repeat does each model get exactly right? It applies to every model: Tide reads with the same kind of memories as Memtrix.</div></div></div>
       <details class="why"><summary>Why this test?</summary><div class="body">
-        <p>This is the hardest test for a memory of fixed size. A transformer keeps every past word and can look back and copy. Engram has to have <b>stored</b> the passage in its memories as it read. The first time through, the passage is new to both models; the second time, a perfect memory gets almost every word.</p>
-        <p><b>Tide</b> is built on Engram: underneath its belt of drafts it has the very same 12 blocks of 64×64 memories, written word by word by surprise. So this test measures Tide's memory just as it does Engram's. Its drafts could even help here: once Tide recognises the repeat, its drafts of the next few words can already be right.</p>
+        <p>This is the hardest test for a memory of fixed size. A transformer keeps every past word and can look back and copy. Memtrix has to have <b>stored</b> the passage in its memories as it read. The first time through, the passage is new to both models; the second time, a perfect memory gets almost every word.</p>
+        <p><b>Tide</b> is built on Memtrix: underneath its belt of drafts it has the very same 12 blocks of 64×64 memories, written word by word by surprise. So this test measures Tide's memory just as it does Memtrix's. Its drafts could even help here: once Tide recognises the repeat, its drafts of the next few words can already be right.</p>
       </div></details>
       <div class="legend" id="recLegend" style="margin-bottom:10px"></div>
       <div class="chart"><canvas id="rec" style="height:220px"></canvas><div class="tip" id="recTip"></div></div>
@@ -208,8 +208,8 @@
   </div>
   </div>
 
-  <div id="engramInside">
-  <div class="section-title"><h3>Inside Engram's memory</h3><div class="line"></div></div>
+  <div id="memtrixInside">
+  <div class="section-title"><h3>Inside Memtrix's memory</h3><div class="line"></div></div>
   <div class="grid">
     <div class="card span12">
       <div class="cardhead">
@@ -249,7 +249,7 @@
 
   <div class="section-title"><h3>All our models</h3><div class="line"></div></div>
   <div class="card">
-    <div class="cardhead"><div class="titles"><h2>Model library</h2><div class="sub">Every model trained in this lab. The page shows the ones training right now; use "Show" to bring a finished one back. "Plots only" keeps a model's lines in the charts but hides its own cards (like Tide's drafts or Inside Engram).</div></div></div>
+    <div class="cardhead"><div class="titles"><h2>Model library</h2><div class="sub">Every model trained in this lab. The page shows the ones training right now; use "Show" to bring a finished one back. "Plots only" keeps a model's lines in the charts but hides its own cards (like Tide's drafts or Inside Memtrix).</div></div></div>
     <div class="libwrap"><table class="lib" id="library"></table></div>
   </div>
 </div>
@@ -257,14 +257,14 @@
 <script src="common.js"></script>
 <script>
 "use strict";
-const C = { engram: UI.css("--brand"), tide: UI.css("--teal"), fern: UI.css("--fern"), ember: UI.css("--ember"), fern2: UI.css("--fern2"), gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
-const NAMES = { engram: "Engram", tide: "Tide", fern: "Fern", ember: "Ember", fern2: "Fern2", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };
+const C = { memtrix: UI.css("--brand"), tide: UI.css("--teal"), fern: UI.css("--fern"), ember: UI.css("--ember"), fern2: UI.css("--fern2"), gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
+const NAMES = { memtrix: "Memtrix", tide: "Tide", fern: "Fern", ember: "Ember", fern2: "Fern2", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };
 // Every model of the lab. role: "ours" (our architectures), "baseline" (the GPT-2 we train the same way), "reference" (OpenAI's).
 const MODELS = {
-  engram: { name: "Engram", color: C.engram, role: "ours", blurb: "Learns while it reads: small memories fixed by their own surprise, word by word." },
-  tide: { name: "Tide", color: C.tide, role: "ours", blurb: "Engram plus a belt of drafts of the next 8 words, cleaned up as they arrive." },
+  memtrix: { name: "Memtrix", color: C.memtrix, role: "ours", blurb: "Learns while it reads: small memories fixed by their own surprise, word by word." },
+  tide: { name: "Tide", color: C.tide, role: "ours", blurb: "Memtrix plus a belt of drafts of the next 8 words, cleaned up as they arrive." },
   fern: { name: "Fern", color: C.fern, role: "ours", blurb: "Writes 16 words at a time, coarse to fine: where the passage is going first, then the middle, then the details. Not a next-word model." },
-  ember: { name: "Ember", color: C.ember, role: "ours", blurb: "Engram's memory, raised to learn fast: grows from 4 to 12 blocks, learns from GPT-2 medium early on, Muon optimizer." },
+  ember: { name: "Ember", color: C.ember, role: "ours", blurb: "Memtrix's memory, raised to learn fast: grows from 4 to 12 blocks, learns from GPT-2 medium early on, Muon optimizer." },
   fern2: { name: "Fern2", color: C.fern2, role: "ours", blurb: "Fern, smaller (119M) and raised the Ember way: both halves grow, the reader also learns next words from GPT-2 medium, Muon. Not a next-word model." },
   gpt: { name: NAMES.gpt, color: C.gpt, role: "baseline", blurb: "GPT-2 small (124M), trained on the same text, in the same order, with the same schedule." },
   "openai-gpt2": { name: NAMES.openai, color: C.ref, role: "reference", blurb: "OpenAI's 2019 GPT-2 small, measured with the same tests: the line to beat." },
@@ -300,7 +300,7 @@ const HS_GPT2 = 0.2955;
 // HellaSwag points worth drawing: full scores, and quick checks on the evenly spread sample.
 // Runs before Nov 5 took the first 1,000 questions (easier, ~5 points too high); those are hidden.
 const hsOK = (x) => x.kind === "hellaswag" && (x.full || x.sample === "spread" || x.n < 1000);
-let SNAPRUN = "engram", TSNAPS = [], TSNAP = null, INSIDE = "tide", RUNS = [], DATA = {}, SNAPS = [], SNAP = null, xmode = "tokens", colorBy = "surprise", POSLAB = [];
+let SNAPRUN = "memtrix", TSNAPS = [], TSNAP = null, INSIDE = "tide", RUNS = [], DATA = {}, SNAPS = [], SNAP = null, xmode = "tokens", colorBy = "surprise", POSLAB = [];
 
 const fmtL = (v) => v.toFixed(3);
 const pct = (v) => (v * 100).toFixed(1) + "%";
@@ -462,7 +462,7 @@ function scoreboard() {
   const row = (n, v, w, fmt) => `<div class="row"><span>${nameOf(n)}</span><div class="track"><div style="width:${Math.max(2, w * 100).toFixed(1)}%;background-color:${colorOf(n)}"></div></div><b>${fmt(v)}</b></div>`;
   let verdictL = "", verdictH = "";
   const target = ref(val) != null ? ["OpenAI GPT-2", ref(val)] : val.gpt != null ? [NAMES.gpt, val.gpt] : null;
-  for (const me of ["engram", "tide", "fern", "ember", "fern2"]) {
+  for (const me of ["memtrix", "tide", "fern", "ember", "fern2"]) {
     const nm = nameOf(me), br = verdictL ? "<br>" : "";
     if (val[me] != null && target) {
       const d = val[me] - target[1];
@@ -484,7 +484,7 @@ function scoreboard() {
       <div class="note">Random guessing is 25%. OpenAI GPT-2's 29.6% is the published-style score (nanoGPT scoring).</div></div>
     <div class="card score"><div class="t">Size</div><div class="big">${VIS().filter((r) => r.config?.params).map((r) => `${nameOf(r.name)} ${(r.config.params / 1e6).toFixed(0)}M`).join(" · ")}</div>
       ${VIS().filter((r) => r.config?.params).map((r) => row(r.name, r.config.params, r.config.params / 130e6, (v) => (v / 1e6).toFixed(0) + "M")).join("")}
-      <div class="note">Engram's memory of the text is a fixed ${RUNS.find((r) => r.name === "engram")?.config?.memory_numbers ? UI.fmtTokens(RUNS.find((r) => r.name === "engram").config.memory_numbers) : "590k"} numbers, however long the text. A GPT's grows with every word (18.9M numbers at 1,024 words).</div></div>`;
+      <div class="note">Memtrix's memory of the text is a fixed ${RUNS.find((r) => r.name === "memtrix")?.config?.memory_numbers ? UI.fmtTokens(RUNS.find((r) => r.name === "memtrix").config.memory_numbers) : "590k"} numbers, however long the text. A GPT's grows with every word (18.9M numbers at 1,024 words).</div></div>`;
 }
 
 function drawLearning() {
@@ -715,16 +715,16 @@ async function refresh() {
   const pill = document.getElementById("updated");
   try {
     RUNS = await getJSON("api/runs");
-    const ORDER = ["fern2", "ember", "fern", "tide", "engram", "gpt", "openai-gpt2"];
+    const ORDER = ["fern2", "ember", "fern", "tide", "memtrix", "gpt", "openai-gpt2"];
     RUNS.sort((a, b) => ORDER.indexOf(a.name) - ORDER.indexOf(b.name));
     for (const r of RUNS) {
       const [metrics, samples] = await Promise.all([getJSON(`api/run/${r.name}/metrics`), getJSON(`api/run/${r.name}/samples`)]);
       DATA[r.name] = { metrics, samples };
     }
     draw();
-    const hasT = RUNS.some((r) => r.name === "tide") && full("tide"), hasE = RUNS.some((r) => r.name === "engram") && full("engram");
+    const hasT = RUNS.some((r) => r.name === "tide") && full("tide"), hasE = RUNS.some((r) => r.name === "memtrix") && full("memtrix");
     document.getElementById("tideInside").style.display = hasT ? "" : "none";
-    document.getElementById("engramInside").style.display = hasE ? "" : "none";
+    document.getElementById("memtrixInside").style.display = hasE ? "" : "none";
     if (hasT) {
       const ts = await getJSON("api/run/tide/snapshots"), tsl = document.getElementById("tSnapSlider");
       const atEndT = +tsl.value >= TSNAPS.length - 1;

@@ -17,7 +17,7 @@ has three versions of the same thing:
   chunked()    the same maths, but 64 words at a time with matrix products (pure PyTorch, runs anywhere).
   fla          the flash-linear-attention Triton kernel for the chunked form (fastest; GPU only, optional).
 
-All three give the same answer (engram/tests.py checks this). Shapes, everywhere:
+All three give the same answer (memtrix/tests.py checks this). Shapes, everywhere:
     q, k: (B, T, H, K)   v: (B, T, H, V)   log_fade: (B, T, H) (= log a_t <= 0)   trust: (B, T, H)
     state S: (B, H, K, V)
 """
@@ -128,7 +128,7 @@ def fla_check(device) -> bool:
     if _FLA_OK is not None:
         return _FLA_OK
     _FLA_OK = False
-    if os.environ.get("ENGRAM_NO_FLA") or device.type != "cuda" or not _load_fla():
+    if (os.environ.get("OAZY_NO_FLA") or os.environ.get("ENGRAM_NO_FLA")) or device.type != "cuda" or not _load_fla():
         return False
     try:
         g = torch.Generator(device=device).manual_seed(0)
@@ -143,10 +143,10 @@ def fla_check(device) -> bool:
         err = (o.float() - ref).abs().max().item() / (ref.abs().max().item() + 1e-6)
         errS = (S.float() - Sref).abs().max().item() / (Sref.abs().max().item() + 1e-6)
         _FLA_OK = err < 0.05 and errS < 0.05
-        print(f"[engram] flash-linear-attention kernel {'OK' if _FLA_OK else 'DISAGREES, not used'} "
+        print(f"[memtrix] flash-linear-attention kernel {'OK' if _FLA_OK else 'DISAGREES, not used'} "
               f"(rel. error {err:.4f} / state {errS:.4f})", flush=True)
     except Exception as e:  # missing Triton support for this GPU, API change, ...
-        print(f"[engram] flash-linear-attention kernel unavailable ({type(e).__name__}: {str(e)[:200]}); "
+        print(f"[memtrix] flash-linear-attention kernel unavailable ({type(e).__name__}: {str(e)[:200]}); "
               "using the pure-PyTorch chunked version", flush=True)
         _FLA_OK = False
     return _FLA_OK

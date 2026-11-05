@@ -15,8 +15,8 @@ Within a round all the middles are decided together, so each one is chosen knowi
 fixed on BOTH sides of it (the past and the future of the passage). 16 words come out in 5 rounds.
 
 What a word "sees" when it is decided (and nothing else, checked by fern/tests.py):
-  * everything written before the passage, read by the READER: Engram's learn-while-reading
-    memories (engram/model.py), running over the finished text. The passage sees the reader's
+  * everything written before the passage, read by the READER: Memtrix's learn-while-reading
+    memories (memtrix/model.py), running over the finished text. The passage sees the reader's
     understanding of the last 16 words, and through its memories everything earlier (gist, not
     word for word: the memories are a fixed size however long the text is);
   * the words of the passage decided in earlier rounds (the coarser floors of the frond);
@@ -45,13 +45,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from engram.model import Block as ReaderBlock, EngramConfig, RMSNorm
+from memtrix.model import Block as ReaderBlock, MemtrixConfig, RMSNorm
 from oazy.sample import sample_logits
 
 
 @dataclass
-class FernConfig(EngramConfig):
-    # the reader (Engram blocks): d_model, n_layer, n_head, head_k, head_v, mlp_hidden, conv
+class FernConfig(MemtrixConfig):
+    # the reader (Memtrix blocks): d_model, n_layer, n_head, head_k, head_v, mlp_hidden, conv
     n_layer: int = 18           # 18 reader blocks + 6 unfolder blocks = 198M parameters
     passage: int = 16            # words per passage (a power of 2): log2(passage) + 1 rounds
     unfold_layers: int = 6       # unfolder blocks
@@ -201,7 +201,7 @@ class Fern(nn.Module):
 
     # ------------------------------------------------------------------ the two halves
     def reader(self, idx):
-        """Engram reading real words: (B, T) -> understanding after each word (B, T, D)."""
+        """Memtrix reading real words: (B, T) -> understanding after each word (B, T, D)."""
         x = self.embed(idx)
         for b in self.blocks:
             x, _ = b(x)

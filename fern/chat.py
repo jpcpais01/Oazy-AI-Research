@@ -18,7 +18,7 @@ from urllib.parse import urlparse, parse_qs
 
 import torch
 
-from engram import chat as engram_chat
+from memtrix import chat as memtrix_chat
 from oazy.data import get_tokenizer, default_dir, EOT
 from oazy.probes import token_strings
 from oazy.train import load_model
@@ -70,7 +70,7 @@ class FernBrain:
 
 
 def make_handler(brain: FernBrain):
-    Base = engram_chat.make_handler(brain)
+    Base = memtrix_chat.make_handler(brain)
 
     class H(Base):
         def do_GET(self):

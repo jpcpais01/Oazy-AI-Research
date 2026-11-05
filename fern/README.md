@@ -15,7 +15,7 @@ round 5        ●     ●     ●     ●     ●     ●     ●     ●      
 One rule, five times: **decide the middle of every stretch whose two ends are known.** All the
 middles of a round are decided together, each knowing what is fixed on both sides of it.
 
-- **Reader** (the past): 18 blocks of Engram's learn-while-reading memory over the finished text.
+- **Reader** (the past): 18 blocks of Memtrix's learn-while-reading memory over the finished text.
   Memory is fixed-size: old text is kept as gist, recent text in detail.
 - **Unfolder** (the passage): 6 blocks where the slots of a round glance at each other, at the
   earlier rounds (the coarser floors of the frond) and at the reader's last 16 words. The glance is

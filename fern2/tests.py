@@ -13,7 +13,7 @@ import argparse
 import torch
 import torch.nn.functional as F
 
-from engram.tests import check
+from memtrix.tests import check
 from ember.mentor import mentor_loss
 from fern.model import Fern, FernConfig
 from oazy.gpt import GPT, GPTConfig

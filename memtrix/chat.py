@@ -1,6 +1,6 @@
-"""Talk to a trained Engram and watch its memories change, word by word.
+"""Talk to a trained Memtrix and watch its memories change, word by word.
 
-    python -m engram.chat --port 8002     (on RunPod, see docs/RUNPOD.md for the port)
+    python -m memtrix.chat --port 8002     (on RunPod, see docs/RUNPOD.md for the port)
 
 Then open http://localhost:8001 (on RunPod: the pod's HTTP port 8001 link).
 The text is kept between messages, so the memories keep everything read so far (that is the
@@ -18,7 +18,7 @@ from urllib.parse import urlparse, parse_qs
 import torch
 import torch.nn.functional as F
 
-from oazy.data import get_tokenizer, default_dir, EOT
+from oazy.data import get_tokenizer, default_dir, run_dir, EOT
 from oazy.sample import sample_logits
 from oazy.probes import _img, token_strings
 from oazy.train import load_model
@@ -34,8 +34,8 @@ def r3(x):
 class Brain:
     def __init__(self, ckpt: Path, device):
         self.model, st = load_model(ckpt, device)
-        if st.get("kind", "engram") not in ("engram", "ember"):
-            raise SystemExit("this checkpoint is not an Engram-style model; the chat app needs an Engram or Ember checkpoint")
+        if st.get("kind", "memtrix") not in ("memtrix", "engram", "ember"):
+            raise SystemExit("this checkpoint is not a Memtrix-style model; the chat app needs a Memtrix or Ember checkpoint")
         self.cfg = self.model.cfg
         self.device = device
         self.enc = get_tokenizer()
@@ -169,12 +169,12 @@ def make_handler(brain: Brain):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt", default=None)
-    ap.add_argument("--run", default="engram", help="which run folder to open (engram or ember)")
+    ap.add_argument("--run", default="memtrix", help="which run folder to open (memtrix or ember)")
     ap.add_argument("--port", type=int, default=8001)
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--device", default=None)
     a = ap.parse_args()
-    a.ckpt = a.ckpt or f"{default_dir('runs')}/{a.run}/ckpt.pt"
+    a.ckpt = a.ckpt or str(run_dir(default_dir("runs"), "memtrix" if a.run == "engram" else a.run) / "ckpt.pt")
     device = torch.device(a.device or ("cuda" if torch.cuda.is_available() else "cpu"))
     print(f"loading {a.ckpt} on {device} ...", flush=True)
     brain = Brain(Path(a.ckpt), device)

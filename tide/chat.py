@@ -5,7 +5,7 @@
 Then open http://localhost:8001 (on RunPod: the pod's HTTP port 8001 link).
 Shows the belt of drafts (what Tide expects 1, 2, ... 8 words ahead) live, and for every word how
 it arrived: what the draft of that word looked like 8 words before, 7 words before, ... 1 word before.
-Engram's memory views (surprise per block) are kept too, since Tide reads with Engram's memories.
+Memtrix's memory views (surprise per block) are kept too, since Tide reads with Memtrix's memories.
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 
-from engram import chat as engram_chat
+from memtrix import chat as memtrix_chat
 from oazy.data import get_tokenizer, default_dir
 from oazy.probes import _img, token_strings
 from oazy.train import load_model
@@ -29,12 +29,12 @@ def r3(x):
     return [round(float(v), 3) for v in x]
 
 
-class TideBrain(engram_chat.Brain):
+class TideBrain(memtrix_chat.Brain):
     def __init__(self, ckpt: Path, device):
         import threading
         self.model, st = load_model(ckpt, device)
         if st.get("kind") != "tide":
-            raise SystemExit("this checkpoint is not a Tide; use engram.chat for Engram")
+            raise SystemExit("this checkpoint is not a Tide; use memtrix.chat for Memtrix")
         self.cfg = self.model.cfg
         self.device = device
         self.enc = get_tokenizer()
@@ -106,7 +106,7 @@ class TideBrain(engram_chat.Brain):
 
 
 def make_handler(brain):
-    Base = engram_chat.make_handler(brain)
+    Base = memtrix_chat.make_handler(brain)
 
     class H(Base):
         def do_GET(self):

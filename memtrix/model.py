@@ -1,4 +1,4 @@
-"""Engram: a language model that learns while it reads.
+"""Memtrix: a language model that learns while it reads.
 
 The whole model, following one word from arriving to the next word coming out:
 
@@ -8,7 +8,7 @@ The whole model, following one word from arriving to the next word coming out:
      goes with it"), a question ("what comes next?"), a trust level and a fade level;
   3. the block's memory (a 64 x 64 grid per head, blank at the start of every text) guesses the
      value from the key; the miss is the surprise; the memory is fixed by trust x surprise, after
-     fading a little (engram/memory.py: the one rule);
+     fading a little (memtrix/memory.py: the one rule);
   4. the question reads an answer out of the updated memory, and a small per-word layer (the MLP,
      "how to think about what was recalled") turns it into the input of the next block;
   5. after the last block, the vector is compared with every word's meaning to give the next
@@ -34,7 +34,7 @@ from . import memory
 
 
 @dataclass
-class EngramConfig:
+class MemtrixConfig:
     vocab_size: int = 50304      # GPT-2's 50257 words, padded to a multiple of 64 for speed
     max_len: int = 1024          # training context (the model itself has no length limit)
     d_model: int = 768
@@ -66,7 +66,7 @@ class RMSNorm(nn.Module):
 class Memory(nn.Module):
     """One block's memories: read a word, feel the surprise, learn from it, recall."""
 
-    def __init__(self, cfg: EngramConfig):
+    def __init__(self, cfg: MemtrixConfig):
         super().__init__()
         D, H, K, V = cfg.d_model, cfg.n_head, cfg.head_k, cfg.head_v
         self.H, self.K, self.V = H, K, V
@@ -146,7 +146,7 @@ class Memory(nn.Module):
 
 
 class MLP(nn.Module):
-    def __init__(self, cfg: EngramConfig):
+    def __init__(self, cfg: MemtrixConfig):
         super().__init__()
         self.up = nn.Linear(cfg.d_model, 2 * cfg.mlp_hidden, bias=False)
         self.down = nn.Linear(cfg.mlp_hidden, cfg.d_model, bias=False)
@@ -157,7 +157,7 @@ class MLP(nn.Module):
 
 
 class Block(nn.Module):
-    def __init__(self, cfg: EngramConfig):
+    def __init__(self, cfg: MemtrixConfig):
         super().__init__()
         self.n1 = RMSNorm(cfg.d_model)
         self.mem = Memory(cfg)
@@ -172,8 +172,8 @@ class Block(nn.Module):
         return x, state
 
 
-class Engram(nn.Module):
-    def __init__(self, cfg: EngramConfig):
+class Memtrix(nn.Module):
+    def __init__(self, cfg: MemtrixConfig):
         super().__init__()
         self.cfg = cfg
         self.embed = nn.Embedding(cfg.vocab_size, cfg.d_model)
@@ -260,3 +260,7 @@ class Engram(nn.Module):
             out.append(nxt)
             logits, states = self.read(torch.tensor([[nxt]], device=dev), states)
         return out, None
+
+
+# Memtrix was called Engram until Nov 5 2026: the old names keep working for older code.
+Engram, EngramConfig = Memtrix, MemtrixConfig

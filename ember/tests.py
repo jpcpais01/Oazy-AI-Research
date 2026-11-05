@@ -12,7 +12,7 @@ import torch.nn.functional as F
 
 from .model import Ember, EmberConfig
 from .mentor import mentor_loss
-from engram.model import Engram, EngramConfig
+from memtrix.model import Memtrix, MemtrixConfig
 from oazy.muon import straighten
 from oazy.train import make_optimizer, carry_state
 
@@ -37,8 +37,8 @@ def main():
     cfg = EmberConfig(**SMALL, grow="2:0,4:0.1,6:0.3")
     m = Ember(cfg).to(dev)
     check("starts shallow", m.depth == 2, f"depth {m.depth}")
-    full = Engram(EngramConfig(**SMALL)).num_params()
-    check("fully grown size = Engram's size", m.full_params() == full, f"{m.full_params()} vs {full}")
+    full = Memtrix(MemtrixConfig(**SMALL)).num_params()
+    check("fully grown size = Memtrix's size", m.full_params() == full, f"{m.full_params()} vs {full}")
     check("no growth before its time", not m.grow_to(0.05) and m.depth == 2)
     check("grows on time", m.grow_to(0.1) and m.depth == 4, f"depth {m.depth}")
     same = all(torch.equal(a, b) for a, b in zip(m.blocks[2].state_dict().values(), m.blocks[0].state_dict().values()))

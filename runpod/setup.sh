@@ -42,13 +42,13 @@ python3 -m pip install -q -r oazy/requirements.txt
 # the fast Triton kernels for the memory rule; pinned to the installed torch so pip never swaps it out
 TV=$(python3 -c "import torch; print(torch.__version__)")
 python3 -m pip install -q flash-linear-attention --constraint <(echo "torch==${TV}") \
-    || echo "-- flash-linear-attention did not install; Engram will use its pure-PyTorch version (slower, same maths)"
+    || echo "-- flash-linear-attention did not install; Memtrix will use its pure-PyTorch version (slower, same maths)"
 
 echo "== FineWeb-Edu (${TOKENS} tokens) -> ${DATA}"
 python3 -m oazy.data --out "${DATA}" --tokens "${TOKENS}"
 
 echo "== self-tests of every model"
-python3 -m engram.tests --device cuda
+python3 -m memtrix.tests --device cuda
 python3 -m tide.tests --device cuda
 python3 -m ember.tests --device cuda
 python3 -m fern2.tests --device cuda

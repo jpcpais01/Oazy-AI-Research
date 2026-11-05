@@ -1,15 +1,15 @@
-"""Train Engram, Tide, Fern, Ember, Fern2 or the GPT-2 baseline on FineWeb-Edu. Resumable: re-run the same command.
+"""Train Memtrix, Tide, Fern, Ember, Fern2 or the GPT-2 baseline on FineWeb-Edu. Resumable: re-run the same command.
 
-    python -m oazy.train --model engram --data /workspace/oazy_data --runs /workspace/oazy_runs
+    python -m oazy.train --model memtrix --data /workspace/oazy_data --runs /workspace/oazy_runs
     python -m oazy.train --model gpt    --data /workspace/oazy_data --runs /workspace/oazy_runs
     python -m oazy.train --bench --hours 2     # measure both models' speed; suggest a token budget
 
 Both models see exactly the same text in the same order, with the same schedule and optimizer.
 Everything the dashboard shows is written into the run folder:
   status.json     live status (step, tokens, speed, ETA, latest results)
-  metrics.jsonl   training loss, validation loss, HellaSwag, memory checks (engram/probes.py)
+  metrics.jsonl   training loss, validation loss, HellaSwag, memory checks (memtrix/probes.py)
   samples.jsonl   text written by the model as it learns
-  snapshots/      Engram only: the probe text read with the lid off
+  snapshots/      Memtrix only: the probe text read with the lid off
   ckpt.pt         checkpoint (every few minutes, on Ctrl-c and at the end)
 """
 from __future__ import annotations
@@ -26,14 +26,14 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from .data import Windows, val_set, get_tokenizer, default_dir, EOT
+from .data import Windows, val_set, get_tokenizer, default_dir, run_dir, EOT
 from .gpt import GPT, GPTConfig
-from engram.model import Engram, EngramConfig
-from engram import memory
+from memtrix.model import Memtrix, MemtrixConfig
+from memtrix import memory
 from . import hellaswag, probes
 
-KINDS = ["engram", "tide", "fern", "ember", "fern2", "gpt"]
-NICE = {"engram": "Engram", "tide": "Tide", "fern": "Fern", "ember": "Ember", "fern2": "Fern2", "gpt": "GPT"}
+KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "gpt"]
+NICE = {"memtrix": "Memtrix", "tide": "Tide", "fern": "Fern", "ember": "Ember", "fern2": "Fern2", "gpt": "GPT"}
 FAST = ("ember", "fern2")       # raised the fast way: Muon and the GPT-2 medium mentor by default
 
 
@@ -51,7 +51,7 @@ def _tide():
 
 
 def _fern():
-    from fern.model import Fern, FernConfig          # fern/ reads with Engram's memories
+    from fern.model import Fern, FernConfig          # fern/ reads with Memtrix's memories
     return Fern, FernConfig
 
 
@@ -67,7 +67,7 @@ def _fern2():
 PRESETS = {
     # a laptop-CPU test of the whole pipeline (minutes)
     "tiny": dict(
-        engram=dict(d_model=128, n_layer=4, n_head=2, head_k=64, head_v=64, mlp_hidden=256, max_len=256),
+        memtrix=dict(d_model=128, n_layer=4, n_head=2, head_k=64, head_v=64, mlp_hidden=256, max_len=256),
         gpt=dict(d_model=128, n_layer=4, n_head=2, max_len=256),
         tide=dict(refine_hidden=256, lookahead=4),
         fern=dict(n_layer=4, unfold_layers=2, unfold_heads=2, unfold_hidden=256),
@@ -79,7 +79,7 @@ PRESETS = {
     ),
     # a 1-minute smoke test of every code path
     "smoke": dict(
-        engram=dict(d_model=64, n_layer=2, n_head=1, head_k=64, head_v=64, mlp_hidden=128, max_len=128),
+        memtrix=dict(d_model=64, n_layer=2, n_head=1, head_k=64, head_v=64, mlp_hidden=128, max_len=128),
         gpt=dict(d_model=64, n_layer=2, n_head=1, max_len=128),
         tide=dict(refine_hidden=128, lookahead=4),
         fern=dict(n_layer=2, unfold_layers=1, unfold_heads=1, unfold_hidden=128),
@@ -89,16 +89,16 @@ PRESETS = {
         eval_every=20_000, probe_every=30_000, hs_every=30_000, sample_every=30_000,
         val_windows=16, hs_quick=20, sample_len=10,
     ),
-    # GPT-2 small size (Engram 117M vs GPT-2 124M), ~2 h for both models on one B200 (check with --bench)
+    # GPT-2 small size (Memtrix 117M vs GPT-2 124M), ~2 h for both models on one B200 (check with --bench)
     "full": dict(
-        engram=dict(), gpt=dict(), micro_fern2=16,
+        memtrix=dict(), gpt=dict(), micro_fern2=16,
         micro=32, accum=8, lr=1.2e-3, warmup=400, tokens=2_000_000_000,
         eval_every=50_000_000, probe_every=250_000_000, hs_every=250_000_000, sample_every=250_000_000,
         val_windows=128, hs_quick=1000, sample_len=120,
     ),
     # the same models, 2.5x the text (e.g. a 2 x B200 pod for ~2.5 h, one model per GPU)
     "big": dict(
-        engram=dict(), gpt=dict(), micro_fern2=16,
+        memtrix=dict(), gpt=dict(), micro_fern2=16,
         micro=32, accum=8, lr=1.2e-3, warmup=600, tokens=5_000_000_000,
         eval_every=100_000_000, probe_every=500_000_000, hs_every=500_000_000, sample_every=500_000_000,
         val_windows=128, hs_quick=1000, sample_len=120,
@@ -121,24 +121,24 @@ def parse_overrides(items):
 
 def build(kind, preset, overrides=None):
     p = PRESETS[preset]
-    if kind == "engram":
-        cfg = EngramConfig(**{**p["engram"], **(overrides or {})})
-        return Engram(cfg), cfg
+    if kind == "memtrix":
+        cfg = MemtrixConfig(**{**p["memtrix"], **(overrides or {})})
+        return Memtrix(cfg), cfg
     if kind == "tide":
         Tide, TideConfig = _tide()
-        cfg = TideConfig(**{**p["engram"], **p.get("tide", {}), **(overrides or {})})
+        cfg = TideConfig(**{**p["memtrix"], **p.get("tide", {}), **(overrides or {})})
         return Tide(cfg), cfg
     if kind == "fern":
         Fern, FernConfig = _fern()
-        cfg = FernConfig(**{**p["engram"], **p.get("fern", {}), **(overrides or {})})
+        cfg = FernConfig(**{**p["memtrix"], **p.get("fern", {}), **(overrides or {})})
         return Fern(cfg), cfg
     if kind == "ember":
         Ember, EmberConfig = _ember()
-        cfg = EmberConfig(**{**p["engram"], **p.get("ember", {}), **(overrides or {})})
+        cfg = EmberConfig(**{**p["memtrix"], **p.get("ember", {}), **(overrides or {})})
         return Ember(cfg), cfg
     if kind == "fern2":
         Fern2, Fern2Config = _fern2()
-        cfg = Fern2Config(**{**p["engram"], **p.get("fern2", {}), **(overrides or {})})
+        cfg = Fern2Config(**{**p["memtrix"], **p.get("fern2", {}), **(overrides or {})})
         return Fern2(cfg), cfg
     cfg = GPTConfig(**{**p["gpt"], **(overrides or {})})
     return GPT(cfg), cfg
@@ -146,9 +146,11 @@ def build(kind, preset, overrides=None):
 
 def load_model(ckpt: Path, device):
     st = torch.load(ckpt, map_location="cpu", weights_only=False)
-    kind = st.get("kind", "engram")
-    if kind == "engram":
-        model = Engram(EngramConfig.from_dict(st["config"]))
+    kind = st.get("kind", "memtrix")
+    if kind == "engram":                      # Memtrix's name before Nov 5
+        kind = st["kind"] = "memtrix"
+    if kind == "memtrix":
+        model = Memtrix(MemtrixConfig.from_dict(st["config"]))
     elif kind == "tide":
         Tide, TideConfig = _tide()
         model = Tide(TideConfig.from_dict(st["config"]))
@@ -270,7 +272,7 @@ def bench(args, device):
     micro = args.micro or p.get("micro_" + args.model, p["micro"])
     total = int(args.tokens or p["tokens"])
     speeds = {}
-    kinds = [args.model, "gpt"] if args.model != "gpt" else ["engram", "gpt"]
+    kinds = [args.model, "gpt"] if args.model != "gpt" else ["memtrix", "gpt"]
     for kind in kinds:
         model, cfg = build(kind, args.preset, parse_overrides(args.set) if kind != "gpt" else None)
         if hasattr(model, "grow_to"):
@@ -323,7 +325,7 @@ def bench(args, device):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", choices=KINDS, default="engram")
+    ap.add_argument("--model", choices=KINDS + ["engram"], default="memtrix")
     ap.add_argument("--preset", choices=list(PRESETS), default="full")
     ap.add_argument("--data", default=None)
     ap.add_argument("--runs", default=None)
@@ -349,6 +351,8 @@ def main():
                     help="change a model setting, e.g. --set n_layer=8 (applies to the model being trained)")
     args = ap.parse_args()
     args.data, args.runs = args.data or default_dir("data"), args.runs or default_dir("runs")
+    if args.model == "engram":                # the old name of Memtrix
+        args.model = "memtrix"
 
     device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
     if device.type == "cuda":
@@ -360,7 +364,7 @@ def main():
     p = PRESETS[args.preset]
     lr = args.lr or p["lr"]
     total = int(args.tokens or p["tokens"])
-    run = Run(Path(args.runs) / (args.name or args.model))
+    run = Run(run_dir(args.runs, args.name or args.model))
     data = Path(args.data)
     enc = get_tokenizer()
 
@@ -489,7 +493,7 @@ def main():
                 latest["round_loss"] = r["round_loss"]
                 say(f"[rounds] loss by round {[round(v, 3) for v in r['round_loss']]} | "
                       f"top-1 {[round(v * 100, 1) for v in r['round_acc']]}%", flush=True)
-            if isinstance(model, Engram):
+            if isinstance(model, Memtrix):
                 snap = probes.snapshot(model, enc)
                 if hasattr(model, "belt"):
                     from tide.model import foresight

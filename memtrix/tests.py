@@ -1,8 +1,8 @@
 """Self-tests: the three versions of the memory rule agree, no peeking at future words,
 and writing word by word gives exactly what training sees.
 
-    python -m engram.tests            (CPU)
-    python -m engram.tests --device cuda
+    python -m memtrix.tests            (CPU)
+    python -m memtrix.tests --device cuda
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import torch
 import torch.nn.functional as F
 
 from . import memory
-from .model import Engram, EngramConfig
+from .model import Memtrix, MemtrixConfig
 from oazy.gpt import GPT, GPTConfig
 
 
@@ -37,7 +37,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", default="cpu")
     dev = torch.device(ap.parse_args().device)
-    print(f"Engram self-tests on {dev}")
+    print(f"Memtrix self-tests on {dev}")
 
     q, k, v, lf, tr, S0 = rand_inputs(dev)
     o1, S1, s1 = memory.recurrent(q, k, v, lf, tr, S0, return_surprise=True)
@@ -63,8 +63,8 @@ def main():
             print("  --   flash-linear-attention kernel not used (the pure-PyTorch version will run)")
 
     torch.manual_seed(0)
-    cfg = EngramConfig(vocab_size=300, d_model=64, n_layer=3, n_head=2, head_k=32, head_v=32, mlp_hidden=96, max_len=96)
-    m = Engram(cfg).to(dev).eval()
+    cfg = MemtrixConfig(vocab_size=300, d_model=64, n_layer=3, n_head=2, head_k=32, head_v=32, mlp_hidden=96, max_len=96)
+    m = Memtrix(cfg).to(dev).eval()
     x = torch.randint(0, 300, (2, 96), device=dev)
     with torch.no_grad():
         l1 = m(x)[0].float()

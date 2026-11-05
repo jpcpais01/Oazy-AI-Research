@@ -3,7 +3,7 @@
 #
 #   bash runpod/train.sh tide                       # train Tide
 #   bash runpod/train.sh fern --tokens 2e9          # train Fern (writes passages coarse to fine)
-#   bash runpod/train.sh engram --tokens 2e9        # extra arguments go to the trainer
+#   bash runpod/train.sh memtrix --tokens 2e9        # extra arguments go to the trainer
 #   bash runpod/train.sh tide --gpt                 # also train the GPT-2 baseline next to it
 #   bash runpod/train.sh ember --tokens 2e9         # Ember (grows, learns from GPT-2 medium, Muon)
 #   bash runpod/train.sh fern2 --tokens 2e9         # Fern2 (Fern, smaller, raised the Ember way)
@@ -11,13 +11,14 @@
 # Each model gets its own tmux window; the app (dashboard, port 8000) gets one too, and OpenAI's
 # GPT-2 is measured once as the reference line. Running it again for another model adds that model.
 # Re-running after a stop or a pod restart resumes from the checkpoint.
-#   OAZY_GPU=1 bash runpod/train.sh engram          # put the model on GPU 1
+#   OAZY_GPU=1 bash runpod/train.sh memtrix          # put the model on GPU 1
 # Watch:  tmux attach -t oazy     (Ctrl-b then a window number to switch, Ctrl-b then d to leave)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 REPO="$(pwd)"
 MODEL="${1:-}"
-case "$MODEL" in engram|tide|fern|ember|fern2|gpt) shift ;; *) echo "usage: bash runpod/train.sh engram|tide|fern|ember|fern2|gpt [--gpt] [trainer options]"; exit 1 ;; esac
+[ "$MODEL" = engram ] && MODEL=memtrix          # Memtrix's old name
+case "$MODEL" in memtrix|tide|fern|ember|fern2|gpt) shift ;; *) echo "usage: bash runpod/train.sh memtrix|tide|fern|ember|fern2|gpt [--gpt] [trainer options]"; exit 1 ;; esac
 WITH_GPT=0
 ARGS=()
 for a in "$@"; do if [ "$a" = "--gpt" ]; then WITH_GPT=1; else ARGS+=("$a"); fi; done

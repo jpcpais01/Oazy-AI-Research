@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Oazy AI Research · Watch Engram remember</title>
+<title>Oazy AI Research · Watch Memtrix remember</title>
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="stylesheet" href="style.css">
 <style>
@@ -65,7 +65,7 @@
 <body>
 <header class="topbar"><div class="inner">
   <div class="brand"><img class="logo" src="icon.svg" alt="">
-    <h1>Oazy AI Research <span class="tag">Watch Engram remember</span></h1></div>
+    <h1>Oazy AI Research <span class="tag">Watch Memtrix remember</span></h1></div>
   <div class="spacer"></div>
   <div class="pills" id="pills"></div>
   <button class="btn" id="reset" title="Wipe the memories and start a new text"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 8a5 5 0 1 0 1.6-3.7"/><path d="M3 2.5v3h3"/></svg>New text</button>
@@ -75,16 +75,16 @@
   <div class="grid">
     <div class="card span7">
       <div class="cardhead">
-        <div class="titles"><h2>The text so far</h2><div class="sub">Your words in white, Engram's in light blue. Each word is shaded by how much it surprised the memories.</div></div>
+        <div class="titles"><h2>The text so far</h2><div class="sub">Your words in white, Memtrix's in light blue. Each word is shaded by how much it surprised the memories.</div></div>
         <div class="tools"><div class="seg" id="colorBy"><button data-c="surprise" class="on">Memory surprise</button><button data-c="p">Word surprise</button><button data-c="none">Plain</button></div><span class="status" id="status"><span class="dot"></span><span>ready</span></span></div>
       </div>
-      <details class="why"><summary>How does Engram read?</summary><div class="body">
-        <p>Engram never looks back at the text. Every block holds a few small <b>memories</b> (grids of 64 × 64 numbers), blank when a text starts. For each word, every memory <b>guesses</b> what goes with it, compares with the truth, and is <b>fixed by its surprise</b>. Then it is asked "what comes next?" and answers from the updated memory.</p>
+      <details class="why"><summary>How does Memtrix read?</summary><div class="body">
+        <p>Memtrix never looks back at the text. Every block holds a few small <b>memories</b> (grids of 64 × 64 numbers), blank when a text starts. For each word, every memory <b>guesses</b> what goes with it, compares with the truth, and is <b>fixed by its surprise</b>. Then it is asked "what comes next?" and answers from the updated memory.</p>
         <p><b>Memory surprise</b> shades each word by how wrong the memories' guesses were (bright = new to them). <b>Word surprise</b> shades by how unlikely the model thought the word was. Click any word to inspect it. The text continues between messages; <b>New text</b> wipes the memories.</p>
       </div></details>
-      <div class="story" id="story"><div class="hint">Type the start of a text below and press <b>Continue</b>. Try writing a fact early on ("My cat is called Pepper.") and see whether Engram can use it later.</div></div>
+      <div class="story" id="story"><div class="hint">Type the start of a text below and press <b>Continue</b>. Try writing a fact early on ("My cat is called Pepper.") and see whether Memtrix can use it later.</div></div>
       <div class="composer">
-        <textarea id="input" placeholder="Write the beginning, or leave it empty to let Engram carry on…" rows="2"></textarea>
+        <textarea id="input" placeholder="Write the beginning, or leave it empty to let Memtrix carry on…" rows="2"></textarea>
         <div class="row"><span class="small muted">Enter to send · Shift+Enter for a new line</span><div class="spacer"></div>
           <button class="btn ghost" id="stop" disabled>Stop</button><button class="btn primary" id="go">Continue</button></div>
       </div>

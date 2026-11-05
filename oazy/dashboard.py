@@ -13,6 +13,8 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, unquote
 
+from .data import run_dir
+
 WEB = Path(__file__).parent / "web"
 
 
@@ -67,11 +69,16 @@ def make_handler(runs: Path, web: Path = WEB):
                 if runs.exists():
                     for d in sorted(runs.iterdir()):
                         if d.is_dir() and (d / "config.json").exists():
-                            out.append({"name": d.name, "config": read_json(d / "config.json"),
+                            name = d.name
+                            if name == "engram":                  # Memtrix's folder from before the rename
+                                if (runs / "memtrix").exists():
+                                    continue
+                                name = "memtrix"
+                            out.append({"name": name, "config": read_json(d / "config.json"),
                                         "status": read_json(d / "status.json")})
                 return self.js(out)
             if len(parts) >= 4 and parts[:2] == ["api", "run"]:
-                d = runs / parts[2]
+                d = run_dir(runs, parts[2])
                 if ".." in parts[2] or not d.is_dir():
                     return self.send(404, b"{}")
                 what = parts[3]
@@ -92,7 +99,7 @@ def make_handler(runs: Path, web: Path = WEB):
             parts = [p for p in unquote(urlparse(self.path).path).split("/") if p]
             if len(parts) != 4 or parts[:2] != ["api", "run"] or parts[3] != "control" or ".." in parts[2]:
                 return self.send(404, b"{}")
-            d = runs / parts[2]
+            d = run_dir(runs, parts[2])
             st = read_json(d / "status.json") or {}
             try:
                 n = int(self.headers.get("Content-Length") or 0)

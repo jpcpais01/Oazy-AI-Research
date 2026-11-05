@@ -1,8 +1,8 @@
 """Ember: a mind raised to learn fast.
 
 Ember is still a NEXT-WORD model: it reads text and guesses the very next word, exactly like GPT-2
-and Engram, and it is scored the same way (loss, HellaSwag). Its body is Engram's learn-while-reading
-memory (engram/model.py). What is new is how it grows up, because the cost we care about now is
+and Memtrix, and it is scored the same way (loss, HellaSwag). Its body is Memtrix's learn-while-reading
+memory (memtrix/model.py). What is new is how it grows up, because the cost we care about now is
 *training*, not running. Three ideas, each borrowed from how brains develop:
 
   1. It grows, like a child's brain.  Ember starts only 4 blocks deep. Early on, a model only learns
@@ -21,7 +21,7 @@ memory (engram/model.py). What is new is how it grows up, because the cost we ca
   3. It learns evenly (Muon).  Its weight grids are updated so that every direction moves the same
      amount, so weak skills catch up with strong ones (oazy/muon.py).
 
-Each idea is switchable, so their gains can be measured one by one against Engram (same body):
+Each idea is switchable, so their gains can be measured one by one against Memtrix (same body):
   --set grow=12:0      never grow (start at full depth)
   --mentor none        no mentor
   --opt adamw          AdamW instead of Muon
@@ -35,11 +35,11 @@ from dataclasses import dataclass
 import torch
 import torch.nn as nn
 
-from engram.model import Engram, EngramConfig, sample_logits  # noqa: F401  (sample_logits re-exported)
+from memtrix.model import Memtrix, MemtrixConfig, sample_logits  # noqa: F401  (sample_logits re-exported)
 
 
 @dataclass
-class EmberConfig(EngramConfig):
+class EmberConfig(MemtrixConfig):
     # depth plan, "depth:when" (fraction of training tokens); the last depth must be n_layer
     grow: str = "4:0,8:0.1,12:0.25"
     grow_mode: str = "stack"     # "stack": copies act at once; "quiet": copies start silent (their outputs zeroed)
@@ -90,9 +90,9 @@ def _quiet_reader(b):
         nn.init.zeros_(b.mlp.down.weight)
 
 
-class Ember(Engram):
+class Ember(Memtrix):
     def __init__(self, cfg: EmberConfig):
-        super().__init__(cfg)                       # builds all n_layer blocks (same init as Engram) ...
+        super().__init__(cfg)                       # builds all n_layer blocks (same init as Memtrix) ...
         self._block_params = sum(p.numel() for p in self.blocks[0].parameters())
         d0 = depth_plan(cfg)[0][1]
         self.blocks = nn.ModuleList(list(self.blocks)[:d0])     # ... and keeps only the first few

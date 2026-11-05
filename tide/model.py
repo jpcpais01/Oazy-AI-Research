@@ -12,7 +12,7 @@ Every time a real word is read:
   1. the belt moves one place towards now: what was the draft of "3 words ahead" is now the draft
      of "2 words ahead", and a blank thought joins at the far end;
   2. every slot gets one clean-up step (the refiner), from the far end to the front. The clean-up
-     sees three things: the slot's own draft, what has been read so far (Engram's memory, below),
+     sees three things: the slot's own draft, what has been read so far (Memtrix's memory, below),
      and the drafts queued behind it (the further future, already cleaned this step);
   3. the front slot is the next-word guess.
 
@@ -24,7 +24,7 @@ Every slot is trained against the real word it is drafting (slot d at word t aga
 the drafts cannot drift into meaningless states: they must become guesses of the future.
 
 Context ("what it remembers"), all fixed-size whatever the text length, no attention:
-  long past   Engram's 12 x 12 learn-while-reading memories (engram/model.py), the backbone;
+  long past   Memtrix's 12 x 12 learn-while-reading memories (memtrix/model.py), the backbone;
   near past   the same memories' fast-fading heads, plus a 4-word convolution;
   near future the belt of 8 drafts.
 
@@ -41,11 +41,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from engram.model import Engram, EngramConfig, RMSNorm, sample_logits  # noqa: F401  (sample_logits re-exported)
+from memtrix.model import Memtrix, MemtrixConfig, RMSNorm, sample_logits  # noqa: F401  (sample_logits re-exported)
 
 
 @dataclass
-class TideConfig(EngramConfig):
+class TideConfig(MemtrixConfig):
     lookahead: int = 8           # K: how many words ahead the belt drafts
     refine_hidden: int = 1536    # width of the clean-up network (one network, shared by all slots)
     draft_weight: float = 0.1    # how much the far drafts' own guesses count in training (0 = free, wordless drafts)
@@ -76,7 +76,7 @@ class Refiner(nn.Module):
         return u + self.down(F.silu(a) * b)
 
 
-class Tide(Engram):
+class Tide(Memtrix):
     def __init__(self, cfg: TideConfig):
         super().__init__(cfg)
         K, D = cfg.lookahead, cfg.d_model
@@ -95,7 +95,7 @@ class Tide(Engram):
 
     # ------------------------------------------------------------------ pieces
     def backbone(self, idx, states=None):
-        """Engram reading the real words. Returns (normalised context per word, new block states)."""
+        """Memtrix reading the real words. Returns (normalised context per word, new block states)."""
         x = self.embed(idx)
         states = states or [None] * len(self.blocks)
         new = []
@@ -181,7 +181,7 @@ class Tide(Engram):
 
     @torch.no_grad()
     def inspect(self, idx, states=None):
-        """Engram's lid-off view of the backbone (for the dashboard snapshot); logits are Tide's own."""
+        """Memtrix's lid-off view of the backbone (for the dashboard snapshot); logits are Tide's own."""
         blocks, prev = states[:2] if states is not None else (None, None)
         x = self.embed(idx)
         blocks = blocks or [None] * len(self.blocks)

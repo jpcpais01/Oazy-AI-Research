@@ -41,7 +41,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from engram.model import RMSNorm
+from memtrix.model import RMSNorm
 from ember.model import parse_plan, depth_at, grow_stack, stack_depth_in, _quiet_reader
 from fern.model import Fern, FernConfig
 

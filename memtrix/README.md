@@ -1,4 +1,4 @@
-# Engram: a language model that learns while it reads
+# Memtrix: a language model that learns while it reads
 
 *Working name. Alternatives: Imprint, Hebb, Plastic.*
 
@@ -26,7 +26,7 @@ grow, and are the *only* way information travels more than 3 words (no attention
 so the model cannot route around its memory.
 
 * `memory.py` the rule, three ways: word by word (reference), chunked PyTorch, fla Triton kernel; tested equal.
-* `model.py` Engram (117M at GPT-2 small width/depth), `gpt.py` GPT-2 small baseline (124M) + OpenAI weights loader.
+* `model.py` Memtrix (117M at GPT-2 small width/depth), `gpt.py` GPT-2 small baseline (124M) + OpenAI weights loader.
 * `data.py` FineWeb-Edu → tokens; `train.py` training (same data order and schedule for both models).
 * `probes.py` "is the memory used?" checks: context curve, loss by position, exact recall of a repeated passage.
 * `hellaswag.py`, `compare.py` (measures OpenAI GPT-2), `dashboard.py`, `chat.py`, `tests.py`, `synth.py` (CPU toy data).
