@@ -45,11 +45,14 @@ class Block(nn.Module):
         self.fc = nn.Linear(d, 4 * d)
         self.out = nn.Linear(4 * d, d)
 
-    def forward(self, x):
+    def forward(self, x, mask=None):
         B, T, D = x.shape
         q, k, v = self.qkv(self.ln1(x)).split(D, dim=2)
         q, k, v = (t.view(B, T, self.n_head, D // self.n_head).transpose(1, 2) for t in (q, k, v))
-        y = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+        if mask is None:
+            y = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+        else:                                      # (B, 1, T, T) bool: which earlier words may be seen (same document)
+            y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
         x = x + self.proj(y.transpose(1, 2).reshape(B, T, D))
         return x + self.out(F.gelu(self.fc(self.ln2(x)), approximate="tanh"))
 
@@ -83,12 +86,19 @@ class GPT(nn.Module):
     def enable_compile(self):
         self._compiled = torch.compile(self._body)
 
-    def _body(self, idx):
+    def hidden(self, idx, mask=None):
+        """The token vectors before the word table (mentor use: the scores are formed in pieces, oazy/lmloss.py)."""
         T = idx.shape[1]
         x = self.embed(idx) + self.pos(torch.arange(T, device=idx.device))
         for b in self.blocks:
-            x = b(x)
-        return F.linear(self.ln_f(x), self.embed.weight)
+            x = b(x, mask)
+        return self.ln_f(x)
+
+    def head_weight(self):
+        return self.embed.weight
+
+    def _body(self, idx):
+        return F.linear(self.hidden(idx), self.embed.weight)
 
     def forward(self, idx, targets=None):
         logits = (self._compiled or self._body)(idx)

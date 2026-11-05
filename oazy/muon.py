@@ -10,6 +10,10 @@ reached GPT-2's loss with ~1.35x fewer tokens than AdamW, at almost no extra cos
 Muon is only for the 2-D weight grids inside the blocks. Word embeddings, norms, the memories'
 trust/fade knobs and other small parameters stay on AdamW (that is what Combined is for).
 
+Weight decay (Bee3: 0.1) pulls every grid a little towards zero each step, measured on AdamW's
+learning-rate scale so that "0.1" means what it means for AdamW. Moonshot's Moonlight and Kimi K2
+found Muon needs it on long runs: without it the grids drift large and lose precision in bf16.
+
 Reference: Keller Jordan et al., "Muon: an optimizer for hidden layers" (2024).
 """
 from __future__ import annotations
@@ -56,8 +60,8 @@ class Muon(torch.optim.Optimizer):
                 parts = u.split(p.muon_split, dim=0) if getattr(p, "muon_split", None) else [u]
                 u = torch.cat([straighten(x, g["ns_steps"]) * max(1.0, x.size(0) / x.size(1)) ** 0.5
                                for x in parts], dim=0)
-                if g["weight_decay"]:
-                    p.mul_(1 - g["lr"] * g["weight_decay"])
+                if g["weight_decay"]:       # on AdamW's scale: the group's lr_scale is Muon's rate over the AdamW rate
+                    p.mul_(1 - g["lr"] / g.get("lr_scale", 1.0) * g["weight_decay"])
                 p.add_(u, alpha=-g["lr"])
 
 

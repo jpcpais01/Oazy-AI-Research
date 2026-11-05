@@ -76,14 +76,16 @@ def evaluate(model, path: Path, device, limit: int | None = None, batch_examples
                 logits = model._body(x)          # uncompiled: these shapes change every batch
         loss = F.cross_entropy(logits[:, :-1].float().reshape(-1, logits.size(-1)), x[:, 1:].reshape(-1),
                                reduction="none").view(len(seqs), L - 1)
-        tot = (loss * mask).sum(1).view(-1, 4)
-        avg = tot / mask.sum(1).view(-1, 4)
-        chars = torch.tensor([[len(" " + e) for e in ex["endings"]] for ex in rows[b0:b0 + batch_examples]],
-                             device=device, dtype=torch.float32)
-        labels = torch.tensor([lab for _, _, lab in exs], device=device)
-        correct_char += int(((tot / chars).argmin(1) == labels).sum())
-        correct_norm += int((avg.argmin(1) == labels).sum())
-        correct += int((tot.argmin(1) == labels).sum())
+        tot_rows, cnt_rows = (loss * mask).sum(1), mask.sum(1)
+        i = 0                                             # an example may have any number of endings (ARC: 3-5, PIQA: 2)
+        for (_, ends, lab), ex in zip(exs, rows[b0:b0 + batch_examples]):
+            k = len(ends)
+            t = tot_rows[i:i + k]
+            chars = torch.tensor([len(" " + e) for e in ex["endings"]], device=device, dtype=torch.float32)
+            correct += int(t.argmin() == lab)
+            correct_norm += int((t / cnt_rows[i:i + k]).argmin() == lab)
+            correct_char += int((t / chars).argmin() == lab)
+            i += k
     if was_training:
         model.train()
     n = len(rows)

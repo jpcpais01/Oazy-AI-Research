@@ -36,13 +36,83 @@ class Mentor:
             self.net = self.net.to(torch.bfloat16)
             if compile:
                 self.net.enable_compile()
+                self._hidden_compiled = torch.compile(self.net.hidden)
         for p in self.net.parameters():
             p.requires_grad_(False)
 
     anchor = None          # (progress, weight): fade from here instead of from the start (a run made shorter)
+    floor = 0.0            # the share it keeps after `until` (Bee3: 0.25), ...
+    off = 0.0              # ... fading to 0 over this last fraction of the run (Bee3: 0.1)
+    _hidden_compiled = None
+    _mask_form = None      # how this mentor takes a per-document mask: "bool", "float" or "none" (checked once)
 
     def weight_at(self, progress: float) -> float:
-        return fade(progress, self.w0, self.until, self.anchor)
+        return fade(progress, self.w0, self.until, self.anchor, self.floor, self.off)
+
+    # ------------------------------------------------------------- the fused way: token vectors + word table
+    def head_weight(self):
+        return self.net.head_weight()
+
+    def hidden(self, x, mask=None):
+        """The mentor's token vectors (B, T, Dt) and its word table (Vt, Dt): the student forms both sets of
+        scores slice by slice (oazy/lmloss.py) instead of receiving 49,152 scores per token.
+        mask: (B, 1, T, T) bool, which earlier words each word may see (same document), or None."""
+        if mask is not None:
+            form = self._mask_check(x.device)
+            if form == "none":
+                mask = None
+            elif form == "float":
+                mask = torch.zeros(mask.shape, dtype=torch.bfloat16 if x.is_cuda else torch.float32,
+                                   device=x.device).masked_fill(~mask, torch.finfo(torch.float32).min)
+        L = self.net.cfg.max_len
+        f = self._hidden_compiled if self._hidden_compiled is not None else self.net.hidden
+        try:
+            h = self._pieces(f, x, mask, L)
+        except Exception as e:
+            if self._hidden_compiled is None:
+                raise
+            print(f"[mentor] torch.compile failed ({type(e).__name__}: {e}); the mentor reads uncompiled", flush=True)
+            self._hidden_compiled = None
+            h = self._pieces(self.net.hidden, x, mask, L)
+        return h, self.head_weight()
+
+    @staticmethod
+    def _pieces(f, x, mask, L):
+        if x.shape[1] <= L:
+            return f(x, mask)
+        return torch.cat([f(x[:, i:i + L], None if mask is None else mask[:, :, i:i + L, i:i + L])
+                          for i in range(0, x.shape[1], L)], dim=1)
+
+    @torch.no_grad()
+    def _mask_check(self, device):
+        """Does this mentor honour a per-document mask? Two short texts packed in one window must read exactly
+        as they do apart. Tried as a bool mask, then as 0/-inf; if neither works the mentor reads unmasked."""
+        if self._mask_form is not None:
+            return self._mask_form
+        g = torch.Generator(device="cpu").manual_seed(0)
+        V = int(self.head_weight().shape[0])
+        a, b = (torch.randint(1, min(V, 1000), (1, 12), generator=g).to(device) for _ in range(2))
+        apart = self.net.hidden(b, None).float()
+        both = torch.cat([a, b], 1)
+        T = both.shape[1]
+        doc = torch.cat([torch.zeros(12), torch.ones(12)]).to(device)
+        m = (doc[None, None, :, None] == doc[None, None, None, :]) & torch.ones(T, T, dtype=torch.bool, device=device).tril()
+        forms = {"bool": m, "float": torch.zeros(m.shape, dtype=apart.dtype if device.type != "cuda" else torch.bfloat16,
+                                                 device=device).masked_fill(~m, torch.finfo(torch.float32).min)}
+        for name, mk in forms.items():
+            try:
+                h = self.net.hidden(both, mk).float()[:, 12:]
+            except Exception:
+                continue
+            err = (h - apart).abs().max().item() / (apart.abs().max().item() + 1e-6)
+            if err < 2e-2:
+                self._mask_form = name
+                print(f"[mentor] {self.name} reads each document on its own (mask form: {name}, rel. error {err:.4f})", flush=True)
+                return name
+        self._mask_form = "none"
+        print(f"[mentor] {self.name} does not take a per-document mask here: it reads whole windows "
+              f"(a little bleed from the previous document into its first guesses)", flush=True)
+        return "none"
 
     @torch.no_grad()
     def guess(self, x):
@@ -63,18 +133,28 @@ class Mentor:
         return torch.cat([f(x[:, i:i + L]) for i in range(0, x.shape[1], L)], dim=1)
 
 
-def fade(progress, w0, until, anchor=None):
-    """The mentor's share of the lesson: from w0 at the start down to 0 at `until` (fraction of the run).
-    anchor=(p0, w): the run's length was changed at progress p0, when the share was w: from there it
-    fades straight from w to 0 at `until` of the new length, so it never jumps."""
+def fade(progress, w0, until, anchor=None, floor=0.0, off=0.0):
+    """The mentor's share of the lesson: from w0 at the start down to `floor` at `until` (fraction of the
+    run), held there, then down to 0 over the last `off` of the run. With floor = off = 0 (Bee0.2B, Bee2)
+    that is a straight fade from w0 to 0 at `until`, after which the mentor is not run at all. Bee3 keeps
+    it the whole way (floor 0.25, off 0.1): its lesson never runs dry for a 200M student.
+    anchor=(p0, w): the run's length was changed at progress p0, when the share was w: the first fade
+    goes straight from w to the floor at `until` of the new length, so it never jumps."""
     if until <= 0:
         return 0.0
     if anchor is not None:
         p0, w = anchor
-        if progress >= until or until <= p0:
-            return 0.0
-        return max(0.0, w * (1 - max(0.0, progress - p0) / (until - p0)))
-    return max(0.0, w0 * (1 - progress / until))
+        if until <= p0:
+            share = floor
+        elif progress >= until:
+            share = floor
+        else:
+            share = floor + max(0.0, (w - floor) * (1 - max(0.0, progress - p0) / (until - p0)))
+    else:
+        share = floor + max(0.0, (w0 - floor) * (1 - min(progress, until) / until))
+    if off > 0 and progress > 1 - off:
+        share *= max(0.0, (1 - progress) / off)
+    return max(0.0, share)
 
 
 SMOL = {"smollm2-135m": "HuggingFaceTB/SmolLM2-135M", "smollm2-360m": "HuggingFaceTB/SmolLM2-360M",
@@ -108,6 +188,13 @@ class HFMentor(torch.nn.Module):
 
     def _body(self, x):
         return self.hf(input_ids=x, use_cache=False).logits
+
+    def hidden(self, x, mask=None):
+        """Token vectors after the final norm (B, T, Dt); the word table is head_weight()."""
+        return self.hf.model(input_ids=x, attention_mask=mask, use_cache=False).last_hidden_state
+
+    def head_weight(self):
+        return self.hf.lm_head.weight
 
 
 def mentor_loss(student_logits, mentor_logits, chunk: int = 4):

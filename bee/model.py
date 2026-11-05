@@ -60,6 +60,9 @@ class BeeConfig:
     # per-word thinking
     mlp_hidden: int = 1792       # SwiGLU width (1792 makes the whole model 204M)
     softcap: float = 30.0        # final scores are kept within +-30 (0 = off)
+    doc_mask: int = 0            # 1 = no bleed between documents in a window: attention looks back only inside
+                                 # the current document and the memories start blank at each document (Bee3)
+    tokenizer: str = "gpt2"      # which pieces it reads (oazy/tok.py); decides the <|endoftext|> id
 
     def to_dict(self):
         return asdict(self)
@@ -124,23 +127,40 @@ class Attention(nn.Module):
         y = y.transpose(1, 2).reshape(B, T, -1)
         return self.out(y * torch.sigmoid(self.gate(x)))
 
-    def forward(self, x, state=None):
-        """state: None (fresh text) or (keys, values) of the words read before. Returns (output, new state)."""
+    _gqa = None      # does this PyTorch let the kernel share key/value heads itself (no copies)? found out once
+
+    def forward(self, x, state=None, mask=None):
+        """state: None (fresh text) or (keys, values) of the words read before. mask: (B, 1, T, T) bool, which
+        earlier words each word may see (its own document only; training with doc_mask). Returns (output, new state)."""
         B, T, _ = x.shape
         P = 0 if state is None else state[0].shape[1]
         q, k, v = self.project(x, P)
         if state is not None:
             k, v = torch.cat([state[0], k], 1), torch.cat([state[1], v], 1)
-        rep = self.H // self.KV
-        qh = q.transpose(1, 2)
-        kh = k.transpose(1, 2).repeat_interleave(rep, dim=1)
-        vh = v.transpose(1, 2).repeat_interleave(rep, dim=1)
-        if P == 0:
-            y = F.scaled_dot_product_attention(qh, kh, vh, is_causal=True)
-        else:   # new words see all old ones, and the new ones up to themselves
-            mask = torch.ones(T, P + T, dtype=torch.bool, device=x.device).tril(P)
+        qh, kh, vh = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
+        if P == 0 and mask is None:
+            y = self._causal(qh, kh, vh)
+        else:
+            rep = self.H // self.KV
+            kh, vh = kh.repeat_interleave(rep, dim=1), vh.repeat_interleave(rep, dim=1)
+            if mask is None:   # new words see all old ones, and the new ones up to themselves
+                mask = torch.ones(T, P + T, dtype=torch.bool, device=x.device).tril(P)
             y = F.scaled_dot_product_attention(qh, kh, vh, attn_mask=mask)
         return self.finish(x, y), (k, v)
+
+    def _causal(self, qh, kh, vh):
+        """Plain causal attention with grouped key/value heads: the fused kernel shares them itself where it can."""
+        rep = self.H // self.KV
+        if Attention._gqa is not False and rep > 1:
+            try:
+                y = F.scaled_dot_product_attention(qh, kh, vh, is_causal=True, enable_gqa=True)
+                Attention._gqa = True
+                return y
+            except (TypeError, RuntimeError):
+                Attention._gqa = False
+        if rep > 1:
+            kh, vh = kh.repeat_interleave(rep, dim=1), vh.repeat_interleave(rep, dim=1)
+        return F.scaled_dot_product_attention(qh, kh, vh, is_causal=True)
 
     @torch.no_grad()
     def looks(self, x, state):
@@ -171,8 +191,13 @@ class Block(nn.Module):
     def mixer(self):
         return self.mem if self.kind == "M" else self.attn
 
-    def forward(self, x, state=None):
-        y, state = self.mixer()(self.n1(x), state)
+    def forward(self, x, state=None, resets=None, mask=None):
+        """resets (B, T) bool: new documents start here (memory layers start blank); mask (B, 1, T, T) bool:
+        which earlier words each word may see (attention layers). Both None when reading one text."""
+        if self.kind == "M":
+            y, state = self.mem(self.n1(x), state, resets)
+        else:
+            y, state = self.attn(self.n1(x), state, mask)
         x = x + y
         return x + self.mlp(self.n2(x)), state
 
@@ -215,27 +240,67 @@ class Bee(nn.Module):
     def ctx_at(self, progress: float) -> int:
         return ctx_at(self.cfg, progress)
 
-    def enable_compile(self):
-        self._compiled = torch.compile(self._body)
+    fused_loss = True            # the loss in slices (oazy/lmloss.py); False = full 32-bit scores (tests, --loss plain)
+    loss_chunk = 1024            # tokens per slice
 
-    def head(self, x):
-        logits = F.linear(self.norm(x), self.embed.weight)
+    def enable_compile(self):
+        self._compiled = torch.compile(self._trunk)
+
+    def head(self, h):
+        """Scores against the word table, softly capped. h: the token vectors after the final norm."""
+        logits = F.linear(h, self.embed.weight)
         c = self.cfg.softcap
         return c * torch.tanh(logits / c) if c else logits
 
-    def _body(self, idx):
+    def doc_info(self, idx):
+        """With doc_mask: where new documents start (B, T) and which earlier words each word may see (B, 1, T, T).
+        A document starts right after an <|endoftext|>. Without doc_mask: (None, None), a window is one text."""
+        if not self.cfg.doc_mask:
+            return None, None
+        from oazy.tok import eot_id
+        B, T = idx.shape
+        resets = torch.zeros(B, T, dtype=torch.bool, device=idx.device)
+        resets[:, 1:] = idx[:, :-1] == eot_id(self.cfg.tokenizer)
+        doc = resets.cumsum(1)
+        mask = (doc[:, None, :, None] == doc[:, None, None, :]) & torch.ones(T, T, dtype=torch.bool, device=idx.device).tril()
+        return resets, mask
+
+    def _trunk(self, idx, resets=None, mask=None):
+        """Everything but the word table: (B, T, D) token vectors after the final norm."""
         x = self.embed(idx)
         for b in self.blocks:
-            x, _ = b(x)
-        return self.head(x)
+            x, _ = b(x, None, resets, mask)
+        return self.norm(x)
+
+    def _body(self, idx):
+        """The full scores (B, T, V), as the probes and HellaSwag want them."""
+        return self.head(self._trunk(idx, *self.doc_info(idx)))
+
+    def losses(self, idx, targets, mentor=None, kd_weight=0.0):
+        """One lesson: the next-word loss, plus the mentor's (KL to its guesses) weighted kd_weight.
+        Returns (loss to train on, {"ce": next-word loss, "kd": the mentor term}), the stats detached."""
+        resets, mask = self.doc_info(idx)
+        h = (self._compiled or self._trunk)(idx, resets, mask)
+        th = tW = None
+        if mentor is not None and kd_weight > 0:
+            th, tW = mentor.hidden(idx, mask)
+        if self.fused_loss:
+            from oazy.lmloss import head_loss
+            loss, ce, kd = head_loss(h, self.embed.weight, targets, self.cfg.softcap, th, tW, kd_weight, self.loss_chunk)
+        else:
+            from oazy.lmloss import plain_loss
+            loss, ce, kd = plain_loss(h, self.embed.weight, targets, self.cfg.softcap, th, tW, kd_weight)
+        stats = {"ce": ce}
+        if th is not None:
+            stats["kd"] = kd
+        return loss, stats
 
     def forward(self, idx, targets=None):
-        logits = (self._compiled or self._body)(idx)
-        loss, stats = None, {}
-        if targets is not None:
-            loss = F.cross_entropy(logits.float().reshape(-1, logits.size(-1)), targets.reshape(-1), ignore_index=-1)
-            stats["ce"] = loss
-        return logits, loss, stats
+        """Without targets: (scores, None, {}). With targets: (None, loss, stats); the scores are never formed whole."""
+        if targets is None:
+            return self._body(idx), None, {}
+        loss, stats = self.losses(idx, targets)
+        return None, loss, stats
 
     # ---------------------------------------------------------------- reading as a stream (chat)
     def read(self, idx, states=None):
@@ -246,7 +311,7 @@ class Bee(nn.Module):
         for b, s in zip(self.blocks, states):
             x, s = b(x, s)
             new.append(s)
-        return self.head(x), new
+        return self.head(self.norm(x)), new
 
     @torch.no_grad()
     def inspect(self, idx, states=None):
@@ -268,7 +333,7 @@ class Bee(nn.Module):
             x = x + b.mlp(b.n2(x))
             new.append(s)
             infos.append(info)
-        return self.head(x), new, infos
+        return self.head(self.norm(x)), new, infos
 
     @torch.no_grad()
     def generate(self, prompt_ids, max_new_tokens=100, temperature=0.8, top_k=40, eos=None):

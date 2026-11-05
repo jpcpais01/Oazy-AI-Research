@@ -89,7 +89,7 @@ def main():
     n = big.num_params()
     check("full size is about 0.2B", 195e6 < n < 215e6, f"{n / 1e6:.1f}M parameters, {big.layout()}")
     check("same body as Bee0.2B, only the vocabulary differs",
-          all(getattr(big.cfg, k) == v for k, v in BeeConfig().to_dict().items() if k != "vocab_size"))
+          all(getattr(big.cfg, k) == v for k, v in BeeConfig().to_dict().items() if k not in ("vocab_size", "tokenizer")))
     check("SmolLM2's 49,152 pieces", big.cfg.vocab_size == 49152 and tok.name_of(big) == "smollm2")
     del big
 

@@ -30,6 +30,33 @@ import torch.nn.functional as F
 
 _FLA = None
 _FLA_OK = None          # None = not checked yet; True/False after the first check on this machine
+_FLA_SEG = False        # the kernel's packed-documents form agrees with the reference (checked with it)
+
+
+def _check_resets(q, k, v, lf, tr, device, g):
+    """Documents starting blank inside a window: the kernel's packed form first, else the "forget all"
+    fade; whichever agrees with the reference is used (see delta_rule)."""
+    global _FLA_SEG
+    B, T, H, K = q.shape
+    resets = torch.rand(B, T, device=device, generator=g) < 0.03
+    resets[:, 0] = False
+    ref, Sref = chunked(q, k, v, with_resets(lf, resets), tr)
+    bf = [x.bfloat16() for x in (q, k, v)]
+    try:
+        o, S = _fla_segments(*bf, lf, tr.bfloat16(), resets, K ** -0.5)
+        err = (o.float() - ref).abs().max().item() / (ref.abs().max().item() + 1e-6)
+        errS = (S.float() - Sref).abs().max().item() / (Sref.abs().max().item() + 1e-6)
+        _FLA_SEG = err < 0.05 and errS < 0.05
+    except Exception as e:
+        print(f"[memtrix] packed-documents form unavailable ({type(e).__name__}: {str(e)[:120]})", flush=True)
+        err = errS = float("nan")
+    if _FLA_SEG:
+        print(f"[memtrix] documents start blank: kernel's packed form OK (rel. error {err:.4f} / state {errS:.4f})", flush=True)
+        return
+    o, S = _fla_call(*bf, with_resets(lf, resets), tr.bfloat16(), None, K ** -0.5)
+    err2 = (o.float() - ref).abs().max().item() / (ref.abs().max().item() + 1e-6)
+    print(f"[memtrix] documents start blank: packed form {'disagrees' if err == err else 'unavailable'} (rel. error {err:.4f}), "
+          f"'forget all' fade through the kernel rel. error {err2:.4f}{'' if err2 < 0.05 else ' (BAD: check memtrix/memory.py)'}", flush=True)
 
 
 def _load_fla():
@@ -145,6 +172,8 @@ def fla_check(device) -> bool:
         _FLA_OK = err < 0.05 and errS < 0.05
         print(f"[memtrix] flash-linear-attention kernel {'OK' if _FLA_OK else 'DISAGREES, not used'} "
               f"(rel. error {err:.4f} / state {errS:.4f})", flush=True)
+        if _FLA_OK:
+            _check_resets(q, k, v, lf, tr, device, g)
     except Exception as e:  # missing Triton support for this GPU, API change, ...
         print(f"[memtrix] flash-linear-attention kernel unavailable ({type(e).__name__}: {str(e)[:200]}); "
               "using the pure-PyTorch chunked version", flush=True)
@@ -152,9 +181,50 @@ def fla_check(device) -> bool:
     return _FLA_OK
 
 
-def delta_rule(q, k, v, log_fade, trust, state=None, scale=None):
-    """Pick the fastest version that is correct on this machine. Returns (answers, final state)."""
+RESET = -50.0           # a log-fade this negative empties the memory: exp(-50) ~ 2e-22, far below float32 precision,
+                        # while the running sums of fades in chunked() stay precise (a -1e4 would cost them digits)
+
+
+def with_resets(log_fade, resets):
+    """Empty the memory at the start of every new document: the fade at those tokens becomes "forget all"."""
+    return log_fade.masked_fill(resets[:, :, None], RESET)
+
+
+def segments(resets):
+    """Where the documents start, for the kernel's packed form: (cu_seqlens int32 of N+1 offsets into the
+    flattened B*T tokens, the index of each row's last segment)."""
+    B, T = resets.shape
+    starts = resets.clone()
+    starts[:, 0] = True
+    flat = starts.reshape(-1)
+    pos = flat.nonzero(as_tuple=True)[0].to(torch.int32)
+    cu = torch.cat([pos, torch.tensor([B * T], dtype=torch.int32, device=resets.device)])
+    last = starts.sum(1).cumsum(0) - 1                     # the segment that ends each row
+    return cu, last
+
+
+@torch.compiler.disable
+def _fla_segments(q, k, v, log_fade, trust, resets, scale):
+    """The kernel on documents packed one after another (its cu_seqlens form): the memory of each document
+    starts blank. Returns (answers, the final memory of each row's last document)."""
+    B, T, H, K = q.shape
+    cu, last = segments(resets)
+    flat = lambda x: x.reshape(1, B * T, *x.shape[2:])    # noqa: E731
+    o, S = _load_fla()(q=flat(q), k=flat(k), v=flat(v), g=flat(log_fade).float(), beta=flat(trust), scale=scale,
+                       output_final_state=True, cu_seqlens=cu)
+    return o.reshape(B, T, H, -1), S[last]
+
+
+def delta_rule(q, k, v, log_fade, trust, state=None, scale=None, resets=None):
+    """Pick the fastest version that is correct on this machine. Returns (answers, final state).
+    resets: (B, T) bool, True where a new document starts: its memory starts blank (no bleed between texts)."""
     scale = q.shape[-1] ** -0.5 if scale is None else scale
     if q.is_cuda and fla_check(q.device):
+        if resets is not None and state is None and _FLA_SEG:
+            return _fla_segments(q, k, v, log_fade, trust, resets, scale)
+        if resets is not None:
+            log_fade = with_resets(log_fade, resets)
         return _fla_call(q, k, v, log_fade, trust, state, scale)
+    if resets is not None:
+        log_fade = with_resets(log_fade, resets)
     return chunked(q, k, v, log_fade, trust, state, scale)

@@ -242,3 +242,6 @@ input[type=range]::-webkit-slider-thumb { box-shadow: 0 0 0 4px rgba(143, 123, 2
 .modal { background: rgba(3, 3, 5, 0.6); }
 .modal .card { background: radial-gradient(120% 80% at 100% 0%, rgba(143, 123, 255, .12), transparent 60%), var(--bg-2); border-color: var(--line-2); box-shadow: 0 40px 120px -40px rgba(0, 0, 0, .95); }
 .modal .mt { font: 600 22px/1.2 var(--display); letter-spacing: -0.02em; }
+
+.score .sub { font-size: 12px; letter-spacing: .04em; text-transform: uppercase; opacity: .7; margin: 14px 0 4px; }
+.score .sub:first-of-type { margin-top: 6px; }

@@ -37,8 +37,8 @@ APP = Path(__file__).resolve().parent.parent / "oazy" / "web"     # shared look:
 class Brain:
     def __init__(self, ckpt: Path, device):
         self.model, st = load_model(ckpt, device)
-        if st.get("kind") not in ("bee", "bee2"):
-            raise SystemExit("this checkpoint is not a Bee0.2B checkpoint")
+        if st.get("kind") not in ("bee", "bee2", "bee3"):
+            raise SystemExit("this checkpoint is not a Bee checkpoint")
         self.device = device
         self.enc = tok.for_model(self.model)       # GPT-2's pieces (Bee0.2B) or SmolLM2's (v2)
         self.eot, self.V = self.enc.eot_token, self.enc.n_vocab
@@ -47,7 +47,7 @@ class Brain:
         self.att_layers = [i for i, k in enumerate(kinds) if k == "A"]
         self.meta = {"step": st.get("step"), "tokens": st.get("tokens"), "params": self.model.num_params(),
                      "layout": self.model.layout(), "mem_layers": self.mem_layers, "att_layers": self.att_layers,
-                     "layers": len(kinds), "name": "Bee_v2_0.2B" if st.get("kind") == "bee2" else "Bee0.2B"}
+                     "layers": len(kinds), "name": {"bee2": "Bee_v2_0.2B", "bee3": "Bee3"}.get(st.get("kind"), "Bee0.2B")}
         self.lock = threading.Lock()
         self.reset()
 

@@ -280,8 +280,8 @@ fetch("api/version").then((r) => r.json()).then((v) => {
   el.title = `commit ${v.commit}${v.date ? ", " + v.date : ""}`;
 }).catch(() => {});
 "use strict";
-const C = { memtrix: UI.css("--brand"), tide: UI.css("--teal"), fern: UI.css("--fern"), ember: UI.css("--ember"), fern2: UI.css("--fern2"), fern3: UI.css("--fern3"), bee: UI.css("--bee"), bee2: UI.css("--bee2"), gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
-const NAMES = { memtrix: "Memtrix", tide: "Tide", fern: "Fern", ember: "Ember", fern2: "Fern2", fern3: "Fern3", bee: "Bee0.2B", bee2: "Bee_v2_0.2B", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };
+const C = { memtrix: UI.css("--brand"), tide: UI.css("--teal"), fern: UI.css("--fern"), ember: UI.css("--ember"), fern2: UI.css("--fern2"), fern3: UI.css("--fern3"), bee: UI.css("--bee"), bee2: UI.css("--bee2"), bee3: UI.css("--bee3"), gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
+const NAMES = { memtrix: "Memtrix", tide: "Tide", fern: "Fern", ember: "Ember", fern2: "Fern2", fern3: "Fern3", bee: "Bee0.2B", bee2: "Bee_v2_0.2B", bee3: "Bee3", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };
 // Every model of the lab. role: "ours" (our architectures), "baseline" (the GPT-2 we train the same way), "reference" (OpenAI's).
 const MODELS = {
   memtrix: { name: "Memtrix", color: C.memtrix, role: "ours", blurb: "Learns while it reads: small memories fixed by their own surprise, word by word." },
@@ -292,6 +292,7 @@ const MODELS = {
   fern3: { name: "Fern3", color: C.fern3, role: "ours", blurb: "Fern that remembers like you do: every old passage folded into a gist, and the 3 whose gists match best read again in full. No fixed-size memory. Not a next-word model." },
   bee: { name: "Bee0.2B", color: C.bee, role: "ours", blurb: "Our main model (204M, next-word): a modern hybrid, 3 Memtrix memory layers to 1 attention layer, learns from GPT-2 large early on, Muon, a mix of FineWeb-Edu, DCLM and (at the end) conversations." },
   bee2: { name: "Bee_v2_0.2B", color: C.bee2, role: "ours", blurb: "Bee0.2B's body (203M, next-word) with a smarter, cheaper mentor: SmolLM2-360M instead of GPT-2 large, and so SmolLM2's tokenizer. Same text, re-cut. Its losses are shown per GPT-2 token, so they line up with the others." },
+  bee3: { name: "Bee3", color: C.bee3, role: "ours", blurb: "Bee_v2_0.2B's body (203M, next-word), raised better: the Tagus text bundle (seven kinds of text), no bleed between documents, the mentor for the whole run, twice the learning rate, 2,048-word windows throughout. Losses per GPT-2 token, like Bee2." },
   gpt: { name: NAMES.gpt, color: C.gpt, role: "baseline", blurb: "GPT-2 small (124M), trained on the same text, in the same order, with the same schedule." },
   "openai-gpt2": { name: NAMES.openai, color: C.ref, role: "reference", blurb: "OpenAI's 2019 GPT-2 small, measured with the same tests: the line to beat." },
 };
@@ -360,7 +361,7 @@ function runCard(r) {
   const latest = st.latest || {};
   const col = colorOf(r.name);
   const lastT = (DATA[r.name]?.metrics || []).filter((x) => x.kind === "train").pop() || null;
-  const MIXN = { fwe: "FineWeb-Edu", dclm: "DCLM", chat: "chats" };
+  const MIXN = { fwe: "FineWeb-Edu", dclm: "DCLM", chat: "chats", cosmo: "Cosmopedia", wiki: "Wikipedia", math: "FineMath", code: "code" };
   const mixT = lastT && lastT.mix ? " · reading " + Object.entries(lastT.mix).map(([k, v]) => `${Math.round(v * 100)}% ${MIXN[k] || k}`).join(", ") + ` in windows of ${lastT.context.toLocaleString()} words` : "";
   const mem = cf.layout ? cf.layout + mixT : cf.memory_numbers ? `memory ${UI.fmtTokens(cf.memory_numbers)} numbers (fixed)` : cf.recall ? `recalls the ${cf.recall} best-matching old passages by gist` : `remembers by looking back at every word`;
   const stat = (k, v, h) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div>${h ? `<div class="h">${h}</div>` : ""}</div>`;
@@ -505,7 +506,7 @@ function scoreboard() {
   const row = (n, v, w, fmt) => `<div class="row"><span>${nameOf(n)}</span><div class="track"><div style="width:${Math.max(2, w * 100).toFixed(1)}%;background-color:${colorOf(n)}"></div></div><b>${fmt(v)}</b></div>`;
   let verdictL = "", verdictH = "";
   const target = ref(val) != null ? ["OpenAI GPT-2", ref(val)] : val.gpt != null ? [NAMES.gpt, val.gpt] : null;
-  for (const me of ["bee2", "bee", "memtrix", "tide", "fern", "ember", "fern2", "fern3"]) {
+  for (const me of ["bee3", "bee2", "bee", "memtrix", "tide", "fern", "ember", "fern2", "fern3"]) {
     const nm = nameOf(me), br = verdictL ? "<br>" : "";
     if (val[me] != null && target) {
       const d = val[me] - target[1];
@@ -518,7 +519,22 @@ function scoreboard() {
   }
   const hsRows = Object.entries(hs);
   if (!("openai-gpt2" in hs)) hsRows.push(["openai-gpt2", HS_GPT2]);
-  box.innerHTML = `
+  // three more standard tests (oazy/evals.py), once a run has them
+  const EV = [["arc_easy", "ARC-Easy", "science questions, 4 answers · guessing 25%"], ["piqa", "PIQA", "physical common sense, 2 answers · guessing 50%"],
+    ["lambada", "LAMBADA", "guess the last word of a passage · long-range memory"]];
+  const evRuns = names.filter((n) => lastOf(n, "evals"));
+  const evCard = evRuns.length ? `<div class="card score"><div class="t">More tests (higher is better)</div>
+      ${EV.map(([k, t, h]) => { const rows = evRuns.map((n) => [n, lastOf(n, "evals")[k]]).filter((r) => r[1] != null); if (!rows.length) return "";
+        return `<div class="sub">${t}</div>${rows.map(([n, v]) => row(n, v, v, pct)).join("")}<div class="note">${h}</div>`; }).join("")}</div>` : "";
+  // held-out loss per kind of text (the bundle's per-source slices)
+  const SRC = { dclm: "DCLM (web)", chat: "conversations", cosmo: "Cosmopedia (textbooks)", wiki: "Wikipedia", math: "FineMath", code: "Python code" };
+  const srcRuns = names.map((n) => [n, lastOf(n, "eval")]).filter(([, e]) => e && Object.keys(e).some((k) => k.startsWith("val_loss_")));
+  const srcCard = srcRuns.length ? `<div class="card score"><div class="t">Held-out loss by kind of text</div>
+      ${Object.keys(SRC).map((k) => { const rows = srcRuns.map(([n, e]) => [n, e["val_loss_" + k]]).filter((r) => r[1] != null); if (!rows.length) return "";
+        const mx = Math.max(...rows.map((r) => r[1])) + 0.05, mn = Math.min(...rows.map((r) => r[1])) - 0.3;
+        return `<div class="sub">${SRC[k]}</div>${rows.map(([n, v]) => row(n, v, (mx - v) / (mx - mn), fmtL)).join("")}`; }).join("")}
+      <div class="note">2M held-out tokens of each kind, never trained on. Lower is better; kinds are not comparable with each other.</div></div>` : "";
+  box.innerHTML = evCard + srcCard + `
     <div class="card score"><div class="t">Validation loss (lower is better)</div><div class="big">${verdictL || "&nbsp;"}</div>
       ${lossRows.map(([n, v]) => row(n, v, (hi - v) / (hi - lo), fmtL)).join("")}
       <div class="note">Same held-out FineWeb-Edu text for every model.</div></div>
@@ -863,7 +879,7 @@ async function refresh() {
   const pill = document.getElementById("updated");
   try {
     RUNS = await getJSON("api/runs");
-    const ORDER = ["bee2", "bee", "fern3", "fern2", "ember", "fern", "tide", "memtrix", "gpt", "openai-gpt2"];
+    const ORDER = ["bee3", "bee2", "bee", "fern3", "fern2", "ember", "fern", "tide", "memtrix", "gpt", "openai-gpt2"];
     RUNS.sort((a, b) => ORDER.indexOf(a.name) - ORDER.indexOf(b.name));
     for (const r of RUNS) {
       const [metrics, samples] = await Promise.all([getJSON(`api/run/${r.name}/metrics`), getJSON(`api/run/${r.name}/samples`)]);
