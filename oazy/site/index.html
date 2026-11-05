@@ -242,6 +242,76 @@ html::-webkit-scrollbar { display: none; }
 .rail:hover .thumb, .rail.drag .thumb { width: 6px; right: 2px; box-shadow: 0 0 16px rgba(143, 123, 255, .8), 0 0 2px rgba(255, 255, 255, .7) inset; }
 @media (pointer: coarse) { .rail { display: none; } }
 
+/* ---------- life below the hero: drifting pools of light, glass, light seams ---------- */
+.below { position: relative; isolation: isolate; }
+.below::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background-image: radial-gradient(rgba(236, 235, 243, .09) 1px, transparent 1.3px); background-size: 30px 30px;
+  -webkit-mask-image: radial-gradient(40% 14% at 82% 16%, #000, transparent), radial-gradient(36% 12% at 12% 52%, #000, transparent), radial-gradient(40% 12% at 78% 84%, #000, transparent);
+  mask-image: radial-gradient(40% 14% at 82% 16%, #000, transparent), radial-gradient(36% 12% at 12% 52%, #000, transparent), radial-gradient(40% 12% at 78% 84%, #000, transparent); }
+.aura { position: absolute; inset: 0; z-index: -2; overflow: hidden; pointer-events: none; }
+.aura i { position: absolute; width: var(--w, 900px); aspect-ratio: 1.6; border-radius: 50%; background: radial-gradient(closest-side, var(--c), transparent); opacity: .9; animation: drift var(--t, 26s) ease-in-out infinite alternate; will-change: transform; }
+.aura .a1 { --c: rgba(106, 77, 255, .28); top: -6%; left: -18%; --w: 1100px; }
+.aura .a2 { --c: rgba(79, 216, 255, .18); top: 12%; right: -22%; --w: 1000px; --t: 31s; animation-delay: -8s; }
+.aura .a3 { --c: rgba(255, 95, 174, .15); top: 33%; left: -14%; --w: 900px; --t: 29s; animation-delay: -4s; }
+.aura .a4 { --c: rgba(106, 77, 255, .25); top: 47%; right: -16%; --w: 1050px; --t: 34s; }
+.aura .a5 { --c: rgba(79, 216, 255, .16); top: 66%; left: 10%; --w: 1000px; --t: 27s; animation-delay: -12s; }
+.aura .a6 { --c: rgba(143, 123, 255, .22); top: 84%; right: 0%; --w: 900px; --t: 30s; animation-delay: -6s; }
+@keyframes drift { from { transform: translate3d(-4%, -3%, 0) scale(1); } to { transform: translate3d(5%, 4%, 0) scale(1.12); } }
+
+/* a seam of light opens each section, split into colour like the hero's lens */
+section.block { position: relative; }
+section.block::before { content: ""; position: absolute; top: 0; left: 50%; width: min(1100px, 92%); height: 1px; transform: translateX(-50%);
+  background: linear-gradient(90deg, transparent, rgba(79, 216, 255, .55) 30%, rgba(236, 235, 243, .85) 50%, rgba(255, 95, 174, .55) 70%, transparent);
+  box-shadow: 0 0 18px 1px rgba(143, 123, 255, .45); opacity: .55; }
+section.block::after { content: ""; position: absolute; top: 0; left: 50%; width: min(700px, 70%); height: 160px; transform: translateX(-50%); pointer-events: none; z-index: -1;
+  background: radial-gradient(50% 100% at 50% 0%, rgba(120, 100, 255, .16), transparent 70%); }
+.head h2 em, .close h2 em { font-style: normal; background: linear-gradient(100deg, #fff 0%, #d9d2ff 40%, #a6f0ff 95%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* pillars become lit glass panes, each with its own colour of light */
+.pillar { position: relative; border-left: 0; padding: 26px 26px 28px; border-radius: 18px; overflow: hidden;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 9%, transparent), rgba(255, 255, 255, .015) 60%), rgba(11, 11, 16, .55);
+  border: 1px solid var(--line); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+.pillar::before { content: ""; position: absolute; inset: 0 18% auto; height: 1px; background: linear-gradient(90deg, transparent, var(--acc), transparent); box-shadow: 0 0 14px 1px var(--acc); }
+.pillar .label { color: var(--acc); }
+.pillars { gap: 18px; }
+@media (max-width: 820px) { .pillars { gap: 14px; } }
+
+/* glass cards: frosted so the pools of light show through, with a lit edge and a light that follows the pointer */
+.model, .glass { position: relative; isolation: isolate; backdrop-filter: blur(18px) saturate(130%); -webkit-backdrop-filter: blur(18px) saturate(130%); }
+.model { background: radial-gradient(120% 70% at 100% 0%, color-mix(in srgb, var(--acc) 18%, transparent), transparent 60%), linear-gradient(180deg, rgba(255, 255, 255, .045), rgba(255, 255, 255, .012)), rgba(11, 11, 16, .6); }
+.glass { overflow: hidden; background: radial-gradient(90% 60% at 0% 0%, rgba(106, 77, 255, .12), transparent 60%), linear-gradient(180deg, rgba(255, 255, 255, .045), rgba(255, 255, 255, .012)), rgba(11, 11, 16, .6); }
+.model::after, .glass::after { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity .4s;
+  background: radial-gradient(420px circle at var(--mx, 50%) var(--my, 0%), color-mix(in srgb, var(--acc, var(--violet-2)) 14%, transparent), transparent 60%); }
+.model:hover::after, .glass:hover::after { opacity: 1; }
+.glass::before { content: ""; position: absolute; inset: 0 0 auto; height: 1px; background: linear-gradient(90deg, transparent, rgba(143, 123, 255, .8), rgba(79, 216, 255, .6), transparent); }
+.demo { background: rgba(0, 0, 0, .5); }
+.track { background: rgba(255, 255, 255, .04); }
+.fill.bee { box-shadow: 0 0 18px -2px color-mix(in srgb, var(--bee) 70%, transparent); }
+.fill.fern { box-shadow: 0 0 18px -2px color-mix(in srgb, var(--fern) 70%, transparent); }
+
+/* lab log as a lit timeline */
+.log { position: relative; border-top: 0; padding-left: 34px; }
+.log::before { content: ""; position: absolute; left: 5px; top: 8px; bottom: 8px; width: 2px; border-radius: 2px;
+  background: linear-gradient(180deg, var(--cyan), var(--violet-2) 50%, var(--pink)); box-shadow: 0 0 12px rgba(143, 123, 255, .6); opacity: .8; }
+.entry { position: relative; border-bottom: 1px solid var(--line); }
+.entry::before { content: ""; position: absolute; left: -34px; top: 29px; width: 12px; height: 12px; border-radius: 50%; background: var(--bg); border: 2px solid var(--cyan); box-shadow: 0 0 12px var(--cyan); }
+.entry:has(.nn)::before { border-color: var(--pink); box-shadow: 0 0 12px var(--pink); }
+.entry:last-child::before { background: var(--cyan); }
+.entry:hover { background: linear-gradient(90deg, rgba(106, 77, 255, .08), rgba(255, 255, 255, .02) 60%, transparent); }
+@media (max-width: 820px) { .log { padding-left: 26px; } .entry::before { left: -26px; top: 26px; } }
+
+/* closing band: a second, slower tunnel of light drawn as lines */
+.close::before { background: radial-gradient(50% 120% at 50% 50%, rgba(106, 77, 255, .26), transparent 70%); }
+.streaks { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; -webkit-mask-image: radial-gradient(75% 100% at 50% 50%, #000 30%, transparent); mask-image: radial-gradient(75% 100% at 50% 50%, #000 30%, transparent); }
+.streaks path { fill: none; vector-effect: non-scaling-stroke; }
+.streaks .base path { stroke-width: 1; opacity: .16; }
+.streaks .run path { stroke-width: 1.5; stroke-linecap: round; animation: run var(--d) linear infinite; animation-delay: var(--o); }
+.streaks .glow { filter: blur(3px); opacity: .9; }
+.close:not(.live) .streaks .run path { animation-play-state: paused; }
+@keyframes run { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -1400; } }
+footer { position: relative; }
+footer::before { content: ""; position: absolute; top: 0; left: 50%; width: min(900px, 90%); height: 1px; transform: translateX(-50%); background: linear-gradient(90deg, transparent, rgba(143, 123, 255, .5), transparent); }
+
 /* reveal: content is visible at rest; this only adds a gentle rise when it scrolls in */
 .rv { transition: transform .9s cubic-bezier(.2,.8,.2,1), opacity .9s; }
 .js .rv.pre { transform: translateY(18px); opacity: .35; }
@@ -249,6 +319,7 @@ html::-webkit-scrollbar { display: none; }
   html { scroll-behavior: auto; }
   .hero-in > *, .rv { animation: none !important; transition: none !important; transform: none !important; opacity: 1 !important; }
   .bee .caret { animation: none; }
+  .aura i, .streaks .run path { animation: none !important; }
 }
 </style>
 </head>
@@ -303,19 +374,21 @@ html::-webkit-scrollbar { display: none; }
     </div>
   </section>
 
+  <div class="below">
+  <div class="aura" aria-hidden="true"><i class="a1"></i><i class="a2"></i><i class="a3"></i><i class="a4"></i><i class="a5"></i><i class="a6"></i></div>
   <div class="wrap">
     <div class="pillars">
-      <div class="pillar rv">
+      <div class="pillar rv" style="--acc:var(--cyan)">
         <span class="label">// architecture</span>
         <h3>New ways to think</h3>
         <p>Memory that learns while it reads, and thoughts that unfold from the gist down to the details.</p>
       </div>
-      <div class="pillar rv">
+      <div class="pillar rv" style="--acc:var(--violet-2)">
         <span class="label">// scale</span>
         <h3>Small on purpose</h3>
         <p>Every model stays at or under 0.2B parameters and trains on a few billion tokens, so each idea gets a fair test in a day.</p>
       </div>
-      <div class="pillar rv">
+      <div class="pillar rv" style="--acc:var(--pink)">
         <span class="label">// yardstick</span>
         <h3>The same test for all</h3>
         <p>Same text, same order, same budget. Held-out loss and HellaSwag, next to GPT-2 small trained the same way.</p>
@@ -329,7 +402,7 @@ html::-webkit-scrollbar { display: none; }
       <div class="head rv">
         <div>
           <span class="label">// models <b>· 2 entries</b></span>
-          <h2 id="models-h">Two ways to write a sentence</h2>
+          <h2 id="models-h">Two ways to <em>write a sentence</em></h2>
         </div>
         <p>Bee writes the way almost every language model does: one token, then the next. Fern plans the whole passage first and lets it come into focus. Watch each one write below.</p>
       </div>
@@ -394,18 +467,18 @@ html::-webkit-scrollbar { display: none; }
       <div class="head rv">
         <div>
           <span class="label">// results <b>· FineWeb-Edu</b></span>
-          <h2 id="results-h">How they score</h2>
+          <h2 id="results-h">How they <em>score</em></h2>
         </div>
         <p>HellaSwag asks a model to pick the sensible ending to an everyday scene out of four. Guessing gets 25%. GPT-2 small, with 124M parameters, gets 29.6%.</p>
       </div>
       <div class="results">
-        <div class="panel rv">
+        <div class="panel glass rv">
           <span class="label">HellaSwag accuracy · 10,042 questions</span>
           <h3>Picking the right ending</h3>
           <p class="cap">Higher is better. Striped bars are placeholders.</p>
           <div class="chart" id="chart" role="img" aria-label="HellaSwag accuracy: Bee_0.2B 33.8% (placeholder), Fern_0.2B 31.2% (placeholder), GPT-2 small 29.6%, random guessing 25%."></div>
         </div>
-        <div class="panel rv">
+        <div class="panel glass rv">
           <span class="label">Side by side</span>
           <h3>At a glance</h3>
           <p class="cap">Held-out loss is how surprised the model is by new text, lower is better.</p>
@@ -431,7 +504,7 @@ html::-webkit-scrollbar { display: none; }
       <div class="head rv">
         <div>
           <span class="label">// lab log <b>· in order</b></span>
-          <h2 id="log-h">Every idea we have tried</h2>
+          <h2 id="log-h">Every idea <em>we have tried</em></h2>
         </div>
         <p>Each architecture taught us something the next one used. Some predict the next token, some do not, and we say which.</p>
       </div>
@@ -447,10 +520,13 @@ html::-webkit-scrollbar { display: none; }
     </div>
   </section>
 
+  </div>
+
   <section class="close" aria-labelledby="close-h">
+    <svg class="streaks" id="streaks" viewBox="0 0 1200 400" preserveAspectRatio="none" aria-hidden="true"></svg>
     <div class="wrap close-in rv">
       <span class="label">// next</span>
-      <h2 id="close-h">A 0.2B model that holds its own against models twice its size</h2>
+      <h2 id="close-h">A 0.2B model that holds its own against models <em>twice its size</em></h2>
       <p>That is the bar we are training towards. Follow the code, the runs and the results as they come in.</p>
       <div class="ctas">
         <a class="btn btn-light" href="https://github.com/jpcpais01/Oazy-AI-Research" target="_blank" rel="noopener">Browse the code</a>
@@ -1034,6 +1110,41 @@ void main() {
     else if (!es[0].isIntersecting && timer) { clearInterval(timer); timer = null; }
   }).observe(demos);
 })();
+
+// closing band: lines bending through a waist, with bright dashes running outwards along them
+(() => {
+  const svg = document.getElementById('streaks'); if (!svg) return;
+  const NS = 'http://www.w3.org/2000/svg', W = 1200, H = 400;
+  const mk = (t, a) => { const e = document.createElementNS(NS, t); for (const k in a) e.setAttribute(k, a[k]); return e; };
+  const defs = mk('defs', {}), g = mk('linearGradient', { id: 'sg', gradientUnits: 'userSpaceOnUse', x1: 0, y1: 0, x2: W, y2: 0 });
+  [['0', '#4fd8ff'], ['.25', '#8f7bff'], ['.5', '#ecebf3'], ['.75', '#ff5fae'], ['1', '#8f7bff']].forEach(([o, c]) => g.appendChild(mk('stop', { offset: o, 'stop-color': c })));
+  defs.appendChild(g); svg.appendChild(defs);
+  const base = mk('g', { class: 'base', stroke: 'url(#sg)' }), run = mk('g', { class: 'run', stroke: 'url(#sg)' }), glow = mk('g', { class: 'run glow', stroke: 'url(#sg)' });
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 44; i++) {
+    const s = (i < 22 ? -1 : 1) * Math.pow((i % 22 + 1) / 22, 1.35), waist = 10 + rnd() * 6, flare = 230;
+    for (const side of [-1, 1]) {
+      let d = '';
+      for (let k = 0; k <= 24; k++) {
+        const x = k / 24, X = W / 2 + side * x * W / 2, y = H / 2 + s * (waist + flare * x * x);
+        d += (k ? 'L' : 'M') + X.toFixed(1) + ' ' + y.toFixed(1);
+      }
+      base.appendChild(mk('path', { d }));
+      if (rnd() < 0.55) {
+        const dash = 40 + rnd() * 140, a = { d, 'stroke-dasharray': dash.toFixed(0) + ' ' + (1400 - dash).toFixed(0), style: '--d:' + (5 + rnd() * 7).toFixed(1) + 's;--o:-' + (rnd() * 12).toFixed(1) + 's' };
+        run.appendChild(mk('path', a)); if (rnd() < 0.5) glow.appendChild(mk('path', a));
+      }
+    }
+  }
+  svg.append(base, glow, run);
+  const band = svg.parentElement;
+  new IntersectionObserver(es => es.forEach(e => band.classList.toggle('live', e.isIntersecting))).observe(band);
+})();
+// glass cards: a soft light follows the pointer
+document.querySelectorAll('.model, .glass').forEach(el => el.addEventListener('pointermove', e => {
+  const r = el.getBoundingClientRect();
+  el.style.setProperty('--mx', (e.clientX - r.left) + 'px'); el.style.setProperty('--my', (e.clientY - r.top) + 'px');
+}));
 </script>
 </body>
 </html>
