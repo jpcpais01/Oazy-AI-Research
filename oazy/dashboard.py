@@ -1,6 +1,6 @@
 """Engram live training dashboard. Reads the run folders and serves a web page that refreshes itself.
 
-    python -m engram.dashboard --runs /workspace/engram_runs --port 8000
+    python -m oazy.dashboard --runs /workspace/oazy_runs --port 8000
 
 Then open http://localhost:8000 (on RunPod: the pod's HTTP port 8000 link).
 Uses only the Python standard library.
@@ -92,10 +92,12 @@ def make_handler(runs: Path, web: Path = WEB):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--runs", default="/workspace/engram_runs")
+    ap.add_argument("--runs", default=None)
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--host", default="0.0.0.0")
     a = ap.parse_args()
+    from .data import default_dir
+    a.runs = a.runs or default_dir("runs")
     srv = ThreadingHTTPServer((a.host, a.port), make_handler(Path(a.runs)))
     print(f"dashboard on http://{a.host}:{a.port}  (runs: {a.runs})", flush=True)
     srv.serve_forever()

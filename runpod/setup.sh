@@ -1,66 +1,54 @@
 #!/usr/bin/env bash
-# One-time setup on a RunPod GPU pod (any Ubuntu image with an NVIDIA driver,
-# e.g. the official "RunPod PyTorch" template).  Safe to re-run.
+# One-time setup of the Oazy AI Research lab on a RunPod GPU pod (B200, B300, H100, ...). Safe to re-run.
 #
-#   bash runpod/setup.sh
+#   bash runpod/setup.sh               # prepares 4B tokens of FineWeb-Edu (enough for the "full" run)
+#   OAZY_PREP_TOKENS=8e9 bash runpod/setup.sh   # more text, for the "big" run
 #
-# Installs: ffmpeg + Blender's runtime libraries (apt), NVIDIA Warp (pip), and
-# Blender into /workspace/blender (on the persistent volume, so a pod restart
-# does not download it again).
+# 1. makes sure PyTorch can use this GPU (Blackwell needs a recent build),
+# 2. installs the tokenizer, dataset tools, and the flash-linear-attention kernels (optional speed-up),
+# 3. downloads FineWeb-Edu and tokenizes it into /workspace/oazy_data (or the existing engram_data) (~10-20 min), plus HellaSwag,
+# 4. runs every model's self-tests on the GPU (including: the fast kernel agrees with the reference).
 set -euo pipefail
 cd "$(dirname "$0")/.."
-
-BLENDER_VERSION="${BLENDER_VERSION:-5.2.3}"
-BL_DIR="${BL_DIR:-/workspace/blender}"
+DATA="$(python3 -c "from oazy.data import default_dir; print(default_dir('data'))")"
+TOKENS="${OAZY_PREP_TOKENS:-4e9}"
 
 echo "== apt packages"
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get install -y -qq ffmpeg xz-utils curl libegl1 libgl1 libxi6 libxxf86vm1 libxfixes3 libxrender1 \
-    libxkbcommon0 libxkbcommon-x11-0 libsm6 libice6 libx11-6 libxext6 > /dev/null
+if ! command -v tmux >/dev/null; then
+    apt-get update -qq && apt-get install -y -qq tmux > /dev/null
+fi
+
+echo "== checking that PyTorch supports this GPU"
+if ! python3 - <<'PY'
+import sys, torch
+assert torch.cuda.is_available(), "no CUDA GPU visible"
+cap = torch.cuda.get_device_capability()
+arch = f"sm_{cap[0]}{cap[1]}"
+ok = arch in torch.cuda.get_arch_list() or any(a.startswith(f"sm_{cap[0]}") for a in torch.cuda.get_arch_list())
+x = torch.randn(256, 256, device="cuda", dtype=torch.bfloat16)
+(x @ x).sum().item()
+print(f"torch {torch.__version__}, {torch.cuda.get_device_name()} ({arch}) OK")
+sys.exit(0 if ok else 1)
+PY
+then
+    echo "-- this PyTorch is too old for the GPU; installing the current release (takes a few minutes)"
+    python3 -m pip install -q --upgrade torch
+fi
 
 echo "== python packages"
 python3 -m pip install -q --upgrade pip
-python3 -m pip install -q -r requirements.txt
+python3 -m pip install -q -r oazy/requirements.txt
+# the fast Triton kernels for the memory rule; pinned to the installed torch so pip never swaps it out
+TV=$(python3 -c "import torch; print(torch.__version__)")
+python3 -m pip install -q flash-linear-attention --constraint <(echo "torch==${TV}") \
+    || echo "-- flash-linear-attention did not install; Engram will use its pure-PyTorch version (slower, same maths)"
 
-echo "== blender ${BLENDER_VERSION}"
-if [ ! -x "${BL_DIR}/blender" ]; then
-    MM="${BLENDER_VERSION%.*}"
-    URL="https://download.blender.org/release/Blender${MM}/blender-${BLENDER_VERSION}-linux-x64.tar.xz"
-    echo "downloading ${URL}"
-    if curl -fL --retry 5 --retry-delay 3 -o /tmp/blender.tar.xz "${URL}"; then
-        mkdir -p "${BL_DIR}"
-        tar -xJf /tmp/blender.tar.xz -C "${BL_DIR}" --strip-components=1
-        rm -f /tmp/blender.tar.xz
-    else
-        echo "!! Blender ${BLENDER_VERSION} download failed."
-        echo "   Pick another 5.2.x from https://download.blender.org/release/Blender5.2/ and run:"
-        echo "   BLENDER_VERSION=5.2.x bash runpod/setup.sh"
-        exit 1
-    fi
-fi
+echo "== FineWeb-Edu (${TOKENS} tokens) -> ${DATA}"
+python3 -m oazy.data --out "${DATA}" --tokens "${TOKENS}"
 
-echo "== checks"
-nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv
-python3 - <<'EOF'
-import warp as wp
-wp.config.quiet = True
-wp.init()
-devs = wp.get_cuda_devices()
-print("warp CUDA devices:", [str(d) for d in devs])
-assert devs, "Warp sees no CUDA device"
-EOF
-"${BL_DIR}/blender" -b --factory-startup --python-expr "
-import bpy, addon_utils
-addon_utils.enable('cycles', default_set=True)
-p = bpy.context.preferences.addons['cycles'].preferences
-for kind in ('OPTIX', 'CUDA'):
-    try:
-        p.compute_device_type = kind
-        p.refresh_devices()
-        print('cycles', kind, [d.name for d in p.devices if d.type == kind])
-    except Exception as e:
-        print('cycles', kind, 'unavailable', e)
-print('BLENDER_OK', bpy.app.version_string)
-" 2>&1 | grep -E "cycles|BLENDER_OK"
-echo "== setup complete"
+echo "== self-tests of every model"
+python3 -m engram.tests --device cuda
+python3 -m tide.tests --device cuda
+
+echo "== setup complete. Next: python3 -m oazy.train --bench --model tide --hours 2"

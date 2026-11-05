@@ -1,6 +1,6 @@
 """A small synthetic corpus for CPU tests, built so that remembering matters.
 
-    python -m engram.synth --out ./synth_data --docs 30000
+    python -m oazy.synth --out ./synth_data --docs 30000
 
 Two kinds of documents:
   stories   template stories where names, pets and objects introduced early come back later;
@@ -8,7 +8,7 @@ Two kinds of documents:
             code again: the digits can only be predicted by recalling them from far back
             (the honest weak spot of a fixed-size memory, tested on purpose).
 Also writes a HellaSwag-style file (pick the right next sentence of a story out of 4) so the
-benchmark code can be tested offline. Same file format as engram.data.
+benchmark code can be tested offline. Same file format as oazy.data.
 """
 from __future__ import annotations
 

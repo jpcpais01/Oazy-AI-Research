@@ -1,6 +1,6 @@
 """Talk to a trained Tide and watch its drafts roll in, word by word.
 
-    python -m tide.chat --ckpt /workspace/engram_runs/tide/ckpt.pt --port 8001
+    python -m tide.chat --ckpt /workspace/oazy_runs/tide/ckpt.pt --port 8001
 
 Then open http://localhost:8001 (on RunPod: the pod's HTTP port 8001 link).
 Shows the belt of drafts (what Tide expects 1, 2, ... 8 words ahead) live, and for every word how
@@ -17,9 +17,9 @@ import torch
 import torch.nn.functional as F
 
 from engram import chat as engram_chat
-from engram.data import get_tokenizer
-from engram.probes import _img, token_strings
-from engram.train import load_model
+from oazy.data import get_tokenizer, default_dir
+from oazy.probes import _img, token_strings
+from oazy.train import load_model
 
 WEB = Path(__file__).parent / "web"
 VOCAB = 50257
@@ -120,11 +120,12 @@ def make_handler(brain):
 def main():
     from http.server import ThreadingHTTPServer
     ap = argparse.ArgumentParser()
-    ap.add_argument("--ckpt", default="/workspace/engram_runs/tide/ckpt.pt")
+    ap.add_argument("--ckpt", default=None)
     ap.add_argument("--port", type=int, default=8001)
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--device", default=None)
     a = ap.parse_args()
+    a.ckpt = a.ckpt or f"{default_dir('runs')}/tide/ckpt.pt"
     device = torch.device(a.device or ("cuda" if torch.cuda.is_available() else "cpu"))
     print(f"loading {a.ckpt} on {device} ...", flush=True)
     brain = TideBrain(Path(a.ckpt), device)

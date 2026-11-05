@@ -8,7 +8,7 @@ ending's tokens after reading the context and pick the lowest (the "acc_norm" sc
 nanoGPT / llm.c). OpenAI's GPT-2 124M scores 29.6% this way (see engram/compare.py to measure it
 on this machine). Works for any model with the forward(idx) -> logits interface.
 
-    python -m engram.hellaswag --ckpt /workspace/engram_runs/engram/ckpt.pt
+    python -m oazy.hellaswag --ckpt /workspace/oazy_runs/engram/ckpt.pt
 """
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 
-from .data import get_tokenizer
+from .data import get_tokenizer, default_dir
 
 
 def load(path: Path, limit: int | None = None):
@@ -82,10 +82,11 @@ def main():
     from .train import load_model
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt", required=True)
-    ap.add_argument("--data", default="/workspace/engram_data")
+    ap.add_argument("--data", default=None)
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--device", default=None)
     a = ap.parse_args()
+    a.data = a.data or default_dir("data")
     device = torch.device(a.device or ("cuda" if torch.cuda.is_available() else "cpu"))
     model, _ = load_model(Path(a.ckpt), device)
     r = evaluate(model, Path(a.data) / "hellaswag_val.jsonl", device, a.limit)

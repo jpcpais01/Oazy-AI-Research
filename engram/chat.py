@@ -1,6 +1,6 @@
 """Talk to a trained Engram and watch its memories change, word by word.
 
-    python -m engram.chat --ckpt /workspace/engram_runs/engram/ckpt.pt --port 8001
+    python -m engram.chat --port 8002     (on RunPod, see docs/RUNPOD.md for the port)
 
 Then open http://localhost:8001 (on RunPod: the pod's HTTP port 8001 link).
 The text is kept between messages, so the memories keep everything read so far (that is the
@@ -18,12 +18,13 @@ from urllib.parse import urlparse, parse_qs
 import torch
 import torch.nn.functional as F
 
-from .data import get_tokenizer, EOT
-from .model import sample_logits
-from .probes import _img, token_strings
-from .train import load_model
+from oazy.data import get_tokenizer, default_dir, EOT
+from oazy.sample import sample_logits
+from oazy.probes import _img, token_strings
+from oazy.train import load_model
 
 WEB = Path(__file__).parent / "web"
+APP = Path(__file__).resolve().parent.parent / "oazy" / "web"     # shared look: style.css, common.js, icon.svg
 
 
 def r3(x):
@@ -130,9 +131,9 @@ def make_handler(brain: Brain):
             name = u.path.strip("/")
             if name == "":
                 return self.send(200, (WEB / "chat.html").read_bytes(), "text/html; charset=utf-8")
-            if name.endswith((".js", ".css", ".svg")) and "/" not in name and (WEB / name).is_file():
+            if name.endswith((".js", ".css", ".svg")) and "/" not in name and (APP / name).is_file():
                 ctype = "text/javascript" if name.endswith(".js") else "image/svg+xml" if name.endswith(".svg") else "text/css"
-                return self.send(200, (WEB / name).read_bytes(), ctype + "; charset=utf-8")
+                return self.send(200, (APP / name).read_bytes(), ctype + "; charset=utf-8")
             L, Hh = brain.cfg.n_layer, brain.cfg.n_head
             layer = min(L - 1, max(0, int(q.get("layer", L - 1))))
             head = min(Hh - 1, max(0, int(q.get("head", 0))))
@@ -167,11 +168,12 @@ def make_handler(brain: Brain):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--ckpt", default="/workspace/engram_runs/engram/ckpt.pt")
+    ap.add_argument("--ckpt", default=None)
     ap.add_argument("--port", type=int, default=8001)
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--device", default=None)
     a = ap.parse_args()
+    a.ckpt = a.ckpt or f"{default_dir('runs')}/engram/ckpt.pt"
     device = torch.device(a.device or ("cuda" if torch.cuda.is_available() else "cpu"))
     print(f"loading {a.ckpt} on {device} ...", flush=True)
     brain = Brain(Path(a.ckpt), device)

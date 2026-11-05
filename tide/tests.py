@@ -9,7 +9,7 @@ import argparse
 
 import torch
 
-from engram.gpt import GPT, GPTConfig
+from oazy.gpt import GPT, GPTConfig
 from engram.tests import check
 from .model import Tide, TideConfig
 

@@ -100,7 +100,7 @@ class GPT(nn.Module):
 
     @torch.no_grad()
     def generate(self, prompt_ids, max_new_tokens=100, temperature=0.8, top_k=40, eos=None):
-        from .model import sample_logits
+        from .sample import sample_logits
         ids = list(prompt_ids)
         out = []
         dev = self.embed.weight.device

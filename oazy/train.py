@@ -1,8 +1,8 @@
 """Train Engram or the GPT-2 baseline on FineWeb-Edu. Resumable: re-run the same command.
 
-    python -m engram.train --model engram --data /workspace/engram_data --runs /workspace/engram_runs
-    python -m engram.train --model gpt    --data /workspace/engram_data --runs /workspace/engram_runs
-    python -m engram.train --bench --hours 2     # measure both models' speed; suggest a token budget
+    python -m oazy.train --model engram --data /workspace/oazy_data --runs /workspace/oazy_runs
+    python -m oazy.train --model gpt    --data /workspace/oazy_data --runs /workspace/oazy_runs
+    python -m oazy.train --bench --hours 2     # measure both models' speed; suggest a token budget
 
 Both models see exactly the same text in the same order, with the same schedule and optimizer.
 Everything the dashboard shows is written into the run folder:
@@ -25,10 +25,11 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from .data import Windows, val_set, get_tokenizer, EOT
+from .data import Windows, val_set, get_tokenizer, default_dir, EOT
 from .gpt import GPT, GPTConfig
-from .model import Engram, EngramConfig
-from . import hellaswag, probes, memory
+from engram.model import Engram, EngramConfig
+from engram import memory
+from . import hellaswag, probes
 
 KINDS = ["engram", "tide", "gpt"]
 NICE = {"engram": "Engram", "tide": "Tide", "gpt": "GPT"}
@@ -238,8 +239,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", choices=KINDS, default="engram")
     ap.add_argument("--preset", choices=list(PRESETS), default="full")
-    ap.add_argument("--data", default="/workspace/engram_data")
-    ap.add_argument("--runs", default="/workspace/engram_runs")
+    ap.add_argument("--data", default=None)
+    ap.add_argument("--runs", default=None)
     ap.add_argument("--name", default=None, help="run folder name (default: the model name)")
     ap.add_argument("--tokens", type=float, default=None, help="training tokens, e.g. 2e9")
     ap.add_argument("--micro", type=int, default=None, help="sequences per forward pass (lower it if out of memory)")
@@ -256,6 +257,7 @@ def main():
     ap.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE",
                     help="change a model setting, e.g. --set n_layer=8 (applies to the model being trained)")
     args = ap.parse_args()
+    args.data, args.runs = args.data or default_dir("data"), args.runs or default_dir("runs")
 
     device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
     if device.type == "cuda":

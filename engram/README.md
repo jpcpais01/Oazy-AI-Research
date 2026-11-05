@@ -31,4 +31,4 @@ so the model cannot route around its memory.
 * `probes.py` "is the memory used?" checks: context curve, loss by position, exact recall of a repeated passage.
 * `hellaswag.py`, `compare.py` (measures OpenAI GPT-2), `dashboard.py`, `chat.py`, `tests.py`, `synth.py` (CPU toy data).
 
-Family: fast-weight programmers, DeltaNet, Gated DeltaNet, Titans. RunPod guide: `docs/ENGRAM_RUNPOD.md`.
+Family: fast-weight programmers, DeltaNet, Gated DeltaNet, Titans. RunPod guide: `docs/RUNPOD.md`.

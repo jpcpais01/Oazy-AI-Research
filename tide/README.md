@@ -40,9 +40,9 @@ GPT-2 small's 124.4M. Each word costs about 1.4 × an Engram word to train.
 * `model.py` the model and `draft_report` (how good is the draft of the word d ahead).
 * `tests.py` no peeking at future words, word by word == training, the live belt == what training scores.
 * `chat.py`, `web/chat.html` talk to it and watch the belt; see how each word's thought arrived.
-* Training, data, HellaSwag and the dashboard are Engram's: `python -m engram.train --model tide`.
+* Training, data, HellaSwag and the app are the lab's (`oazy/`): `python -m oazy.train --model tide`.
 
-RunPod guide: `docs/TIDE_RUNPOD.md`. Family: multi-token prediction, rolling diffusion, diffusion
+RunPod guide: `docs/RUNPOD.md`. Family: multi-token prediction, rolling diffusion, diffusion
 forcing, block diffusion; fast-weight memories (DeltaNet) as in Engram.
 
 ## First CPU test (toy corpus, 400k tokens, ~7M-parameter versions of each model)

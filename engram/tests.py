@@ -13,7 +13,7 @@ import torch.nn.functional as F
 
 from . import memory
 from .model import Engram, EngramConfig
-from .gpt import GPT, GPTConfig
+from oazy.gpt import GPT, GPTConfig
 
 
 def check(name, ok, detail=""):

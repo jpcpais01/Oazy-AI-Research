@@ -1,6 +1,6 @@
 """FineWeb-Edu, tokenized with GPT-2's tokenizer into flat uint16 files (nanoGPT style).
 
-    python -m engram.data --out /workspace/engram_data --tokens 4e9
+    python -m oazy.data --out /workspace/oazy_data --tokens 4e9
 
 FineWeb-Edu is web pages filtered for educational value (Hugging Face, 2024); small models trained
 on it beat GPT-2 with far less text. We download the "sample-10BT" parquet files one by one,
@@ -27,6 +27,19 @@ from pathlib import Path
 import numpy as np
 
 EOT = 50256
+
+
+def default_dir(what: str) -> str:
+    """Where the lab keeps its text ("data") and its training runs ("runs") on the pod.
+
+    $OAZY_DATA / $OAZY_RUNS win; otherwise /workspace/oazy_data and /workspace/oazy_runs, except that
+    the folders from the Engram days (/workspace/oazy_data, /workspace/oazy_runs) keep being used
+    while they are the only ones there, so nothing has to be moved."""
+    env = os.environ.get("OAZY_" + what.upper())
+    if env:
+        return env
+    new, old = f"/workspace/oazy_{what}", f"/workspace/engram_{what}"
+    return old if (os.path.exists(old) and not os.path.exists(new)) else new
 HELLASWAG_URL = "https://raw.githubusercontent.com/rowanz/hellaswag/master/data/hellaswag_val.jsonl"
 
 
@@ -208,13 +221,14 @@ def val_set(path, block: int, n: int):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default="/workspace/engram_data")
+    ap.add_argument("--out", default=None)
     ap.add_argument("--tokens", type=float, default=4e9, help="training tokens to prepare")
     ap.add_argument("--val-tokens", type=float, default=1e7)
     ap.add_argument("--sample", default="sample-10BT", help="FineWeb-Edu sample: sample-10BT, sample-100BT, ...")
     ap.add_argument("--workers", type=int, default=0)
     ap.add_argument("--hellaswag-only", action="store_true", help="only fetch the HellaSwag file")
     a = ap.parse_args()
+    a.out = a.out or default_dir("data")
     if a.hellaswag_only:
         Path(a.out).mkdir(parents=True, exist_ok=True)
         return fetch_hellaswag(Path(a.out))

@@ -247,7 +247,7 @@ def foresight(model: Tide, enc, text):
     draft_p[d][t]   the chance the draft made d+1 words before word t gave to word t (None at the start)
     draft_top[d][t] that draft's own best guess
     """
-    from engram.probes import token_strings
+    from oazy.probes import token_strings
     was = model.training
     model.eval()
     dev = model.embed.weight.device

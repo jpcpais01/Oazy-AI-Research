@@ -1,6 +1,6 @@
 """Measure OpenAI's own GPT-2 124M with exactly the same tests, as the line to beat.
 
-    python -m engram.compare --data /workspace/engram_data --runs /workspace/engram_runs
+    python -m oazy.compare --data /workspace/oazy_data --runs /workspace/oazy_runs
 
 Loads the released weights from Hugging Face ("gpt2"), then measures validation loss on our
 held-out FineWeb-Edu text, the memory checks, and full HellaSwag (all 10,042 questions). The result
@@ -16,7 +16,7 @@ from pathlib import Path
 
 import torch
 
-from .data import val_set
+from .data import val_set, default_dir
 from .gpt import load_openai_gpt2
 from . import hellaswag, probes
 from .train import PRESETS, Run, val_loss
@@ -24,11 +24,12 @@ from .train import PRESETS, Run, val_loss
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data", default="/workspace/engram_data")
-    ap.add_argument("--runs", default="/workspace/engram_runs")
+    ap.add_argument("--data", default=None)
+    ap.add_argument("--runs", default=None)
     ap.add_argument("--preset", default="full", help="use the same validation windows as this training preset")
     ap.add_argument("--device", default=None)
     a = ap.parse_args()
+    a.data, a.runs = a.data or default_dir("data"), a.runs or default_dir("runs")
     device = torch.device(a.device or ("cuda" if torch.cuda.is_available() else "cpu"))
     p = PRESETS[a.preset]
     data = Path(a.data)
