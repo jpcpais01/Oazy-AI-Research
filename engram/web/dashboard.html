@@ -108,6 +108,14 @@
 
   <div class="section-title"><h3>Is the memory really used?</h3><div class="line"></div></div>
   <div class="grid">
+    <div class="card span12" id="draftCard" style="display:none">
+      <div class="cardhead"><div class="titles"><h2>Tide's drafts: how far ahead can it see?</h2><div class="sub">Loss of Tide's draft of the word 1, 2, … 8 words ahead (1 = the ordinary next-word loss). Each line is one check during training.</div></div></div>
+      <details class="why"><summary>Why does this matter?</summary><div class="body">
+        <p>Every Tide draft is trained to guess the real word it stands for. If the far drafts get much better than "any common word", the model is genuinely planning ahead, and those plans are what the next-word guess listens to. If they stay flat, the belt is not earning its keep.</p>
+      </div></details>
+      <div class="legend" id="draftLegend" style="margin-bottom:10px"></div>
+      <div class="chart"><canvas id="drafts" style="height:240px"></canvas><div class="tip" id="draftsTip"></div></div>
+    </div>
     <div class="card span6">
       <div class="cardhead"><div class="titles"><h2>What memory buys</h2><div class="sub">Loss when a model may only use the last few words, versus all of them.</div></div></div>
       <details class="why"><summary>How to read this</summary><div class="body">
@@ -176,12 +184,12 @@
 <script src="common.js"></script>
 <script>
 "use strict";
-const C = { engram: UI.css("--brand"), gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
-const NAMES = { engram: "Engram", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };
-const colorOf = (n) => n.startsWith("engram") ? C.engram : n.startsWith("gpt") ? C.gpt : C.ref;
-const nameOf = (n) => n === "engram" ? "Engram" : n === "gpt" ? NAMES.gpt : n === "openai-gpt2" ? NAMES.openai : n;
+const C = { engram: UI.css("--brand"), tide: "#2fb8a6", gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
+const NAMES = { engram: "Engram", tide: "Tide", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };
+const colorOf = (n) => n.startsWith("engram") ? C.engram : n.startsWith("tide") ? C.tide : n.startsWith("gpt") ? C.gpt : C.ref;
+const nameOf = (n) => n === "engram" ? "Engram" : n === "tide" ? "Tide" : n === "gpt" ? NAMES.gpt : n === "openai-gpt2" ? NAMES.openai : n;
 const HS_GPT2 = 0.2955;
-let RUNS = [], DATA = {}, SNAPS = [], SNAP = null, xmode = "tokens", colorBy = "surprise", POSLAB = [];
+let SNAPRUN = "engram", RUNS = [], DATA = {}, SNAPS = [], SNAP = null, xmode = "tokens", colorBy = "surprise", POSLAB = [];
 
 const fmtL = (v) => v.toFixed(3);
 const pct = (v) => (v * 100).toFixed(1) + "%";
@@ -193,6 +201,7 @@ const charts = {
   ctx: UI.lineChart(document.getElementById("ctx"), document.getElementById("ctxTip"), { series: [] }),
   pos: UI.lineChart(document.getElementById("pos"), document.getElementById("posTip"), { series: [] }),
   rec: UI.lineChart(document.getElementById("rec"), document.getElementById("recTip"), { series: [] }),
+  drafts: UI.lineChart(document.getElementById("drafts"), document.getElementById("draftsTip"), { series: [] }),
 };
 
 function legend(id, items) {
@@ -253,13 +262,16 @@ function scoreboard() {
   const row = (n, v, w, fmt) => `<div class="row"><span>${nameOf(n)}</span><div class="track"><div style="width:${Math.max(2, w * 100).toFixed(1)}%;background:${colorOf(n)}"></div></div><b>${fmt(v)}</b></div>`;
   let verdictL = "", verdictH = "";
   const target = ref(val) != null ? ["OpenAI GPT-2", ref(val)] : val.gpt != null ? [NAMES.gpt, val.gpt] : null;
-  if (val.engram != null && target) {
-    const d = val.engram - target[1];
-    verdictL = d < 0 ? `<span class="win">Engram is ahead of ${target[0]} by ${(-d).toFixed(3)}</span>` : `<span class="lose">Engram is ${d.toFixed(3)} behind ${target[0]}</span>`;
-  }
-  if (hs.engram != null) {
-    const d = hs.engram - HS_GPT2;
-    verdictH = d > 0 ? `<span class="win">Engram beats GPT-2's 29.6% by ${(d * 100).toFixed(1)} points</span>` : `<span class="lose">${(-d * 100).toFixed(1)} points below GPT-2's 29.6%</span>`;
+  for (const me of ["engram", "tide"]) {
+    const nm = nameOf(me), br = verdictL ? "<br>" : "";
+    if (val[me] != null && target) {
+      const d = val[me] - target[1];
+      verdictL += br + (d < 0 ? `<span class="win">${nm} is ahead of ${target[0]} by ${(-d).toFixed(3)}</span>` : `<span class="lose">${nm} is ${d.toFixed(3)} behind ${target[0]}</span>`);
+    }
+    if (hs[me] != null) {
+      const d = hs[me] - HS_GPT2, bh = verdictH ? "<br>" : "";
+      verdictH += bh + (d > 0 ? `<span class="win">${nm} beats GPT-2's 29.6% by ${(d * 100).toFixed(1)} points</span>` : `<span class="lose">${nm}: ${(-d * 100).toFixed(1)} points below GPT-2's 29.6%</span>`);
+    }
   }
   const hsRows = Object.entries(hs);
   if (!("openai-gpt2" in hs)) hsRows.push(["openai-gpt2", HS_GPT2]);
@@ -334,6 +346,18 @@ function drawMemoryUse() {
     empty: "Waiting for the first memory check", tipNote: () => "share of the repeated passage predicted exactly" });
 }
 
+function drawDrafts() {
+  const hist = (DATA.tide?.metrics || []).filter((x) => x.kind === "drafts");
+  document.getElementById("draftCard").style.display = hist.length ? "" : "none";
+  if (!hist.length) return;
+  const pick = hist.length <= 5 ? hist : [0, 1, 2, 3, 4].map((i) => hist[Math.round(i * (hist.length - 1) / 4)]);
+  const series = pick.map((h, i) => ({ name: "after " + UI.fmtTokens(h.tokens) + " tokens", color: C.tide, alpha: 0.25 + 0.75 * (i + 1) / pick.length,
+    width: i === pick.length - 1 ? 2.6 : 1.4, dots: true, endLabel: i === pick.length - 1, points: h.draft_loss.map((l, d) => [d + 1, l]) }));
+  legend("draftLegend", pick.map((h, i) => ["after " + UI.fmtTokens(h.tokens) + " tokens", UI.alpha ? UI.alpha(C.tide, 0.25 + 0.75 * (i + 1) / pick.length) : C.tide]));
+  charts.drafts.set({ series, xFmt: (v) => Math.round(v) === 1 ? "next word" : "+" + Math.round(v), xTip: (v) => Math.round(v) + " words ahead",
+    yFmt: (v) => v.toFixed(1), tipFmt: fmtL });
+}
+
 // ---------------------------------------------------------------- inside the memory
 function drawSnapshot() {
   const p = document.getElementById("passage");
@@ -396,7 +420,7 @@ function drawMatrix(cv, m) {
 async function loadSnap(i) {
   const s = SNAPS[i]; if (!s) return;
   document.getElementById("snapLabel").textContent = `after ${UI.fmtTokens(s.tokens)} tokens (step ${s.step})`;
-  SNAP = await getJSON(`api/run/engram/snapshot/${s.file}`);
+  SNAP = await getJSON(`api/run/${SNAPRUN}/snapshot/${s.file}`);
   drawSnapshot();
 }
 
@@ -414,15 +438,16 @@ async function refresh() {
   const pill = document.getElementById("updated");
   try {
     RUNS = await getJSON("api/runs");
-    RUNS.sort((a, b) => ["engram", "gpt", "openai-gpt2"].indexOf(a.name) - ["engram", "gpt", "openai-gpt2"].indexOf(b.name));
+    RUNS.sort((a, b) => ["tide", "engram", "gpt", "openai-gpt2"].indexOf(a.name) - ["tide", "engram", "gpt", "openai-gpt2"].indexOf(b.name));
     for (const r of RUNS) {
       const [metrics, samples] = await Promise.all([getJSON(`api/run/${r.name}/metrics`), getJSON(`api/run/${r.name}/samples`)]);
       DATA[r.name] = { metrics, samples };
     }
     document.getElementById("runs").innerHTML = RUNS.length ? RUNS.map(runCard).join("") : `<div class="card"><div class="empty">No runs yet. Start training and this page fills in by itself.</div></div>`;
-    scoreboard(); drawLearning(); drawMemoryUse(); drawSamples();
-    if (RUNS.some((r) => r.name === "engram")) {
-      const snaps = await getJSON("api/run/engram/snapshots");
+    scoreboard(); drawLearning(); drawMemoryUse(); drawDrafts(); drawSamples();
+    SNAPRUN = RUNS.some((r) => r.name === "engram") ? "engram" : "tide";
+    if (RUNS.some((r) => r.name === SNAPRUN)) {
+      const snaps = await getJSON(`api/run/${SNAPRUN}/snapshots`);
       const slider = document.getElementById("snapSlider");
       const atEnd = +slider.value >= SNAPS.length - 1;
       if (snaps.length !== SNAPS.length) {

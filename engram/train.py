@@ -30,11 +30,20 @@ from .gpt import GPT, GPTConfig
 from .model import Engram, EngramConfig
 from . import hellaswag, probes, memory
 
+KINDS = ["engram", "tide", "gpt"]
+NICE = {"engram": "Engram", "tide": "Tide", "gpt": "GPT"}
+
+
+def _tide():
+    from tide.model import Tide, TideConfig          # tide/ builds on this package
+    return Tide, TideConfig
+
 PRESETS = {
     # a laptop-CPU test of the whole pipeline (minutes)
     "tiny": dict(
         engram=dict(d_model=128, n_layer=4, n_head=2, head_k=64, head_v=64, mlp_hidden=256, max_len=256),
         gpt=dict(d_model=128, n_layer=4, n_head=2, max_len=256),
+        tide=dict(refine_hidden=256, lookahead=4),
         micro=16, accum=1, lr=3e-3, warmup=50, tokens=3_000_000,
         eval_every=250_000, probe_every=1_000_000, hs_every=1_000_000, sample_every=1_000_000,
         val_windows=64, hs_quick=200, sample_len=40,
@@ -43,6 +52,7 @@ PRESETS = {
     "smoke": dict(
         engram=dict(d_model=64, n_layer=2, n_head=1, head_k=64, head_v=64, mlp_hidden=128, max_len=128),
         gpt=dict(d_model=64, n_layer=2, n_head=1, max_len=128),
+        tide=dict(refine_hidden=128, lookahead=4),
         micro=8, accum=2, lr=3e-3, warmup=10, tokens=60_000,
         eval_every=20_000, probe_every=30_000, hs_every=30_000, sample_every=30_000,
         val_windows=16, hs_quick=20, sample_len=10,
@@ -82,6 +92,10 @@ def build(kind, preset, overrides=None):
     if kind == "engram":
         cfg = EngramConfig(**{**p["engram"], **(overrides or {})})
         return Engram(cfg), cfg
+    if kind == "tide":
+        Tide, TideConfig = _tide()
+        cfg = TideConfig(**{**p["engram"], **p.get("tide", {}), **(overrides or {})})
+        return Tide(cfg), cfg
     cfg = GPTConfig(**{**p["gpt"], **(overrides or {})})
     return GPT(cfg), cfg
 
@@ -91,6 +105,9 @@ def load_model(ckpt: Path, device):
     kind = st.get("kind", "engram")
     if kind == "engram":
         model = Engram(EngramConfig.from_dict(st["config"]))
+    elif kind == "tide":
+        Tide, TideConfig = _tide()
+        model = Tide(TideConfig.from_dict(st["config"]))
     else:
         model = GPT(GPTConfig.from_dict(st["config"]))
     model.load_state_dict(st["model"])
@@ -168,8 +185,9 @@ def bench(args, device):
     micro = args.micro or p["micro"]
     total = int(args.tokens or p["tokens"])
     speeds = {}
-    for kind in ("engram", "gpt"):
-        model, cfg = build(kind, args.preset, parse_overrides(args.set) if kind == "engram" else None)
+    kinds = [args.model, "gpt"] if args.model != "gpt" else ["engram", "gpt"]
+    for kind in kinds:
+        model, cfg = build(kind, args.preset, parse_overrides(args.set) if kind != "gpt" else None)
         model.to(device).train()
         memory.fla_check(device)
         if args.compile and device.type == "cuda":
@@ -194,7 +212,7 @@ def bench(args, device):
         speeds[kind] = tps
         mem = torch.cuda.max_memory_allocated() / 2**30 if device.type == "cuda" else 0
         extra = ""
-        if kind == "engram":
+        if kind != "gpt":
             extra = f"  (memory kernel: {'flash-linear-attention' if memory._FLA_OK else 'pure PyTorch chunked'})"
         print(f"{kind:7s} params {model.num_params() / 1e6:6.1f}M  {dt * 1000:7.1f} ms per {micro}x{T}  "
               f"{tps / 1e3:8.1f}k tok/s  peak mem {mem:5.1f} GB{extra}")
@@ -202,21 +220,23 @@ def bench(args, device):
         if device.type == "cuda":
             torch.cuda.empty_cache()
             torch.cuda.reset_peak_memory_stats()
-    te, tg = total / speeds["engram"], total / speeds["gpt"]
-    print(f"\n{total / 1e9:.2f}B tokens each: Engram {te / 3600:.2f} h, GPT {tg / 3600:.2f} h on their own.")
+    me = kinds[0]
+    te, tg = total / speeds[me], total / speeds["gpt"]
+    print(f"\n{total / 1e9:.2f}B tokens each: {NICE[me]} {te / 3600:.2f} h, GPT {tg / 3600:.2f} h on their own.")
     print(f"  one GPU, both at once: about {(te + tg) / 3600:.2f} h")
     print(f"  two GPUs, one each:    about {max(te, tg) / 3600:.2f} h")
     if args.hours:
-        share = args.hours * 3600 / (1 / speeds["engram"] + 1 / speeds["gpt"])
+        share = args.hours * 3600 / (1 / speeds[me] + 1 / speeds["gpt"])
         two = args.hours * 3600 * min(speeds.values())
         print(f"\nto finish in {args.hours:g} h (+ a few minutes of evaluations):")
+        print(f"  {NICE[me]} alone on a GPU: --tokens {args.hours * 3600 * speeds[me] * 0.93 / 1e9:.2f}e9")
         print(f"  one GPU:  --tokens {share * 0.93 / 1e9:.2f}e9")
         print(f"  two GPUs: --tokens {two * 0.93 / 1e9:.2f}e9")
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", choices=["engram", "gpt"], default="engram")
+    ap.add_argument("--model", choices=KINDS, default="engram")
     ap.add_argument("--preset", choices=list(PRESETS), default="full")
     ap.add_argument("--data", default="/workspace/engram_data")
     ap.add_argument("--runs", default="/workspace/engram_runs")
@@ -334,6 +354,13 @@ def main():
             latest["recall_acc"] = r["recall_acc"]
             print(f"[memory] context curve {[(s, round(l, 3)) for s, l in r['context']]} | "
                   f"repeat recall {r['recall_acc'] * 100:.1f}%", flush=True)
+            if hasattr(model, "belt"):
+                from tide.model import draft_report
+                r = draft_report(model, pwin, device, batch=min(micro, 16))
+                run.log("metrics.jsonl", {"kind": "drafts", **base, **r})
+                latest["draft_acc"] = r["draft_acc"]
+                print(f"[drafts] loss by words ahead {[round(v, 3) for v in r['draft_loss']]} | "
+                      f"top-1 {[round(v * 100, 1) for v in r['draft_acc']]}%", flush=True)
             if isinstance(model, Engram):
                 snap = probes.snapshot(model, enc)
                 name = f"{step:07d}.json"
@@ -361,7 +388,7 @@ def main():
             x, y = train.get(device)
             try:
                 with amp(device):
-                    _, loss, _ = model(x, y)
+                    _, loss, st = model(x, y)
                 (loss / accum).backward()
             except Exception as e:
                 if model._compiled is None:
@@ -369,9 +396,9 @@ def main():
                 print(f"torch.compile failed ({type(e).__name__}: {e}); continuing without compile", flush=True)
                 model._compiled = None
                 with amp(device):
-                    _, loss, _ = model(x, y)
+                    _, loss, st = model(x, y)
                 (loss / accum).backward()
-            loss_sum += loss.detach()
+            loss_sum += st.get("ce", loss).detach()       # the next-word loss (Tide also trains its far drafts)
         gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         opt.step()
         opt.zero_grad(set_to_none=True)
