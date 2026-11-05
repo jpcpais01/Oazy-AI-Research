@@ -295,7 +295,7 @@ def main():
         opt.load_state_dict(state["opt"])
         step, tokens, elapsed, nxt = state["step"], state["tokens"], state["elapsed"], state["next"]
         train.set_state(state["data"])
-        torch.set_rng_state(state["torch_rng"])
+        torch.set_rng_state(state["torch_rng"].cpu())
         print(f"resumed from {ck}: step {step}, {tokens / 1e6:.1f}M tokens, {elapsed / 60:.1f} min")
     elif args.fresh:
         for f in ("metrics.jsonl", "samples.jsonl", "snapshots.jsonl", "status.json"):
@@ -316,6 +316,13 @@ def main():
     if tokens >= total:
         print("this run is already finished. Use --tokens to train longer or --fresh to start over.")
         return
+
+    try:
+        prev = json.loads((run.dir / "status.json").read_text())
+    except Exception:
+        prev = {}
+    run.status({**prev, **info, "state": "starting", "step": step, "tokens": tokens, "elapsed": elapsed,
+                "updated": time.time()})
 
     memory.fla_check(device)
     if args.compile and device.type == "cuda":
