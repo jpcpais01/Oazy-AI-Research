@@ -128,7 +128,7 @@ PRESETS = {
     "big": dict(
         memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288,
         micro=32, accum=8, lr=1.2e-3, warmup=600, tokens=5_000_000_000,
-        eval_every=100_000_000, probe_every=500_000_000, hs_every=500_000_000, sample_every=500_000_000,
+        eval_every=100_000_000, probe_every=200_000_000, hs_every=200_000_000, sample_every=200_000_000,
         val_windows=128, hs_quick=1000, sample_len=120,
     ),
 }
@@ -531,6 +531,9 @@ def main():
         opt = new_opt()
         opt.load_state_dict(state["opt"])
         step, tokens, elapsed, nxt = state["step"], state["tokens"], state["elapsed"], state["next"]
+        for k in nxt:                                    # tests made more frequent since: the next one comes sooner
+            every = p[k + "_every"]
+            nxt[k] = min(nxt[k], math.ceil(tokens / every) * every)
         train.set_state(state["data"])
         if growing_ctx:
             T = train.T
