@@ -37,6 +37,8 @@ docs/RUNPOD.md how to run everything on a RunPod GPU
 browser (double-click it, no server needed). The light tunnel in its hero is a WebGL shader written for Oazy; it
 lowers its own resolution on slow GPUs, pauses when scrolled away, and holds still for people who ask for reduced motion.
 Model results on it are placeholders until the runs finish.
+On Vercel: import this repo, set **Root Directory** to `oazy/site` (Framework Preset: Other, no build command),
+then in Settings → Git set the **Production Branch** to `oazy-ai-research`. Only the page is published, not the code.
 
 Adding a model: a package with `model.py` (forward(idx, targets) → logits, loss, stats; `_body`;
 `generate`), registered in `oazy/train.py` (`build`, `load_model`) and in the app's `MODELS` list.
