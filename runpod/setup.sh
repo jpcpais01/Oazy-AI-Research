@@ -50,5 +50,6 @@ python3 -m oazy.data --out "${DATA}" --tokens "${TOKENS}"
 echo "== self-tests of every model"
 python3 -m engram.tests --device cuda
 python3 -m tide.tests --device cuda
+python3 -m ember.tests --device cuda
 
 echo "== setup complete. Next: python3 -m oazy.train --bench --model tide --hours 2"

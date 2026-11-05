@@ -257,13 +257,14 @@
 <script src="common.js"></script>
 <script>
 "use strict";
-const C = { engram: UI.css("--brand"), tide: UI.css("--teal"), fern: UI.css("--fern"), gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
-const NAMES = { engram: "Engram", tide: "Tide", fern: "Fern", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };
+const C = { engram: UI.css("--brand"), tide: UI.css("--teal"), fern: UI.css("--fern"), ember: UI.css("--ember"), gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
+const NAMES = { engram: "Engram", tide: "Tide", fern: "Fern", ember: "Ember", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };
 // Every model of the lab. role: "ours" (our architectures), "baseline" (the GPT-2 we train the same way), "reference" (OpenAI's).
 const MODELS = {
   engram: { name: "Engram", color: C.engram, role: "ours", blurb: "Learns while it reads: small memories fixed by their own surprise, word by word." },
   tide: { name: "Tide", color: C.tide, role: "ours", blurb: "Engram plus a belt of drafts of the next 8 words, cleaned up as they arrive." },
   fern: { name: "Fern", color: C.fern, role: "ours", blurb: "Writes 16 words at a time, coarse to fine: where the passage is going first, then the middle, then the details. Not a next-word model." },
+  ember: { name: "Ember", color: C.ember, role: "ours", blurb: "Engram's memory, raised to learn fast: grows from 4 to 12 blocks, learns from GPT-2 medium early on, Muon optimizer." },
   gpt: { name: NAMES.gpt, color: C.gpt, role: "baseline", blurb: "GPT-2 small (124M), trained on the same text, in the same order, with the same schedule." },
   "openai-gpt2": { name: NAMES.openai, color: C.ref, role: "reference", blurb: "OpenAI's 2019 GPT-2 small, measured with the same tests: the line to beat." },
 };
@@ -460,7 +461,7 @@ function scoreboard() {
   const row = (n, v, w, fmt) => `<div class="row"><span>${nameOf(n)}</span><div class="track"><div style="width:${Math.max(2, w * 100).toFixed(1)}%;background-color:${colorOf(n)}"></div></div><b>${fmt(v)}</b></div>`;
   let verdictL = "", verdictH = "";
   const target = ref(val) != null ? ["OpenAI GPT-2", ref(val)] : val.gpt != null ? [NAMES.gpt, val.gpt] : null;
-  for (const me of ["engram", "tide", "fern"]) {
+  for (const me of ["engram", "tide", "fern", "ember"]) {
     const nm = nameOf(me), br = verdictL ? "<br>" : "";
     if (val[me] != null && target) {
       const d = val[me] - target[1];
@@ -702,7 +703,7 @@ async function refresh() {
   const pill = document.getElementById("updated");
   try {
     RUNS = await getJSON("api/runs");
-    RUNS.sort((a, b) => ["fern", "tide", "engram", "gpt", "openai-gpt2"].indexOf(a.name) - ["fern", "tide", "engram", "gpt", "openai-gpt2"].indexOf(b.name));
+    RUNS.sort((a, b) => ["ember", "fern", "tide", "engram", "gpt", "openai-gpt2"].indexOf(a.name) - ["ember", "fern", "tide", "engram", "gpt", "openai-gpt2"].indexOf(b.name));
     for (const r of RUNS) {
       const [metrics, samples] = await Promise.all([getJSON(`api/run/${r.name}/metrics`), getJSON(`api/run/${r.name}/samples`)]);
       DATA[r.name] = { metrics, samples };

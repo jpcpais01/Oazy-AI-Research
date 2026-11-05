@@ -34,19 +34,19 @@ def r3(x):
 class Brain:
     def __init__(self, ckpt: Path, device):
         self.model, st = load_model(ckpt, device)
-        if st.get("kind", "engram") != "engram":
-            raise SystemExit("this checkpoint is the GPT baseline; the chat app needs an Engram checkpoint")
+        if st.get("kind", "engram") not in ("engram", "ember"):
+            raise SystemExit("this checkpoint is not an Engram-style model; the chat app needs an Engram or Ember checkpoint")
         self.cfg = self.model.cfg
         self.device = device
         self.enc = get_tokenizer()
         self.meta = {"step": st.get("step"), "tokens": st.get("tokens"), "params": self.model.num_params(),
-                     "layers": self.cfg.n_layer, "heads": self.cfg.n_head, "k": self.cfg.head_k, "v": self.cfg.head_v,
+                     "layers": len(self.model.blocks), "heads": self.cfg.n_head, "k": self.cfg.head_k, "v": self.cfg.head_v,
                      "memory_numbers": self.model.memory_numbers()}
         self.lock = threading.Lock()
         self.reset()
 
     def reset(self):
-        self.states = [None] * self.cfg.n_layer
+        self.states = [None] * len(self.model.blocks)
         self.logits = None
         self.n = 0
 
@@ -134,7 +134,7 @@ def make_handler(brain: Brain):
             if name.endswith((".js", ".css", ".svg")) and "/" not in name and (APP / name).is_file():
                 ctype = "text/javascript" if name.endswith(".js") else "image/svg+xml" if name.endswith(".svg") else "text/css"
                 return self.send(200, (APP / name).read_bytes(), ctype + "; charset=utf-8")
-            L, Hh = brain.cfg.n_layer, brain.cfg.n_head
+            L, Hh = len(brain.model.blocks), brain.cfg.n_head
             layer = min(L - 1, max(0, int(q.get("layer", L - 1))))
             head = min(Hh - 1, max(0, int(q.get("head", 0))))
             if name == "api/info":
@@ -169,11 +169,12 @@ def make_handler(brain: Brain):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt", default=None)
+    ap.add_argument("--run", default="engram", help="which run folder to open (engram or ember)")
     ap.add_argument("--port", type=int, default=8001)
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--device", default=None)
     a = ap.parse_args()
-    a.ckpt = a.ckpt or f"{default_dir('runs')}/engram/ckpt.pt"
+    a.ckpt = a.ckpt or f"{default_dir('runs')}/{a.run}/ckpt.pt"
     device = torch.device(a.device or ("cuda" if torch.cuda.is_available() else "cpu"))
     print(f"loading {a.ckpt} on {device} ...", flush=True)
     brain = Brain(Path(a.ckpt), device)
