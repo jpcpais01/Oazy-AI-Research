@@ -65,6 +65,19 @@ It trains 16 sequences at a time by default (same 262k tokens per step); if it r
 add `--micro 8`. Ablations: `--mentor none`, `--set grow=9:0 unfold_grow=3:0`, `--opt adamw`,
 `--set reader_weight=0`, each with its own `--name`.
 
+## Fern3 (117M, remembers old passages by their gist)
+
+```bash
+cd /workspace/oazy && git pull
+python3 -m fern3.tests --device cuda                    # ~1 min, includes a small recall exercise
+python3 -m oazy.train --bench --model fern3 --hours 2   # speed (fully grown)
+bash runpod/train.sh fern3 --tokens 2e9                 # 4,096-word windows, 262k tokens per step
+python3 -m fern.chat --run fern3 --port 8002
+```
+
+It trains 4 windows of 4,096 words at a time; if it runs out of memory, add `--micro 2`.
+Ablations: `--set recall=1`, `--set hindsight_weight=0`, `--set recall_warm=3`, `--mentor none`.
+
 ## Fern (200M, writes passages coarse to fine)
 
 ```bash

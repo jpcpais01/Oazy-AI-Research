@@ -41,9 +41,9 @@ def main():
     # ---- growing both halves
     cfg = Fern2Config(**SMALL, **PLAN)
     m = Fern2(cfg).to(dev)
-    full = Fern(FernConfig(**SMALL)).num_params() + cfg.d_model          # + the reader's norm
+    full = Fern(FernConfig(**SMALL)).num_params() + cfg.d_model + cfg.d_model ** 2   # + the reader's norm and layer
     check("starts shallow", (len(m.blocks), len(m.unfold)) == (2, 1), m.depth_text())
-    check("fully grown size = Fern's size (+ one norm)", m.full_params() == full, f"{m.full_params()} vs {full}")
+    check("fully grown size = Fern's size (+ the next-word layer)", m.full_params() == full, f"{m.full_params()} vs {full}")
     check("no growth before its time", not m.grow_to(0.05) and len(m.blocks) == 2)
     check("grows on time", m.grow_to(0.1) and (len(m.blocks), len(m.unfold)) == (4, 2), m.depth_text())
     check("a copy starts as its original",
@@ -74,7 +74,7 @@ def main():
     # ---- fully grown, Fern2 is a Fern: same weights, same chances for every word
     m.eval()
     f = Fern(FernConfig(**SMALL)).to(dev).eval()
-    f.load_state_dict({k: v for k, v in m.state_dict().items() if not k.startswith("reader_norm")})
+    f.load_state_dict({k: v for k, v in m.state_dict().items() if not k.startswith(("reader_norm", "reader_proj"))})
     with torch.no_grad():
         d = float((f.seq_logits(seq) - m.seq_logits(seq)).abs().max())
     check("fully grown Fern2 gives exactly Fern's chances", d < 1e-6, f"max diff {d:.1e}")

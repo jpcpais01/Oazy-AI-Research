@@ -6,7 +6,7 @@ each half, down to the last details. Its loss is the same exact per-word loss as
 
 What changes is the size and how it is raised:
 
-  * Size: 9 reader blocks + 3 unfolder blocks = 118.6M parameters (Fern: 18 + 6 = 198M), so it is
+  * Size: 9 reader blocks + 3 unfolder blocks = 119.2M parameters (Fern: 18 + 6 = 198M), so it is
     compared with GPT-2 small (124M) at a fair size and costs ~40% less per word than Fern.
 
   * It grows (from Ember). Both halves start a third deep and copy their own top blocks to grow:
@@ -64,7 +64,12 @@ def _quiet_unfold(b):
 class Fern2(Fern):
     def __init__(self, cfg: Fern2Config):
         super().__init__(cfg)                          # all blocks, Fern's init ...
-        self.reader_norm = RMSNorm(cfg.d_model)        # the reader's own next-word guess (tied word table)
+        D = cfg.d_model
+        # the reader's own next-word guess goes through its own small layer, so that guessing the next
+        # word does not crowd out what the unfolder needs from the reader (what was actually read)
+        self.reader_proj = nn.Linear(D, D, bias=False)
+        nn.init.normal_(self.reader_proj.weight, std=0.02)
+        self.reader_norm = RMSNorm(D)                  # (then the tied word table)
         self._block_params = sum(p.numel() for p in self.blocks[0].parameters())
         self._unfold_params = sum(p.numel() for p in self.unfold[0].parameters())
         self.blocks = nn.ModuleList(list(self.blocks)[:self.plans[0][0][1]])     # ... keep the first few
@@ -102,6 +107,8 @@ class Fern2(Fern):
             n = stack_depth_in(sd, prefix)
             while len(stack) < n:
                 stack.append(copy.deepcopy(stack[-1]))
+        if "reader_proj.weight" not in sd and "reader_norm.weight" in sd:      # checkpoints from before reader_proj
+            sd = {**sd, "reader_proj.weight": self.reader_proj.weight.detach().clone()}
         if self._compiled is not None:
             self.enable_compile()
         return super().load_state_dict(sd, strict=strict, assign=assign)
@@ -120,7 +127,7 @@ class Fern2(Fern):
 
     def reader_logits(self, idx):
         """The reader's own next-word guesses (B, T, vocab) for the words it has read."""
-        return F.linear(self.reader_norm(self.reader(idx)), self.embed.weight)
+        return F.linear(self.reader_norm(self.reader_proj(self.reader(idx))), self.embed.weight)
 
     def forward(self, idx, targets=None):
         if targets is None or not self.training or self.cfg.reader_weight <= 0:
@@ -137,7 +144,7 @@ class Fern2(Fern):
         logits = F.linear(hid, self.embed.weight)
         tgt = torch.where(self.rounds_of(starts, N) >= 0, targets, torch.full_like(targets, -1))
         ce = F.cross_entropy(logits.float().reshape(-1, logits.size(-1)), tgt.reshape(-1), ignore_index=-1)
-        rlog = F.linear(self.reader_norm(H), self.embed.weight)              # word t -> guess of word t + 1
+        rlog = F.linear(self.reader_norm(self.reader_proj(H)), self.embed.weight)   # word t -> guess of word t + 1
         rce = F.cross_entropy(rlog.float().reshape(-1, rlog.size(-1)), targets.reshape(-1))
         stats = {"ce": ce.detach(), "reader_ce": rce.detach(), "_ce": ce, "_reader_ce": rce, "kd_logits": rlog}
         return logits, ce + self.cfg.reader_weight * rce, stats
