@@ -344,7 +344,7 @@ def main():
             nxt["eval"] += p["eval_every"]
         if hs_path.exists() and (final or tokens >= nxt["hs"]):
             r = hellaswag.evaluate(model, hs_path, device, None if final else p["hs_quick"])
-            run.log("metrics.jsonl", {"kind": "hellaswag", **base, **r, "full": final})
+            run.log("metrics.jsonl", {"kind": "hellaswag", **base, **r, "full": final, "sample": "spread"})
             latest["hellaswag" + ("_full" if final else "")] = r["acc_norm"]
             print(f"[hellaswag] {r['acc_norm'] * 100:.2f}% on {r['n']} examples", flush=True)
             nxt["hs"] += p["hs_every"]
