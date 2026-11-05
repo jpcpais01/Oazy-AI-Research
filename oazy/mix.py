@@ -39,17 +39,18 @@ import numpy as np
 from .data import write_tokens, default_dir, get_tokenizer
 
 DEFAULT_MIX = "fwe:0.65,dclm:0.35@0;fwe:0.45,dclm:0.25,chat:0.3@0.8"
-# the bundle (oazy/bundle.py; SmolLM2-tokenizer models only): seven kinds of text, conversations a pinch
-# throughout and 30% of the cool-down
-BUNDLE_MIX = ("fwe:0.45,dclm:0.25,cosmo:0.12,wiki:0.05,math:0.05,code:0.05,chat:0.03@0;"
+# Tagus, our dataset (oazy/tagus.py; SmolLM2-tokenizer models only): seven kinds of text, conversations
+# a pinch throughout and 30% of the cool-down
+TAGUS_MIX = ("fwe:0.45,dclm:0.25,cosmo:0.12,wiki:0.05,math:0.05,code:0.05,chat:0.03@0;"
               "fwe:0.30,dclm:0.05,cosmo:0.15,wiki:0.05,math:0.10,code:0.05,chat:0.30@0.8")
-MIXES = {"default": DEFAULT_MIX, "v1": DEFAULT_MIX, "bundle": BUNDLE_MIX}
+BUNDLE_MIX = TAGUS_MIX                     # its first name
+MIXES = {"default": DEFAULT_MIX, "v1": DEFAULT_MIX, "tagus": TAGUS_MIX, "bundle": TAGUS_MIX}
 SOURCES = {"fwe": "", "dclm": "dclm", "chat": "chat",          # name -> sub-folder of the data folder
            "cosmo": "cosmo", "wiki": "wiki", "math": "math", "code": "code"}
 
 
 def resolve_mix(text):
-    """A mix by name ("bundle", "v1") or written out."""
+    """A mix by name ("tagus", "v1") or written out."""
     return MIXES.get(text, text) if text else text
 
 

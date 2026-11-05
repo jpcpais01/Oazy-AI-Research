@@ -498,10 +498,10 @@ def main():
     schedule = args.schedule or ("wsd" if args.model in BEES else "cos")
     lr_fn = lr_wsd if schedule == "wsd" else lr_at
     if args.model in BEES:
-        from .mix import Mix, DEFAULT_MIX, BUNDLE_MIX, resolve_mix, source_path
+        from .mix import Mix, DEFAULT_MIX, resolve_mix, source_path
         from bee.model import ctx_plan
-        if args.mix is None:      # SmolLM2-tokenizer Bees read the bundle when it is there (oazy/bundle.py)
-            args.mix = "bundle" if tk == "smollm2" and (data / "cosmo" / "train.bin").exists() else "v1"
+        if args.mix is None:      # SmolLM2-tokenizer Bees read Tagus when it is there (oazy/tagus.py)
+            args.mix = "tagus" if tk == "smollm2" and (data / "cosmo" / "train.bin").exists() else "v1"
         args.mix = resolve_mix(args.mix)
         train = Mix(data, args.mix, T, micro, seed=args.seed,
                     lengths=[t for _, t in ctx_plan(cfg)], log=say)
