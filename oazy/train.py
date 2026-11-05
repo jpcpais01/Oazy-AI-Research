@@ -349,6 +349,8 @@ def main():
         stop["flag"] = True
     signal.signal(signal.SIGINT, handler)
     signal.signal(signal.SIGTERM, handler)
+    if hasattr(signal, "SIGHUP"):
+        signal.signal(signal.SIGHUP, handler)      # closing the tmux session also saves first
 
     def ckpt_meta():
         return {"step": step, "tokens": tokens, "elapsed": elapsed, "next": nxt, "data": train.state(),
