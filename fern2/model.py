@@ -6,7 +6,7 @@ each half, down to the last details. Its loss is the same exact per-word loss as
 
 What changes is the size and how it is raised:
 
-  * Size: 9 reader blocks + 3 unfolder blocks = 118.6M parameters (Fern: 18 + 6 = 198M), so it is
+  * Size: 9 reader blocks + 3 unfolder blocks = 119.2M parameters (Fern: 18 + 6 = 198M), so it is
     compared with GPT-2 small (124M) at a fair size and costs ~40% less per word than Fern.
 
   * It grows (from Ember). Both halves start a third deep and copy their own top blocks to grow:

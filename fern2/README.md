@@ -7,7 +7,7 @@ how it is raised, using Ember's recipe plus one new idea.
 
 ```
                      Fern                    Fern2
-size                 198M (18 + 6 blocks)    118.6M (9 reader + 3 unfolder), under GPT-2's 124M
+size                 198M (18 + 6 blocks)    119.2M (9 reader + 3 unfolder), under GPT-2's 124M
 growing              no                      reader 3 -> 6 -> 9, unfolder 1 -> 2 -> 3 (at 10% and 25%)
 reader's own lesson  no                      also guesses the next word of everything it reads
 mentor               no                      GPT-2 medium teaches the reader, fading out by 50%

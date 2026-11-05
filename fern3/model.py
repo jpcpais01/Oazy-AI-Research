@@ -23,11 +23,14 @@ The parts, all built from the blocks Fern already has (fern/model.py UnfoldBlock
   * MERGE: folds a passage's 16 word states into one gist, two at a time, with one shared rule.
   * THINKER: a small model that reads the gists in order (a passage only sees earlier gists).
   * RECALL: the passage being written asks a question (from the thinker's latest thought); every
-    old gist answers with how well it matches. All gists get a soft share of a "blended gist" read
-    (so every gist learns whether it would have helped), and the 3 best are read in full. Learning
-    which to recall is the hard part (a yes/no choice): the soft share gives the learning signal,
-    and the 3 recalled passages carry their share in the backward pass (straight-through), so a
-    useful recall raises its gist's score. Close to "landmark attention" (Mohtashami & Jaggi 2023).
+    old gist answers with how well it matches. The 3 best are read in full, and the unfolder listens
+    to each in proportion to its match, so a recall that helped raises its gist's score (as in
+    "landmark attention", Mohtashami & Jaggi 2023). All gists also give a soft blended summary.
+    Learning WHICH passage to recall is the hard part, so it gets two extra helps:
+      - HINDSIGHT: once a passage is written, the old passage that shares the most words with it is
+        the one that would have been worth recalling; recall's scores are pulled towards that.
+      - WARM-UP: for the first 10% of training it recalls 8 passages and listens to them equally,
+        so the unfolder first learns to use recalled words at all.
   * UNFOLDER: Fern's, unchanged, glancing at the last 2 passages, the 3 recalled ones and 2 gist
     summaries (82 items in all) instead of Fern's reader.
 
@@ -47,7 +50,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from engram.model import RMSNorm
+from memtrix.model import RMSNorm
 from fern.model import UnfoldBlock
 from fern2.model import Fern2, Fern2Config
 from oazy.data import EOT

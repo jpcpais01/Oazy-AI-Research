@@ -32,9 +32,9 @@ from memtrix.model import Memtrix, MemtrixConfig
 from memtrix import memory
 from . import hellaswag, probes
 
-KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "gpt"]
-NICE = {"memtrix": "Memtrix", "tide": "Tide", "fern": "Fern", "ember": "Ember", "fern2": "Fern2", "gpt": "GPT"}
-FAST = ("ember", "fern2")       # raised the fast way: Muon and the GPT-2 medium mentor by default
+KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "gpt"]
+NICE = {"memtrix": "Memtrix", "tide": "Tide", "fern": "Fern", "ember": "Ember", "fern2": "Fern2", "fern3": "Fern3", "gpt": "GPT"}
+FAST = ("ember", "fern2", "fern3")       # raised the fast way: Muon and the GPT-2 medium mentor by default
 
 
 def say(*a, **k):
@@ -64,6 +64,11 @@ def _fern2():
     from fern2.model import Fern2, Fern2Config       # fern2/ = Fern's body + Ember's way of training
     return Fern2, Fern2Config
 
+
+def _fern3():
+    from fern3.model import Fern3, Fern3Config       # fern3/ = Fern's unfolding + gist-indexed recall
+    return Fern3, Fern3Config
+
 PRESETS = {
     # a laptop-CPU test of the whole pipeline (minutes)
     "tiny": dict(
@@ -73,6 +78,8 @@ PRESETS = {
         fern=dict(n_layer=4, unfold_layers=2, unfold_heads=2, unfold_hidden=256),
         ember=dict(grow="1:0,2:0.1,4:0.25"), mentor="none",
         fern2=dict(n_layer=4, unfold_layers=2, unfold_heads=2, unfold_hidden=256, grow="2:0,4:0.25", unfold_grow="1:0,2:0.25"),
+        fern3=dict(n_layer=2, unfold_layers=2, think_layers=1, unfold_heads=2, unfold_hidden=256, max_len=512,
+                   grow="1:0,2:0.25", unfold_grow="1:0,2:0.25"),
         micro=16, accum=1, lr=3e-3, warmup=50, tokens=3_000_000,
         eval_every=250_000, probe_every=1_000_000, hs_every=1_000_000, sample_every=1_000_000,
         val_windows=64, hs_quick=200, sample_len=40,
@@ -85,20 +92,22 @@ PRESETS = {
         fern=dict(n_layer=2, unfold_layers=1, unfold_heads=1, unfold_hidden=128),
         ember=dict(grow="1:0,2:0.3"), mentor="none",
         fern2=dict(n_layer=2, unfold_layers=1, unfold_heads=1, unfold_hidden=128, grow="1:0,2:0.3", unfold_grow="1:0"),
+        fern3=dict(n_layer=2, unfold_layers=1, think_layers=1, unfold_heads=1, unfold_hidden=128, max_len=256,
+                   grow="1:0,2:0.3", unfold_grow="1:0", recall_warm_until=0.2),
         micro=8, accum=2, lr=3e-3, warmup=10, tokens=60_000,
         eval_every=20_000, probe_every=30_000, hs_every=30_000, sample_every=30_000,
         val_windows=16, hs_quick=20, sample_len=10,
     ),
     # GPT-2 small size (Memtrix 117M vs GPT-2 124M), ~2 h for both models on one B200 (check with --bench)
     "full": dict(
-        memtrix=dict(), gpt=dict(), micro_fern2=16,
+        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4,
         micro=32, accum=8, lr=1.2e-3, warmup=400, tokens=2_000_000_000,
         eval_every=50_000_000, probe_every=250_000_000, hs_every=250_000_000, sample_every=250_000_000,
         val_windows=128, hs_quick=1000, sample_len=120,
     ),
     # the same models, 2.5x the text (e.g. a 2 x B200 pod for ~2.5 h, one model per GPU)
     "big": dict(
-        memtrix=dict(), gpt=dict(), micro_fern2=16,
+        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4,
         micro=32, accum=8, lr=1.2e-3, warmup=600, tokens=5_000_000_000,
         eval_every=100_000_000, probe_every=500_000_000, hs_every=500_000_000, sample_every=500_000_000,
         val_windows=128, hs_quick=1000, sample_len=120,
@@ -140,6 +149,10 @@ def build(kind, preset, overrides=None):
         Fern2, Fern2Config = _fern2()
         cfg = Fern2Config(**{**p["memtrix"], **p.get("fern2", {}), **(overrides or {})})
         return Fern2(cfg), cfg
+    if kind == "fern3":
+        Fern3, Fern3Config = _fern3()
+        cfg = Fern3Config(**{**p["memtrix"], **p.get("fern3", {}), **(overrides or {})})
+        return Fern3(cfg), cfg
     cfg = GPTConfig(**{**p["gpt"], **(overrides or {})})
     return GPT(cfg), cfg
 
@@ -163,6 +176,9 @@ def load_model(ckpt: Path, device):
     elif kind == "fern2":
         Fern2, Fern2Config = _fern2()
         model = Fern2(Fern2Config.from_dict(st["config"]))
+    elif kind == "fern3":
+        Fern3, Fern3Config = _fern3()
+        model = Fern3(Fern3Config.from_dict(st["config"]))
     else:
         model = GPT(GPTConfig.from_dict(st["config"]))
     model.load_state_dict(st["model"])
@@ -373,7 +389,8 @@ def main():
     model.to(device)
     T = cfg.max_len
     micro = args.micro or p.get("micro_" + args.model, p["micro"])
-    accum = max(1, (args.batch_tokens or p["micro"] * p["accum"] * T) // (micro * T))
+    # tokens per step: the preset's (at its usual 1,024-word windows, so Fern3's 4,096-word windows keep 262k)
+    accum = max(1, (args.batch_tokens or p["micro"] * p["accum"] * min(T, 1024)) // (micro * T))
     B = micro * accum
     opt_kind = args.opt or ("muon" if args.model in FAST else "adamw")
     new_opt = lambda: make_optimizer(model, lr, device, opt_kind, args.muon_lr)   # noqa: E731
@@ -572,7 +589,7 @@ def main():
         cur_lr = lr_at(tokens / total, step, lr, p["warmup"])
         for g in opt.param_groups:
             g["lr"] = cur_lr * g.get("lr_scale", 1.0)
-        loss_sum, kd_sum, rd_sum = 0.0, 0.0, 0.0
+        loss_sum, kd_sum, rd_sum, hs_sum = 0.0, 0.0, 0.0, 0.0
 
         def lesson(x, y):
             with amp(device):
@@ -605,6 +622,8 @@ def main():
                 kd_sum += st["kd"].detach()
             if "reader_ce" in st:
                 rd_sum += st["reader_ce"]
+            if "recall_hindsight" in st:
+                hs_sum += st["recall_hindsight"]
         gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         opt.step()
         opt.zero_grad(set_to_none=True)
@@ -626,6 +645,8 @@ def main():
                 rec["mentor_w"], rec["mentor_kl"] = mw, float(kd_sum) / accum
             if rd_sum:
                 rec["reader_loss"] = float(rd_sum) / accum
+            if hs_sum:
+                rec["recall_hindsight"] = float(hs_sum) / accum
             acc_loss, acc_n = 0.0, 0
             run.log("metrics.jsonl", rec)
             eta = (total - tokens) / max(tps, 1)
