@@ -1,6 +1,7 @@
 """Talk to a trained Fern and watch every passage unfold, round by round.
 
-    python -m fern.chat --port 8002     (on RunPod, see docs/RUNPOD.md for the port)
+    python -m fern.chat --port 8002                (on RunPod, see docs/RUNPOD.md for the port)
+    python -m fern.chat --run fern2 --port 8002    (Fern2 unfolds the same way)
 
 Fern writes 16 words at a time, coarse to fine: first where the passage is going (word 16), then
 the middle of the way (word 8), then the middle of each half, and so on for 5 rounds. The page
@@ -28,8 +29,8 @@ WEB = Path(__file__).parent / "web"
 class FernBrain:
     def __init__(self, ckpt: Path, device):
         self.model, st = load_model(ckpt, device)
-        if st.get("kind") != "fern":
-            raise SystemExit("this checkpoint is not a Fern")
+        if st.get("kind") not in ("fern", "fern2"):
+            raise SystemExit("this checkpoint is not a Fern or a Fern2")
         self.cfg = self.model.cfg
         self.device = device
         self.enc = get_tokenizer()
@@ -109,11 +110,12 @@ def main():
     from http.server import ThreadingHTTPServer
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt", default=None)
+    ap.add_argument("--run", default="fern", help="which run folder to open (fern or fern2)")
     ap.add_argument("--port", type=int, default=8002)
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--device", default=None)
     a = ap.parse_args()
-    a.ckpt = a.ckpt or f"{default_dir('runs')}/fern/ckpt.pt"
+    a.ckpt = a.ckpt or f"{default_dir('runs')}/{a.run}/ckpt.pt"
     device = torch.device(a.device or ("cuda" if torch.cuda.is_available() else "cpu"))
     print(f"loading {a.ckpt} on {device} ...", flush=True)
     brain = FernBrain(Path(a.ckpt), device)

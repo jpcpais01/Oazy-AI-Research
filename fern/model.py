@@ -207,17 +207,18 @@ class Fern(nn.Module):
             x, _ = b(x)
         return self.norm(x)
 
-    def _hidden(self, seq, starts, ends, J):
+    def _hidden(self, seq, starts, ends, J, H=None):
         """The unfolder's final thought for every word of every passage.
 
         seq (B, N+1) tokens; passages start right after position starts[b] (per row) and words after
         position ends[b] do not exist. Returns h (B, J, P, D) for the words at base + 1..P, base (B, J).
+        H: the reader's understanding of seq[:, :N], if already computed.
         """
         B, N1 = seq.shape
         N = N1 - 1
         P, D = self.cfg.passage, self.cfg.d_model
         dev = seq.device
-        H = self.reader(seq[:, :N])                                         # (B, N, D)
+        H = self.reader(seq[:, :N]) if H is None else H                     # (B, N, D)
         base = starts[:, None] + torch.arange(J, device=dev)[None, :] * P   # (B, J) last word before passage
         # the reader's last P words before the passage
         ppos = base[..., None] - (P - 1) + torch.arange(P, device=dev)        # (B, J, P)

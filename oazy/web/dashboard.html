@@ -257,14 +257,15 @@
 <script src="common.js"></script>
 <script>
 "use strict";
-const C = { engram: UI.css("--brand"), tide: UI.css("--teal"), fern: UI.css("--fern"), ember: UI.css("--ember"), gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
-const NAMES = { engram: "Engram", tide: "Tide", fern: "Fern", ember: "Ember", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };
+const C = { engram: UI.css("--brand"), tide: UI.css("--teal"), fern: UI.css("--fern"), ember: UI.css("--ember"), fern2: UI.css("--fern2"), gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
+const NAMES = { engram: "Engram", tide: "Tide", fern: "Fern", ember: "Ember", fern2: "Fern2", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };
 // Every model of the lab. role: "ours" (our architectures), "baseline" (the GPT-2 we train the same way), "reference" (OpenAI's).
 const MODELS = {
   engram: { name: "Engram", color: C.engram, role: "ours", blurb: "Learns while it reads: small memories fixed by their own surprise, word by word." },
   tide: { name: "Tide", color: C.tide, role: "ours", blurb: "Engram plus a belt of drafts of the next 8 words, cleaned up as they arrive." },
   fern: { name: "Fern", color: C.fern, role: "ours", blurb: "Writes 16 words at a time, coarse to fine: where the passage is going first, then the middle, then the details. Not a next-word model." },
   ember: { name: "Ember", color: C.ember, role: "ours", blurb: "Engram's memory, raised to learn fast: grows from 4 to 12 blocks, learns from GPT-2 medium early on, Muon optimizer." },
+  fern2: { name: "Fern2", color: C.fern2, role: "ours", blurb: "Fern, smaller (119M) and raised the Ember way: both halves grow, the reader also learns next words from GPT-2 medium, Muon. Not a next-word model." },
   gpt: { name: NAMES.gpt, color: C.gpt, role: "baseline", blurb: "GPT-2 small (124M), trained on the same text, in the same order, with the same schedule." },
   "openai-gpt2": { name: NAMES.openai, color: C.ref, role: "reference", blurb: "OpenAI's 2019 GPT-2 small, measured with the same tests: the line to beat." },
 };
@@ -461,7 +462,7 @@ function scoreboard() {
   const row = (n, v, w, fmt) => `<div class="row"><span>${nameOf(n)}</span><div class="track"><div style="width:${Math.max(2, w * 100).toFixed(1)}%;background-color:${colorOf(n)}"></div></div><b>${fmt(v)}</b></div>`;
   let verdictL = "", verdictH = "";
   const target = ref(val) != null ? ["OpenAI GPT-2", ref(val)] : val.gpt != null ? [NAMES.gpt, val.gpt] : null;
-  for (const me of ["engram", "tide", "fern", "ember"]) {
+  for (const me of ["engram", "tide", "fern", "ember", "fern2"]) {
     const nm = nameOf(me), br = verdictL ? "<br>" : "";
     if (val[me] != null && target) {
       const d = val[me] - target[1];
@@ -558,13 +559,24 @@ function drawDrafts() {
 }
 
 function drawRounds() {
-  const hist = showsKind("fern") ? (DATA.fern?.metrics || []).filter((x) => x.kind === "rounds") : [];
-  document.getElementById("roundsCard").style.display = hist.length ? "" : "none";
-  if (!hist.length) return;
-  const pick = hist.length <= 5 ? hist : [0, 1, 2, 3, 4].map((i) => hist[Math.round(i * (hist.length - 1) / 4)]);
-  const series = pick.map((h, i) => ({ name: "after " + UI.fmtTokens(h.tokens) + " tokens", color: C.fern, alpha: 0.25 + 0.75 * (i + 1) / pick.length,
-    width: i === pick.length - 1 ? 2.6 : 1.4, dots: true, endLabel: i === pick.length - 1, points: h.round_loss.map((l, r) => [r + 1, l]) }));
-  legend("roundsLegend", pick.map((h, i) => ["after " + UI.fmtTokens(h.tokens) + " tokens", UI.alpha ? UI.alpha(C.fern, 0.25 + 0.75 * (i + 1) / pick.length) : C.fern]));
+  // Fern and Fern2 unfold the same way: one model shows its history, several show their latest check side by side
+  const fams = RUNS.filter((r) => ["fern", "fern2"].includes(kindOf(r)) && full(r.name))
+    .map((r) => ({ n: r.name, hist: (DATA[r.name]?.metrics || []).filter((x) => x.kind === "rounds") })).filter((f) => f.hist.length);
+  document.getElementById("roundsCard").style.display = fams.length ? "" : "none";
+  if (!fams.length) return;
+  let pick, series;
+  if (fams.length === 1) {
+    const hist = fams[0].hist, col = colorOf(fams[0].n);
+    pick = hist.length <= 5 ? hist : [0, 1, 2, 3, 4].map((i) => hist[Math.round(i * (hist.length - 1) / 4)]);
+    series = pick.map((h, i) => ({ name: "after " + UI.fmtTokens(h.tokens) + " tokens", color: col, alpha: 0.25 + 0.75 * (i + 1) / pick.length,
+      width: i === pick.length - 1 ? 2.6 : 1.4, dots: true, endLabel: i === pick.length - 1, points: h.round_loss.map((l, r) => [r + 1, l]) }));
+    legend("roundsLegend", pick.map((h, i) => ["after " + UI.fmtTokens(h.tokens) + " tokens", UI.alpha ? UI.alpha(col, 0.25 + 0.75 * (i + 1) / pick.length) : col]));
+  } else {
+    pick = fams.map((f) => f.hist[f.hist.length - 1]);
+    series = fams.map((f, i) => ({ name: nameOf(f.n) + " at " + UI.fmtTokens(pick[i].tokens), color: colorOf(f.n), width: 2.4, dots: true,
+      endLabel: true, points: pick[i].round_loss.map((l, r) => [r + 1, l]) }));
+    legend("roundsLegend", fams.map((f, i) => [nameOf(f.n) + " (latest check, " + UI.fmtTokens(pick[i].tokens) + " tokens)", colorOf(f.n)]));
+  }
   const words = pick[pick.length - 1].round_words || [];
   const what = ["where the passage goes", "the middle", "quarters", "eighths", "last details"];
   charts.rounds.set({ series, xFmt: (v) => "round " + Math.round(v), xTip: (v) => `round ${Math.round(v)}: ${what[Math.round(v) - 1] || ""}` + (words[Math.round(v) - 1] ? ` (${words[Math.round(v) - 1]} words per text)` : ""),
@@ -703,7 +715,8 @@ async function refresh() {
   const pill = document.getElementById("updated");
   try {
     RUNS = await getJSON("api/runs");
-    RUNS.sort((a, b) => ["ember", "fern", "tide", "engram", "gpt", "openai-gpt2"].indexOf(a.name) - ["ember", "fern", "tide", "engram", "gpt", "openai-gpt2"].indexOf(b.name));
+    const ORDER = ["fern2", "ember", "fern", "tide", "engram", "gpt", "openai-gpt2"];
+    RUNS.sort((a, b) => ORDER.indexOf(a.name) - ORDER.indexOf(b.name));
     for (const r of RUNS) {
       const [metrics, samples] = await Promise.all([getJSON(`api/run/${r.name}/metrics`), getJSON(`api/run/${r.name}/samples`)]);
       DATA[r.name] = { metrics, samples };

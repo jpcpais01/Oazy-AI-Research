@@ -48,7 +48,22 @@ python3 -m engram.chat --port 8002
 python3 -m tide.chat --port 8002
 python3 -m fern.chat --port 8002
 python3 -m engram.chat --run ember --port 8002
+python3 -m fern.chat --run fern2 --port 8002
 ```
+
+## Fern2 (119M, Fern raised the Ember way)
+
+```bash
+cd /workspace/oazy && git pull
+python3 -m fern2.tests --device cuda                    # ~1 min
+python3 -m oazy.train --bench --model fern2 --hours 2   # speed (fully grown, without the mentor's cost)
+bash runpod/train.sh fern2 --tokens 2e9                 # downloads GPT-2 medium on first start
+python3 -m fern.chat --run fern2 --port 8002            # watch it unfold, from its latest checkpoint
+```
+
+It trains 16 sequences at a time by default (same 262k tokens per step); if it runs out of memory,
+add `--micro 8`. Ablations: `--mentor none`, `--set grow=9:0 unfold_grow=3:0`, `--opt adamw`,
+`--set reader_weight=0`, each with its own `--name`.
 
 ## Fern (200M, writes passages coarse to fine)
 

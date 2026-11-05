@@ -1,4 +1,4 @@
-"""Train Engram, Tide, Ember or the GPT-2 baseline on FineWeb-Edu. Resumable: re-run the same command.
+"""Train Engram, Tide, Fern, Ember, Fern2 or the GPT-2 baseline on FineWeb-Edu. Resumable: re-run the same command.
 
     python -m oazy.train --model engram --data /workspace/oazy_data --runs /workspace/oazy_runs
     python -m oazy.train --model gpt    --data /workspace/oazy_data --runs /workspace/oazy_runs
@@ -32,8 +32,9 @@ from engram.model import Engram, EngramConfig
 from engram import memory
 from . import hellaswag, probes
 
-KINDS = ["engram", "tide", "fern", "ember", "gpt"]
-NICE = {"engram": "Engram", "tide": "Tide", "fern": "Fern", "ember": "Ember", "gpt": "GPT"}
+KINDS = ["engram", "tide", "fern", "ember", "fern2", "gpt"]
+NICE = {"engram": "Engram", "tide": "Tide", "fern": "Fern", "ember": "Ember", "fern2": "Fern2", "gpt": "GPT"}
+FAST = ("ember", "fern2")       # raised the fast way: Muon and the GPT-2 medium mentor by default
 
 
 def say(*a, **k):
@@ -58,6 +59,11 @@ def _ember():
     from ember.model import Ember, EmberConfig       # ember/ builds on this package
     return Ember, EmberConfig
 
+
+def _fern2():
+    from fern2.model import Fern2, Fern2Config       # fern2/ = Fern's body + Ember's way of training
+    return Fern2, Fern2Config
+
 PRESETS = {
     # a laptop-CPU test of the whole pipeline (minutes)
     "tiny": dict(
@@ -66,6 +72,7 @@ PRESETS = {
         tide=dict(refine_hidden=256, lookahead=4),
         fern=dict(n_layer=4, unfold_layers=2, unfold_heads=2, unfold_hidden=256),
         ember=dict(grow="1:0,2:0.1,4:0.25"), mentor="none",
+        fern2=dict(n_layer=4, unfold_layers=2, unfold_heads=2, unfold_hidden=256, grow="2:0,4:0.25", unfold_grow="1:0,2:0.25"),
         micro=16, accum=1, lr=3e-3, warmup=50, tokens=3_000_000,
         eval_every=250_000, probe_every=1_000_000, hs_every=1_000_000, sample_every=1_000_000,
         val_windows=64, hs_quick=200, sample_len=40,
@@ -77,20 +84,21 @@ PRESETS = {
         tide=dict(refine_hidden=128, lookahead=4),
         fern=dict(n_layer=2, unfold_layers=1, unfold_heads=1, unfold_hidden=128),
         ember=dict(grow="1:0,2:0.3"), mentor="none",
+        fern2=dict(n_layer=2, unfold_layers=1, unfold_heads=1, unfold_hidden=128, grow="1:0,2:0.3", unfold_grow="1:0"),
         micro=8, accum=2, lr=3e-3, warmup=10, tokens=60_000,
         eval_every=20_000, probe_every=30_000, hs_every=30_000, sample_every=30_000,
         val_windows=16, hs_quick=20, sample_len=10,
     ),
     # GPT-2 small size (Engram 117M vs GPT-2 124M), ~2 h for both models on one B200 (check with --bench)
     "full": dict(
-        engram=dict(), gpt=dict(),
+        engram=dict(), gpt=dict(), micro_fern2=16,
         micro=32, accum=8, lr=1.2e-3, warmup=400, tokens=2_000_000_000,
         eval_every=50_000_000, probe_every=250_000_000, hs_every=250_000_000, sample_every=250_000_000,
         val_windows=128, hs_quick=1000, sample_len=120,
     ),
     # the same models, 2.5x the text (e.g. a 2 x B200 pod for ~2.5 h, one model per GPU)
     "big": dict(
-        engram=dict(), gpt=dict(),
+        engram=dict(), gpt=dict(), micro_fern2=16,
         micro=32, accum=8, lr=1.2e-3, warmup=600, tokens=5_000_000_000,
         eval_every=100_000_000, probe_every=500_000_000, hs_every=500_000_000, sample_every=500_000_000,
         val_windows=128, hs_quick=1000, sample_len=120,
@@ -128,6 +136,10 @@ def build(kind, preset, overrides=None):
         Ember, EmberConfig = _ember()
         cfg = EmberConfig(**{**p["engram"], **p.get("ember", {}), **(overrides or {})})
         return Ember(cfg), cfg
+    if kind == "fern2":
+        Fern2, Fern2Config = _fern2()
+        cfg = Fern2Config(**{**p["engram"], **p.get("fern2", {}), **(overrides or {})})
+        return Fern2(cfg), cfg
     cfg = GPTConfig(**{**p["gpt"], **(overrides or {})})
     return GPT(cfg), cfg
 
@@ -146,6 +158,9 @@ def load_model(ckpt: Path, device):
     elif kind == "ember":
         Ember, EmberConfig = _ember()
         model = Ember(EmberConfig.from_dict(st["config"]))
+    elif kind == "fern2":
+        Fern2, Fern2Config = _fern2()
+        model = Fern2(Fern2Config.from_dict(st["config"]))
     else:
         model = GPT(GPTConfig.from_dict(st["config"]))
     model.load_state_dict(st["model"])
@@ -158,7 +173,8 @@ def lr_at(progress, step, base, warmup):
     return base * (0.05 + 0.95 * 0.5 * (1 + math.cos(math.pi * min(1.0, progress))))
 
 
-MUON_GRIDS = ("mem.qkv.weight", "mem.gate.weight", "mem.out.weight", "mlp.up.weight", "mlp.down.weight")
+MUON_GRIDS = ("mem.qkv.weight", "mem.gate.weight", "mem.out.weight", "mlp.up.weight", "mlp.down.weight",
+              "glance.qkv.weight", "glance.out.weight", ".up.weight", ".down.weight")    # (last four: Fern's unfolder)
 
 
 def make_optimizer(model, lr, device, kind="adamw", muon_lr=0.02):
@@ -182,7 +198,9 @@ def make_optimizer(model, lr, device, kind="adamw", muon_lr=0.02):
         if n.endswith("mem.qkv.weight"):
             H, K, V = model.cfg.n_head, model.cfg.head_k, model.cfg.head_v
             p.muon_split = [H * K, H * K, H * V]
-        elif n.endswith("mlp.up.weight"):
+        elif n.endswith("glance.qkv.weight"):
+            p.muon_split = [p.shape[0] // 3] * 3
+        elif n.endswith(".up.weight"):           # two halves: the gate and the value of a SwiGLU
             p.muon_split = [p.shape[0] // 2] * 2
     muon = Muon([{"params": [p for _, p in grids], "lr_scale": muon_lr / lr}], lr=muon_lr)
     return Combined(muon, adam)
@@ -249,7 +267,7 @@ def save_ckpt(run, model, opt, meta):
 def bench(args, device):
     say(f"device {device}  ({torch.cuda.get_device_name() if device.type == 'cuda' else 'cpu'})")
     p = PRESETS[args.preset]
-    micro = args.micro or p["micro"]
+    micro = args.micro or p.get("micro_" + args.model, p["micro"])
     total = int(args.tokens or p["tokens"])
     speeds = {}
     kinds = [args.model, "gpt"] if args.model != "gpt" else ["engram", "gpt"]
@@ -350,13 +368,13 @@ def main():
     model, cfg = build(args.model, args.preset, parse_overrides(args.set))
     model.to(device)
     T = cfg.max_len
-    micro = args.micro or p["micro"]
+    micro = args.micro or p.get("micro_" + args.model, p["micro"])
     accum = max(1, (args.batch_tokens or p["micro"] * p["accum"] * T) // (micro * T))
     B = micro * accum
-    opt_kind = args.opt or ("muon" if args.model == "ember" else "adamw")
+    opt_kind = args.opt or ("muon" if args.model in FAST else "adamw")
     new_opt = lambda: make_optimizer(model, lr, device, opt_kind, args.muon_lr)   # noqa: E731
     opt = new_opt()
-    mentor_name = args.mentor or (p.get("mentor", "gpt2-medium") if args.model == "ember" else "none")
+    mentor_name = args.mentor or (p.get("mentor", "gpt2-medium") if args.model in FAST else "none")
     train = Windows(data / "train.bin", T, micro, seed=args.seed)
     vwin = val_set(data / "val.bin", T, p["val_windows"])
     pwin = vwin[: min(32, len(vwin))]
@@ -533,15 +551,16 @@ def main():
         evaluations()
         t_eval = time.time() - t0
 
-        if hasattr(model, "grow_to") and model.grow_to(tokens / total):     # Ember: time to grow
+        if hasattr(model, "grow_to") and model.grow_to(tokens / total):     # Ember, Fern2: time to grow
             old, opt = opt, new_opt()
             carry_state(old, opt)
-            say(f"[grow] {tokens / 1e6:.0f}M tokens: Ember is now {model.depth} blocks deep", flush=True)
+            deep = model.depth_text() if hasattr(model, "depth_text") else f"{model.depth} blocks deep"
+            say(f"[grow] {tokens / 1e6:.0f}M tokens: {NICE[args.model]} is now {deep}", flush=True)
             run.log("metrics.jsonl", {"kind": "grow", "step": step, "tokens": tokens, "elapsed": elapsed,
                                       "depth": model.depth})
         mw = mentor.weight_at(tokens / total) if mentor is not None else 0.0
         if mentor is not None and mw <= 0:
-            say(f"[mentor] {tokens / 1e6:.0f}M tokens: the mentor steps back; Ember learns alone now", flush=True)
+            say(f"[mentor] {tokens / 1e6:.0f}M tokens: the mentor steps back; {NICE[args.model]} learns alone now", flush=True)
             mentor = None
             if device.type == "cuda":
                 torch.cuda.empty_cache()
@@ -549,16 +568,21 @@ def main():
         cur_lr = lr_at(tokens / total, step, lr, p["warmup"])
         for g in opt.param_groups:
             g["lr"] = cur_lr * g.get("lr_scale", 1.0)
-        loss_sum, kd_sum = 0.0, 0.0
+        loss_sum, kd_sum, rd_sum = 0.0, 0.0, 0.0
 
         def lesson(x, y):
             with amp(device):
                 logits, loss, st = model(x, y)
-                if mw > 0:
+                # Ember learns the mentor's guesses with its own; Fern2 with its reader (st["kd_logits"])
+                student = st.get("kd_logits", None if hasattr(model, "mix_mentor") else logits)
+                if mw > 0 and student is not None:
                     from ember.mentor import mentor_loss
-                    kd = mentor_loss(logits, mentor.guess(x))
+                    kd = mentor_loss(student, mentor.guess(x))
+                    if hasattr(model, "mix_mentor"):
+                        loss = model.mix_mentor(loss, st, kd, mw)
+                    else:
+                        loss = (1 - mw) * loss + mw * kd
                     st = {**st, "kd": kd}
-                    loss = (1 - mw) * loss + mw * kd
             (loss / accum).backward()
             return loss, st
 
@@ -575,6 +599,8 @@ def main():
             loss_sum += st.get("ce", loss).detach()       # the next-word loss (Tide also trains its far drafts)
             if "kd" in st:
                 kd_sum += st["kd"].detach()
+            if "reader_ce" in st:
+                rd_sum += st["reader_ce"]
         gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         opt.step()
         opt.zero_grad(set_to_none=True)
@@ -594,6 +620,8 @@ def main():
                 rec["depth"] = model.depth
             if mw > 0:
                 rec["mentor_w"], rec["mentor_kl"] = mw, float(kd_sum) / accum
+            if rd_sum:
+                rec["reader_loss"] = float(rd_sum) / accum
             acc_loss, acc_n = 0.0, 0
             run.log("metrics.jsonl", rec)
             eta = (total - tokens) / max(tps, 1)

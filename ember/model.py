@@ -45,11 +45,49 @@ class EmberConfig(EngramConfig):
     grow_mode: str = "stack"     # "stack": copies act at once; "quiet": copies start silent (their outputs zeroed)
 
 
-def depth_plan(cfg: EmberConfig):
-    plan = sorted((float(w), int(d)) for d, w in (s.split(":") for s in cfg.grow.split(",")))
-    if plan[0][0] != 0 or plan[-1][1] != cfg.n_layer or any(b[1] <= a[1] for a, b in zip(plan, plan[1:])):
-        raise ValueError(f"bad grow plan {cfg.grow!r}: start at 0, grow every time, end at n_layer={cfg.n_layer}")
+def parse_plan(text: str, final: int, what: str = "grow"):
+    """"4:0,8:0.1,12:0.25" -> [(0.0, 4), (0.1, 8), (0.25, 12)]: depth by fraction of training tokens."""
+    plan = sorted((float(w), int(d)) for d, w in (s.split(":") for s in text.split(",")))
+    if plan[0][0] != 0 or plan[-1][1] != final or any(b[1] <= a[1] for a, b in zip(plan, plan[1:])):
+        raise ValueError(f"bad {what} plan {text!r}: start at 0, grow every time, end at {final}")
     return plan
+
+
+def depth_plan(cfg: EmberConfig):
+    return parse_plan(cfg.grow, cfg.n_layer)
+
+
+def depth_at(plan, progress: float) -> int:
+    return max(d for w, d in plan if progress >= w)
+
+
+def grow_stack(blocks: nn.ModuleList, target: int, silence=None):
+    """Make a stack of blocks `target` deep by copying its top blocks and putting the copies on top
+    (at most doubling per pass). Each copy starts as its original; `silence(block)` (optional) zeroes
+    a copy's outputs so it starts out doing nothing. Returns True if the stack grew."""
+    grew = False
+    while len(blocks) < target:
+        d = len(blocks)
+        n = min(target - d, d)
+        for b in list(blocks)[d - n:d]:
+            nb = copy.deepcopy(b)
+            if silence is not None:
+                silence(nb)
+            blocks.append(nb)
+        grew = True
+    return grew
+
+
+def stack_depth_in(sd, prefix: str) -> int:
+    """How many blocks a checkpoint's stack `prefix` (e.g. "blocks") holds."""
+    pat = re.compile(rf"{re.escape(prefix)}\.(\d+)\.")
+    return 1 + max(int(m.group(1)) for k in sd if (m := pat.match(k)))
+
+
+def _quiet_reader(b):
+    nn.init.zeros_(b.mem.out.weight)
+    if b.mlp is not None:
+        nn.init.zeros_(b.mlp.down.weight)
 
 
 class Ember(Engram):
@@ -64,7 +102,7 @@ class Ember(Engram):
         return len(self.blocks)
 
     def depth_at(self, progress: float) -> int:
-        return max(d for w, d in depth_plan(self.cfg) if progress >= w)
+        return depth_at(depth_plan(self.cfg), progress)
 
     def full_params(self):
         """Parameters once fully grown (the size it is compared at)."""
@@ -72,26 +110,16 @@ class Ember(Engram):
 
     def grow_to(self, progress: float) -> bool:
         """Grow to the depth the plan asks for at this point of training. True if it grew."""
-        target = self.depth_at(progress)
-        if target <= self.depth:
+        quiet = _quiet_reader if self.cfg.grow_mode == "quiet" else None
+        if not grow_stack(self.blocks, self.depth_at(progress), quiet):
             return False
-        while self.depth < target:
-            d = self.depth
-            n = min(target - d, d)
-            for b in list(self.blocks)[d - n:d]:          # copy the top n blocks, put the copies on top
-                nb = copy.deepcopy(b)
-                if self.cfg.grow_mode == "quiet":
-                    nn.init.zeros_(nb.mem.out.weight)
-                    if nb.mlp is not None:
-                        nn.init.zeros_(nb.mlp.down.weight)
-                self.blocks.append(nb)
         if self._compiled is not None:
             self.enable_compile()                          # the body changed: compile it again
         return True
 
     def load_state_dict(self, sd, strict=True, assign=False):
         """Checkpoints may come from any depth: grow (with placeholder copies) to match, then load."""
-        n = 1 + max(int(m.group(1)) for k in sd if (m := re.match(r"blocks\.(\d+)\.", k)))
+        n = stack_depth_in(sd, "blocks")
         while self.depth < n:
             self.blocks.append(copy.deepcopy(self.blocks[-1]))
         if self._compiled is not None:
