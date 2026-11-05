@@ -1,21 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <!-- Oazy mark: a liquid-glass orb with a small neural network inside -->
-  <defs>
-    <radialGradient id="sky" cx="0.35" cy="0.25" r="0.95"><stop offset="0" stop-color="#bdf6ff"/><stop offset="0.35" stop-color="#4cc4ff"/><stop offset="0.75" stop-color="#2a63f0"/><stop offset="1" stop-color="#4a2fc0"/></radialGradient>
-    <clipPath id="c"><circle cx="50" cy="50" r="42"/></clipPath>
-    <filter id="sh" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#0a2a80" flood-opacity="0.45"/></filter>
-    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.8"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
-    <radialGradient id="node" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#fff"/><stop offset="0.5" stop-color="#dffaff"/><stop offset="1" stop-color="#7fe0ff"/></radialGradient>
-  </defs>
-  <g filter="url(#sh)"><circle cx="50" cy="50" r="42" fill="url(#sky)"/></g>
-  <g stroke="#fff" stroke-width="1.8" stroke-opacity="0.55" stroke-linecap="round">
-    <path d="M28 38 L50 30 M28 38 L50 50 M28 38 L50 70 M28 62 L50 30 M28 62 L50 50 M28 62 L50 70 M50 30 L72 50 M50 50 L72 50 M50 70 L72 50"/>
+  <!-- Oazy mark: a liquid-glass AI spark wrapped by an orbit of network nodes -->
+  <defs><filter id="sh" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#0a2a80" flood-opacity="0.45"/></filter>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.85"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <linearGradient id="st" x1="0.2" y1="0" x2="0.8" y2="1"><stop offset="0" stop-color="#b6f8ff"/><stop offset="0.45" stop-color="#3cc0ff"/><stop offset="0.8" stop-color="#2a6cff"/><stop offset="1" stop-color="#8a5cff"/></linearGradient>
+    <linearGradient id="st2" x1="0.8" y1="0" x2="0.2" y2="1"><stop offset="0" stop-color="#a6ffe0"/><stop offset="1" stop-color="#1fb8a0"/></linearGradient>
+    <radialGradient id="node" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#fff"/><stop offset="0.5" stop-color="#dffaff"/><stop offset="1" stop-color="#7fe0ff"/></radialGradient></defs>
+  <g transform="rotate(-22 50 50)">
+    <path d="M6 50 A44 14 0 0 1 94 50" fill="none" stroke="#8fe6ff" stroke-opacity="0.45" stroke-width="2.6"/>
   </g>
-  <g fill="url(#node)" stroke="#fff" stroke-opacity="0.9" stroke-width="1">
-    <circle cx="28" cy="38" r="5"/><circle cx="28" cy="62" r="5"/>
-    <circle cx="50" cy="30" r="5"/><circle cx="50" cy="50" r="5"/><circle cx="50" cy="70" r="5"/>
-    <circle cx="72" cy="50" r="7"/>
+  <g filter="url(#sh)"><path d="M50 6 C53 34 60 44 88 50 C60 56 53 66 50 94 C47 66 40 56 12 50 C40 44 47 34 50 6 Z" fill="url(#st)"/></g>
+  <path d="M50 6 C53 34 60 44 88 50 C60 56 53 66 50 94 C47 66 40 56 12 50 C40 44 47 34 50 6 Z" fill="none" stroke="#fff" stroke-opacity="0.7" stroke-width="1.4"/>
+  <path d="M48 16 C47 30 44 40 32 46" fill="none" stroke="url(#gloss)" stroke-width="3.2" stroke-linecap="round"/>
+  <g transform="rotate(-22 50 50)">
+    <path d="M6 50 A44 14 0 0 0 94 50" fill="none" stroke="#fff" stroke-opacity="0.85" stroke-width="2.6" stroke-linecap="round"/>
+    <circle cx="6.5" cy="50" r="4.4" fill="url(#node)"/>
+    <circle cx="50" cy="64" r="4.4" fill="url(#node)"/>
+    <circle cx="93.5" cy="50" r="4.4" fill="url(#node)"/>
   </g>
-  <g clip-path="url(#c)"><ellipse cx="44" cy="22" rx="28" ry="13" fill="url(#gloss)" opacity="0.75"/></g>
-  <circle cx="50" cy="50" r="41.2" fill="none" stroke="#fff" stroke-opacity="0.6" stroke-width="1.6"/>
 </svg>
