@@ -145,6 +145,15 @@ def main():
     check("running it again does nothing", again["fwe"]["train"] == m["train"])
     check("HellaSwag is shared (plain text)", (data / "smol" / "hellaswag_val.jsonl").exists())
 
+    # ---- the data bundle: sized for a run, picked up by the mix
+    from oazy import bundle
+    from oazy.mix import parse_mix, resolve_mix, BUNDLE_MIX
+    w = bundle.needs(2.5e9, margin=0.05)
+    check("bundle: a 2.5B run reads 2.5B tokens (+5%)", abs(sum(w.values()) - 2.625e9) < 1e4 and set(w) == set(parse_mix(BUNDLE_MIX)[0][1]),
+          ", ".join(f"{k} {v / 1e6:,.0f}M" for k, v in w.items()))
+    check("bundle: chats are a pinch throughout and 30% of the cool-down",
+          parse_mix(resolve_mix("bundle"))[0][1]["chat"] == 0.03 and parse_mix(resolve_mix("bundle"))[1][1]["chat"] == 0.3)
+
     # ---- the SmolLM2 mentor
     from ember.mentor import Mentor, mentor_loss
     me = Mentor("smol-random", dev, compile=False)
