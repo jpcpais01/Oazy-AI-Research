@@ -184,6 +184,9 @@ const UI = (() => {
           if (s.tipRange && (xv < s.points[0][0] || xv > s.points[s.points.length - 1][0])) continue;
           let best = s.points[0];
           for (const p of s.points) if (Math.abs(p[0] - xv) < Math.abs(best[0] - xv)) best = p;
+          // a ghost line (e.g. held-out loss, measured only now and then) is shown only near one of its real points,
+          // so the hover never repeats an old measurement as if it were new
+          if (s.ghost && Math.abs(best[0] - xv) > 0.03 * (x1 - x0)) continue;
           if (!s.ghost) {
             ctx.fillStyle = css("--solid");
             ctx.beginPath(); ctx.arc(X(best[0]), Y(best[1]), 4.5, 0, 7); ctx.fill();
