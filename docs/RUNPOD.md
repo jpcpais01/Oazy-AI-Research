@@ -77,12 +77,12 @@ python3 -m bee2.chat --port 8002                          # chat
 
 (`bash runpod/setup.sh bee2` does the preparation in one go, but it also re-runs the general setup.)
 
-**The data bundle** (seven kinds of text, sized for the run; see `bee2/README.md`):
+**Tagus, our dataset** (seven kinds of text, sized for the run; see `bee2/README.md`):
 
 ```bash
-python3 -m oazy.bundle --plan --run-tokens 2.5e9          # what a 2.5B run reads, and what is there
-nice -n 10 python3 -m oazy.bundle --run-tokens 2.5e9      # download + cut Cosmopedia, Wikipedia, FineMath, code
-tmux kill-window -t oazy:bee2 2>/dev/null; bash runpod/train.sh bee2 --preset big --tokens 2.5e9 --name bee2-bundle
+python3 -m oazy.tagus --plan --run-tokens 2.5e9          # what a 2.5B run reads, and what is there
+nice -n 10 python3 -m oazy.tagus --run-tokens 2.5e9      # download + cut Cosmopedia, Wikipedia, FineMath, code
+tmux kill-window -t oazy:bee2 2>/dev/null; bash runpod/train.sh bee2 --preset big --tokens 2.5e9 --name bee2-tagus
 ```
 
 ## Experiments
