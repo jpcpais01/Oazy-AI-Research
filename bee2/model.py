@@ -1,4 +1,4 @@
-"""Bee0.2B v2: Bee0.2B with a smarter, cheaper mentor (SmolLM2-360M) and SmolLM2's tokenizer.
+"""Bee_v2_0.2B: Bee0.2B with a smarter, cheaper mentor (SmolLM2-360M) and SmolLM2's tokenizer.
 
 Still a NEXT-WORD model: it reads text and guesses the very next token, like GPT-2 and Bee0.2B.
 

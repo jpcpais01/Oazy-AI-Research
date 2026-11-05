@@ -259,7 +259,7 @@
 <script>
 "use strict";
 const C = { memtrix: UI.css("--brand"), tide: UI.css("--teal"), fern: UI.css("--fern"), ember: UI.css("--ember"), fern2: UI.css("--fern2"), fern3: UI.css("--fern3"), bee: UI.css("--bee"), bee2: UI.css("--bee2"), gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
-const NAMES = { memtrix: "Memtrix", tide: "Tide", fern: "Fern", ember: "Ember", fern2: "Fern2", fern3: "Fern3", bee: "Bee0.2B", bee2: "Bee0.2B v2", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };
+const NAMES = { memtrix: "Memtrix", tide: "Tide", fern: "Fern", ember: "Ember", fern2: "Fern2", fern3: "Fern3", bee: "Bee0.2B", bee2: "Bee_v2_0.2B", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };
 // Every model of the lab. role: "ours" (our architectures), "baseline" (the GPT-2 we train the same way), "reference" (OpenAI's).
 const MODELS = {
   memtrix: { name: "Memtrix", color: C.memtrix, role: "ours", blurb: "Learns while it reads: small memories fixed by their own surprise, word by word." },
@@ -269,7 +269,7 @@ const MODELS = {
   fern2: { name: "Fern2", color: C.fern2, role: "ours", blurb: "Fern, smaller (119M) and raised the Ember way: both halves grow, the reader also learns next words from GPT-2 medium, Muon. Not a next-word model." },
   fern3: { name: "Fern3", color: C.fern3, role: "ours", blurb: "Fern that remembers like you do: every old passage folded into a gist, and the 3 whose gists match best read again in full. No fixed-size memory. Not a next-word model." },
   bee: { name: "Bee0.2B", color: C.bee, role: "ours", blurb: "Our main model (204M, next-word): a modern hybrid, 3 Memtrix memory layers to 1 attention layer, learns from GPT-2 large early on, Muon, a mix of FineWeb-Edu, DCLM and (at the end) conversations." },
-  bee2: { name: "Bee0.2B v2", color: C.bee2, role: "ours", blurb: "Bee0.2B's body (203M, next-word) with a smarter, cheaper mentor: SmolLM2-360M instead of GPT-2 large, and so SmolLM2's tokenizer. Same text, re-cut. Its losses are shown per GPT-2 token, so they line up with the others." },
+  bee2: { name: "Bee_v2_0.2B", color: C.bee2, role: "ours", blurb: "Bee0.2B's body (203M, next-word) with a smarter, cheaper mentor: SmolLM2-360M instead of GPT-2 large, and so SmolLM2's tokenizer. Same text, re-cut. Its losses are shown per GPT-2 token, so they line up with the others." },
   gpt: { name: NAMES.gpt, color: C.gpt, role: "baseline", blurb: "GPT-2 small (124M), trained on the same text, in the same order, with the same schedule." },
   "openai-gpt2": { name: NAMES.openai, color: C.ref, role: "reference", blurb: "OpenAI's 2019 GPT-2 small, measured with the same tests: the line to beat." },
 };

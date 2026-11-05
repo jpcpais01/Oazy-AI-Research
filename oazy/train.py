@@ -35,7 +35,7 @@ from . import hellaswag, probes
 
 KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "gpt"]
 NICE = {"memtrix": "Memtrix", "tide": "Tide", "fern": "Fern", "ember": "Ember", "fern2": "Fern2", "fern3": "Fern3",
-        "bee": "Bee0.2B", "bee2": "Bee0.2B v2", "gpt": "GPT"}
+        "bee": "Bee0.2B", "bee2": "Bee_v2_0.2B", "gpt": "GPT"}
 FAST = ("ember", "fern2", "fern3", "bee", "bee2")    # raised the fast way: Muon and a mentor by default
 MENTOR = {"bee": "gpt2-large", "bee2": "smollm2-360m"}   # default mentor (the others: gpt2-medium)
 BEES = ("bee", "bee2")                         # the text mix, WSD, growing windows
@@ -429,7 +429,7 @@ def main():
     ap.add_argument("--opt", choices=["adamw", "muon"], default=None, help="optimizer (default: muon for ember, adamw otherwise)")
     ap.add_argument("--muon-lr", type=float, default=0.02)
     ap.add_argument("--mentor", default=None, help="the mentor: gpt2-medium (Ember's default), gpt2-large (Bee's), gpt2-xl, "
-                    "smollm2-360m (Bee0.2B v2's; also smollm2-135m, smollm2-1.7b; only for SmolLM2-tokenizer models) or none")
+                    "smollm2-360m (Bee_v2_0.2B's; also smollm2-135m, smollm2-1.7b; only for SmolLM2-tokenizer models) or none")
     ap.add_argument("--mentor-weight", type=float, default=0.6, help="mentor's share of the lesson at the start")
     ap.add_argument("--mentor-until", type=float, default=0.5, help="fraction of training after which the mentor is silent")
     ap.add_argument("--schedule", choices=["cos", "wsd"], default=None,

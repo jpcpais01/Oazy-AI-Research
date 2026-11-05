@@ -65,7 +65,7 @@ python3 -m bee.chat --port 8002                         # chat (Chat or Write), 
 On a 32 GB GPU (RTX 5090) add `--micro 8`. If DCLM or the conversations are missing it trains on
 what is there and says so. Ablations are in `bee/README.md`.
 
-## Bee0.2B v2 (203M, SmolLM2-360M as mentor)
+## Bee_v2_0.2B (203M, SmolLM2-360M as mentor)
 
 Needs Bee0.2B's text first (`bash runpod/setup.sh bee`). Safe to prepare while Bee0.2B trains (CPU only):
 

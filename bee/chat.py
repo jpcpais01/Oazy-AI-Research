@@ -47,7 +47,7 @@ class Brain:
         self.att_layers = [i for i, k in enumerate(kinds) if k == "A"]
         self.meta = {"step": st.get("step"), "tokens": st.get("tokens"), "params": self.model.num_params(),
                      "layout": self.model.layout(), "mem_layers": self.mem_layers, "att_layers": self.att_layers,
-                     "layers": len(kinds), "name": "Bee0.2B v2" if st.get("kind") == "bee2" else "Bee0.2B"}
+                     "layers": len(kinds), "name": "Bee_v2_0.2B" if st.get("kind") == "bee2" else "Bee0.2B"}
         self.lock = threading.Lock()
         self.reset()
 

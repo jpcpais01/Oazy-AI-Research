@@ -65,7 +65,7 @@ if [ "${1:-}" = bee ] || [ "${1:-}" = bee2 ]; then
     python3 -m oazy.mix --source chat --data "${DATA}" --tokens 4e8
 fi
 if [ "${1:-}" = bee2 ]; then
-    echo "== Bee0.2B v2: the same text re-cut with SmolLM2's tokenizer -> ${DATA}/smol, and its mentor SmolLM2-360M"
+    echo "== Bee_v2_0.2B: the same text re-cut with SmolLM2's tokenizer -> ${DATA}/smol, and its mentor SmolLM2-360M"
     nice -n 10 python3 -m oazy.retok --to smollm2 --data "${DATA}"
     python3 -c "from transformers import AutoModelForCausalLM as M; M.from_pretrained('HuggingFaceTB/SmolLM2-360M'); print('SmolLM2-360M downloaded')"
     python3 -m bee2.tests --device cuda

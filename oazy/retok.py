@@ -1,4 +1,4 @@
-"""Re-cut the lab's prepared text with another tokenizer (for Bee0.2B v2: SmolLM2's).
+"""Re-cut the lab's prepared text with another tokenizer (for Bee_v2_0.2B: SmolLM2's).
 
     python -m oazy.retok                       # every source there is -> <data>/smol/   (~15-40 min)
     python -m oazy.retok --sources fwe,chat    # only some
@@ -12,7 +12,7 @@ is cut again with the new tokenizer:
   <data>/dclm/train.bin, val.bin           ->  <data>/smol/dclm/train.bin, val.bin     (DCLM)
   <data>/chat/train.bin, val.bin           ->  <data>/smol/chat/train.bin, val.bin     (conversations)
 
-So Bee0.2B v2 reads exactly the same documents as Bee0.2B, in the same order, and its held-out
+So Bee_v2_0.2B reads exactly the same documents as Bee0.2B, in the same order, and its held-out
 text is exactly the same held-out text: that is what makes the two comparable. Each folder gets a
 meta.json with the token counts of both tokenizers and the number of bytes, e.g. "ratio": 0.96
 means SmolLM2 needs 4% fewer tokens than GPT-2 for this text. It is safe to run while a model trains
