@@ -99,7 +99,7 @@
       <div class="cardhead"><div class="titles"><h2>HellaSwag</h2><div class="sub">Picking the sensible ending of a scene, out of 4. Higher is better.</div></div></div>
       <details class="why"><summary>What is HellaSwag?</summary><div class="body">
         <p>A standard test of common sense: "A woman is outside with a bucket and a dog. The dog is running around trying to avoid a bath. She…" followed by four endings, three of them silly.</p>
-        <p>The model picks the ending it finds least surprising. Guessing gives <b>25%</b>. OpenAI's GPT-2 small scores <b>29.6%</b> this way: that is the line to beat. During training a quick check uses the first 1,000 questions; the final score uses all 10,042.</p>
+        <p>The model picks the ending it finds least surprising. Guessing gives <b>25%</b>. OpenAI's GPT-2 small scores <b>29.6%</b> this way: that is the line to beat. During training a quick check uses 1,000 questions spread over the whole set; the final score uses all 10,042. (Runs from before Nov 5 used the first 1,000, which are easier: their curves read about 5 points too high.)</p>
       </div></details>
       <div class="legend" id="hsLegend" style="margin-bottom:10px"></div>
       <div class="chart"><canvas id="hs" style="height:300px"></canvas><div class="tip" id="hsTip"></div></div>
@@ -213,7 +213,7 @@ function runCard(r) {
   const mem = cf.memory_numbers ? `memory ${UI.fmtTokens(cf.memory_numbers)} numbers (fixed)` : `remembers by looking back at every word`;
   const stat = (k, v, h) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div>${h ? `<div class="h">${h}</div>` : ""}</div>`;
   const hs = latest.hellaswag_full != null ? pct(latest.hellaswag_full) : latest.hellaswag != null ? pct(latest.hellaswag) : "–";
-  const hsH = latest.hellaswag_full != null ? "all 10,042" : latest.hellaswag != null ? "first 1,000" : "";
+  const hsH = latest.hellaswag_full != null ? "all 10,042" : latest.hellaswag != null ? "1,000 sample" : "";
   if (r.name === "openai-gpt2") {
     return `<div class="card run"><div class="head"><div class="name"><span class="chip" style="background:${col}"></span>${nameOf(r.name)}</div><span class="badge done">reference</span></div>
       <div class="meta">OpenAI's 2019 release · ${(cf.params / 1e6).toFixed(0)}M parameters · trained on ~${cf.trained_tokens_note || "WebText"}</div>
