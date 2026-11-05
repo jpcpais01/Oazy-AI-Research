@@ -12,6 +12,7 @@ GPT-2 small (124M) on the same text, with the same budget, by the same tests.
 | **Fern2** | Fern at 119M (under GPT-2's 124M), raised the Ember way: both halves grow, the reader also learns next words from GPT-2 medium, Muon; **not a next-word model** | [`fern2/`](fern2/) |
 | **Fern3** | Fern that remembers like you do: each finished passage is folded into one gist, the model thinks with gists, and for each new passage recalls the 3 old passages whose gists match best and reads them in full. No fixed-size memory; 117M; **not a next-word model** | [`fern3/`](fern3/) |
 | **Bee0.2B** | **our main model** (204M): a modern hybrid of 18 Memtrix memory layers and 6 attention layers (3:1, like Qwen3-Next), learns from GPT-2 large early on, Muon, a FineWeb-Edu + DCLM mix with conversations at the end; next-word | [`bee/`](bee/) |
+| **Bee0.2B v2** | Bee0.2B's body (203M) with a smarter, cheaper mentor: SmolLM2-360M instead of GPT-2 large, so it reads SmolLM2's tokenizer (the same text, re-cut); next-word | [`bee2/`](bee2/) |
 | GPT-2 | the baseline: GPT-2 small, trained here exactly like our models | [`oazy/gpt.py`](oazy/gpt.py) |
 
 **The lab** ([`oazy/`](oazy/)) is shared by every model: the data pipeline, training (same text in
@@ -27,6 +28,7 @@ ember/         Ember: model.py (growing), mentor.py (distillation), tests.py
 fern2/         Fern2: model.py, tests.py (chat: python -m fern.chat --run fern2)
 fern3/         Fern3: model.py, tests.py (chat: python -m fern.chat --run fern3)
 bee/           Bee0.2B: model.py, chat.py (chat with a look inside), tests.py; its text mix is oazy/mix.py
+bee2/          Bee0.2B v2: model.py, chat.py, tests.py; its tokenizer is oazy/tok.py, its text oazy/retok.py
 runpod/        setup.sh (once per pod), train.sh <model>
 docs/RUNPOD.md how to run everything on a RunPod GPU
 ```

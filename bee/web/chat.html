@@ -70,7 +70,7 @@
 <body>
 <header class="topbar"><div class="inner">
   <div class="brand"><img class="logo" src="icon.svg" alt="">
-    <h1>Oazy AI Research <span class="tag">Talk to Bee0.2B</span></h1></div>
+    <h1>Oazy AI Research <span class="tag" id="tag">Talk to Bee0.2B</span></h1></div>
   <div class="spacer"></div>
   <div class="pills" id="pills"></div>
   <button class="btn" id="reset" title="Forget everything and start over"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 8a5 5 0 1 0 1.6-3.7"/><path d="M3 2.5v3h3"/></svg>Start over</button>
@@ -136,6 +136,7 @@ const surpriseU = (s) => Math.max(0, Math.min(1, (s - 0.3) / 0.9));
 
 async function init() {
   INFO = await (await fetch("api/info")).json();
+  if (INFO.name) { $("tag").textContent = `Talk to ${INFO.name}`; document.title = `Oazy AI Research · Talk to ${INFO.name}`; }
   $("pills").innerHTML = `<span class="pill"><b>${(INFO.params / 1e6).toFixed(0)}M</b> parameters</span>
     <span class="pill">${INFO.layout}</span>
     ${INFO.tokens ? `<span class="pill">trained on <b>${UI.fmtTokens(INFO.tokens)}</b> tokens</span>` : ""}`;

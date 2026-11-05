@@ -26,17 +26,19 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from .data import Windows, val_set, get_tokenizer, default_dir, run_dir, EOT
+from .data import Windows, val_set, default_dir, run_dir
+from . import tok
 from .gpt import GPT, GPTConfig
 from memtrix.model import Memtrix, MemtrixConfig
 from memtrix import memory
 from . import hellaswag, probes
 
-KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "gpt"]
+KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "gpt"]
 NICE = {"memtrix": "Memtrix", "tide": "Tide", "fern": "Fern", "ember": "Ember", "fern2": "Fern2", "fern3": "Fern3",
-        "bee": "Bee0.2B", "gpt": "GPT"}
-FAST = ("ember", "fern2", "fern3", "bee")    # raised the fast way: Muon and a GPT-2 mentor by default
-MENTOR = {"bee": "gpt2-large"}                 # default mentor (the others: gpt2-medium)
+        "bee": "Bee0.2B", "bee2": "Bee0.2B v2", "gpt": "GPT"}
+FAST = ("ember", "fern2", "fern3", "bee", "bee2")    # raised the fast way: Muon and a mentor by default
+MENTOR = {"bee": "gpt2-large", "bee2": "smollm2-360m"}   # default mentor (the others: gpt2-medium)
+BEES = ("bee", "bee2")                         # the text mix, WSD, growing windows
 
 
 def say(*a, **k):
@@ -75,6 +77,11 @@ def _fern3():
 def _bee():
     from bee.model import Bee, BeeConfig             # bee/ = modern hybrid: Memtrix memory layers + attention, 3:1
     return Bee, BeeConfig
+
+
+def _bee2():
+    from bee2.model import Bee2, Bee2Config          # bee2/ = Bee0.2B's body, SmolLM2's tokenizer and mentor
+    return Bee2, Bee2Config
 
 
 PRESETS = {
@@ -169,6 +176,10 @@ def build(kind, preset, overrides=None):
         Bee, BeeConfig = _bee()
         cfg = BeeConfig(**{**p.get("bee", {}), **(overrides or {})})
         return Bee(cfg), cfg
+    if kind == "bee2":
+        Bee2, Bee2Config = _bee2()
+        cfg = Bee2Config(**{**p.get("bee", {}), **p.get("bee2", {}), **(overrides or {})})
+        return Bee2(cfg), cfg
     cfg = GPTConfig(**{**p["gpt"], **(overrides or {})})
     return GPT(cfg), cfg
 
@@ -198,6 +209,9 @@ def load_model(ckpt: Path, device):
     elif kind == "bee":
         Bee, BeeConfig = _bee()
         model = Bee(BeeConfig.from_dict(st["config"]))
+    elif kind == "bee2":
+        Bee2, Bee2Config = _bee2()
+        model = Bee2(Bee2Config.from_dict(st["config"]))
     else:
         model = GPT(GPTConfig.from_dict(st["config"]))
     model.load_state_dict(st["model"])
@@ -283,7 +297,9 @@ class Run:
 
 
 @torch.no_grad()
-def val_loss(model, windows, device, micro):
+def val_loss(model, windows, device, micro, bpb=False):
+    """Average loss per token on fixed held-out windows. bpb=True: also bits per byte of text, a number
+    that does not depend on how the text was cut into tokens (fair across tokenizers)."""
     model.eval()
     xy = torch.from_numpy(windows).to(device)
     tot = 0.0
@@ -292,7 +308,11 @@ def val_loss(model, windows, device, micro):
             _, loss, _ = model(xy[i:i + micro, :-1], xy[i:i + micro, 1:])
         tot += float(loss) * len(xy[i:i + micro])
     model.train()
-    return tot / len(xy)
+    vl = tot / len(xy)
+    if not bpb:
+        return vl
+    nb = int(tok.bytes_per_token(tok.name_of(model))[windows[:, 1:]].sum())
+    return vl, vl * windows[:, 1:].size / max(nb, 1) / math.log(2)
 
 
 @torch.no_grad()
@@ -300,7 +320,7 @@ def write_samples(model, enc, run, step, tokens, n_tok):
     model.eval()
     for p in SAMPLE_PROMPTS:
         torch.manual_seed(1234)
-        ids, _ = model.generate(enc.encode_ordinary(p), max_new_tokens=n_tok, temperature=0.8, top_k=40, eos=EOT)
+        ids, _ = model.generate(enc.encode_ordinary(p), max_new_tokens=n_tok, temperature=0.8, top_k=40, eos=enc.eot_token)
         run.log("samples.jsonl", {"step": step, "tokens": tokens, "prompt": p, "text": enc.decode(ids)})
     model.train()
 
@@ -328,7 +348,7 @@ def bench(args, device):
             model.enable_compile()
         opt = make_optimizer(model, 1e-4, device)
         T = model.ctx_at(0) if hasattr(model, "ctx_at") else cfg.max_len     # Bee: its first window length
-        x = torch.randint(0, 50257, (micro, T), device=device)
+        x = torch.randint(0, min(50257, cfg.vocab_size), (micro, T), device=device)
         times = []
         for i in range(args.bench_steps + 3):
             t0 = time.time()
@@ -351,7 +371,7 @@ def bench(args, device):
         say(f"{kind:7s} params {model.num_params() / 1e6:6.1f}M  {dt * 1000:7.1f} ms per {micro}x{T}  "
               f"{tps / 1e3:8.1f}k tok/s  peak mem {mem:5.1f} GB{extra}")
         mname = args.mentor or MENTOR.get(kind, "none")
-        if kind == "bee" and mname != "none":            # Bee's real cost includes its mentor's reading
+        if kind in BEES and mname != "none":             # Bee's real cost includes its mentor's reading
             from ember.mentor import Mentor
             me = Mentor(mname, device, compile=bool(args.compile))
             mt = []
@@ -366,7 +386,7 @@ def bench(args, device):
             mtps = micro * T / float(np.median(mt))
             u = args.mentor_until
             sec = total * (u * (1 / tps + 1 / mtps) + (1 - u) / tps)
-            say(f"mentor  {mname}: {mtps / 1e3:8.1f}k tok/s reading only. Bee0.2B with it for the first {u:.0%}: "
+            say(f"mentor  {mname}: {mtps / 1e3:8.1f}k tok/s reading only. {NICE[kind]} with it for the first {u:.0%}: "
                 f"about {sec / 3600:.1f} h for {total / 1e9:.1f}B tokens (+ ~5-10% for 2,048-word windows and tests)")
             del me
         del model, opt
@@ -408,7 +428,8 @@ def main():
     ap.add_argument("--hours", type=float, default=None, help="with --bench: suggest --tokens for this many hours")
     ap.add_argument("--opt", choices=["adamw", "muon"], default=None, help="optimizer (default: muon for ember, adamw otherwise)")
     ap.add_argument("--muon-lr", type=float, default=0.02)
-    ap.add_argument("--mentor", default=None, help="Ember's mentor: gpt2-medium (default), gpt2-large, gpt2-xl or none")
+    ap.add_argument("--mentor", default=None, help="the mentor: gpt2-medium (Ember's default), gpt2-large (Bee's), gpt2-xl, "
+                    "smollm2-360m (Bee0.2B v2's; also smollm2-135m, smollm2-1.7b; only for SmolLM2-tokenizer models) or none")
     ap.add_argument("--mentor-weight", type=float, default=0.6, help="mentor's share of the lesson at the start")
     ap.add_argument("--mentor-until", type=float, default=0.5, help="fraction of training after which the mentor is silent")
     ap.add_argument("--schedule", choices=["cos", "wsd"], default=None,
@@ -431,14 +452,28 @@ def main():
 
     p = PRESETS[args.preset]
     lr = args.lr or p["lr"]
-    total = int(args.tokens or p["tokens"])
     run = Run(run_dir(args.runs, args.name or args.model))
-    data = Path(args.data)
-    enc = get_tokenizer()
+    root = Path(args.data)
 
     torch.manual_seed(args.seed)
     model, cfg = build(args.model, args.preset, parse_overrides(args.set))
     model.to(device)
+    tk = tok.name_of(model)
+    enc = tok.get(tk)
+    # a model that reads another tokenizer than GPT-2's reads the same text, re-cut (oazy/retok.py)
+    data = root
+    val_scale = 1.0
+    if tk != "gpt2":
+        from .retok import target_dir, ratio
+        data = target_dir(root, tk)
+        if not (data / "train.bin").exists():
+            raise SystemExit(f"no {tk} text in {data} yet: run  python3 -m oazy.retok  first (bash runpod/setup.sh bee2)")
+        # its losses per token, turned into "per GPT-2 token" so that they sit on the same scale as
+        # every other model's: (nats per text) is the same thing whoever cuts the text
+        val_scale = ratio(data, "val")
+    total = int(args.tokens or p["tokens"] * (val_scale if args.tokens is None else 1))
+    if tk != "gpt2" and args.tokens is None:
+        say(f"{p['tokens'] / 1e9:.2f}B GPT-2 tokens of text = {total / 1e9:.2f}B {tk} tokens (the same text as the GPT-2 models)")
     T = cfg.max_len
     micro0 = args.micro or p.get("micro_" + args.model, p["micro"])
     # tokens per step: the preset's (at its usual 1,024-word windows, so Fern3's 4,096-word windows keep 262k)
@@ -457,9 +492,12 @@ def main():
     new_opt = lambda: make_optimizer(model, lr, device, opt_kind, args.muon_lr)   # noqa: E731
     opt = new_opt()
     mentor_name = args.mentor or (p.get("mentor", MENTOR.get(args.model, "gpt2-medium")) if args.model in FAST else "none")
-    schedule = args.schedule or ("wsd" if args.model == "bee" else "cos")
+    if mentor_name not in ("none", "random", "smol-random") and mentor_name.startswith("smollm2") != (tk == "smollm2"):
+        raise SystemExit(f"the mentor {mentor_name} cuts text differently from {NICE[args.model]} ({tk} tokenizer): "
+                         f"use a {'smollm2-*' if tk == 'smollm2' else 'gpt2-*'} mentor or --mentor none")
+    schedule = args.schedule or ("wsd" if args.model in BEES else "cos")
     lr_fn = lr_wsd if schedule == "wsd" else lr_at
-    if args.model == "bee":
+    if args.model in BEES:
         from .mix import Mix, DEFAULT_MIX, source_path
         from bee.model import ctx_plan
         train = Mix(data, args.mix or DEFAULT_MIX, T, micro, seed=args.seed,
@@ -471,7 +509,17 @@ def main():
         xval = {}
     vwin = val_set(data / "val.bin", T0, p["val_windows"])
     pwin = vwin[: min(32, len(vwin))]
-    hs_path = data / "hellaswag_val.jsonl"
+    hs_path = root / "hellaswag_val.jsonl"
+    if tk != "gpt2":                                  # training loss: weigh each source's own ratio by the mix
+        from .retok import ratio
+        from .mix import source_path
+        src_ratio = {n: ratio(source_path(data, n).parent, "train", val_scale) for n in getattr(train, "src", {})}
+
+        def loss_scale_at(progress):
+            w = train.weights(progress) if hasattr(train, "weights") else {}
+            return sum(v * src_ratio.get(n, val_scale) for n, v in w.items()) or val_scale
+    else:
+        loss_scale_at = lambda progress: 1.0      # noqa: E731
 
     step, tokens, elapsed = 0, 0, 0.0
     nxt = {"eval": 0, "probe": 0, "hs": 0, "sample": 0}
@@ -503,10 +551,14 @@ def main():
         - model.embed.weight.numel(), "optimizer": opt_kind, "mentor": mentor_name, "batch_tokens": B * T, "micro": micro,
         "context": cfg.max_len if growing_ctx else T, "lr": lr, "schedule": schedule,
         "layout": model.layout() if hasattr(model, "layout") else None,
-        "mix": args.mix or (DEFAULT_MIX if args.model == "bee" else None), "total_tokens": total, "device": str(device),
+        "mix": args.mix or (DEFAULT_MIX if args.model in BEES else None), "total_tokens": total, "device": str(device),
+        "tokenizer": tk, "loss_scale": val_scale,
         "gpu": torch.cuda.get_device_name() if device.type == "cuda" else "cpu",
         "memory_numbers": model.memory_numbers() if hasattr(model, "memory_numbers") else None,
         "data": json.loads((data / "meta.json").read_text()) if (data / "meta.json").exists() else None,
+        **({"loss_note": f"losses are per GPT-2 token (own per-token loss x {val_scale:.3f}, the {tk}/GPT-2 token "
+                         "ratio on the same text), so they compare directly with the GPT-2-tokenizer models; "
+                         "*_own fields are per own token"} if tk != "gpt2" else {}),
     }
     (run.dir / "config.json").write_text(json.dumps(info, indent=1))
     say(json.dumps(info, indent=1))
@@ -558,18 +610,24 @@ def main():
         """Validation loss, HellaSwag, memory checks, samples, snapshot, whenever their turn comes."""
         base = {"step": step, "tokens": tokens, "elapsed": elapsed}
         if final or tokens >= nxt["eval"]:
-            vl = val_loss(model, vwin, device, micro0)
-            extra = {f"val_loss_{n}": val_loss(model, w, device, micro0) for n, w in xval.items()}
-            run.log("metrics.jsonl", {"kind": "eval", **base, "val_loss": vl, **extra})
+            vl, bpb = val_loss(model, vwin, device, micro0, bpb=True)
+            extra = {f"val_loss_{n}": val_loss(model, w, device, micro0) * val_scale for n, w in xval.items()}
+            own = {"val_loss_own": vl} if tk != "gpt2" else {}
+            vl *= val_scale
+            run.log("metrics.jsonl", {"kind": "eval", **base, "val_loss": vl, "val_bpb": bpb, **own, **extra})
             latest.update(extra)
-            latest["val_loss"] = vl
-            say(f"[eval] step {step} | {tokens / 1e6:.0f}M tokens | val loss {vl:.4f}", flush=True)
+            latest["val_loss"], latest["val_bpb"] = vl, bpb
+            say(f"[eval] step {step} | {tokens / 1e6:.0f}M tokens | val loss {vl:.4f}"
+                + (f" (GPT-2-equivalent; {own['val_loss_own']:.4f} per {tk} token)" if own else "")
+                + f" | {bpb:.4f} bits per byte", flush=True)
             nxt["eval"] += p["eval_every"]
         if hs_path.exists() and (final or tokens >= nxt["hs"]):
             r = hellaswag.evaluate(model, hs_path, device, None if final else p["hs_quick"])
             run.log("metrics.jsonl", {"kind": "hellaswag", **base, **r, "full": final, "sample": "spread"})
             latest["hellaswag" + ("_full" if final else "")] = r["acc_norm"]
-            say(f"[hellaswag] {r['acc_norm'] * 100:.2f}% on {r['n']} examples", flush=True)
+            latest["hellaswag_char" + ("_full" if final else "")] = r["acc_char"]
+            say(f"[hellaswag] {r['acc_norm'] * 100:.2f}% on {r['n']} examples "
+                f"({r['acc_char'] * 100:.2f}% scored per letter)", flush=True)
             nxt["hs"] += p["hs_every"]
         if final or tokens >= nxt["probe"]:
             r = probes.memory_report(model, pwin, device, batch=min(micro, 16))
@@ -729,8 +787,11 @@ def main():
             now = time.time()
             tps = (tokens - tok_log) / max(1e-6, now - t_log)
             t_log, tok_log = now, tokens
+            own_loss = float(acc_loss) / acc_n
             rec = {"kind": "train", "step": step, "tokens": tokens, "elapsed": elapsed,
-                   "loss": float(acc_loss) / acc_n, "lr": cur_lr, "tok_s": tps, "grad_norm": float(gnorm)}
+                   "loss": own_loss * loss_scale_at(tokens / total), "lr": cur_lr, "tok_s": tps, "grad_norm": float(gnorm)}
+            if tk != "gpt2":
+                rec["loss_own"] = own_loss
             if hasattr(model, "grow_to"):
                 rec["depth"] = model.depth
             if hasattr(train, "weights"):

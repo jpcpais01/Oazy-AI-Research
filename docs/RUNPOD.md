@@ -65,6 +65,21 @@ python3 -m bee.chat --port 8002                         # chat (Chat or Write), 
 On a 32 GB GPU (RTX 5090) add `--micro 8`. If DCLM or the conversations are missing it trains on
 what is there and says so. Ablations are in `bee/README.md`.
 
+## Bee0.2B v2 (203M, SmolLM2-360M as mentor)
+
+Needs Bee0.2B's text first (`bash runpod/setup.sh bee`). Safe to prepare while Bee0.2B trains (CPU only):
+
+```bash
+cd /workspace/oazy && git pull
+nice -n 10 python3 -m oazy.retok                         # the same text, re-cut with SmolLM2's tokenizer -> <data>/smol (~15-40 min)
+python3 -m bee2.tests --device cuda                       # self-tests with the real SmolLM2 tokenizer
+python3 -m oazy.train --bench --model bee2 --preset big   # speed, mentor included (best when the GPU is free)
+bash runpod/train.sh bee2 --preset big                    # the same text as Bee0.2B's 5B GPT-2 tokens; downloads SmolLM2-360M once
+python3 -m bee2.chat --port 8002                          # chat
+```
+
+(`bash runpod/setup.sh bee2` does the preparation in one go, but it also re-runs the general setup.)
+
 ## Fern2 (119M, Fern raised the Ember way)
 
 ```bash

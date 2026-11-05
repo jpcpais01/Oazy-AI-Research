@@ -5,7 +5,10 @@ vs three endings that are grammatical but silly. Random guessing scores 25%.
 
 A model "chooses" the ending it finds least surprising: we measure its average loss on the
 ending's tokens after reading the context and pick the lowest (the "acc_norm" scoring used by
-nanoGPT / llm.c). OpenAI's GPT-2 124M scores 29.6% this way (see memtrix/compare.py to measure it
+nanoGPT / llm.c). We also report "acc_char": the ending's total loss divided by its number of
+letters, which is what lm-evaluation-harness calls acc_norm. It does not depend on how a tokenizer
+cuts the endings, so it is the fairest way to compare models with different tokenizers (Bee0.2B v2
+reads SmolLM2's pieces, the others GPT-2's). Each model is given the text cut its own way. OpenAI's GPT-2 124M scores 29.6% this way (see memtrix/compare.py to measure it
 on this machine). Works for any model with the forward(idx) -> logits interface.
 
     python -m oazy.hellaswag --ckpt /workspace/oazy_runs/memtrix/ckpt.pt
@@ -18,7 +21,8 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 
-from .data import get_tokenizer, default_dir
+from .data import default_dir
+from . import tok
 
 
 def load(path: Path, limit: int | None = None):
@@ -43,11 +47,11 @@ def render(enc, ex):
 @torch.no_grad()
 def evaluate(model, path: Path, device, limit: int | None = None, batch_examples: int = 16):
     """Returns {"acc_norm", "acc", "n"}. limit = only the first N examples (quick check during training)."""
-    enc = get_tokenizer()
+    enc = tok.for_model(model)
     rows = load(path, limit)
     was_training = model.training
     model.eval()
-    correct_norm = correct = 0
+    correct_norm = correct = correct_char = 0
     for b0 in range(0, len(rows), batch_examples):
         exs = [render(enc, ex) for ex in rows[b0:b0 + batch_examples]]
         seqs, spans = [], []
@@ -74,13 +78,16 @@ def evaluate(model, path: Path, device, limit: int | None = None, batch_examples
                                reduction="none").view(len(seqs), L - 1)
         tot = (loss * mask).sum(1).view(-1, 4)
         avg = tot / mask.sum(1).view(-1, 4)
+        chars = torch.tensor([[len(" " + e) for e in ex["endings"]] for ex in rows[b0:b0 + batch_examples]],
+                             device=device, dtype=torch.float32)
         labels = torch.tensor([lab for _, _, lab in exs], device=device)
+        correct_char += int(((tot / chars).argmin(1) == labels).sum())
         correct_norm += int((avg.argmin(1) == labels).sum())
         correct += int((tot.argmin(1) == labels).sum())
     if was_training:
         model.train()
     n = len(rows)
-    return {"acc_norm": correct_norm / max(n, 1), "acc": correct / max(n, 1), "n": n}
+    return {"acc_norm": correct_norm / max(n, 1), "acc": correct / max(n, 1), "acc_char": correct_char / max(n, 1), "n": n}
 
 
 def main():

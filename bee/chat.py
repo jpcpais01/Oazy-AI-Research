@@ -24,7 +24,8 @@ from urllib.parse import urlparse, parse_qs
 import torch
 import torch.nn.functional as F
 
-from oazy.data import get_tokenizer, default_dir, EOT
+from oazy.data import default_dir
+from oazy import tok
 from oazy.sample import sample_logits
 from oazy.probes import token_strings
 from oazy.train import load_model
@@ -36,16 +37,17 @@ APP = Path(__file__).resolve().parent.parent / "oazy" / "web"     # shared look:
 class Brain:
     def __init__(self, ckpt: Path, device):
         self.model, st = load_model(ckpt, device)
-        if st.get("kind") != "bee":
+        if st.get("kind") not in ("bee", "bee2"):
             raise SystemExit("this checkpoint is not a Bee0.2B checkpoint")
         self.device = device
-        self.enc = get_tokenizer()
+        self.enc = tok.for_model(self.model)       # GPT-2's pieces (Bee0.2B) or SmolLM2's (v2)
+        self.eot, self.V = self.enc.eot_token, self.enc.n_vocab
         kinds = self.model.cfg.kinds()
         self.mem_layers = [i for i, k in enumerate(kinds) if k == "M"]
         self.att_layers = [i for i, k in enumerate(kinds) if k == "A"]
         self.meta = {"step": st.get("step"), "tokens": st.get("tokens"), "params": self.model.num_params(),
                      "layout": self.model.layout(), "mem_layers": self.mem_layers, "att_layers": self.att_layers,
-                     "layers": len(kinds)}
+                     "layers": len(kinds), "name": "Bee0.2B v2" if st.get("kind") == "bee2" else "Bee0.2B"}
         self.lock = threading.Lock()
         self.reset()
 
@@ -55,11 +57,11 @@ class Brain:
 
     @torch.no_grad()
     def _read(self, token, source):
-        p_word = None if self.logits is None else float(F.softmax(self.logits.float()[:50257], -1)[token])
+        p_word = None if self.logits is None else float(F.softmax(self.logits.float()[:self.V], -1)[token])
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=self.device.type == "cuda"):
             logits, self.states, infos = self.model.inspect(torch.tensor([[token]], device=self.device), self.states)
         self.logits = logits[0, -1].float()
-        probs = F.softmax(self.logits[:50257], -1)
+        probs = F.softmax(self.logits[:self.V], -1)
         pv, pi = torch.topk(probs, 6)
         looks = []
         for inf in infos:
@@ -82,7 +84,7 @@ class Brain:
     def run(self, text, mode, n_new, temperature, top_k):
         with self.lock:
             if self.n == 0:
-                yield self._read(EOT, "frame")                  # "a new text starts here"
+                yield self._read(self.eot, "frame")                  # "a new text starts here"
             if mode == "chat":
                 yield from self._feed(("\n\n" if self.need_sep else "") + "User:", "frame")
                 yield from self._feed(" " + text.strip(), "you")
@@ -92,8 +94,8 @@ class Brain:
             out = ""
             self.need_sep = True
             for _ in range(n_new):
-                t = sample_logits(self.logits, temperature, top_k)
-                if t == EOT:
+                t = sample_logits(self.logits[:self.V], temperature, top_k)   # only real pieces
+                if t == self.eot:
                     yield {"type": "eos"}
                     break
                 piece = self.enc.decode([t])
@@ -155,10 +157,10 @@ def make_handler(brain: Brain):
     return H
 
 
-def main():
+def main(default_run="bee"):
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt", default=None)
-    ap.add_argument("--run", default="bee", help="which run folder to open")
+    ap.add_argument("--run", default=default_run, help="which run folder to open")
     ap.add_argument("--port", type=int, default=8002)
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--device", default=None)
@@ -168,7 +170,7 @@ def main():
     print(f"loading {a.ckpt} on {device} ...", flush=True)
     brain = Brain(Path(a.ckpt), device)
     srv = ThreadingHTTPServer((a.host, a.port), make_handler(brain))
-    print(f"Bee0.2B chat on http://{a.host}:{a.port}", flush=True)
+    print(f"{brain.meta['name']} chat on http://{a.host}:{a.port}", flush=True)
     srv.serve_forever()
 
 

@@ -44,19 +44,19 @@ def main():
     base = {"step": 0, "tokens": 0, "elapsed": 0}
     vwin = val_set(data / "val.bin", T, p["val_windows"])
     t0 = time.time()
-    vl = val_loss(model, vwin, device, 16)
-    run.log("metrics.jsonl", {"kind": "eval", **base, "val_loss": vl})
-    print(f"val loss {vl:.4f}")
+    vl, bpb = val_loss(model, vwin, device, 16, bpb=True)
+    run.log("metrics.jsonl", {"kind": "eval", **base, "val_loss": vl, "val_bpb": bpb})
+    print(f"val loss {vl:.4f} ({bpb:.4f} bits per byte)")
     rep = probes.memory_report(model, vwin[:32], device)
     run.log("metrics.jsonl", {"kind": "memory", **base, **rep})
     print(f"context curve {rep['context']}  exact recall {rep['recall_acc'] * 100:.1f}%")
-    latest = {"val_loss": vl, "recall_acc": rep["recall_acc"]}
+    latest = {"val_loss": vl, "val_bpb": bpb, "recall_acc": rep["recall_acc"]}
     hs = data / "hellaswag_val.jsonl"
     if hs.exists():
         r = hellaswag.evaluate(model, hs, device)
         run.log("metrics.jsonl", {"kind": "hellaswag", **base, **r, "full": True})
-        latest["hellaswag_full"] = r["acc_norm"]
-        print(f"HellaSwag {r['acc_norm'] * 100:.2f}% ({r['n']} questions)")
+        latest["hellaswag_full"], latest["hellaswag_char_full"] = r["acc_norm"], r["acc_char"]
+        print(f"HellaSwag {r['acc_norm'] * 100:.2f}% ({r['n']} questions; {r['acc_char'] * 100:.2f}% scored per letter)")
     run.status({**info, "state": "done", "latest": latest, "updated": time.time()})
     print(f"done in {time.time() - t0:.0f} s -> {run.dir}")
 
