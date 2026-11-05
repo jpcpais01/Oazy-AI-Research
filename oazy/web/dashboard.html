@@ -328,6 +328,8 @@ const HS_GPT2 = 0.2955;
 const hsOK = (x) => x.kind === "hellaswag" && (x.full || x.sample === "spread" || x.n < 1000);
 let SNAPRUN = "memtrix", TSNAPS = [], TSNAP = null, INSIDE = "tide", RUNS = [], DATA = {}, SNAPS = [], SNAP = null, xmode = "tokens", colorBy = "surprise", POSLAB = [];
 
+// token counts: always whole millions, e.g. "2,125M" (João's rule: no "2.1B", no decimals)
+const fmtM = (v) => Math.round((v || 0) / 1e6).toLocaleString("en-US") + "M";
 const fmtL = (v) => v.toFixed(3);
 const pct = (v) => (v * 100).toFixed(1) + "%";
 const fmtTime = (s) => s < 3600 ? Math.round(s / 60) + " min" : (s / 3600).toFixed(1) + " h";
@@ -383,7 +385,7 @@ function runCard(r) {
   return `<div class="card run" style="--acc:${col}"><div class="head"><div class="name">${title}</div><span class="badge ${badge}">${badge}</span></div>
     <div class="chips">${chips.map(([t, a]) => `<span class="${a ? "acc" : ""}">${UI.escapeHtml(t)}</span>`).join("")}</div>
     <div class="meta">${mem}</div>
-    <div class="prog"><div class="labels"><span><b>${UI.fmtTokens(st.tokens || 0)}</b> of ${UI.fmtTokens(cf.total_tokens || 0)} tokens · ${(frac * 100).toFixed(0)}%</span>
+    <div class="prog"><div class="labels"><span><b>${fmtM(st.tokens || 0)}</b> of ${fmtM(cf.total_tokens || 0)} tokens · ${(frac * 100).toFixed(0)}%</span>
       <span>${state === "running" && st.eta_s != null ? "about " + fmtTime(st.eta_s) + " left" : state}</span></div>
       <div class="bar-t ${state === "running" ? "live" : ""}"><div style="width:${(frac * 100).toFixed(1)}%"></div></div></div>
     <div class="stats">${stat("val loss", latest.val_loss != null ? fmtL(latest.val_loss) : "–", FORE[r.name]?.val ? "heading for ≈" + fmtL(FORE[r.name].val.yEnd) + (FORE[r.name].val.range ? ` (${fmtL(FORE[r.name].val.range[0])}–${fmtL(FORE[r.name].val.range[1])})` : "") : latest.val_loss != null ? "like 1 of " + UI.fmtChoices(latest.val_loss) + " words" : "")}
@@ -472,7 +474,7 @@ function library() {
     return `<tr class="${on ? "" : "off"}"><td><div class="mname"><span class="chip" style="background:${m.color}"></span>${nameOf(r.name)}</div><div class="blurb">${m.blurb}</div></td>
       <td><span class="badge ${state === "reference" ? "done" : state}">${state}</span></td>
       <td class="num">${cf.params ? (cf.params / 1e6).toFixed(0) + "M" : "–"}</td>
-      <td class="num">${r.name === "openai-gpt2" ? "~10B" : UI.fmtTokens(st.tokens || 0)}</td>
+      <td class="num">${r.name === "openai-gpt2" ? "~10,000M" : fmtM(st.tokens || 0)}</td>
       <td class="num">${L.val_loss != null ? fmtL(L.val_loss) : "–"}</td>
       <td class="num">${hs != null ? pct(hs) + (L.hellaswag_full != null ? "" : "*") : "–"}</td>
       <td>${seg}</td></tr>`;
@@ -580,7 +582,7 @@ function trails(key, fmt) {
     const F = FORE[r.name]?.[key]; if (!F || !F.was) return "";
     const H = F.hist.filter((h) => h[0] >= F.was[0]), mid = H[H.length >> 1];
     const seq = [F.was[1], ...(mid && mid !== F.was ? [mid[1]] : []), F.yEnd].map(fmt).join(" → ");
-    return `<br><span style="color:${colorOf(r.name)}">${nameOf(r.name)}</span>: ${seq} since ${UI.fmtTokens(F.was[0])}`;
+    return `<br><span style="color:${colorOf(r.name)}">${nameOf(r.name)}</span>: ${seq} since ${fmtM(F.was[0])}`;
   }).join("");
 }
 
@@ -639,7 +641,7 @@ function drawLearning() {
   if (anyFore) leg.push(["forecast to the planned end", C.muted, true]);
   if (anyHsFore) hleg.push(["forecast", C.muted, true]);
   legend("lossLegend", leg); legend("hsLegend", hleg);
-  const xf = xmode === "tokens" ? UI.fmtTokens : hours ? (v) => +v.toFixed(1) + " h" : (v) => Math.round(v) + " min";
+  const xf = xmode === "tokens" ? fmtM : hours ? (v) => +v.toFixed(1) + " h" : (v) => Math.round(v) + " min";
   charts.loss.set({ series, xFmt: xf, yFmt: (v, d) => v.toFixed(d), tipFmt: fmtL, yFocus: 0.04,
     tipNote: (xv) => xv > foreFrom
       ? "dashed: forecast · dots: earlier forecasts · shade: their recent swing"
@@ -668,7 +670,7 @@ function drawMemoryUse() {
   charts.ctx.set({ series: ctxS, xFmt: (v) => Math.round(2 ** v) + " words", xTip: (v) => "may use the last " + Math.round(2 ** v) + " words", yFmt: (v, d) => v.toFixed(d), tipFmt: fmtL, empty: "Waiting for the first memory check" });
   const posLab = (v) => POSLAB[Math.round(v)] || "";
   charts.pos.set({ series: posS, xFmt: posLab, xTip: posLab, yFmt: (v, d) => v.toFixed(d), tipFmt: fmtL, empty: "Waiting for the first memory check" });
-  charts.rec.set({ series: recS, xFmt: UI.fmtTokens, xTip: (v) => UI.fmtTokens(v) + " tokens read", yMin: 0, yFmt: (v, d) => (v * 100).toFixed(Math.max(0, d - 2)) + "%", tipFmt: pct,
+  charts.rec.set({ series: recS, xFmt: fmtM, xTip: (v) => fmtM(v) + " tokens read", yMin: 0, yFmt: (v, d) => (v * 100).toFixed(Math.max(0, d - 2)) + "%", tipFmt: pct,
     empty: "Waiting for the first memory check", tipNote: () => "share of the repeated passage predicted exactly" });
 }
 
@@ -677,9 +679,9 @@ function drawDrafts() {
   document.getElementById("draftCard").style.display = hist.length ? "" : "none";
   if (!hist.length) return;
   const pick = hist.length <= 5 ? hist : [0, 1, 2, 3, 4].map((i) => hist[Math.round(i * (hist.length - 1) / 4)]);
-  const series = pick.map((h, i) => ({ name: "after " + UI.fmtTokens(h.tokens) + " tokens", color: C.tide, alpha: 0.25 + 0.75 * (i + 1) / pick.length,
+  const series = pick.map((h, i) => ({ name: "after " + fmtM(h.tokens) + " tokens", color: C.tide, alpha: 0.25 + 0.75 * (i + 1) / pick.length,
     width: i === pick.length - 1 ? 2.6 : 1.4, dots: true, endLabel: i === pick.length - 1, points: h.draft_loss.map((l, d) => [d + 1, l]) }));
-  legend("draftLegend", pick.map((h, i) => ["after " + UI.fmtTokens(h.tokens) + " tokens", UI.alpha ? UI.alpha(C.tide, 0.25 + 0.75 * (i + 1) / pick.length) : C.tide]));
+  legend("draftLegend", pick.map((h, i) => ["after " + fmtM(h.tokens) + " tokens", UI.alpha ? UI.alpha(C.tide, 0.25 + 0.75 * (i + 1) / pick.length) : C.tide]));
   charts.drafts.set({ series, xFmt: (v) => Math.round(v) === 1 ? "next word" : "+" + Math.round(v), xTip: (v) => Math.round(v) + " words ahead",
     yFmt: (v, d) => v.toFixed(d), tipFmt: fmtL });
 }
@@ -694,14 +696,14 @@ function drawRounds() {
   if (fams.length === 1) {
     const hist = fams[0].hist, col = colorOf(fams[0].n);
     pick = hist.length <= 5 ? hist : [0, 1, 2, 3, 4].map((i) => hist[Math.round(i * (hist.length - 1) / 4)]);
-    series = pick.map((h, i) => ({ name: "after " + UI.fmtTokens(h.tokens) + " tokens", color: col, alpha: 0.25 + 0.75 * (i + 1) / pick.length,
+    series = pick.map((h, i) => ({ name: "after " + fmtM(h.tokens) + " tokens", color: col, alpha: 0.25 + 0.75 * (i + 1) / pick.length,
       width: i === pick.length - 1 ? 2.6 : 1.4, dots: true, endLabel: i === pick.length - 1, points: h.round_loss.map((l, r) => [r + 1, l]) }));
-    legend("roundsLegend", pick.map((h, i) => ["after " + UI.fmtTokens(h.tokens) + " tokens", UI.alpha ? UI.alpha(col, 0.25 + 0.75 * (i + 1) / pick.length) : col]));
+    legend("roundsLegend", pick.map((h, i) => ["after " + fmtM(h.tokens) + " tokens", UI.alpha ? UI.alpha(col, 0.25 + 0.75 * (i + 1) / pick.length) : col]));
   } else {
     pick = fams.map((f) => f.hist[f.hist.length - 1]);
-    series = fams.map((f, i) => ({ name: nameOf(f.n) + " at " + UI.fmtTokens(pick[i].tokens), color: colorOf(f.n), width: 2.4, dots: true,
+    series = fams.map((f, i) => ({ name: nameOf(f.n) + " at " + fmtM(pick[i].tokens), color: colorOf(f.n), width: 2.4, dots: true,
       endLabel: true, points: pick[i].round_loss.map((l, r) => [r + 1, l]) }));
-    legend("roundsLegend", fams.map((f, i) => [nameOf(f.n) + " (latest check, " + UI.fmtTokens(pick[i].tokens) + " tokens)", colorOf(f.n)]));
+    legend("roundsLegend", fams.map((f, i) => [nameOf(f.n) + " (latest check, " + fmtM(pick[i].tokens) + " tokens)", colorOf(f.n)]));
   }
   const words = pick[pick.length - 1].round_words || [];
   const what = ["where the passage goes", "the middle", "quarters", "eighths", "last details"];
@@ -771,7 +773,7 @@ function drawMatrix(cv, m) {
 // ---------------------------------------------------------------- inside Tide
 async function loadTSnap(i) {
   const s = TSNAPS[i]; if (!s) return;
-  document.getElementById("tSnapLabel").textContent = `after ${UI.fmtTokens(s.tokens)} tokens (step ${s.step})`;
+  document.getElementById("tSnapLabel").textContent = `after ${fmtM(s.tokens)} tokens (step ${s.step})`;
   TSNAP = await getJSON(`api/run/tide/snapshot/${s.file}`);
   drawTide();
 }
@@ -817,7 +819,7 @@ function drawTide() {
 
 async function loadSnap(i) {
   const s = SNAPS[i]; if (!s) return;
-  document.getElementById("snapLabel").textContent = `after ${UI.fmtTokens(s.tokens)} tokens (step ${s.step})`;
+  document.getElementById("snapLabel").textContent = `after ${fmtM(s.tokens)} tokens (step ${s.step})`;
   SNAP = await getJSON(`api/run/${SNAPRUN}/snapshot/${s.file}`);
   drawSnapshot();
 }
@@ -829,7 +831,7 @@ function drawSamples() {
   const prompts = Object.keys(by);
   if (!prompts.length) { box.innerHTML = `<div class="empty">Waiting for the first samples</div>`; return; }
   box.innerHTML = prompts.map((p) => `<div class="prompt-block"><div class="ph">Prompt: <b>${UI.escapeHtml(p)}</b></div><div class="samples">${
-    Object.entries(by[p]).map(([n, s]) => `<div class="sample" style="--c:${colorOf(n)}"><div class="who"><b>${nameOf(n)}</b> · after ${UI.fmtTokens(s.tokens)} tokens</div><span class="prompt">${UI.escapeHtml(p)}</span><span class="gen">${UI.escapeHtml(s.text)}</span></div>`).join("")}</div></div>`).join("");
+    Object.entries(by[p]).map(([n, s]) => `<div class="sample" style="--c:${colorOf(n)}"><div class="who"><b>${nameOf(n)}</b> · after ${fmtM(s.tokens)} tokens</div><span class="prompt">${UI.escapeHtml(p)}</span><span class="gen">${UI.escapeHtml(s.text)}</span></div>`).join("")}</div></div>`).join("");
 }
 
 // the head: the pod at a glance (how many train, combined speed, the next to finish, the best held-out loss so far)
@@ -845,7 +847,7 @@ function podSummary() {
   document.getElementById("pod").innerHTML =
     cell("training now", live.length ? `${live.length}<small>${live.length === 1 ? "run" : "runs"}</small>` : "0", live.length ? esc(live.map((r) => nameOf(r.name)).join(" · ")) : "nothing on the GPU")
     + cell("combined speed", tps ? `${(tps / 1e3).toFixed(0)}k<small>tok/s</small>` : "–", gpus.length ? esc(gpus.join(", ")) : "")
-    + cell("next to finish", next ? `${fmtTime(next.status.eta_s)}` : "–", next ? esc(nameOf(next.name)) + " · " + UI.fmtTokens(next.config?.total_tokens || 0) + " tokens" : "")
+    + cell("next to finish", next ? `${fmtTime(next.status.eta_s)}` : "–", next ? esc(nameOf(next.name)) + " · " + fmtM(next.config?.total_tokens || 0) + " tokens" : "")
     + cell("best held-out loss", best ? fmtL(best.status.latest.val_loss) : "–", best ? esc(nameOf(best.name)) + (RUNS.find((r) => r.name === "openai-gpt2")?.status?.latest?.val_loss ? " · OpenAI GPT-2 " + fmtL(RUNS.find((r) => r.name === "openai-gpt2").status.latest.val_loss) : "") : "");
   if (typeof LAB !== "undefined") LAB.setPace(running.length ? 1 : 0.15);      // the light drifts while models train
 }
