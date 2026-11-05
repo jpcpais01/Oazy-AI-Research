@@ -20,6 +20,18 @@
   .bar > div { height: 100%; border-radius: 99px; background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.08) 50%, rgba(0, 0, 0, 0.08) 51%, rgba(255, 255, 255, 0.18)); box-shadow: 0 0 14px -2px currentColor; transition: width .8s cubic-bezier(.2,.8,.2,1); position: relative; }
   .bar.live > div::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent); animation: shimmer 2.2s infinite; }
   @keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+  .ctl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .ctl .btn { padding: 7px 14px; font-size: 13px; }
+  .ctlnote { color: var(--muted); font-size: 12.5px; margin-left: 4px; }
+  .btn.danger { color: #ffb4a8; border-color: rgba(255, 120, 100, 0.35); background: linear-gradient(180deg, rgba(255, 110, 90, 0.16), rgba(255, 110, 90, 0.06)); }
+  .btn.danger:hover { border-color: rgba(255, 140, 120, 0.6); background: linear-gradient(180deg, rgba(255, 110, 90, 0.26), rgba(255, 110, 90, 0.10)); }
+  .modal { position: fixed; inset: 0; z-index: 100; display: none; place-items: center; padding: 16px; background: rgba(2, 6, 16, 0.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+  .modal.on { display: grid; animation: fadein .15s ease-out; }
+  @keyframes fadein { from { opacity: 0; } }
+  .modal .card { max-width: 460px; width: 100%; background: linear-gradient(180deg, rgba(40, 60, 100, 0.75), rgba(14, 24, 46, 0.85)); }
+  .modal .mt { font-size: 17px; font-weight: 650; margin-bottom: 10px; }
+  .modal .mb { color: var(--text-2); font-size: 13.5px; line-height: 1.6; }
+  .modal .row { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
   .run .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 14px; }
 
   /* the scoreboard */
@@ -90,6 +102,9 @@
   <div class="spacer"></div>
   <span class="pill" id="updated"><span class="dot"></span><span>connecting…</span></span>
 </div></header>
+
+<div class="modal" id="modal" role="dialog" aria-modal="true"><div class="card"><div class="mt"></div><div class="mb"></div>
+  <div class="row"><button class="btn ghost" data-cancel>Cancel</button><button class="btn danger" data-ok></button></div></div></div>
 
 <div class="wrap">
   <div class="section-title" style="margin-top:6px"><h3>Training now</h3><div class="line"></div></div>
@@ -254,7 +269,7 @@ const kindOf = (r) => (r.config && r.config.model) || r.name;
 const modelOf = (n) => MODELS[n] || MODELS[kindOf(RUNS.find((r) => r.name === n) || { name: n })] || { name: n, color: C.ref, role: "ours", blurb: "" };
 const colorOf = (n) => modelOf(n).color;
 const nameOf = (n) => MODELS[n] ? MODELS[n].name : (modelOf(n).name + (n !== kindOf(RUNS.find((r) => r.name === n) || {}) ? ` (${n})` : ""));
-const isLive = (r) => !!r.status && (r.status.state === "running" || (r.status.state === "starting" && Date.now() / 1000 - (r.status.updated || 0) < 1800));
+const isLive = (r) => !!r.status && (["running", "paused", "finishing"].includes(r.status.state) || (r.status.state === "starting" && Date.now() / 1000 - (r.status.updated || 0) < 1800));
 // Which runs the page shows: the models training now (and the baselines, for comparison).
 // With nothing training, the most recently active of our models. "show" in the library overrides.
 let OVERRIDE = {};
@@ -322,7 +337,67 @@ function runCard(r) {
       <div class="bar ${state === "running" ? "live" : ""}"><div style="width:${(frac * 100).toFixed(1)}%;background-color:${col};color:${col}"></div></div></div>
     <div class="stats">${stat("val loss", latest.val_loss != null ? fmtL(latest.val_loss) : "–", latest.val_loss != null ? "like 1 of " + UI.fmtChoices(latest.val_loss) + " words" : "")}
       ${stat("HellaSwag", hs, hsH)}
-      ${stat("speed", st.tok_s ? (st.tok_s / 1e3).toFixed(0) + "k" : "–", "tokens per second")}</div></div>`;
+      ${stat("speed", st.tok_s ? (st.tok_s / 1e3).toFixed(0) + "k" : "–", "tokens per second")}</div>
+    ${controls(r.name, state)}</div>`;
+}
+
+// ---- pause / resume / end early (the trainer reads the request within one step)
+const PENDING = {};     // run -> {action, from: state, at}
+const ICON = {
+  pause: `<svg viewBox="0 0 16 16" fill="currentColor"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>`,
+  resume: `<svg viewBox="0 0 16 16" fill="currentColor"><path d="M4.5 2.8v10.4a.8.8 0 0 0 1.2.7l8.3-5.2a.8.8 0 0 0 0-1.4L5.7 2.1a.8.8 0 0 0-1.2.7z"/></svg>`,
+  end: `<svg viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="2"/></svg>`,
+};
+function controls(name, state) {
+  const p = PENDING[name];
+  if (p && (p.from !== state || Date.now() - p.at > 600e3)) delete PENDING[name];
+  const wait = PENDING[name];
+  const doing = { pause: "Pausing at the next step…", resume: "Resuming…", end: "Ending: saving and running the final tests…" };
+  let btns = "", note = "";
+  if (state === "finishing") note = "Running the final tests (full HellaSwag takes a few minutes), then it's done.";
+  else if (wait) note = doing[wait.action];
+  else if (state === "paused") {
+    btns = `<button class="btn primary" data-act="resume" data-run="${name}">${ICON.resume}Resume</button>
+            <button class="btn danger" data-act="end" data-run="${name}">${ICON.end}End now</button>`;
+    note = "Paused: the checkpoint is saved and the GPU is idle.";
+  } else {
+    btns = `<button class="btn" data-act="pause" data-run="${name}">${ICON.pause}Pause</button>
+            <button class="btn danger" data-act="end" data-run="${name}">${ICON.end}End now</button>`;
+  }
+  return `<div class="ctl">${btns}<span class="ctlnote">${note}</span></div>`;
+}
+function askConfirm(title, body, ok) {
+  return new Promise((done) => {
+    const m = document.getElementById("modal");
+    m.querySelector(".mt").textContent = title;
+    m.querySelector(".mb").innerHTML = body;
+    m.querySelector("[data-ok]").innerHTML = ok;
+    m.classList.add("on");
+    const close = (v) => { m.classList.remove("on"); m.onclick = null; document.onkeydown = null; done(v); };
+    m.onclick = (e) => { if (e.target === m || e.target.dataset.cancel != null) close(false); else if (e.target.closest("[data-ok]")) close(true); };
+    document.onkeydown = (e) => { if (e.key === "Escape") close(false); };
+  });
+}
+async function control(name, action) {
+  const nm = nameOf(name);
+  if (action === "end" && !(await askConfirm(`End ${nm}'s training now?`,
+      `It saves a checkpoint, runs the final tests (full HellaSwag, a few minutes) and marks ${nm} as finished with what it has learned so far.<br><br>You can still continue it later: run <span class="kbd">bash runpod/train.sh ${kindOf({ name })}</span> again.`,
+      `${ICON.end}End training`))) return;
+  try {
+    const r = await fetch(`api/run/${encodeURIComponent(name)}/control`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+    const st = (RUNS.find((x) => x.name === name) || {}).status || {};
+    PENDING[name] = { action, from: st.state || "starting", at: Date.now() };
+  } catch (e) {
+    await askConfirm("That didn't work", UI.escapeHtml(String(e.message || e)), "OK");
+  }
+  draw(); fastRefresh();
+}
+let fastT = null;
+function fastRefresh() {     // poll every 3 s while a request is on its way
+  clearTimeout(fastT);
+  if (!Object.keys(PENDING).length) return;
+  fastT = setTimeout(async () => { await refresh(); fastRefresh(); }, 3000);
 }
 
 function nowCards() {
@@ -671,6 +746,10 @@ const slider = document.getElementById("snapSlider");
 slider.addEventListener("input", () => { UI.syncRange(slider); loadSnap(+slider.value); });
 document.getElementById("ramp").style.background = UI.heatCSS();
 window.addEventListener("resize", () => { Object.values(charts).forEach((c) => c.draw()); drawSnapshot(); drawTide(); });
+document.getElementById("runs").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-act]");
+  if (b) control(b.dataset.run, b.dataset.act);
+});
 refresh(); setInterval(refresh, 15000);
 </script>
 </body>

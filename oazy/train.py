@@ -404,11 +404,51 @@ def main():
             write_samples(model, enc, run, step, tokens, p["sample_len"])
             nxt["sample"] += p["sample_every"]
 
+    ctl = run.dir / "control.json"
+    ctl.unlink(missing_ok=True)                  # an old request must not stop a fresh start
+
+    def control():
+        """The app's buttons: pause / resume / end early (a small file written by oazy.dashboard)."""
+        if not ctl.exists():
+            return None
+        try:
+            act = json.loads(ctl.read_text()).get("action")
+        except Exception:
+            return None
+        ctl.unlink(missing_ok=True)
+        return act
+
+    def status(state, **extra):
+        run.status({**info, "state": state, "step": step, "tokens": tokens, "elapsed": elapsed,
+                    "latest": latest, "updated": time.time(), **extra})
+
+    end_early = False
     model.train()
     last_ckpt = time.time()
     t_log, tok_log, acc_loss, acc_n = time.time(), tokens, 0.0, 0
     log_every = 10
     while tokens < total and not stop["flag"]:
+        act = control()
+        if act == "pause":
+            save_ckpt(run, model, opt, ckpt_meta())
+            last_ckpt = time.time()
+            print(f"paused at step {step} (checkpoint saved). Resume or end it from the app.", flush=True)
+            status("paused")
+            while not stop["flag"]:
+                act = control()
+                if act in ("resume", "end"):
+                    break
+                status("paused")                     # keeps the card fresh
+                time.sleep(2)
+            if act == "resume":
+                print("resumed", flush=True)
+                status("running")
+                t_log, tok_log, acc_loss, acc_n = time.time(), tokens, 0.0, 0
+        if act == "end":
+            end_early = True
+            break
+        if stop["flag"]:
+            break
         t0 = time.time()
         evaluations()
         t_eval = time.time() - t0
@@ -460,11 +500,13 @@ def main():
             last_ckpt = time.time()
 
     save_ckpt(run, model, opt, ckpt_meta())
-    if tokens >= total:
+    if tokens >= total or end_early:
+        if end_early:
+            print(f"ended early from the app at {tokens / 1e6:.0f}M tokens (checkpoint saved).", flush=True)
+        status("finishing")
         print("training done; final evaluation (full HellaSwag takes a few minutes)...", flush=True)
         evaluations(final=True)
-        run.status({**info, "state": "done", "step": step, "tokens": tokens, "elapsed": elapsed,
-                    "latest": latest, "updated": time.time()})
+        status("done", ended_early=end_early)
         print(f"finished: {json.dumps(latest)} after {elapsed / 60:.1f} min of training. checkpoint: {ck}")
     else:
         run.status({**info, "state": "stopped", "step": step, "tokens": tokens, "elapsed": elapsed,

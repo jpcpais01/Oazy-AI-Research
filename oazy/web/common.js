@@ -141,19 +141,17 @@ const UI = (() => {
         }
         ctx.strokeStyle = s.color;
         ctx.globalAlpha = s.alpha || 1;
-        ctx.lineWidth = s.width || 2;
+        ctx.lineWidth = Math.max(0.8, Math.min(1.5, (s.width || 2) * 0.65));   // thin, crisp lines
         ctx.setLineDash(s.dash || []);
         ctx.lineJoin = "round"; ctx.lineCap = "round";
         ctx.beginPath();
         pts.forEach((p, i) => (i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1]))));
-        if ((s.width || 2) >= 2 && !s.dash) { ctx.shadowColor = alpha(s.color, 0.55); ctx.shadowBlur = 12; }   // a soft neon glow
         ctx.stroke();
-        ctx.shadowBlur = 0; ctx.shadowColor = "transparent";
         ctx.setLineDash([]);
         if (s.dots) {
           for (const p of pts) {
-            ctx.fillStyle = css("--solid") || css("--surface"); ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), 3.6, 0, 7); ctx.fill();
-            ctx.fillStyle = s.color; ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), 2.4, 0, 7); ctx.fill();
+            ctx.fillStyle = css("--solid") || css("--surface"); ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), 2.8, 0, 7); ctx.fill();
+            ctx.fillStyle = s.color; ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), 1.8, 0, 7); ctx.fill();
           }
         }
         ctx.globalAlpha = 1;
@@ -188,7 +186,7 @@ const UI = (() => {
           for (const p of s.points) if (Math.abs(p[0] - xv) < Math.abs(best[0] - xv)) best = p;
           ctx.fillStyle = css("--solid");
           ctx.beginPath(); ctx.arc(X(best[0]), Y(best[1]), 6, 0, 7); ctx.fill();
-          ctx.strokeStyle = s.color; ctx.lineWidth = 2;
+          ctx.strokeStyle = s.color; ctx.lineWidth = 1.5;
           ctx.beginPath(); ctx.arc(X(best[0]), Y(best[1]), 4, 0, 7); ctx.stroke();
           const f = s.tipFmt || o.tipFmt || o.yFmt || ((x) => x);
           rows.push(`<div class="tiprow"><span class="sw" style="background:${s.color};opacity:${s.alpha && s.alpha < 1 ? 0.5 : 1}"></span>${s.name}<b>${f(best[1])}</b></div>`);

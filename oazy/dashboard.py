@@ -1,4 +1,4 @@
-"""Engram live training dashboard. Reads the run folders and serves a web page that refreshes itself.
+"""Oazy AI Research: the live training dashboard (and its pause / resume / end-early buttons). Reads the run folders and serves a web page that refreshes itself.
 
     python -m oazy.dashboard --runs /workspace/oazy_runs --port 8000
 
@@ -86,6 +86,27 @@ def make_handler(runs: Path, web: Path = WEB):
                     if f.exists():
                         return self.send(200, f.read_bytes())
             self.send(404, b"{}")
+
+        def do_POST(self):
+            """POST /api/run/<name>/control {"action": "pause" | "resume" | "end"}: the trainer picks it up within a step."""
+            parts = [p for p in unquote(urlparse(self.path).path).split("/") if p]
+            if len(parts) != 4 or parts[:2] != ["api", "run"] or parts[3] != "control" or ".." in parts[2]:
+                return self.send(404, b"{}")
+            d = runs / parts[2]
+            st = read_json(d / "status.json") or {}
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                action = json.loads(self.rfile.read(min(n, 4096)) or b"{}").get("action")
+            except Exception:
+                action = None
+            if action not in ("pause", "resume", "end") or not d.is_dir():
+                return self.send(400, b'{"error": "bad request"}')
+            if st.get("state") not in ("running", "starting", "paused"):
+                return self.send(409, json.dumps({"error": f"{parts[2]} is not training right now"}).encode())
+            tmp = d / "control.json.tmp"
+            tmp.write_text(json.dumps({"action": action}))
+            tmp.replace(d / "control.json")
+            return self.js({"ok": True, "action": action})
 
     return H
 
