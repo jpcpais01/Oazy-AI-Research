@@ -65,6 +65,8 @@ h1, h2, h3 { font-family: var(--display); }
 .mark img { width: 32px; height: 32px; display: block; }
 .word { font: 800 18px/1 var(--display); letter-spacing: 0.2em; color: #fff; }
 .word small { display: block; font: 500 9.5px/1 var(--mono); letter-spacing: 0.24em; color: var(--muted); margin-top: 5px; }
+.word .ver { margin-left: 0.5em; padding: 1px 5px; border: 1px solid currentColor; border-radius: 999px; letter-spacing: 0.08em; opacity: 0.8; }
+.word .ver:empty { display: none; }
 .tabs { position: relative; display: flex; gap: 2px; margin: 0 auto; padding: 4px; border-radius: 999px; background: rgba(255, 255, 255, 0.035); border: 1px solid var(--line); }
 .tabs a { position: relative; z-index: 1; padding: 7px 14px; border-radius: 999px; font: 500 13.5px/1 var(--sans); color: var(--text-2); text-decoration: none; transition: color .25s; white-space: nowrap; }
 .tabs a:hover, .tabs a.on { color: #fff; }
