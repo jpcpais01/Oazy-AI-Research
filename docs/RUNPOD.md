@@ -38,7 +38,21 @@ Talk to a model (works during training, from its latest checkpoint):
 ```bash
 python3 -m engram.chat --port 8002
 python3 -m tide.chat --port 8002
+python3 -m fern.chat --port 8002
 ```
+
+## Fern (200M, writes passages coarse to fine)
+
+```bash
+cd /workspace/oazy && git pull
+python3 -m fern.tests --device cuda                    # ~1 min: no peeking, writing == scoring
+python3 -m oazy.train --bench --model fern --hours 2   # Fern's speed next to the GPT-2
+bash runpod/train.sh fern --tokens 2e9                 # train; the app adds "Fern's rounds"
+```
+
+Fern has 198M parameters (18 reader blocks of Engram memory + 6 unfolder blocks), so it costs
+roughly 2-3x Engram per token: check `--bench` before picking `--tokens`. If it runs out of GPU
+memory, add `--micro 16`. Its loss is an exact per-word loss, directly comparable with GPT-2's.
 
 ## Where things live
 

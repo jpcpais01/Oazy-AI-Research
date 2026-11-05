@@ -2,6 +2,7 @@
 # Train a model of the lab (and keep the app running) in one tmux session called "oazy".
 #
 #   bash runpod/train.sh tide                       # train Tide
+#   bash runpod/train.sh fern --tokens 2e9          # train Fern (writes passages coarse to fine)
 #   bash runpod/train.sh engram --tokens 2e9        # extra arguments go to the trainer
 #   bash runpod/train.sh tide --gpt                 # also train the GPT-2 baseline next to it
 #
@@ -14,7 +15,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 REPO="$(pwd)"
 MODEL="${1:-}"
-case "$MODEL" in engram|tide|gpt) shift ;; *) echo "usage: bash runpod/train.sh engram|tide|gpt [--gpt] [trainer options]"; exit 1 ;; esac
+case "$MODEL" in engram|tide|fern|gpt) shift ;; *) echo "usage: bash runpod/train.sh engram|tide|fern|gpt [--gpt] [trainer options]"; exit 1 ;; esac
 WITH_GPT=0
 ARGS=()
 for a in "$@"; do if [ "$a" = "--gpt" ]; then WITH_GPT=1; else ARGS+=("$a"); fi; done

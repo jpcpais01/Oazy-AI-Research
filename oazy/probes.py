@@ -43,7 +43,7 @@ def token_losses(model, x, y, span=None, batch=16):
     out = []
     for i in range(0, x.shape[0], batch):
         with _amp(x.device):
-            logits = model._body(x[i:i + batch])
+            logits = model.score(x[i:i + batch], y[i:i + batch]) if hasattr(model, "score") else model._body(x[i:i + batch])
         out.append(F.cross_entropy(logits.float().transpose(1, 2), y[i:i + batch], reduction="none"))
         del logits
     return torch.cat(out).reshape(N, T)
@@ -73,7 +73,7 @@ def memory_report(model, windows: np.ndarray, device, batch=16):
     for i in range(0, len(rx), batch):
         r = rx[i:i + batch]
         with _amp(device):
-            logits = model._body(r[:, :-1]).float()
+            logits = (model.score(r[:, :-1], r[:, 1:]) if hasattr(model, "score") else model._body(r[:, :-1])).float()
         tgt = r[:, 1:]
         lo = F.cross_entropy(logits.transpose(1, 2), tgt, reduction="none")
         first += float(lo[:, :L - 1].mean(1).sum())

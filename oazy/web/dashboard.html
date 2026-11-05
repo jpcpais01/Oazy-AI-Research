@@ -134,6 +134,15 @@
       <div class="legend" id="draftLegend" style="margin-bottom:10px"></div>
       <div class="chart"><canvas id="drafts" style="height:240px"></canvas><div class="tip" id="draftsTip"></div></div>
     </div>
+    <div class="card span12" id="roundsCard" style="display:none">
+      <div class="cardhead"><div class="titles"><h2>Fern's rounds: how hard is each step of the unfolding?</h2><div class="sub">Loss of the words Fern decides in each of its 5 rounds. Round 1 picks the 16th word of a passage from the past alone; round 5 fills single gaps between two known words. Each line is one check during training.</div></div></div>
+      <details class="why"><summary>Why does this matter?</summary><div class="body">
+        <p>Fern writes a passage of 16 words like a fern frond unfurls: first where the passage is going (word 16), then the middle of the way (word 8), then the middle of each half (4 and 12), and so on, until the last round fills every gap. Its total loss is simply the average over all words, so it compares directly with the GPT-2's.</p>
+        <p>Early rounds are long-range guesses and should stay hardest. If the later rounds fall far below the GPT-2's loss, Fern is really using the future it has already decided, on both sides of each gap. That is the whole point of writing coarse to fine.</p>
+      </div></details>
+      <div class="legend" id="roundsLegend" style="margin-bottom:10px"></div>
+      <div class="chart"><canvas id="rounds" style="height:240px"></canvas><div class="tip" id="roundsTip"></div></div>
+    </div>
     <div class="card span6">
       <div class="cardhead"><div class="titles"><h2>What memory buys</h2><div class="sub">Loss when a model may only use the last few words, versus all of them.</div></div></div>
       <details class="why"><summary>How to read this</summary><div class="body">
@@ -231,12 +240,13 @@
 <script src="common.js"></script>
 <script>
 "use strict";
-const C = { engram: UI.css("--brand"), tide: UI.css("--teal"), gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
-const NAMES = { engram: "Engram", tide: "Tide", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };
+const C = { engram: UI.css("--brand"), tide: UI.css("--teal"), fern: UI.css("--fern"), gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
+const NAMES = { engram: "Engram", tide: "Tide", fern: "Fern", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };
 // Every model of the lab. role: "ours" (our architectures), "baseline" (the GPT-2 we train the same way), "reference" (OpenAI's).
 const MODELS = {
   engram: { name: "Engram", color: C.engram, role: "ours", blurb: "Learns while it reads: small memories fixed by their own surprise, word by word." },
   tide: { name: "Tide", color: C.tide, role: "ours", blurb: "Engram plus a belt of drafts of the next 8 words, cleaned up as they arrive." },
+  fern: { name: "Fern", color: C.fern, role: "ours", blurb: "Writes 16 words at a time, coarse to fine: where the passage is going first, then the middle, then the details. Not a next-word model." },
   gpt: { name: NAMES.gpt, color: C.gpt, role: "baseline", blurb: "GPT-2 small (124M), trained on the same text, in the same order, with the same schedule." },
   "openai-gpt2": { name: NAMES.openai, color: C.ref, role: "reference", blurb: "OpenAI's 2019 GPT-2 small, measured with the same tests: the line to beat." },
 };
@@ -277,6 +287,7 @@ const charts = {
   pos: UI.lineChart(document.getElementById("pos"), document.getElementById("posTip"), { series: [] }),
   rec: UI.lineChart(document.getElementById("rec"), document.getElementById("recTip"), { series: [] }),
   drafts: UI.lineChart(document.getElementById("drafts"), document.getElementById("draftsTip"), { series: [] }),
+  rounds: UI.lineChart(document.getElementById("rounds"), document.getElementById("roundsTip"), { series: [] }),
 };
 
 function legend(id, items) {
@@ -363,7 +374,7 @@ function scoreboard() {
   const row = (n, v, w, fmt) => `<div class="row"><span>${nameOf(n)}</span><div class="track"><div style="width:${Math.max(2, w * 100).toFixed(1)}%;background-color:${colorOf(n)}"></div></div><b>${fmt(v)}</b></div>`;
   let verdictL = "", verdictH = "";
   const target = ref(val) != null ? ["OpenAI GPT-2", ref(val)] : val.gpt != null ? [NAMES.gpt, val.gpt] : null;
-  for (const me of ["engram", "tide"]) {
+  for (const me of ["engram", "tide", "fern"]) {
     const nm = nameOf(me), br = verdictL ? "<br>" : "";
     if (val[me] != null && target) {
       const d = val[me] - target[1];
@@ -456,6 +467,20 @@ function drawDrafts() {
     width: i === pick.length - 1 ? 2.6 : 1.4, dots: true, endLabel: i === pick.length - 1, points: h.draft_loss.map((l, d) => [d + 1, l]) }));
   legend("draftLegend", pick.map((h, i) => ["after " + UI.fmtTokens(h.tokens) + " tokens", UI.alpha ? UI.alpha(C.tide, 0.25 + 0.75 * (i + 1) / pick.length) : C.tide]));
   charts.drafts.set({ series, xFmt: (v) => Math.round(v) === 1 ? "next word" : "+" + Math.round(v), xTip: (v) => Math.round(v) + " words ahead",
+    yFmt: (v) => v.toFixed(1), tipFmt: fmtL });
+}
+
+function drawRounds() {
+  const hist = showsKind("fern") ? (DATA.fern?.metrics || []).filter((x) => x.kind === "rounds") : [];
+  document.getElementById("roundsCard").style.display = hist.length ? "" : "none";
+  if (!hist.length) return;
+  const pick = hist.length <= 5 ? hist : [0, 1, 2, 3, 4].map((i) => hist[Math.round(i * (hist.length - 1) / 4)]);
+  const series = pick.map((h, i) => ({ name: "after " + UI.fmtTokens(h.tokens) + " tokens", color: C.fern, alpha: 0.25 + 0.75 * (i + 1) / pick.length,
+    width: i === pick.length - 1 ? 2.6 : 1.4, dots: true, endLabel: i === pick.length - 1, points: h.round_loss.map((l, r) => [r + 1, l]) }));
+  legend("roundsLegend", pick.map((h, i) => ["after " + UI.fmtTokens(h.tokens) + " tokens", UI.alpha ? UI.alpha(C.fern, 0.25 + 0.75 * (i + 1) / pick.length) : C.fern]));
+  const words = pick[pick.length - 1].round_words || [];
+  const what = ["where the passage goes", "the middle", "quarters", "eighths", "last details"];
+  charts.rounds.set({ series, xFmt: (v) => "round " + Math.round(v), xTip: (v) => `round ${Math.round(v)}: ${what[Math.round(v) - 1] || ""}` + (words[Math.round(v) - 1] ? ` (${words[Math.round(v) - 1]} words per text)` : ""),
     yFmt: (v) => v.toFixed(1), tipFmt: fmtL });
 }
 
@@ -584,14 +609,14 @@ function drawSamples() {
 
 function draw() {
   document.getElementById("runs").innerHTML = nowCards();
-  scoreboard(); drawLearning(); drawMemoryUse(); drawDrafts(); drawSamples(); library();
+  scoreboard(); drawLearning(); drawMemoryUse(); drawDrafts(); drawRounds(); drawSamples(); library();
 }
 
 async function refresh() {
   const pill = document.getElementById("updated");
   try {
     RUNS = await getJSON("api/runs");
-    RUNS.sort((a, b) => ["tide", "engram", "gpt", "openai-gpt2"].indexOf(a.name) - ["tide", "engram", "gpt", "openai-gpt2"].indexOf(b.name));
+    RUNS.sort((a, b) => ["fern", "tide", "engram", "gpt", "openai-gpt2"].indexOf(a.name) - ["fern", "tide", "engram", "gpt", "openai-gpt2"].indexOf(b.name));
     for (const r of RUNS) {
       const [metrics, samples] = await Promise.all([getJSON(`api/run/${r.name}/metrics`), getJSON(`api/run/${r.name}/samples`)]);
       DATA[r.name] = { metrics, samples };
