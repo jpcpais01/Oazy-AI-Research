@@ -13,7 +13,7 @@
 
 ```bash
 cd /workspace
-git clone https://github.com/jpcpais01/Ooazy-AI-Research.git oazy
+git clone https://github.com/jpcpais01/Oazy-AI-Research.git oazy
 cd oazy
 bash runpod/setup.sh          # ~20-30 min: 4B tokens of FineWeb-Edu, HellaSwag, self-tests
 ```
