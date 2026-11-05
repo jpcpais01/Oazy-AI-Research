@@ -39,10 +39,10 @@ class Mentor:
         for p in self.net.parameters():
             p.requires_grad_(False)
 
+    anchor = None          # (progress, weight): fade from here instead of from the start (a run made shorter)
+
     def weight_at(self, progress: float) -> float:
-        if self.until <= 0:
-            return 0.0
-        return max(0.0, self.w0 * (1 - progress / self.until))
+        return fade(progress, self.w0, self.until, self.anchor)
 
     @torch.no_grad()
     def guess(self, x):
@@ -61,6 +61,20 @@ class Mentor:
         if x.shape[1] <= L:
             return f(x)
         return torch.cat([f(x[:, i:i + L]) for i in range(0, x.shape[1], L)], dim=1)
+
+
+def fade(progress, w0, until, anchor=None):
+    """The mentor's share of the lesson: from w0 at the start down to 0 at `until` (fraction of the run).
+    anchor=(p0, w): the run's length was changed at progress p0, when the share was w: from there it
+    fades straight from w to 0 at `until` of the new length, so it never jumps."""
+    if until <= 0:
+        return 0.0
+    if anchor is not None:
+        p0, w = anchor
+        if progress >= until or until <= p0:
+            return 0.0
+        return max(0.0, w * (1 - max(0.0, progress - p0) / (until - p0)))
+    return max(0.0, w0 * (1 - progress / until))
 
 
 SMOL = {"smollm2-135m": "HuggingFaceTB/SmolLM2-135M", "smollm2-360m": "HuggingFaceTB/SmolLM2-360M",

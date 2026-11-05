@@ -523,6 +523,7 @@ def main():
 
     step, tokens, elapsed = 0, 0, 0.0
     nxt = {"eval": 0, "probe": 0, "hs": 0, "sample": 0}
+    old_total, anchor = None, None
     ck = run.dir / "ckpt.pt"
     if ck.exists() and not args.fresh:
         state = torch.load(ck, map_location=device, weights_only=False)
@@ -537,7 +538,20 @@ def main():
             B = micro * accum
             train.set_batch(micro)
         torch.set_rng_state(state["torch_rng"].cpu())
+        old_total = state.get("total") or (state.get("info") or {}).get("total_tokens")
+        anchor = state.get("mentor_anchor")
         say(f"resumed from {ck}: step {step}, {tokens / 1e6:.1f}M tokens, {elapsed / 60:.1f} min")
+        if old_total and old_total != total and tokens < total:
+            say(f"[length] the run's length changes: {old_total / 1e9:.2f}B -> {total / 1e9:.2f}B tokens. Every "
+                f"schedule follows the new length (cool-down, mentor, windows, text mix); the learning rate does not jump.")
+            if schedule == "wsd":
+                was, now = lr_fn(tokens / old_total, step, 1.0, p["warmup"]), lr_fn(tokens / total, step, 1.0, p["warmup"])
+                if abs(was - now) > 1e-6:
+                    raise SystemExit(f"with {total / 1e9:.2f}B tokens this run would already be in its cool-down "
+                                     f"(learning rate x{now:.2f} instead of x{was:.2f}). Pick --tokens of at least "
+                                     f"{tokens / 0.8 / 1e9:.2f}e9, or keep the old length.")
+            else:
+                say("[length] note: with the cosine schedule the learning rate moves to the new curve at once")
     elif args.fresh:
         for f in ("metrics.jsonl", "samples.jsonl", "snapshots.jsonl", "status.json"):
             (run.dir / f).unlink(missing_ok=True)
@@ -581,6 +595,21 @@ def main():
         from ember.mentor import Mentor
         say(f"loading the mentor {mentor_name} ...", flush=True)
         mentor = Mentor(mentor_name, device, args.mentor_weight, args.mentor_until, compile=bool(args.compile))
+    from ember.mentor import fade
+    if anchor is not None and mentor is not None:      # an earlier change of length: keep fading from there
+        mentor.anchor = (anchor["tokens"] / total, anchor["weight"])
+    if old_total and old_total != total and tokens < total and mentor_name != "none":
+        # today's share under the old length, then a straight fade from it to 0 at mentor_until of the new length
+        a_old = (anchor["tokens"] / old_total, anchor["weight"]) if anchor else None
+        w_now = fade(tokens / old_total, args.mentor_weight, args.mentor_until, a_old)
+        anchor = {"tokens": tokens, "weight": w_now}
+        if mentor is not None:
+            mentor.anchor = (tokens / total, w_now)
+            say(f"[length] the mentor's share is {w_now:.2f} now and fades to 0 by "
+                f"{args.mentor_until * total / 1e9:.2f}B tokens", flush=True)
+        elif w_now > 0:
+            say(f"[length] the mentor stops now (its share was {w_now:.2f}): with the new length it is past "
+                f"{args.mentor_until:.0%} of the run", flush=True)
 
     stop = {"flag": False}
 
@@ -602,7 +631,8 @@ def main():
 
     def ckpt_meta():
         return {"step": step, "tokens": tokens, "elapsed": elapsed, "next": nxt, "data": train.state(),
-                "torch_rng": torch.get_rng_state(), "info": info, "kind": args.model, "config": cfg.to_dict()}
+                "torch_rng": torch.get_rng_state(), "info": info, "kind": args.model, "config": cfg.to_dict(),
+                "total": total, "mentor_anchor": anchor}
 
     latest = {}
 
