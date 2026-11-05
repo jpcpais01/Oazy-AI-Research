@@ -16,16 +16,16 @@
   .story { font-size: 18px; line-height: 2; min-height: 180px; max-height: 46vh; overflow-y: auto; padding: 2px 2px 8px; }
   .story .w { border-radius: 5px; padding: 2px 0; cursor: pointer; box-decoration-break: clone; -webkit-box-decoration-break: clone; transition: background .3s; }
   .story .you { color: var(--text); }
-  .story .model { color: #f6d9c6; }
+  .story .model { color: #c9f1ff; }
   .story .sel { outline: 1.5px solid rgba(255,255,255,.85); outline-offset: 1px; }
   .story .fresh { animation: pop .5s ease-out; }
-  @keyframes pop { from { background: rgba(255, 230, 200, .45); } }
+  @keyframes pop { from { background: rgba(160, 240, 255, .45); } }
   .story .caret { display: inline-block; width: 9px; height: 18px; background: var(--brand); vertical-align: -3px; margin-left: 3px; border-radius: 2px; animation: blink 1s steps(2) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
   .story .hint { color: var(--muted); font-size: 15px; line-height: 1.7; }
 
   .composer { margin-top: 14px; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: 14px; padding: 12px 12px 10px 16px; }
-  .composer:focus-within { border-color: rgba(232, 100, 44, .6); box-shadow: 0 0 0 3px rgba(232, 100, 44, .12); }
+  .composer:focus-within { border-color: rgba(79, 216, 255, .6); box-shadow: 0 0 0 3px rgba(79, 216, 255, .12); }
   .composer textarea { width: 100%; background: transparent; border: 0; color: var(--text); font: 15.5px/1.6 var(--sans); resize: none; outline: none; min-height: 52px; }
   .composer .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .composer .row .spacer { flex: 1; }
@@ -41,7 +41,7 @@
   @media (max-width: 760px) { .belt { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
   .slot { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 9px 9px 8px; min-height: 128px; transition: border-color .3s; }
   .slot .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 6px; }
-  .slot.front { border-color: rgba(232, 100, 44, .7); box-shadow: 0 0 0 3px rgba(232, 100, 44, .10); }
+  .slot.front { border-color: rgba(79, 216, 255, .7); box-shadow: 0 0 0 3px rgba(79, 216, 255, .10); }
   .slot .g { display: flex; justify-content: space-between; gap: 6px; font-size: 12.5px; margin: 4px 0; }
   .slot .g span { font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .slot .g b { font-weight: 500; color: var(--text-2); font-variant-numeric: tabular-nums; }
@@ -90,7 +90,7 @@
 
     <div class="card span7">
       <div class="cardhead">
-        <div class="titles"><h2>The text so far</h2><div class="sub">Your words in white, Tide's in peach, shaded by how far ahead Tide saw each word coming.</div></div>
+        <div class="titles"><h2>The text so far</h2><div class="sub">Your words in white, Tide's in light blue, shaded by how far ahead Tide saw each word coming.</div></div>
         <div class="tools"><div class="seg" id="colorBy"><button data-c="foresight" class="on">Foresight</button><button data-c="p">Word surprise</button><button data-c="none">Plain</button></div></div>
       </div>
       <div class="story" id="story"><div class="hint">Type the start of a text below and press <b>Continue</b>. Click any word to see how its thought arrived.</div></div>
@@ -165,7 +165,7 @@ function shade(w) {
   if (colorBy === "none") return "";
   let u;
   if (colorBy === "p") { if (w.p == null) return ""; u = Math.min(1, -Math.log(Math.max(w.p, 1e-9)) / 10); }
-  else { const f = foresight(w); if (!f) return ""; u = f / K; return `background:rgba(232,100,44,${0.12 + 0.6 * u})`; }
+  else { const f = foresight(w); if (!f) return ""; u = f / K; return `background:rgba(79,216,255,${0.12 + 0.6 * u})`; }
   const [r, g, b] = UI.heatRGB(u);
   return `background:rgba(${r},${g},${b},${0.12 + 0.6 * u})`;
 }

@@ -1,4 +1,4 @@
-// Shared drawing helpers for the Engram dashboard and chat app (no libraries).
+// Shared drawing helpers for the Oazy dashboard and chat app (no libraries).
 "use strict";
 
 const UI = (() => {
@@ -146,11 +146,13 @@ const UI = (() => {
         ctx.lineJoin = "round"; ctx.lineCap = "round";
         ctx.beginPath();
         pts.forEach((p, i) => (i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1]))));
+        if ((s.width || 2) >= 2 && !s.dash) { ctx.shadowColor = alpha(s.color, 0.55); ctx.shadowBlur = 12; }   // a soft neon glow
         ctx.stroke();
+        ctx.shadowBlur = 0; ctx.shadowColor = "transparent";
         ctx.setLineDash([]);
         if (s.dots) {
           for (const p of pts) {
-            ctx.fillStyle = css("--surface"); ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), 3.6, 0, 7); ctx.fill();
+            ctx.fillStyle = css("--solid") || css("--surface"); ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), 3.6, 0, 7); ctx.fill();
             ctx.fillStyle = s.color; ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), 2.4, 0, 7); ctx.fill();
           }
         }
@@ -167,7 +169,7 @@ const UI = (() => {
       labels.sort((a, b) => a.y - b.y);
       for (let i = 1; i < labels.length; i++) if (labels[i].y - labels[i - 1].y < 15) labels[i].y = labels[i - 1].y + 15;
       for (const L of labels) {
-        ctx.fillStyle = css("--surface"); ctx.beginPath(); ctx.arc(L.x, L.y, 5, 0, 7); ctx.fill();
+        ctx.fillStyle = css("--solid"); ctx.beginPath(); ctx.arc(L.x, L.y, 5, 0, 7); ctx.fill();
         ctx.fillStyle = L.color; ctx.beginPath(); ctx.arc(L.x, L.y, 3.5, 0, 7); ctx.fill();
         ctx.font = font(11.5, 600); ctx.textAlign = "left"; ctx.textBaseline = "middle";
         ctx.fillText(L.text, w - pad.r + 8, Math.max(pad.t, Math.min(bottom, L.y)));
@@ -184,7 +186,7 @@ const UI = (() => {
           if (!s.points.length || s.noTip) continue;
           let best = s.points[0];
           for (const p of s.points) if (Math.abs(p[0] - xv) < Math.abs(best[0] - xv)) best = p;
-          ctx.fillStyle = css("--surface");
+          ctx.fillStyle = css("--solid");
           ctx.beginPath(); ctx.arc(X(best[0]), Y(best[1]), 6, 0, 7); ctx.fill();
           ctx.strokeStyle = s.color; ctx.lineWidth = 2;
           ctx.beginPath(); ctx.arc(X(best[0]), Y(best[1]), 4, 0, 7); ctx.stroke();
@@ -201,8 +203,8 @@ const UI = (() => {
     return { draw, set(opt) { state.opt = opt; draw(); } };
   }
 
-  // Colour ramp for "how many steps": dark ember -> bright amber -> white-hot
-  const HEAT = [[34, 28, 26], [110, 40, 22], [214, 86, 38], [246, 166, 82], [255, 238, 205]];
+  // Colour ramp: deep sea -> blue -> aqua -> white foam
+  const HEAT = [[10, 22, 44], [22, 64, 150], [38, 140, 240], [90, 220, 255], [228, 252, 255]];
   function heatRGB(t) {
     t = Math.max(0, Math.min(1, t));
     const f = t * (HEAT.length - 1), i = Math.min(HEAT.length - 2, Math.floor(f)), u = f - i;

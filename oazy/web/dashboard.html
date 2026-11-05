@@ -16,8 +16,8 @@
   .run .prog { margin: 18px 0 16px; }
   .run .prog .labels { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 7px; }
   .run .prog .labels b { color: var(--text); font-weight: 600; }
-  .bar { height: 6px; background: var(--surface-3); border-radius: 99px; overflow: hidden; }
-  .bar > div { height: 100%; border-radius: 99px; transition: width .8s cubic-bezier(.2,.8,.2,1); position: relative; }
+  .bar { height: 10px; background: rgba(4, 12, 28, 0.55); border-radius: 99px; overflow: hidden; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5); border: 1px solid var(--border); }
+  .bar > div { height: 100%; border-radius: 99px; background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.08) 50%, rgba(0, 0, 0, 0.08) 51%, rgba(255, 255, 255, 0.18)); box-shadow: 0 0 14px -2px currentColor; transition: width .8s cubic-bezier(.2,.8,.2,1); position: relative; }
   .bar.live > div::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent); animation: shimmer 2.2s infinite; }
   @keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
   .run .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 14px; }
@@ -25,11 +25,12 @@
   /* the scoreboard */
   .board { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
   .score .t { font-size: 13px; color: var(--muted); }
+  .score .t { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .1em; }
   .score .big { font-size: 15px; font-weight: 600; margin: 4px 0 12px; }
   .score .row { display: grid; grid-template-columns: 120px 1fr 62px; gap: 10px; align-items: center; font-size: 12.5px; color: var(--text-2); margin: 7px 0; }
   .score .row b { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
-  .score .track { height: 9px; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
-  .score .track div { height: 100%; border-radius: 99px; transition: width .8s cubic-bezier(.2,.8,.2,1); }
+  .score .track { height: 10px; border-radius: 99px; background: rgba(4, 12, 28, 0.55); overflow: hidden; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5); }
+  .score .track div { height: 100%; border-radius: 99px; background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.06) 50%, rgba(0, 0, 0, 0.06) 51%, rgba(255, 255, 255, 0.15)); transition: width .8s cubic-bezier(.2,.8,.2,1); }
   .score .note { font-size: 11.5px; color: var(--muted); margin-top: 8px; }
   .win { color: var(--good); } .lose { color: var(--warn); }
 
@@ -37,7 +38,7 @@
   .snaprow { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
   .snaprow input[type=range] { flex: 1; min-width: 160px; }
   .snaprow .label { font-size: 12.5px; color: var(--text-2); font-variant-numeric: tabular-nums; min-width: 170px; text-align: right; }
-  .passage { font-size: 15px; line-height: 2.05; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .passage { font-size: 15px; line-height: 2.05; background: rgba(4, 12, 28, 0.45); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
   .passage .tok { border-radius: 4px; padding: 2px 0; cursor: default; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
   .stripbox { position: relative; margin-top: 14px; }
   .stripbox canvas { display: block; width: 100%; }
@@ -56,7 +57,7 @@
 
   .samples { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
   @media (max-width: 760px) { .samples { grid-template-columns: 1fr; } }
-  .sample { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; font-size: 14px; line-height: 1.75; position: relative; overflow: hidden; }
+  .sample { background: rgba(4, 12, 28, 0.4); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; font-size: 14px; line-height: 1.75; position: relative; overflow: hidden; }
   .sample::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--c); }
   .sample .who { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
   .sample .who b { color: var(--text-2); }
@@ -229,7 +230,7 @@
 <script src="common.js"></script>
 <script>
 "use strict";
-const C = { engram: UI.css("--brand"), tide: "#2fb8a6", gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
+const C = { engram: UI.css("--brand"), tide: UI.css("--teal"), gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
 const NAMES = { engram: "Engram", tide: "Tide", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };
 // Every model of the lab. role: "ours" (our architectures), "baseline" (the GPT-2 we train the same way), "reference" (OpenAI's).
 const MODELS = {
@@ -242,7 +243,7 @@ const kindOf = (r) => (r.config && r.config.model) || r.name;
 const modelOf = (n) => MODELS[n] || MODELS[kindOf(RUNS.find((r) => r.name === n) || { name: n })] || { name: n, color: C.ref, role: "ours", blurb: "" };
 const colorOf = (n) => modelOf(n).color;
 const nameOf = (n) => MODELS[n] ? MODELS[n].name : (modelOf(n).name + (n !== kindOf(RUNS.find((r) => r.name === n) || {}) ? ` (${n})` : ""));
-const isLive = (r) => r.status && r.status.state === "running";
+const isLive = (r) => !!r.status && (r.status.state === "running" || (r.status.state === "starting" && Date.now() / 1000 - (r.status.updated || 0) < 1800));
 // Which runs the page shows: the models training now (and the baselines, for comparison).
 // With nothing training, the most recently active of our models. "show" in the library overrides.
 let OVERRIDE = {};
@@ -306,7 +307,7 @@ function runCard(r) {
     <div class="meta">${(cf.params / 1e6).toFixed(1)}M parameters · ${mem}</div>
     <div class="prog"><div class="labels"><span><b>${UI.fmtTokens(st.tokens || 0)}</b> of ${UI.fmtTokens(cf.total_tokens || 0)} tokens</span>
       <span>${state === "running" && st.eta_s != null ? "about " + fmtTime(st.eta_s) + " left" : state}</span></div>
-      <div class="bar ${state === "running" ? "live" : ""}"><div style="width:${(frac * 100).toFixed(1)}%;background:${col}"></div></div></div>
+      <div class="bar ${state === "running" ? "live" : ""}"><div style="width:${(frac * 100).toFixed(1)}%;background-color:${col};color:${col}"></div></div></div>
     <div class="stats">${stat("val loss", latest.val_loss != null ? fmtL(latest.val_loss) : "–", latest.val_loss != null ? "like 1 of " + UI.fmtChoices(latest.val_loss) + " words" : "")}
       ${stat("HellaSwag", hs, hsH)}
       ${stat("speed", st.tok_s ? (st.tok_s / 1e3).toFixed(0) + "k" : "–", "tokens per second")}</div></div>`;
@@ -358,7 +359,7 @@ function scoreboard() {
   const ref = (obj) => obj["openai-gpt2"];
   const lossRows = Object.entries(val).map(([n, v]) => [n, v]);
   const lo = Math.min(...lossRows.map((r) => r[1])) - 0.3, hi = Math.max(...lossRows.map((r) => r[1])) + 0.05;
-  const row = (n, v, w, fmt) => `<div class="row"><span>${nameOf(n)}</span><div class="track"><div style="width:${Math.max(2, w * 100).toFixed(1)}%;background:${colorOf(n)}"></div></div><b>${fmt(v)}</b></div>`;
+  const row = (n, v, w, fmt) => `<div class="row"><span>${nameOf(n)}</span><div class="track"><div style="width:${Math.max(2, w * 100).toFixed(1)}%;background-color:${colorOf(n)}"></div></div><b>${fmt(v)}</b></div>`;
   let verdictL = "", verdictH = "";
   const target = ref(val) != null ? ["OpenAI GPT-2", ref(val)] : val.gpt != null ? [NAMES.gpt, val.gpt] : null;
   for (const me of ["engram", "tide"]) {
@@ -467,7 +468,7 @@ function drawSnapshot() {
   p.innerHTML = SNAP.pieces.map((w, t) => {
     const v = vals[t], u = v != null && isFinite(v) ? (v - lo) / (hi - lo || 1) : 0;
     const [r, g, b] = UI.heatRGB(u);
-    const fg = u > 0.62 ? "#1a120e" : "var(--text)";
+    const fg = u > 0.62 ? "#04121f" : "var(--text)";
     return `<span class="tok" style="background:rgba(${r},${g},${b},${0.25 + 0.75 * u});color:${fg}" title="${v != null && isFinite(v) ? v.toFixed(3) : ""}">${UI.escapeHtml(w).replace(/\n/g, "⏎")}</span>`;
   }).join("");
   // block x word strip
@@ -531,7 +532,7 @@ function drawTide() {
   document.getElementById("tPassage").innerHTML = S.pieces.map((w, t) => {
     const f = seen(t), u = f / K;
     const [r, g, b] = UI.heatRGB(u);
-    const fg = u > 0.62 ? "#1a120e" : "var(--text)";
+    const fg = u > 0.62 ? "#04121f" : "var(--text)";
     const title = f ? `already the best guess ${f} word${f > 1 ? "s" : ""} before` : "not the best guess of any draft";
     return `<span class="tok" style="background:rgba(${r},${g},${b},${f ? 0.25 + 0.75 * u : 0.06});color:${fg}" title="${title}">${UI.escapeHtml(w).replace(/\n/g, "⏎")}</span>`;
   }).join("");
