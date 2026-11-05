@@ -13,7 +13,7 @@
 
 ```bash
 cd /workspace
-git clone -b oazy-ai-research https://github.com/jpcpais01/simulations.git oazy
+git clone https://github.com/jpcpais01/Ooazy-AI-Research.git oazy
 cd oazy
 bash runpod/setup.sh          # ~20-30 min: 4B tokens of FineWeb-Edu, HellaSwag, self-tests
 ```
@@ -130,6 +130,9 @@ It trains 4 windows of 4,096 words at a time; if it runs out of memory, add `--m
 Ablations: `--set recall=1`, `--set hindsight_weight=0`, `--set recall_warm=3`, `--mentor none`.
 
 ## Where things live
+
+The code lives on `main` (it was on `oazy-ai-research` until Nov 5 2026). A pod cloned before then moves over once with
+`git fetch origin main && git checkout main` (the files are the same, so running training is not disturbed).
 
 `/workspace/oazy_data` (text) and `/workspace/oazy_runs` (one folder per model). Pods that already
 have `/workspace/engram_data` and `/workspace/engram_runs` keep using those, nothing has to move.
