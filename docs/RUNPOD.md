@@ -26,17 +26,12 @@ run every chat with `--port 8002`; it then opens on the pod's 8001 link.
 
 ```bash
 cd /workspace/oazy && git pull
-python3 -m oazy.train --bench --model tide --hours 2   # how many tokens fit in 2 hours
-bash runpod/train.sh tide --tokens 2e9                 # train (add --gpt to train the GPT-2 baseline too)
+bash runpod/train.sh <model> [options]    # start or resume a model: bee, bee2, memtrix, tide, ember, fern, fern2, fern3, gpt
+python3 -m oazy.train --bench --model <model> --hours 2   # how many tokens fit in 2 hours
 ```
 
-Ember (the fast-learning model, `ember/README.md`) trains the same way and downloads its mentor,
-GPT-2 medium, from Hugging Face on first start:
-
-```bash
-python3 -m ember.tests --device cuda
-bash runpod/train.sh ember --tokens 2e9
-```
+Add `--gpt` to train the GPT-2 baseline next to a model. Re-running `train.sh` after a stop or a pod
+restart resumes from the checkpoint.
 
 Open the pod's **8000** link: the app shows the models training now, with their own graphs, and a
 library of every model trained so far. `tmux attach -t oazy` shows the logs.
@@ -44,15 +39,17 @@ library of every model trained so far. `tmux attach -t oazy` shows the logs.
 Talk to a model (works during training, from its latest checkpoint):
 
 ```bash
-python3 -m memtrix.chat --port 8002
-python3 -m tide.chat --port 8002
-python3 -m fern.chat --port 8002
-python3 -m memtrix.chat --run ember --port 8002
-python3 -m fern.chat --run fern2 --port 8002
 python3 -m bee.chat --port 8002
+python3 -m bee2.chat --port 8002
+python3 -m memtrix.chat --port 8002
+python3 -m memtrix.chat --run ember --port 8002
+python3 -m tide.chat --port 8002
+python3 -m fern.chat --port 8002                 # also --run fern2, --run fern3
 ```
 
-## Bee0.2B (204M, the main model)
+## The main models
+
+### Bee0.2B (204M, the main model)
 
 ```bash
 cd /workspace/oazy && git pull
@@ -65,7 +62,7 @@ python3 -m bee.chat --port 8002                         # chat (Chat or Write), 
 On a 32 GB GPU (RTX 5090) add `--micro 8`. If DCLM or the conversations are missing it trains on
 what is there and says so. Ablations are in `bee/README.md`.
 
-## Bee_v2_0.2B (203M, SmolLM2-360M as mentor)
+### Bee_v2_0.2B (203M, SmolLM2-360M as mentor)
 
 Needs Bee0.2B's text first (`bash runpod/setup.sh bee`). Safe to prepare while Bee0.2B trains (CPU only):
 
@@ -80,7 +77,32 @@ python3 -m bee2.chat --port 8002                          # chat
 
 (`bash runpod/setup.sh bee2` does the preparation in one go, but it also re-runs the general setup.)
 
-## Fern2 (119M, Fern raised the Ember way)
+## Experiments
+
+### Memtrix, Tide and Ember (~120M experiments, next-word)
+
+```bash
+cd /workspace/oazy && git pull
+bash runpod/train.sh memtrix --tokens 2e9
+bash runpod/train.sh tide --tokens 2e9
+python3 -m ember.tests --device cuda       # Ember downloads its mentor, GPT-2 medium, on first start
+bash runpod/train.sh ember --tokens 2e9
+```
+
+### Fern (198M, writes passages coarse to fine; not next-word)
+
+```bash
+cd /workspace/oazy && git pull
+python3 -m fern.tests --device cuda                    # ~1 min: no peeking, writing == scoring
+python3 -m oazy.train --bench --model fern --hours 2   # Fern's speed next to the GPT-2
+bash runpod/train.sh fern --tokens 2e9                 # train; the app adds "Fern's rounds"
+```
+
+Fern has 198M parameters (18 reader blocks of Memtrix memory + 6 unfolder blocks), so it costs
+roughly 2-3x Memtrix per token: check `--bench` before picking `--tokens`. If it runs out of GPU
+memory, add `--micro 16`. Its loss is an exact per-word loss, directly comparable with GPT-2's.
+
+### Fern2 (119M, Fern raised the Ember way; not next-word)
 
 ```bash
 cd /workspace/oazy && git pull
@@ -94,7 +116,7 @@ It trains 16 sequences at a time by default (same 262k tokens per step); if it r
 add `--micro 8`. Ablations: `--mentor none`, `--set grow=9:0 unfold_grow=3:0`, `--opt adamw`,
 `--set reader_weight=0`, each with its own `--name`.
 
-## Fern3 (117M, remembers old passages by their gist)
+### Fern3 (117M, remembers old passages by their gist; not next-word)
 
 ```bash
 cd /workspace/oazy && git pull
@@ -106,19 +128,6 @@ python3 -m fern.chat --run fern3 --port 8002
 
 It trains 4 windows of 4,096 words at a time; if it runs out of memory, add `--micro 2`.
 Ablations: `--set recall=1`, `--set hindsight_weight=0`, `--set recall_warm=3`, `--mentor none`.
-
-## Fern (200M, writes passages coarse to fine)
-
-```bash
-cd /workspace/oazy && git pull
-python3 -m fern.tests --device cuda                    # ~1 min: no peeking, writing == scoring
-python3 -m oazy.train --bench --model fern --hours 2   # Fern's speed next to the GPT-2
-bash runpod/train.sh fern --tokens 2e9                 # train; the app adds "Fern's rounds"
-```
-
-Fern has 198M parameters (18 reader blocks of Memtrix memory + 6 unfolder blocks), so it costs
-roughly 2-3x Memtrix per token: check `--bench` before picking `--tokens`. If it runs out of GPU
-memory, add `--micro 16`. Its loss is an exact per-word loss, directly comparable with GPT-2's.
 
 ## Where things live
 
