@@ -30,12 +30,16 @@ const UI = (() => {
   function niceTicks(lo, hi, n) {
     const span = hi - lo || 1;
     const step0 = Math.pow(10, Math.floor(Math.log10(span / n)));
-    const mult = [1, 2, 2.5, 5, 10].find((m) => span / (step0 * m) <= n) || 10;
+    // the finest round step that gives at most ~n ticks (a little over is fine: 3.0 3.5 4.0 … beats 2 4 6)
+    const mult = [1, 2, 2.5, 5, 10].find((m) => span / (step0 * m) <= n * 1.3) || 10;
     const step = step0 * mult;
     const ticks = [];
     for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) ticks.push(+v.toFixed(10));
+    ticks.step = step;
     return ticks;
   }
+  // decimals a tick label needs at this step: 0.5 -> 1, 0.25 -> 2, 2 -> 0
+  const tickDec = (step) => { for (let d = 0; d < 6; d++) if (Math.abs(Math.round(step * 10 ** d) - step * 10 ** d) < 1e-6) return d; return 6; };
 
   function fmtTokens(v) {
     if (v >= 1e9) return (v / 1e9).toFixed(v % 1e9 ? 1 : 0) + "B";
@@ -88,9 +92,26 @@ const UI = (() => {
       }
       let x0 = Math.min(...all.map((p) => p[0])), x1 = Math.max(...all.map((p) => p[0]));
       if (x1 === x0) x1 = x0 + 1;
-      const ys = all.concat(extra).map((p) => p[1]).filter((v) => isFinite(v));
+      const fin = (v) => isFinite(v);
+      let ys = all.concat(extra).map((p) => p[1]).filter(fin);
+      if (o.yFocus) {
+        // Fit the view to the lines that are drawn (not the hover-only ones), leaving out the first yFocus of the x
+        // range, so the steep first stretch (a loss of 11 at the start) cannot flatten the part worth reading: it
+        // runs off the top instead. The forecast cones and earlier-forecast dots may widen the view, but only a
+        // little: a wild early guess is pinned to the edge.
+        const xc = x0 + o.yFocus * (x1 - x0);
+        let line = o.series.filter((s) => !s.ghost).flatMap((s) => s.points.filter((p) => p[0] >= xc).map((p) => p[1])).filter(fin);
+        if (!line.length) line = o.series.filter((s) => !s.ghost).flatMap((s) => s.points.map((p) => p[1])).filter(fin);
+        if (line.length) {
+          let lo = Math.min(...line), hi = Math.max(...line);
+          const keep = o.series.filter((s) => s.keep && !s.ghost).flatMap((s) => s.points.map((p) => p[1])).filter(fin);
+          if (keep.length) { lo = Math.min(lo, ...keep); hi = Math.max(hi, ...keep); }
+          const room = Math.max(hi - lo, 0.1) * 0.25, ex = extra.map((p) => p[1]).filter(fin);
+          if (ex.length) { lo = Math.min(lo, Math.max(lo - room, Math.min(...ex))); hi = Math.max(hi, Math.min(hi + room, Math.max(...ex))); }
+          ys = [lo, hi];
+        }
+      }
       let y0 = o.yMin != null ? o.yMin : Math.min(...ys), y1 = o.yMax != null ? o.yMax : Math.max(...ys);
-      if (o.yClip) y1 = Math.min(y1, o.yClip(ys));
       if (y1 === y0) { y1 += 1; y0 -= o.yMin != null ? 0 : 1; }
       const padY = (y1 - y0) * 0.08;
       if (o.yMin == null) y0 -= padY;
@@ -111,7 +132,7 @@ const UI = (() => {
         ctx.setLineDash([]);
         ctx.fillStyle = css("--muted");
         ctx.textAlign = "right"; ctx.textBaseline = "middle";
-        ctx.fillText((o.yFmt || ((x) => x))(v), pad.l - 8, y);
+        ctx.fillText((o.yFmt || ((x, d) => x.toFixed(d)))(v, tickDec(yt.step)), pad.l - 8, y);
       }
       ctx.textAlign = "center"; ctx.textBaseline = "top"; ctx.fillStyle = css("--muted");
       let lastLab = null;
@@ -158,7 +179,8 @@ const UI = (() => {
         }
         if (s.marks) for (const [mx, my, ma] of s.marks) {   // earlier forecasts, older ones fainter
           ctx.globalAlpha = (s.alpha || 1) * ma; ctx.fillStyle = s.color;
-          ctx.beginPath(); ctx.arc(X(mx), Y(my), 2, 0, 7); ctx.fill();
+          const yy = Y(my), py = Math.max(pad.t, Math.min(bottom, yy));   // off the chart: pinned to its edge
+          ctx.beginPath(); ctx.arc(X(mx), py, py === yy ? 2 : 1.4, 0, 7); ctx.fill();
         }
         ctx.globalAlpha = s.alpha || 1;
         if (s.endDot && pts.length) {                     // a hollow ring where a forecast lands
@@ -323,6 +345,6 @@ const UI = (() => {
   const choices = (loss) => Math.exp(loss);
   const fmtChoices = (loss) => { const n = choices(loss); return n < 10 ? n.toFixed(1) : n < 1000 ? Math.round(n).toString() : fmtTokens(n); };
 
-  return { css, font, fitCanvas, b64bytes, lineChart, fmtTokens, heat, heatRGB, heatCSS, escapeHtml, niceTicks, alpha,
+  return { css, font, fitCanvas, b64bytes, lineChart, fmtTokens, heat, heatRGB, heatCSS, escapeHtml, niceTicks, tickDec, alpha,
            placeTip, fitPowerLaw, forecastEnd, forecastHistory, syncRange, watchRanges, pieceLabel, choices, fmtChoices };
 })();
