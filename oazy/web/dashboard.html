@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Oazy AI Research · Training</title>
+<title>Oazy · Training lab</title>
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="stylesheet" href="style.css">
 <style>
@@ -95,27 +95,39 @@
   .nowhint .t { font-weight: 600; font-size: 15px; }
   .nowhint .s { color: var(--muted); font-size: 13px; }
 </style>
+<link rel="stylesheet" href="lab.css">
 </head>
 <body>
-<header class="topbar"><div class="inner">
-  <div class="brand">
-    <img class="logo" src="icon.svg" alt="">
-    <h1>Oazy AI Research <span class="tag">Lab</span></h1></div>
-  <div class="spacer"></div>
+<header class="lab-bar" id="bar"><div class="bar-in">
+  <a class="mark" href="#top" aria-label="Oazy AI Research, back to top"><img src="icon.svg" alt=""><span class="word">OAZY<small>TRAINING LAB</small></span></a>
+  <nav class="tabs" id="tabs" aria-label="Sections"><span class="tabpill" id="tabpill"></span>
+    <a href="#now" data-sec="now">Now</a><a href="#scores" data-sec="scores">Scores</a><a href="#learning" data-sec="learning">Learning</a>
+    <a href="#memory" data-sec="memory">Memory</a><a href="#writing" data-sec="writing">Writing</a><a href="#models" data-sec="models">Models</a></nav>
   <span class="pill" id="updated"><span class="dot"></span><span>connecting…</span></span>
 </div></header>
+
+<section class="lab-head" id="top" aria-label="The lab right now">
+  <div class="fallback" aria-hidden="true"></div>
+  <canvas id="warp" aria-hidden="true"></canvas>
+  <div class="lab-head-in">
+    <p class="eyebrow"><b>//</b> Oazy AI Research · training lab</p>
+    <h1 id="headline">Models <em>learning</em>, live</h1>
+    <p class="lede" id="lede">Every run on the pod, as it trains: how wrong each model still is, how it scores, where it is heading, and what it writes.</p>
+    <div class="pod" id="pod"></div>
+  </div>
+</section>
 
 <div class="modal" id="modal" role="dialog" aria-modal="true"><div class="card"><div class="mt"></div><div class="mb"></div>
   <div class="row"><button class="btn ghost" data-cancel>Cancel</button><button class="btn danger" data-ok></button></div></div></div>
 
 <div class="wrap">
-  <div class="section-title" style="margin-top:6px"><h3>Training now</h3><div class="line"></div></div>
+  <div class="section-title" id="now"><h3>Training now</h3><div class="line"></div></div>
   <div class="runs" id="runs"></div>
 
-  <div class="section-title"><h3>The finish line</h3><div class="line"></div></div>
+  <div class="section-title" id="scores"><h3>The finish line</h3><div class="line"></div></div>
   <div class="board" id="board"></div>
 
-  <div class="section-title"><h3>Learning</h3><div class="line"></div></div>
+  <div class="section-title" id="learning"><h3>Learning</h3><div class="line"></div></div>
   <div class="grid">
     <div class="card span7">
       <div class="cardhead">
@@ -142,7 +154,7 @@
     </div>
   </div>
 
-  <div class="section-title"><h3>How they use what they read</h3><div class="line"></div></div>
+  <div class="section-title" id="memory"><h3>How they use what they read</h3><div class="line"></div></div>
   <div class="grid">
     <div class="card span12" id="draftCard" style="display:none">
       <div class="cardhead"><div class="titles"><h2>Tide's drafts: how far ahead can it see?</h2><div class="sub">Loss of Tide's draft of the word 1, 2, … 8 words ahead (1 = the ordinary next-word loss). Each line is one check during training.</div></div></div>
@@ -245,17 +257,20 @@
 
   </div>
 
-  <div class="section-title"><h3>What they write</h3><div class="line"></div></div>
+  <div class="section-title" id="writing"><h3>What they write</h3><div class="line"></div></div>
   <div class="card"><div id="samples"><div class="empty">Waiting for the first samples</div></div></div>
 
-  <div class="section-title"><h3>All our models</h3><div class="line"></div></div>
+  <div class="section-title" id="models"><h3>All our models</h3><div class="line"></div></div>
   <div class="card">
     <div class="cardhead"><div class="titles"><h2>Model library</h2><div class="sub">Every model trained in this lab. The page shows the ones training right now; use "Show" to bring a finished one back. "Plots only" keeps a model's lines in the charts but hides its own cards (like Tide's drafts or Inside Memtrix).</div></div></div>
     <div class="libwrap"><table class="lib" id="library"></table></div>
   </div>
 </div>
 
+<footer class="foot"><span>Oazy AI Research · training lab</span><span>Refreshes every 15 s · <a href="https://github.com/jpcpais01/Oazy-AI-Research" target="_blank" rel="noopener">Code</a></span></footer>
+
 <script src="common.js"></script>
+<script src="lab.js"></script>
 <script>
 "use strict";
 const C = { memtrix: UI.css("--brand"), tide: UI.css("--teal"), fern: UI.css("--fern"), ember: UI.css("--ember"), fern2: UI.css("--fern2"), fern3: UI.css("--fern3"), bee: UI.css("--bee"), bee2: UI.css("--bee2"), gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
@@ -335,7 +350,7 @@ function runCard(r) {
   const frac = cf.total_tokens ? Math.min(1, (st.tokens || 0) / cf.total_tokens) : 0;
   const latest = st.latest || {};
   const col = colorOf(r.name);
-  const lastT = cf.layout ? (DATA[r.name]?.metrics || []).filter((x) => x.kind === "train").pop() : null;
+  const lastT = (DATA[r.name]?.metrics || []).filter((x) => x.kind === "train").pop() || null;
   const MIXN = { fwe: "FineWeb-Edu", dclm: "DCLM", chat: "chats" };
   const mixT = lastT && lastT.mix ? " · reading " + Object.entries(lastT.mix).map(([k, v]) => `${Math.round(v * 100)}% ${MIXN[k] || k}`).join(", ") + ` in windows of ${lastT.context.toLocaleString()} words` : "";
   const mem = cf.layout ? cf.layout + mixT : cf.memory_numbers ? `memory ${UI.fmtTokens(cf.memory_numbers)} numbers (fixed)` : cf.recall ? `recalls the ${cf.recall} best-matching old passages by gist` : `remembers by looking back at every word`;
@@ -343,19 +358,31 @@ function runCard(r) {
   const hs = latest.hellaswag_full != null ? pct(latest.hellaswag_full) : latest.hellaswag != null ? pct(latest.hellaswag) : "–";
   const hsH = latest.hellaswag_full != null ? "all 10,042" : latest.hellaswag != null ? "1,000 sample" : "";
   if (r.name === "openai-gpt2") {
-    return `<div class="card run"><div class="head"><div class="name"><span class="chip" style="background:${col}"></span>${nameOf(r.name)}</div><span class="badge done">reference</span></div>
+    return `<div class="card run" style="--acc:${col}"><div class="head"><div class="name">${nameOf(r.name)}</div><span class="badge done">reference</span></div>
       <div class="meta">OpenAI's 2019 release · ${(cf.params / 1e6).toFixed(0)}M parameters · trained on ~${cf.trained_tokens_note || "WebText"}</div>
       <div class="stats" style="margin-top:18px">${stat("val loss", latest.val_loss != null ? fmtL(latest.val_loss) : "–", "on the same text")}
       ${stat("HellaSwag", hs, hsH)}${stat("exact recall", latest.recall_acc != null ? pct(latest.recall_acc) : "–", "of a repeated passage")}</div></div>`;
   }
-  return `<div class="card run"><div class="head"><div class="name"><span class="chip" style="background:${col}"></span>${nameOf(r.name)}</div><span class="badge ${badge}">${badge}</span></div>
-    <div class="meta">${(cf.params / 1e6).toFixed(1)}M parameters · ${mem}</div>
-    <div class="prog"><div class="labels"><span><b>${UI.fmtTokens(st.tokens || 0)}</b> of ${UI.fmtTokens(cf.total_tokens || 0)} tokens</span>
+  // the landing page's tile: a big name with its accent, a row of chips, then the numbers
+  const nm = nameOf(r.name), cut = nm.search(/[_0-9]/);
+  const title = cut > 0 ? `${UI.escapeHtml(nm.slice(0, cut))}<span class="acc">${UI.escapeHtml(nm.slice(cut))}</span>` : UI.escapeHtml(nm);
+  const chips = [cf.params ? [(cf.params / 1e6).toFixed(0) + "M params", true] : null,
+    [MODELS[kindOf(r)]?.blurb?.includes("Not a next-word") ? "not next-token" : "next-token"],
+    cf.mentor && cf.mentor !== "none" ? ["mentor " + cf.mentor] : null, cf.tokenizer && cf.tokenizer !== "gpt2" ? [cf.tokenizer + " tokens"] : null,
+    cf.schedule ? [cf.schedule.toUpperCase() + " schedule"] : null].filter(Boolean);
+  const tele = [["trained for", st.elapsed ? fmtTime(st.elapsed) : "–"], ["step", st.step != null ? st.step.toLocaleString() : "–"],
+    lastT && lastT.lr != null ? ["learning rate", lastT.lr.toExponential(1)] : null, lastT && lastT.mentor_w != null ? ["mentor weight", lastT.mentor_w.toFixed(2)] : null,
+    lastT && lastT.depth ? ["depth", lastT.depth + " blocks"] : null, cf.gpu ? ["gpu", cf.gpu.replace(/^NVIDIA\s+/, "")] : null].filter(Boolean);
+  return `<div class="card run" style="--acc:${col}"><div class="head"><div class="name">${title}</div><span class="badge ${badge}">${badge}</span></div>
+    <div class="chips">${chips.map(([t, a]) => `<span class="${a ? "acc" : ""}">${UI.escapeHtml(t)}</span>`).join("")}</div>
+    <div class="meta">${mem}</div>
+    <div class="prog"><div class="labels"><span><b>${UI.fmtTokens(st.tokens || 0)}</b> of ${UI.fmtTokens(cf.total_tokens || 0)} tokens · ${(frac * 100).toFixed(0)}%</span>
       <span>${state === "running" && st.eta_s != null ? "about " + fmtTime(st.eta_s) + " left" : state}</span></div>
-      <div class="bar ${state === "running" ? "live" : ""}"><div style="width:${(frac * 100).toFixed(1)}%;background-color:${col};color:${col}"></div></div></div>
+      <div class="bar-t ${state === "running" ? "live" : ""}"><div style="width:${(frac * 100).toFixed(1)}%"></div></div></div>
     <div class="stats">${stat("val loss", latest.val_loss != null ? fmtL(latest.val_loss) : "–", FORE[r.name]?.val ? "heading for ≈" + fmtL(FORE[r.name].val.yEnd) + (FORE[r.name].val.range ? ` (${fmtL(FORE[r.name].val.range[0])}–${fmtL(FORE[r.name].val.range[1])})` : "") : latest.val_loss != null ? "like 1 of " + UI.fmtChoices(latest.val_loss) + " words" : "")}
       ${stat("HellaSwag", hs, hsH)}
       ${stat("speed", st.tok_s ? (st.tok_s / 1e3).toFixed(0) + "k" : "–", "tokens per second")}</div>
+    <div class="tele">${tele.map(([k, v]) => `<div><div class="k">${k}</div><div class="v">${UI.escapeHtml(v)}</div></div>`).join("")}</div>
     ${controls(r.name, state)}</div>`;
 }
 
@@ -798,8 +825,27 @@ function drawSamples() {
     Object.entries(by[p]).map(([n, s]) => `<div class="sample" style="--c:${colorOf(n)}"><div class="who"><b>${nameOf(n)}</b> · after ${UI.fmtTokens(s.tokens)} tokens</div><span class="prompt">${UI.escapeHtml(p)}</span><span class="gen">${UI.escapeHtml(s.text)}</span></div>`).join("")}</div></div>`).join("");
 }
 
+// the head: the pod at a glance (how many train, combined speed, the next to finish, the best held-out loss so far)
+function podSummary() {
+  const live = RUNS.filter(isLive), running = live.filter((r) => r.status?.state === "running");
+  const ours = VIS().filter((r) => modelOf(r.name).role === "ours");
+  const tps = running.reduce((a, r) => a + (r.status?.tok_s || 0), 0);
+  const next = running.filter((r) => r.status?.eta_s != null).sort((a, b) => a.status.eta_s - b.status.eta_s)[0];
+  const best = ours.filter((r) => r.status?.latest?.val_loss != null).sort((a, b) => a.status.latest.val_loss - b.status.latest.val_loss)[0];
+  const gpus = [...new Set(live.map((r) => r.config?.gpu).filter((g) => g && g !== "cpu").map((g) => g.replace(/^NVIDIA\s+/, "")))];
+  const cell = (k, v, h) => `<div><div class="k">${k}</div><div class="v">${v}</div><div class="h">${h || "&nbsp;"}</div></div>`;
+  const esc = UI.escapeHtml;
+  document.getElementById("pod").innerHTML =
+    cell("training now", live.length ? `${live.length}<small>${live.length === 1 ? "run" : "runs"}</small>` : "0", live.length ? esc(live.map((r) => nameOf(r.name)).join(" · ")) : "nothing on the GPU")
+    + cell("combined speed", tps ? `${(tps / 1e3).toFixed(0)}k<small>tok/s</small>` : "–", gpus.length ? esc(gpus.join(", ")) : "")
+    + cell("next to finish", next ? `${fmtTime(next.status.eta_s)}` : "–", next ? esc(nameOf(next.name)) + " · " + UI.fmtTokens(next.config?.total_tokens || 0) + " tokens" : "")
+    + cell("best held-out loss", best ? fmtL(best.status.latest.val_loss) : "–", best ? esc(nameOf(best.name)) + (RUNS.find((r) => r.name === "openai-gpt2")?.status?.latest?.val_loss ? " · OpenAI GPT-2 " + fmtL(RUNS.find((r) => r.name === "openai-gpt2").status.latest.val_loss) : "") : "");
+  if (typeof LAB !== "undefined") LAB.setPace(running.length ? 1 : 0.15);      // the light drifts while models train
+}
+
 function draw() {
   computeForecasts();
+  podSummary();
   document.getElementById("runs").innerHTML = nowCards();
   scoreboard(); drawLearning(); drawMemoryUse(); drawDrafts(); drawRounds(); drawSamples(); library();
 }
