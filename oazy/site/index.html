@@ -1,0 +1,814 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Oazy AI Research</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Oazy AI Research invents new, mind-inspired language-model architectures, trains them small, and measures them against the transformer on the same data.">
+<meta name="theme-color" content="#050507">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='.2' y1='0' x2='.8' y2='1'%3E%3Cstop offset='0' stop-color='%23b6f8ff'/%3E%3Cstop offset='.45' stop-color='%233cc0ff'/%3E%3Cstop offset='.8' stop-color='%232a6cff'/%3E%3Cstop offset='1' stop-color='%238a5cff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M50 50C40 34 16 32 16 50s24 16 34 0 34-18 34 0-24 16-34 0Z' fill='none' stroke='url(%23g)' stroke-width='12' stroke-linejoin='round'/%3E%3Ccircle cx='84' cy='50' r='6.5' fill='%23dffaff'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one black stage. A full-bleed light tunnel opens the page, then quiet hairline-ruled
+   sections on a 1200px grid, with each model carrying its own accent (as games do in the Oazy launcher). */
+:root {
+  color-scheme: dark;
+  --bg: #050507;          /* the void the light runs through */
+  --bg-2: #0b0b10;        /* raised surfaces */
+  --bg-3: #12121a;
+  --ink: #ecebf3;         /* warm-cool off-white, never pure white */
+  --ink-2: #b4b3c4;
+  --muted: #7d7c8f;
+  --faint: #4a4958;
+  --line: rgba(236, 235, 243, 0.09);
+  --line-2: rgba(236, 235, 243, 0.16);
+  --violet: #6a4dff;      /* primary action */
+  --violet-2: #8f7bff;
+  --cyan: #4fd8ff;        /* Oazy brand light */
+  --pink: #ff5fae;
+  --teal: #4cf2c4;
+  --bee: #ffb347;         /* model accents, as in the lab dashboard */
+  --fern: #a6e86a;
+  --display: "Outfit", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --wrap: 1200px;
+  --gutter: max(16px, env(safe-area-inset-left, 0px));
+  --gutter-r: max(16px, env(safe-area-inset-right, 0px));
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.6 var(--sans); -webkit-font-smoothing: antialiased; overflow-x: hidden;
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 60; background: var(--bg); }
+a { color: inherit; }
+img, svg, canvas { max-width: 100%; }
+h1, h2, h3 { font-family: var(--display); font-weight: 600; margin: 0; text-wrap: balance; letter-spacing: -0.02em; }
+p { margin: 0; }
+:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; border-radius: 4px; }
+.wrap { max-width: calc(var(--wrap) + 64px); margin: 0 auto; padding-left: max(32px, var(--gutter)); padding-right: max(32px, var(--gutter-r)); }
+@media (max-width: 640px) { .wrap { padding-left: var(--gutter); padding-right: var(--gutter-r); } }
+.label { font: 500 12px/1.4 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.label b { color: var(--ink-2); font-weight: 500; }
+
+/* ---------- top bar (the launcher's bar: mark, wordmark, sliding pill tabs) ---------- */
+.bar {
+  position: fixed; top: env(safe-area-inset-top, 0px); left: 0; right: 0; z-index: 50;
+  transition: background .35s, border-color .35s, backdrop-filter .35s;
+  border-bottom: 1px solid transparent;
+}
+.bar.solid { background: rgba(5, 5, 7, 0.72); backdrop-filter: blur(18px) saturate(140%); -webkit-backdrop-filter: blur(18px) saturate(140%); border-bottom-color: var(--line); }
+.bar-in { display: flex; align-items: center; gap: 24px; height: 68px; }
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; flex: none; }
+.brand svg { width: 34px; height: 34px; }
+.word { font: 800 19px/1 var(--display); letter-spacing: 0.2em; color: #fff; }
+.word small { display: block; font: 500 9.5px/1 var(--mono); letter-spacing: 0.24em; color: var(--muted); margin-top: 5px; }
+.tabs { position: relative; display: flex; gap: 2px; margin: 0 auto; padding: 4px; border-radius: 999px; background: rgba(255, 255, 255, 0.035); border: 1px solid var(--line); }
+.tabs a { position: relative; z-index: 1; padding: 8px 16px; border-radius: 999px; font: 500 14px/1 var(--sans); color: var(--ink-2); text-decoration: none; transition: color .25s; white-space: nowrap; }
+.tabs a:hover, .tabs a.on { color: #fff; }
+.pill { position: absolute; z-index: 0; top: 4px; bottom: 4px; left: 0; width: 0; border-radius: 999px; background: rgba(255, 255, 255, 0.11); border: 1px solid rgba(255, 255, 255, 0.08); opacity: 0; transition: transform .45s cubic-bezier(.2,.8,.2,1), width .45s cubic-bezier(.2,.8,.2,1), opacity .3s; }
+.bar-cta { flex: none; }
+@media (max-width: 900px) { .tabs { display: none; } .bar-in { justify-content: space-between; } }
+
+/* ---------- buttons (mono caps; the light one carries a split-colour edge) ---------- */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; height: 52px; padding: 0 28px; font: 500 13.5px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; text-decoration: none; border: 0; cursor: pointer; transition: transform .2s, box-shadow .25s, background .25s, filter .25s; }
+.btn:active { transform: translateY(1px); }
+.btn-light { background: var(--ink); color: #0a0a0f; box-shadow: -1.5px 0 0 var(--pink), 1.5px 0 0 var(--teal); }
+.btn-light:hover { box-shadow: -3px 0 0 var(--pink), 3px 0 0 var(--teal), 0 10px 40px -10px rgba(143, 123, 255, .6); }
+.btn-violet { background: var(--violet); color: #fff; }
+.btn-violet:hover { background: #7a5fff; box-shadow: 0 10px 40px -10px rgba(106, 77, 255, .9); }
+.btn-ghost { height: 40px; padding: 0 16px; font-size: 12px; color: var(--ink); background: rgba(255, 255, 255, 0.04); border: 1px solid var(--line-2); border-radius: 999px; }
+.btn-ghost:hover { background: rgba(255, 255, 255, 0.09); }
+.btn svg { width: 16px; height: 16px; flex: none; }
+
+/* ---------- hero: the tunnel of light ---------- */
+.hero { position: relative; overflow: hidden; isolation: isolate; padding-top: calc(68px + env(safe-area-inset-top, 0px)); }
+.hero canvas, .hero .fallback { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -2; display: block; }
+.hero .fallback {
+  background:
+    radial-gradient(70% 22% at 50% 44%, rgba(120, 100, 255, .32), transparent 70%),
+    radial-gradient(40% 60% at 100% 44%, rgba(120, 130, 255, .35), transparent 70%),
+    radial-gradient(40% 60% at 0% 44%, rgba(120, 130, 255, .30), transparent 70%),
+    var(--bg);
+}
+.hero::after { content: ""; position: absolute; inset: auto 0 0; height: 30%; z-index: -1; background: linear-gradient(transparent, var(--bg)); pointer-events: none; }
+.hero-in { min-height: clamp(560px, 86vh, 880px); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 28px; padding-block: 72px 120px; }
+.eyebrow { font: 600 clamp(16px, 1.6vw, 21px)/1.2 var(--display); letter-spacing: -0.01em; color: var(--ink); text-shadow: 0 2px 24px rgba(0, 0, 0, .8); }
+.hero h1 { font-size: clamp(44px, 8.2vw, 124px); line-height: 0.98; font-weight: 600; letter-spacing: -0.035em; max-width: 13ch; text-shadow: 0 4px 60px rgba(0, 0, 0, .55); }
+.hero h1 em { font-style: normal; background: linear-gradient(100deg, #fff 10%, #d9d2ff 45%, #a6f0ff 90%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.hero .sub { max-width: 600px; font-size: clamp(16px, 1.35vw, 18.5px); color: var(--ink-2); text-shadow: 0 2px 20px rgba(0, 0, 0, .9); }
+.ctas { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; margin-top: 8px; }
+@media (max-width: 480px) { .ctas { width: 100%; } .ctas .btn { flex: 1 1 100%; } }
+.hero-in > * { animation: rise 1s cubic-bezier(.2,.8,.2,1) both; }
+.hero-in > :nth-child(2) { animation-delay: .08s; } .hero-in > :nth-child(3) { animation-delay: .16s; } .hero-in > :nth-child(4) { animation-delay: .24s; }
+@keyframes rise { from { opacity: .001; transform: translateY(14px); filter: blur(6px); } }
+
+/* ---------- three pillars under the hero (hairline columns) ---------- */
+.pillars { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: -40px; position: relative; }
+.pillar { border-left: 1px solid var(--line-2); padding: 4px 28px 8px; display: grid; gap: 12px; align-content: start; }
+.pillar h3 { font-size: 22px; font-weight: 600; }
+.pillar p { color: var(--ink-2); font-size: 15px; max-width: 36ch; }
+@media (max-width: 820px) { .pillars { grid-template-columns: 1fr; gap: 28px; margin-top: 0; } }
+
+/* ---------- sections ---------- */
+section.block { padding-block: clamp(80px, 11vw, 150px) 0; scroll-margin-top: 70px; }
+.head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px 48px; align-items: end; margin-bottom: 48px; }
+.head h2 { font-size: clamp(34px, 4.6vw, 60px); line-height: 1.02; letter-spacing: -0.03em; margin-top: 14px; }
+.head p { color: var(--ink-2); max-width: 52ch; justify-self: end; }
+@media (max-width: 820px) { .head { grid-template-columns: 1fr; } .head p { justify-self: start; } }
+
+/* ---------- model tiles (the launcher's home tiles: accent glow, chips, big title) ---------- */
+.models { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+@media (max-width: 960px) { .models { grid-template-columns: 1fr; } }
+.model {
+  --acc: var(--bee); position: relative; overflow: hidden; border-radius: 22px; padding: 30px;
+  background: radial-gradient(120% 70% at 100% 0%, color-mix(in srgb, var(--acc) 16%, transparent), transparent 60%), var(--bg-2);
+  border: 1px solid var(--line); display: grid; gap: 22px; align-content: start; min-width: 0;
+  transition: border-color .35s, transform .35s cubic-bezier(.2,.8,.2,1), box-shadow .35s;
+}
+.model:hover { border-color: color-mix(in srgb, var(--acc) 45%, transparent); transform: translateY(-3px); box-shadow: 0 30px 80px -40px color-mix(in srgb, var(--acc) 60%, transparent); }
+.model.fern { --acc: var(--fern); }
+.model::before { content: ""; position: absolute; inset: 0 0 auto; height: 1px; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--acc) 80%, transparent), transparent); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { font: 500 11px/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; padding: 7px 10px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--ink-2); background: rgba(255, 255, 255, 0.03); }
+.chip.acc { color: var(--acc); border-color: color-mix(in srgb, var(--acc) 40%, transparent); background: color-mix(in srgb, var(--acc) 8%, transparent); }
+.chip.ph { color: #ffd78a; border-color: rgba(255, 215, 138, 0.35); background: repeating-linear-gradient(135deg, rgba(255, 215, 138, 0.10) 0 6px, transparent 6px 12px); }
+.model h3 { font-size: clamp(38px, 4.4vw, 54px); line-height: 1; letter-spacing: -0.03em; font-weight: 700; }
+.model h3 span { color: var(--acc); }
+.model .what { color: var(--ink-2); max-width: 54ch; }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.stat { padding: 16px 0 14px; display: grid; gap: 6px; }
+.stat + .stat { padding-left: 16px; border-left: 1px solid var(--line); }
+.stat .v { font: 600 26px/1 var(--display); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.stat .v small { font-size: 15px; color: var(--muted); font-weight: 500; }
+.stat .k { font: 500 10.5px/1.3 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+@media (max-width: 520px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .stat:nth-child(3) { padding-left: 0; border-left: 0; } .stat:nth-child(n+3) { border-top: 1px solid var(--line); } }
+
+/* the little writing demos */
+.demo { border-radius: 14px; background: rgba(0, 0, 0, 0.45); border: 1px solid var(--line); padding: 16px 18px 18px; display: grid; gap: 14px; min-width: 0; }
+.demo-top { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.demo-top .label b { color: var(--acc); }
+.toks { display: flex; flex-wrap: wrap; gap: 6px 4px; min-height: 76px; align-content: flex-start; font: 400 15px/1 var(--mono); }
+.tok { padding: 6px 6px; border-radius: 6px; border: 1px solid transparent; color: var(--ink); white-space: pre; transition: background .4s, border-color .4s, color .4s, filter .6s, opacity .6s; }
+.bee .tok { background: rgba(255, 255, 255, 0.04); border-color: var(--line); }
+.bee .tok.new { background: color-mix(in srgb, var(--acc) 22%, transparent); border-color: color-mix(in srgb, var(--acc) 60%, transparent); color: #fff; }
+.bee .caret { width: 9px; height: 26px; background: var(--acc); border-radius: 2px; animation: blink 1s steps(1) infinite; align-self: center; }
+@keyframes blink { 50% { opacity: 0; } }
+.fern .tok { border-color: var(--line); color: var(--faint); background: transparent; }
+.fern .tok.blank { color: transparent; background: repeating-linear-gradient(90deg, rgba(255,255,255,.07) 0 4px, transparent 4px 7px); border-color: transparent; }
+.fern .tok.blank::selection { background: transparent; }
+.fern .tok.new { color: #fff; border-color: color-mix(in srgb, var(--acc) 60%, transparent); background: color-mix(in srgb, var(--acc) 18%, transparent); }
+.fern .tok.set { color: var(--ink); }
+.fern .tok.fresh { filter: blur(5px); opacity: .2; }
+.rounds { display: flex; gap: 6px; }
+.rounds i { width: 22px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.1); transition: background .4s; }
+.rounds i.on { background: var(--acc); }
+.ph-note { display: flex; gap: 12px; align-items: flex-start; margin-top: 24px; padding: 14px 18px; border-radius: 14px; border: 1px dashed rgba(255, 215, 138, 0.35); color: var(--ink-2); font-size: 14.5px; }
+.ph-note .chip { flex: none; }
+
+/* ---------- results chart ---------- */
+.results { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 24px; }
+@media (max-width: 960px) { .results { grid-template-columns: 1fr; } }
+.panel { border: 1px solid var(--line); border-radius: 22px; background: var(--bg-2); padding: 28px; min-width: 0; }
+.panel h3 { font-size: 22px; margin-top: 10px; }
+.panel .cap { color: var(--muted); font-size: 14px; margin-top: 6px; }
+.chart { margin-top: 26px; display: grid; gap: 14px; position: relative; }
+.row { display: grid; grid-template-columns: 150px minmax(0, 1fr) 62px; align-items: center; gap: 14px; }
+.row .n { font: 500 14px/1.2 var(--sans); color: var(--ink); }
+.row .n small { display: block; font: 400 11px/1.4 var(--mono); color: var(--muted); letter-spacing: 0.04em; }
+.track { position: relative; height: 30px; border-radius: 6px; background: rgba(255, 255, 255, 0.025); overflow: hidden; }
+.track .fill { position: absolute; inset: 0 auto 0 0; border-radius: 6px; transform-origin: left; }
+.row .pct { font: 500 15px/1 var(--mono); text-align: right; font-variant-numeric: tabular-nums; }
+.fill.bee { background: linear-gradient(90deg, color-mix(in srgb, var(--bee) 30%, transparent), var(--bee)); }
+.fill.fern { background: linear-gradient(90deg, color-mix(in srgb, var(--fern) 30%, transparent), var(--fern)); }
+.fill.ref { background: linear-gradient(90deg, rgba(236,235,243,.08), rgba(236,235,243,.45)); }
+.fill.rand { background: rgba(236,235,243,.12); }
+.fill.ph::after { content: ""; position: absolute; inset: 0; border-radius: 6px; background: repeating-linear-gradient(135deg, rgba(0,0,0,.28) 0 5px, transparent 5px 10px); }
+.axis { display: grid; grid-template-columns: 150px minmax(0, 1fr) 62px; gap: 14px; margin-top: 4px; }
+.ticks { position: relative; height: 18px; font: 400 11px/1 var(--mono); color: var(--muted); }
+.ticks span { position: absolute; top: 4px; transform: translateX(-50%); }
+.grid-lines { position: absolute; top: 0; bottom: 22px; pointer-events: none; }
+.grid-lines i { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255,255,255,.06); }
+@media (max-width: 560px) { .row, .axis { grid-template-columns: 96px minmax(0, 1fr) 52px; gap: 10px; } .row .n small { display: none; } }
+.tbl-wrap { overflow-x: auto; margin-top: 20px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 380px; }
+th { font: 500 10.5px/1.3 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); text-align: left; padding: 0 10px 10px 0; border-bottom: 1px solid var(--line); }
+td { padding: 13px 10px 13px 0; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+td.num, th.num { text-align: right; padding-right: 0; padding-left: 10px; }
+tr:last-child td { border-bottom: 0; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; vertical-align: 1px; }
+
+/* ---------- lab log (a real sequence, so it is numbered by date) ---------- */
+.log { border-top: 1px solid var(--line); }
+.entry { display: grid; grid-template-columns: 120px 170px minmax(0, 1fr) auto; gap: 8px 28px; align-items: baseline; padding: 22px 0; border-bottom: 1px solid var(--line); transition: background .3s; }
+.entry:hover { background: linear-gradient(90deg, transparent, rgba(255,255,255,.025), transparent); }
+.entry time { font: 500 12px/1.4 var(--mono); color: var(--muted); letter-spacing: 0.06em; }
+.entry h3 { font-size: 24px; font-weight: 600; }
+.entry p { color: var(--ink-2); font-size: 15px; max-width: 62ch; }
+.entry .chip { justify-self: end; white-space: nowrap; }
+.chip.nt { color: var(--cyan); border-color: rgba(79, 216, 255, .3); }
+.chip.nn { color: var(--pink); border-color: rgba(255, 95, 174, .3); }
+@media (max-width: 820px) { .entry { grid-template-columns: 1fr auto; } .entry time { grid-column: 1 / -1; } .entry p { grid-column: 1 / -1; } .entry .chip { grid-row: 2; grid-column: 2; } }
+
+/* ---------- closing band + footer ---------- */
+.close { margin-top: clamp(90px, 12vw, 160px); position: relative; overflow: hidden; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.close::before { content: ""; position: absolute; inset: 0; background:
+  radial-gradient(50% 120% at 50% 50%, rgba(106, 77, 255, .22), transparent 70%),
+  repeating-linear-gradient(180deg, transparent 0 9px, rgba(143, 123, 255, .07) 9px 10px);
+  -webkit-mask-image: radial-gradient(60% 100% at 50% 50%, #000, transparent); mask-image: radial-gradient(60% 100% at 50% 50%, #000, transparent); }
+.close-in { position: relative; text-align: center; padding-block: clamp(80px, 10vw, 130px); display: grid; justify-items: center; gap: 22px; }
+.close h2 { font-size: clamp(32px, 4.6vw, 60px); line-height: 1.04; letter-spacing: -0.03em; max-width: 18ch; }
+.close p { color: var(--ink-2); max-width: 56ch; }
+footer { padding-block: 40px calc(40px + env(safe-area-inset-bottom, 0px)); }
+.foot { display: flex; flex-wrap: wrap; gap: 20px 32px; align-items: center; justify-content: space-between; }
+.foot nav { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+.foot nav a { color: var(--muted); text-decoration: none; font-size: 14px; }
+.foot nav a:hover { color: var(--ink); }
+.foot .label { text-transform: none; letter-spacing: 0.02em; }
+
+/* reveal: content is visible at rest; this only adds a gentle rise when it scrolls in */
+.rv { transition: transform .9s cubic-bezier(.2,.8,.2,1), opacity .9s; }
+.js .rv.pre { transform: translateY(18px); opacity: .35; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .hero-in > *, .rv { animation: none !important; transition: none !important; transform: none !important; opacity: 1 !important; }
+  .bee .caret { animation: none; }
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="oz-st" x1="0.2" y1="0" x2="0.8" y2="1"><stop offset="0" stop-color="#b6f8ff"/><stop offset="0.45" stop-color="#3cc0ff"/><stop offset="0.8" stop-color="#2a6cff"/><stop offset="1" stop-color="#8a5cff"/></linearGradient>
+    <radialGradient id="oz-node" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#fff"/><stop offset="0.5" stop-color="#dffaff"/><stop offset="1" stop-color="#7fe0ff"/></radialGradient>
+    <symbol id="oz-mark" viewBox="0 0 100 100">
+      <path d="M50 50 C40 34 16 32 16 50 C16 68 40 66 50 50 C60 34 84 32 84 50 C84 68 60 66 50 50 Z" fill="none" stroke="url(#oz-st)" stroke-width="12" stroke-linejoin="round"/>
+      <path d="M50 50 C40 34 16 32 16 50 C16 68 40 66 50 50 C60 34 84 32 84 50 C84 68 60 66 50 50 Z" fill="none" stroke="#fff" stroke-opacity="0.5" stroke-width="1.3"/>
+      <path d="M22 42 C26 36 34 36 40 40" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-opacity="0.9"/>
+      <circle cx="84" cy="50" r="6.5" fill="url(#oz-node)"/><circle cx="50" cy="50" r="4" fill="#fff"/>
+    </symbol>
+  </defs>
+</svg>
+
+<header class="bar" id="bar">
+  <div class="wrap bar-in">
+    <a class="brand" href="#top" aria-label="Oazy AI Research, back to top">
+      <svg aria-hidden="true"><use href="#oz-mark"/></svg>
+      <span class="word">OAZY<small>AI RESEARCH</small></span>
+    </a>
+    <nav class="tabs" id="tabs" aria-label="Sections">
+      <span class="pill" id="pill"></span>
+      <a href="#models" data-sec="models">Models</a>
+      <a href="#results" data-sec="results">Results</a>
+      <a href="#log" data-sec="log">Lab log</a>
+    </nav>
+    <a class="btn btn-ghost bar-cta" href="https://github.com/jpcpais01/simulations/tree/oazy-ai-research" target="_blank" rel="noopener">
+      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38v-1.34c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.72 1.22 1.88.87 2.34.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.66 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 8 0Z"/></svg>
+      Code
+    </a>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero" aria-label="Introduction">
+    <div class="fallback" aria-hidden="true"></div>
+    <canvas id="warp" aria-hidden="true"></canvas>
+    <div class="wrap hero-in">
+      <p class="eyebrow">Oazy AI Research</p>
+      <h1>Small models that <em>think differently</em></h1>
+      <p class="sub">We invent new language-model architectures inspired by how minds work, train them on a single GPU, and test them against the transformer on the same text.</p>
+      <div class="ctas">
+        <a class="btn btn-light" href="#models">See the models</a>
+        <a class="btn btn-violet" href="#log">Read the lab log</a>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap">
+    <div class="pillars">
+      <div class="pillar rv">
+        <span class="label">// architecture</span>
+        <h3>New ways to think</h3>
+        <p>Memory that learns while it reads, and thoughts that unfold from the gist down to the details.</p>
+      </div>
+      <div class="pillar rv">
+        <span class="label">// scale</span>
+        <h3>Small on purpose</h3>
+        <p>Every model stays at or under 0.2B parameters and trains on a few billion tokens, so each idea gets a fair test in a day.</p>
+      </div>
+      <div class="pillar rv">
+        <span class="label">// yardstick</span>
+        <h3>The same test for all</h3>
+        <p>Same text, same order, same budget. Held-out loss and HellaSwag, next to GPT-2 small trained the same way.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODELS ===================== -->
+  <section class="block" id="models" aria-labelledby="models-h">
+    <div class="wrap">
+      <div class="head rv">
+        <div>
+          <span class="label">// models <b>· 2 entries</b></span>
+          <h2 id="models-h">Two ways to write a sentence</h2>
+        </div>
+        <p>Bee writes the way almost every language model does: one token, then the next. Fern plans the whole passage first and lets it come into focus. Watch each one write below.</p>
+      </div>
+
+      <div class="models">
+        <article class="model bee rv" aria-labelledby="bee-h">
+          <div class="chips">
+            <span class="chip acc">Next-token</span>
+            <span class="chip">Hybrid · memory + attention</span>
+            <span class="chip ph">Placeholder results</span>
+          </div>
+          <h3 id="bee-h">Bee<span>_0.2B</span></h3>
+          <p class="what">Our main model. Eighteen memory layers that update themselves as they read, plus six attention layers for exact recall, in a 3 to 1 mix. A larger mentor model teaches it early in training.</p>
+          <div class="stats">
+            <div class="stat"><span class="v">204<small>M</small></span><span class="k">Parameters</span></div>
+            <div class="stat"><span class="v">5.0<small>B</small></span><span class="k">Tokens seen</span></div>
+            <div class="stat"><span class="v">2.91</span><span class="k">Held-out loss</span></div>
+            <div class="stat"><span class="v">33.8<small>%</small></span><span class="k">HellaSwag</span></div>
+          </div>
+          <div class="demo" aria-label="Animation: Bee writes one token at a time">
+            <div class="demo-top">
+              <span class="label">How it writes <b>· one token per step</b></span>
+              <span class="label" id="bee-step">step 0 / 16</span>
+            </div>
+            <div class="toks" id="bee-toks"></div>
+          </div>
+        </article>
+
+        <article class="model fern rv" aria-labelledby="fern-h">
+          <div class="chips">
+            <span class="chip acc">Not next-token · unfolds text</span>
+            <span class="chip ph">Placeholder results</span>
+          </div>
+          <h3 id="fern-h">Fern<span>_0.2B</span></h3>
+          <p class="what">Fern does not guess the next word. It writes 16 words at once in 5 rounds: first where the passage is going, then the middle, then the small words, the way a thought comes into focus.</p>
+          <div class="stats">
+            <div class="stat"><span class="v">198<small>M</small></span><span class="k">Parameters</span></div>
+            <div class="stat"><span class="v">5.0<small>B</small></span><span class="k">Tokens seen</span></div>
+            <div class="stat"><span class="v">3.05</span><span class="k">Held-out loss</span></div>
+            <div class="stat"><span class="v">31.2<small>%</small></span><span class="k">HellaSwag</span></div>
+          </div>
+          <div class="demo" aria-label="Animation: Fern writes 16 words at once over 5 rounds">
+            <div class="demo-top">
+              <span class="label">How it writes <b>· 16 words at once</b></span>
+              <span class="label" style="display:flex;gap:10px;align-items:center"><span id="fern-step">round 0 / 5</span><span class="rounds" id="fern-rounds"><i></i><i></i><i></i><i></i><i></i></span></span>
+            </div>
+            <div class="toks" id="fern-toks"></div>
+          </div>
+        </article>
+      </div>
+
+      <div class="ph-note rv">
+        <span class="chip ph">Placeholder</span>
+        <span>Every number for Bee_0.2B and Fern_0.2B on this page is a stand-in. They will be replaced with measured results when the training runs finish.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== RESULTS ===================== -->
+  <section class="block" id="results" aria-labelledby="results-h">
+    <div class="wrap">
+      <div class="head rv">
+        <div>
+          <span class="label">// results <b>· FineWeb-Edu</b></span>
+          <h2 id="results-h">How they score</h2>
+        </div>
+        <p>HellaSwag asks a model to pick the sensible ending to an everyday scene out of four. Guessing gets 25%. GPT-2 small, with 124M parameters, gets 29.6%.</p>
+      </div>
+      <div class="results">
+        <div class="panel rv">
+          <span class="label">HellaSwag accuracy · 10,042 questions</span>
+          <h3>Picking the right ending</h3>
+          <p class="cap">Higher is better. Striped bars are placeholders.</p>
+          <div class="chart" id="chart" role="img" aria-label="HellaSwag accuracy: Bee_0.2B 33.8% (placeholder), Fern_0.2B 31.2% (placeholder), GPT-2 small 29.6%, random guessing 25%."></div>
+        </div>
+        <div class="panel rv">
+          <span class="label">Side by side</span>
+          <h3>At a glance</h3>
+          <p class="cap">Held-out loss is how surprised the model is by new text, lower is better.</p>
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr><th>Model</th><th>Writes</th><th class="num">Params</th><th class="num">Loss</th></tr></thead>
+              <tbody>
+                <tr><td><span class="dot" style="background:var(--bee)"></span>Bee_0.2B <span class="chip ph" style="padding:3px 6px;font-size:9.5px">placeholder</span></td><td>next token</td><td class="num">204M</td><td class="num">2.91</td></tr>
+                <tr><td><span class="dot" style="background:var(--fern)"></span>Fern_0.2B <span class="chip ph" style="padding:3px 6px;font-size:9.5px">placeholder</span></td><td>unfolds</td><td class="num">198M</td><td class="num">3.05</td></tr>
+                <tr><td><span class="dot" style="background:var(--ink-2)"></span>GPT-2 small</td><td>next token</td><td class="num">124M</td><td class="num">n/a</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="cap" style="margin-top:16px">GPT-2 small was trained by OpenAI on different text, so its loss is not comparable here.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== LAB LOG ===================== -->
+  <section class="block" id="log" aria-labelledby="log-h">
+    <div class="wrap">
+      <div class="head rv">
+        <div>
+          <span class="label">// lab log <b>· in order</b></span>
+          <h2 id="log-h">Every idea we have tried</h2>
+        </div>
+        <p>Each architecture taught us something the next one used. Some predict the next token, some do not, and we say which.</p>
+      </div>
+      <div class="log">
+        <div class="entry rv"><time datetime="2026-11-04">Nov 4, 2026</time><h3>Settle</h3><p>A sheet of thought that keeps changing until it settles, so later words can reshape earlier ones.</p><span class="chip nt">next-token</span></div>
+        <div class="entry rv"><time datetime="2026-11-04">Nov 4, 2026</time><h3>Basin</h3><p>Thinking as rolling downhill: words settle into valleys of one learned energy landscape. It taught us what not to do.</p><span class="chip nt">next-token</span></div>
+        <div class="entry rv"><time datetime="2026-11-04">Nov 4, 2026</time><h3>Memtrix</h3><p>A mind that learns while it reads. Small memories in every layer rewrite themselves on surprise. It beat our GPT-2 baseline on HellaSwag, 28.4% to 27.8%.</p><span class="chip nt">next-token</span></div>
+        <div class="entry rv"><time datetime="2026-11-05">Nov 5, 2026</time><h3>Tide</h3><p>A rolling belt of 8 drafts of what comes next, each one cleaned up as it moves towards now.</p><span class="chip nt">next-token</span></div>
+        <div class="entry rv"><time datetime="2026-11-05">Nov 5, 2026</time><h3>Fern</h3><p>A thought unfolds. Sixteen words at a time, gist first and details last, over 5 rounds.</p><span class="chip nn">unfolds text</span></div>
+        <div class="entry rv"><time datetime="2026-11-05">Nov 5, 2026</time><h3>Ember</h3><p>Built to learn fast: it grows from 4 to 12 layers while it trains and learns from a bigger mentor early on.</p><span class="chip nt">next-token</span></div>
+        <div class="entry rv"><time datetime="2026-11-05">Nov 5, 2026</time><h3>Bee</h3><p>Everything that worked, in one 0.2B hybrid of memory and attention, trained on 5B tokens of carefully mixed text.</p><span class="chip nt">next-token</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="close" aria-labelledby="close-h">
+    <div class="wrap close-in rv">
+      <span class="label">// next</span>
+      <h2 id="close-h">A 0.2B model that holds its own against models twice its size</h2>
+      <p>That is the bar we are training towards. Follow the code, the runs and the results as they come in.</p>
+      <div class="ctas">
+        <a class="btn btn-light" href="https://github.com/jpcpais01/simulations/tree/oazy-ai-research" target="_blank" rel="noopener">Browse the code</a>
+        <a class="btn btn-violet" href="#models">Back to the models</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <a class="brand" href="#top" aria-label="Back to top">
+      <svg aria-hidden="true"><use href="#oz-mark"/></svg>
+      <span class="word">OAZY<small>AI RESEARCH</small></span>
+    </a>
+    <nav aria-label="Footer">
+      <a href="#models">Models</a><a href="#results">Results</a><a href="#log">Lab log</a>
+      <a href="https://github.com/jpcpais01/simulations/tree/oazy-ai-research" target="_blank" rel="noopener">Code</a>
+    </nav>
+    <span class="label">© 2026 Oazy AI Research</span>
+  </div>
+</footer>
+
+<script>
+/* =====================================================================
+   The light tunnel. Streaks of light run along lanes that pinch through
+   a narrow waist in the middle of the screen and flare out towards the
+   edges, like an hourglass seen from the side. One fragment shader, four
+   depth layers, no textures. Own implementation for Oazy.
+   ===================================================================== */
+(function () {
+  const canvas = document.getElementById('warp');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  let gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
+  let v2 = !!gl;
+  if (!gl) {
+    gl = canvas.getContext('webgl', { antialias: false, alpha: false }) || canvas.getContext('experimental-webgl');
+    if (gl && !gl.getExtension('OES_standard_derivatives')) gl = null;
+  }
+  if (!gl) { canvas.remove(); return; } // the CSS glow behind it stays as the fallback
+
+  const VERT = v2
+    ? '#version 300 es\nin vec2 p; void main(){ gl_Position = vec4(p,0.,1.); }'
+    : 'attribute vec2 p; void main(){ gl_Position = vec4(p,0.,1.); }';
+
+  const FRAG_BODY = `
+precision highp float;
+uniform vec2  uRes;      // canvas size in device pixels
+uniform float uTime;     // integrated time (speeds up during the intro)
+uniform float uIntro;    // 0 -> 1 as the light switches on
+uniform vec2  uMouse;    // -1..1, eased
+uniform float uCenter;   // waist height, 0..1 from the bottom
+uniform float uPx;       // device pixels per CSS pixel
+uniform float uFade;     // 1 at the top, less as the hero scrolls away
+
+float h11(float n) { return fract(sin(n * 91.3458) * 47453.5453); }
+float h21(vec2 p) { p = fract(p * vec2(233.34, 851.73)); p += dot(p, p + 23.45); return fract(p.x * p.y); }
+
+vec3 palette(float r) {
+  if (r < 0.30) return vec3(0.50, 0.40, 1.00);   // violet
+  if (r < 0.50) return vec3(0.34, 0.50, 1.00);   // electric blue
+  if (r < 0.64) return vec3(0.82, 0.80, 1.00);   // lilac white
+  if (r < 0.75) return vec3(0.30, 0.84, 1.00);   // Oazy cyan
+  if (r < 0.85) return vec3(1.00, 0.42, 0.68);   // pink
+  if (r < 0.93) return vec3(0.34, 0.95, 0.76);   // teal
+  return vec3(1.00, 0.60, 0.40);                 // ember
+}
+
+// One depth layer of streaks.
+// N lanes across the bundle, waist = half-height at the centre, flare = how fast it opens.
+vec3 layer(vec2 p, float aspect, float id, float N, float waist, float flare, float gain, float spd, float thick) {
+  float depth = id / 3.0;
+  float xn = p.x / (0.5 * aspect) - uMouse.x * 0.05 * (0.4 + depth);   // -1..1 across the screen
+  float ax = abs(xn);
+  float y = p.y + uMouse.y * 0.025 * (0.3 + depth);
+  y += 0.012 * sin(xn * 2.1 + uTime * 0.23 + id * 1.7) * ax;          // a slow living sway
+  float w = waist * (1.0 + 0.05 * sin(uTime * 0.31 + id)) + flare * ax * ax;
+  float s = y / w;                                                      // lane coordinate
+  float env = exp(-s * s * 0.7);
+  if (env < 0.002) return vec3(0.0);
+
+  float lane = floor(s * N);
+  float r1 = h11(lane * 1.37 + id * 17.31);
+  float r2 = h11(lane * 2.11 + id * 5.71 + 3.1);
+  float r3 = h11(lane * 0.73 + id * 9.13 + 7.7);
+  float r4 = h11(lane * 4.31 + id * 1.97 + 1.3);
+  float r5 = h11(lane * 7.77 + id * 3.33 + 5.9);
+
+  float lanePx = w * uRes.y / N;                       // lane spacing in device pixels
+  float sc = (lane + 0.5 + (r4 - 0.5) * 0.6) / N;      // jittered lane centre
+  float dpx = abs(s - sc) * w * uRes.y;                // distance to it in pixels
+  float t = thick * uPx * (0.45 + 1.1 * ax) * (0.55 + 0.9 * r3);
+  float tt = max(t, 0.7);
+  float prof = exp(-dpx * dpx / (tt * tt)) * min(1.0, t / 0.7) + 0.07 * exp(-dpx / (tt * 5.0));
+
+  // dashes travel outwards from the waist and stretch as they come towards us
+  float u = pow(ax, 0.72);
+  float freq = mix(0.9, 3.6, r2);
+  float ph = u * freq - uTime * spd * mix(0.55, 1.45, r1) + r3 * 17.0;
+  float f = fract(ph);
+  float duty = mix(0.30, 0.92, r4 * r4);
+  float aa = min(fwidth(ph) * 1.2 + 0.003, 0.2);
+  float dash = pow(smoothstep(0.0, duty, f), 1.6) * (1.0 - smoothstep(duty - aa, duty + aa * 0.5, f));
+  float lit = smoothstep(0.22, 0.52, r5) * (0.35 + 0.65 * r5 * r5) * (r2 > 0.94 ? 2.4 : 1.0);   // a few hero streaks
+
+  vec3 col = palette(fract(r1 * 3.7 + r2));
+  col = mix(col, vec3(1.0), 0.45 * smoothstep(duty * 0.75, duty, f));   // white-hot heads
+  float xg = mix(0.14, 1.0, smoothstep(0.02, 0.95, ax));                 // brighter towards the edges
+  float pulse = 0.75 + 0.25 * sin(u * 4.0 - uTime * 0.9 + id * 2.0);
+  vec3 line = col * prof * dash * lit;
+
+  // where lanes are packed tighter than a few pixels, draw their average glow instead (no shimmer)
+  vec3 haze = vec3(0.50, 0.46, 1.00) * 0.08 * min(1.0, 1.8 * tt / max(lanePx, 0.001));
+  float k = smoothstep(1.4, 4.0, lanePx);
+  return mix(haze, line, k) * env * xg * pulse * gain;
+}
+
+vec3 scene(vec2 frag) {
+  float aspect = uRes.x / uRes.y;
+  vec2 p = vec2((frag.x - 0.5 * uRes.x) / uRes.y, frag.y / uRes.y - uCenter);
+  // keep the hourglass shaped on tall phone screens
+  float sq = clamp(aspect, 0.55, 1.0);
+  p.y *= mix(1.7, 1.0, (sq - 0.55) / 0.45);
+
+  vec3 c = vec3(0.0);
+  c += layer(p, aspect, 0.0, 210.0, 0.165, 0.17, 0.80, 0.10, 0.55);
+  c += layer(p, aspect, 1.0, 136.0, 0.185, 0.22, 1.00, 0.16, 0.75);
+  c += layer(p, aspect, 2.0,  84.0, 0.210, 0.28, 1.10, 0.25, 1.00);
+  c += layer(p, aspect, 3.0,  46.0, 0.240, 0.36, 1.25, 0.38, 1.35);
+
+  // the glow pouring through the waist
+  float xn = p.x / (0.5 * aspect);
+  float ax = abs(xn);
+  float gw = 0.16 + 0.22 * ax * ax;
+  float core = exp(-pow(p.y / gw, 2.0) * 1.6);
+  c += vec3(0.30, 0.24, 0.90) * core * (0.02 + 0.13 * ax * ax);
+  c += vec3(0.55, 0.50, 1.00) * exp(-pow(p.y / 0.035, 2.0)) * exp(-ax * 3.0) * 0.06;
+  return c;
+}
+
+void main() {
+  vec2 fc = gl_FragCoord.xy;
+  vec3 c = scene(fc) * uIntro * uFade;
+  c = 1.0 - exp(-c * 1.9);                          // soft highlights
+  c = pow(c, vec3(0.92));
+  c += vec3(0.0196, 0.0196, 0.0275);                 // the page black (#050507)
+  c += (h21(fc + fract(uTime) * 61.0) - 0.5) / 255.0; // dither, kills banding
+  OUT = vec4(c, 1.0);
+}`;
+  const FRAG = v2
+    ? '#version 300 es\n#define OUT o\nout highp vec4 o;\n' + FRAG_BODY
+    : '#extension GL_OES_standard_derivatives : enable\n#define OUT gl_FragColor\n' + FRAG_BODY;
+
+  function sh(type, src) {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { console.warn(gl.getShaderInfoLog(s)); return null; }
+    return s;
+  }
+  const vs = sh(gl.VERTEX_SHADER, VERT), fs = sh(gl.FRAGMENT_SHADER, FRAG);
+  if (!vs || !fs) { canvas.remove(); return; }
+  const prog = gl.createProgram();
+  gl.attachShader(prog, vs); gl.attachShader(prog, fs);
+  gl.bindAttribLocation(prog, 0, 'p');
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { canvas.remove(); return; }
+  gl.useProgram(prog);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  const U = {};
+  ['uRes', 'uTime', 'uIntro', 'uMouse', 'uCenter', 'uPx', 'uFade'].forEach(n => U[n] = gl.getUniformLocation(prog, n));
+
+  const hero = canvas.parentElement;
+  const title = hero.querySelector('h1');
+  let quality = 1, W = 0, H = 0, px = 1, center = 0.55;
+
+  function resize() {
+    const r = canvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
+    px = dpr * quality;
+    W = Math.max(2, Math.round(r.width * px));
+    H = Math.max(2, Math.round(r.height * px));
+    if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+    gl.viewport(0, 0, W, H);
+    // put the waist right behind the headline
+    const tr = title.getBoundingClientRect();
+    center = 1 - ((tr.top + tr.height * 0.5) - r.top) / r.height;
+  }
+
+  let mouse = [0, 0], mouseT = [0, 0];
+  addEventListener('pointermove', e => {
+    if (e.pointerType !== 'mouse') return;
+    mouseT = [(e.clientX / innerWidth) * 2 - 1, -((e.clientY / innerHeight) * 2 - 1)];
+  }, { passive: true });
+
+  let visible = true, running = false, last = 0, simT = 7.0, start = 0, fade = 1;
+  let frames = 0, acc = 0;
+
+  function draw(intro) {
+    gl.uniform2f(U.uRes, W, H);
+    gl.uniform1f(U.uTime, simT);
+    gl.uniform1f(U.uIntro, intro);
+    gl.uniform2f(U.uMouse, mouse[0], mouse[1]);
+    gl.uniform1f(U.uCenter, center);
+    gl.uniform1f(U.uPx, px);
+    gl.uniform1f(U.uFade, fade);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  function frame(now) {
+    if (!visible || document.hidden) { running = false; return; }
+    const dt = Math.min(0.05, (now - (last || now)) / 1000);
+    last = now;
+    if (!start) start = now;
+    const k = Math.min(1, (now - start) / 1800);
+    const intro = 1 - Math.pow(1 - k, 3);
+    simT += dt * (1 + 5 * Math.pow(1 - k, 2.2));         // warp in fast, then cruise
+    mouse[0] += (mouseT[0] - mouse[0]) * Math.min(1, dt * 2.5);
+    mouse[1] += (mouseT[1] - mouse[1]) * Math.min(1, dt * 2.5);
+    const hr = hero.getBoundingClientRect();
+    fade = Math.max(0.25, Math.min(1, 1 + hr.top / (hr.height * 0.9)));
+    draw(intro);
+
+    // keep it smooth on slower GPUs: lower the resolution if frames run long
+    if (k >= 1) {
+      frames++; acc += dt;
+      if (frames === 45) {
+        const avg = acc / frames;
+        if (avg > 0.024 && quality > 0.5) { quality = Math.max(0.5, quality * 0.8); resize(); }
+        else if (avg < 0.013 && quality < 1) { quality = Math.min(1, quality * 1.12); resize(); }
+        frames = 0; acc = 0;
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+  function go() { if (!running && visible && !document.hidden) { running = true; last = 0; requestAnimationFrame(frame); } }
+
+  resize();
+  if (reduce) { draw(1); addEventListener('resize', () => { resize(); draw(1); }); return; }
+  addEventListener('resize', resize);
+  new ResizeObserver(resize).observe(hero);
+  new IntersectionObserver(es => { visible = es[0].isIntersecting; go(); }).observe(hero);
+  document.addEventListener('visibilitychange', go);
+  canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); running = false; });
+  go();
+})();
+
+/* ========================= page behaviour ========================= */
+(function () {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  document.documentElement.classList.add('js');
+
+  // solid bar once we leave the top
+  const bar = document.getElementById('bar');
+  const onScroll = () => bar.classList.toggle('solid', scrollY > 24);
+  addEventListener('scroll', onScroll, { passive: true }); onScroll();
+
+  // sliding pill under the active tab (as in the Oazy launcher)
+  const tabs = document.getElementById('tabs'), pill = document.getElementById('pill');
+  const links = [...tabs.querySelectorAll('a')];
+  function movePill(a) {
+    links.forEach(l => l.classList.toggle('on', l === a));
+    if (!a) { pill.style.opacity = 0; return; }
+    pill.style.opacity = 1;
+    pill.style.width = a.offsetWidth + 'px';
+    pill.style.transform = 'translateX(' + a.offsetLeft + 'px)';
+  }
+  const secs = links.map(a => document.getElementById(a.dataset.sec));
+  function spy() {
+    let cur = null;
+    secs.forEach((s, i) => { if (s.getBoundingClientRect().top < innerHeight * 0.45) cur = links[i]; });
+    movePill(cur);
+  }
+  addEventListener('scroll', spy, { passive: true }); addEventListener('resize', spy); spy();
+
+  // gentle rise as blocks scroll in (they are readable before it runs)
+  if (!reduce && 'IntersectionObserver' in window) {
+    const els = [...document.querySelectorAll('.rv')].filter(el => el.getBoundingClientRect().top > innerHeight);
+    els.forEach(el => el.classList.add('pre'));
+    const io = new IntersectionObserver(es => es.forEach(e => {
+      if (e.isIntersecting) { e.target.classList.remove('pre'); io.unobserve(e.target); }
+    }), { rootMargin: '0px 0px -8% 0px' });
+    els.forEach(el => io.observe(el));
+  }
+
+  // ---------- HellaSwag chart, drawn to one scale (20% .. 40%) ----------
+  const chart = document.getElementById('chart');
+  const LO = 20, HI = 40;
+  const pos = v => ((v - LO) / (HI - LO)) * 100;
+  const rows = [
+    { n: 'Bee_0.2B', s: 'placeholder', v: 33.8, cls: 'bee ph' },
+    { n: 'Fern_0.2B', s: 'placeholder', v: 31.2, cls: 'fern ph' },
+    { n: 'GPT-2 small', s: 'OpenAI · 124M', v: 29.6, cls: 'ref' },
+    { n: 'Random guess', s: '1 in 4', v: 25.0, cls: 'rand' },
+  ];
+  let html = '<div class="grid-lines" id="gl"></div>';
+  rows.forEach(r => {
+    html += `<div class="row"><span class="n">${r.n}<small>${r.s}</small></span>` +
+      `<div class="track"><div class="fill ${r.cls}" style="width:${pos(r.v)}%"></div></div>` +
+      `<span class="pct">${r.v.toFixed(1)}%</span></div>`;
+  });
+  html += '<div class="axis"><span></span><div class="ticks">' +
+    [20, 25, 30, 35, 40].map(t => `<span style="left:${pos(t)}%">${t}%</span>`).join('') + '</div><span></span></div>';
+  chart.innerHTML = html;
+  function placeGrid() {
+    const tr = chart.querySelector('.track'), gl = document.getElementById('gl');
+    if (!tr) return;
+    const cr = chart.getBoundingClientRect(), r = tr.getBoundingClientRect();
+    gl.style.left = (r.left - cr.left) + 'px'; gl.style.width = r.width + 'px';
+    gl.innerHTML = [25, 30, 35].map(t => `<i style="left:${pos(t)}%"></i>`).join('');
+  }
+  placeGrid(); addEventListener('resize', placeGrid);
+  if (!reduce && 'IntersectionObserver' in window) {
+    const fills = [...chart.querySelectorAll('.fill')];
+    if (chart.getBoundingClientRect().top > innerHeight) {
+      fills.forEach(f => { f.style.transform = 'scaleX(0.02)'; });
+      const io = new IntersectionObserver(es => {
+        if (!es[0].isIntersecting) return;
+        fills.forEach((f, i) => { f.style.transition = `transform 1.2s cubic-bezier(.2,.8,.2,1) ${i * 0.09}s`; f.style.transform = 'scaleX(1)'; });
+        io.disconnect();
+      }, { threshold: 0.3 });
+      io.observe(chart);
+    }
+  }
+
+  // ---------- Bee: one token per step ----------
+  const BEE = ['The', ' river', ' carried', ' the', ' light', ' all', ' the', ' way', ' to', ' the', ' sea', ',', ' and', ' the', ' town', ' woke'];
+  const beeBox = document.getElementById('bee-toks'), beeStep = document.getElementById('bee-step');
+  function beeRender(n) {
+    beeBox.innerHTML = BEE.slice(0, n).map((t, i) => `<span class="tok${i === n - 1 ? ' new' : ''}">${t.trim() || t}</span>`).join('') + (n < BEE.length ? '<span class="caret"></span>' : '');
+    beeStep.textContent = `step ${n} / ${BEE.length}`;
+  }
+
+  // ---------- Fern: 16 words, 5 rounds, gist first ----------
+  const FERN = ['Light', 'from', 'the', 'river', 'reaches', 'the', 'sea,', 'and', 'the', 'quiet', 'town', 'wakes', 'slowly', 'under', 'the', 'morning.'];
+  const ROUND = [3, 4, 5, 1, 3, 5, 1, 4, 5, 3, 2, 2, 4, 4, 5, 3]; // which round reveals each word
+  const fernBox = document.getElementById('fern-toks'), fernStep = document.getElementById('fern-step');
+  const fernBars = [...document.querySelectorAll('#fern-rounds i')];
+  fernBox.innerHTML = FERN.map(w => `<span class="tok blank">${w}</span>`).join('');
+  const fernToks = [...fernBox.children];
+  function fernRender(r) {
+    fernToks.forEach((el, i) => {
+      const at = ROUND[i];
+      el.className = 'tok ' + (at > r ? 'blank' : at === r ? 'new' : 'set');
+      if (at === r) { el.classList.add('fresh'); requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove('fresh'))); }
+    });
+    fernBars.forEach((b, i) => b.classList.toggle('on', i < r));
+    fernStep.textContent = `round ${r} / 5`;
+  }
+
+  if (reduce) { beeRender(BEE.length); fernRender(5); return; }
+  // both demos run on one clock: 16 Bee steps take as long as 5 Fern rounds
+  let tick = 0, timer = null;
+  const STEP = 260, LOOP = 16 + 9;     // 16 steps then a pause
+  function run() {
+    const s = tick % LOOP;
+    beeRender(Math.min(16, s + 1));
+    const r = s >= 16 ? 5 : Math.min(5, Math.floor((s + 1) / 3.2) + 1);
+    if (fernStep.textContent !== `round ${r} / 5` || s === 0) fernRender(r);
+    tick++;
+  }
+  beeRender(BEE.length); fernRender(5);       // complete at rest
+  const demos = document.querySelector('.models');
+  new IntersectionObserver(es => {
+    if (es[0].isIntersecting && !timer) { tick = 0; run(); timer = setInterval(run, STEP); }
+    else if (!es[0].isIntersecting && timer) { clearInterval(timer); timer = null; }
+  }).observe(demos);
+})();
+</script>
+</body>
+</html>
