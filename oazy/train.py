@@ -19,6 +19,7 @@ import json
 import math
 import os
 import signal
+import sys
 import time
 from pathlib import Path
 
@@ -33,6 +34,14 @@ from . import hellaswag, probes
 
 KINDS = ["engram", "tide", "fern", "gpt"]
 NICE = {"engram": "Engram", "tide": "Tide", "fern": "Fern", "gpt": "GPT"}
+
+
+def say(*a, **k):
+    """print, but a closed terminal (tmux killed, `tee` gone) must never crash training before it saves."""
+    try:
+        print(*a, **k)
+    except (BrokenPipeError, OSError):
+        sys.stdout = sys.stderr = open(os.devnull, "w")
 
 
 def _tide():
@@ -195,7 +204,7 @@ def save_ckpt(run, model, opt, meta):
 
 
 def bench(args, device):
-    print(f"device {device}  ({torch.cuda.get_device_name() if device.type == 'cuda' else 'cpu'})")
+    say(f"device {device}  ({torch.cuda.get_device_name() if device.type == 'cuda' else 'cpu'})")
     p = PRESETS[args.preset]
     micro = args.micro or p["micro"]
     total = int(args.tokens or p["tokens"])
@@ -229,7 +238,7 @@ def bench(args, device):
         extra = ""
         if kind != "gpt":
             extra = f"  (memory kernel: {'flash-linear-attention' if memory._FLA_OK else 'pure PyTorch chunked'})"
-        print(f"{kind:7s} params {model.num_params() / 1e6:6.1f}M  {dt * 1000:7.1f} ms per {micro}x{T}  "
+        say(f"{kind:7s} params {model.num_params() / 1e6:6.1f}M  {dt * 1000:7.1f} ms per {micro}x{T}  "
               f"{tps / 1e3:8.1f}k tok/s  peak mem {mem:5.1f} GB{extra}")
         del model, opt
         if device.type == "cuda":
@@ -237,16 +246,16 @@ def bench(args, device):
             torch.cuda.reset_peak_memory_stats()
     me = kinds[0]
     te, tg = total / speeds[me], total / speeds["gpt"]
-    print(f"\n{total / 1e9:.2f}B tokens each: {NICE[me]} {te / 3600:.2f} h, GPT {tg / 3600:.2f} h on their own.")
-    print(f"  one GPU, both at once: about {(te + tg) / 3600:.2f} h")
-    print(f"  two GPUs, one each:    about {max(te, tg) / 3600:.2f} h")
+    say(f"\n{total / 1e9:.2f}B tokens each: {NICE[me]} {te / 3600:.2f} h, GPT {tg / 3600:.2f} h on their own.")
+    say(f"  one GPU, both at once: about {(te + tg) / 3600:.2f} h")
+    say(f"  two GPUs, one each:    about {max(te, tg) / 3600:.2f} h")
     if args.hours:
         share = args.hours * 3600 / (1 / speeds[me] + 1 / speeds["gpt"])
         two = args.hours * 3600 * min(speeds.values())
-        print(f"\nto finish in {args.hours:g} h (+ a few minutes of evaluations):")
-        print(f"  {NICE[me]} alone on a GPU: --tokens {args.hours * 3600 * speeds[me] * 0.93 / 1e9:.2f}e9")
-        print(f"  one GPU:  --tokens {share * 0.93 / 1e9:.2f}e9")
-        print(f"  two GPUs: --tokens {two * 0.93 / 1e9:.2f}e9")
+        say(f"\nto finish in {args.hours:g} h (+ a few minutes of evaluations):")
+        say(f"  {NICE[me]} alone on a GPU: --tokens {args.hours * 3600 * speeds[me] * 0.93 / 1e9:.2f}e9")
+        say(f"  one GPU:  --tokens {share * 0.93 / 1e9:.2f}e9")
+        say(f"  two GPUs: --tokens {two * 0.93 / 1e9:.2f}e9")
 
 
 def main():
@@ -310,7 +319,7 @@ def main():
         step, tokens, elapsed, nxt = state["step"], state["tokens"], state["elapsed"], state["next"]
         train.set_state(state["data"])
         torch.set_rng_state(state["torch_rng"].cpu())
-        print(f"resumed from {ck}: step {step}, {tokens / 1e6:.1f}M tokens, {elapsed / 60:.1f} min")
+        say(f"resumed from {ck}: step {step}, {tokens / 1e6:.1f}M tokens, {elapsed / 60:.1f} min")
     elif args.fresh:
         for f in ("metrics.jsonl", "samples.jsonl", "snapshots.jsonl", "status.json"):
             (run.dir / f).unlink(missing_ok=True)
@@ -326,9 +335,9 @@ def main():
         "data": json.loads((data / "meta.json").read_text()) if (data / "meta.json").exists() else None,
     }
     (run.dir / "config.json").write_text(json.dumps(info, indent=1))
-    print(json.dumps(info, indent=1))
+    say(json.dumps(info, indent=1))
     if tokens >= total:
-        print("this run is already finished. Use --tokens to train longer or --fresh to start over.")
+        say("this run is already finished. Use --tokens to train longer or --fresh to start over.")
         return
 
     try:
@@ -345,8 +354,16 @@ def main():
     stop = {"flag": False}
 
     def handler(sig, frame):
-        print(f"\nsignal {sig}: saving a checkpoint and stopping...", flush=True)
         stop["flag"] = True
+        if sig == getattr(signal, "SIGHUP", None):
+            # the terminal (and the `tee` log) went away: keep writing to nowhere so the save still happens
+            devnull = open(os.devnull, "w")
+            sys.stdout = sys.stderr = devnull
+            return
+        try:
+            say(f"\nsignal {sig}: saving a checkpoint and stopping...", flush=True)
+        except Exception:
+            pass
     signal.signal(signal.SIGINT, handler)
     signal.signal(signal.SIGTERM, handler)
     if hasattr(signal, "SIGHUP"):
@@ -365,33 +382,33 @@ def main():
             vl = val_loss(model, vwin, device, micro)
             run.log("metrics.jsonl", {"kind": "eval", **base, "val_loss": vl})
             latest["val_loss"] = vl
-            print(f"[eval] step {step} | {tokens / 1e6:.0f}M tokens | val loss {vl:.4f}", flush=True)
+            say(f"[eval] step {step} | {tokens / 1e6:.0f}M tokens | val loss {vl:.4f}", flush=True)
             nxt["eval"] += p["eval_every"]
         if hs_path.exists() and (final or tokens >= nxt["hs"]):
             r = hellaswag.evaluate(model, hs_path, device, None if final else p["hs_quick"])
             run.log("metrics.jsonl", {"kind": "hellaswag", **base, **r, "full": final, "sample": "spread"})
             latest["hellaswag" + ("_full" if final else "")] = r["acc_norm"]
-            print(f"[hellaswag] {r['acc_norm'] * 100:.2f}% on {r['n']} examples", flush=True)
+            say(f"[hellaswag] {r['acc_norm'] * 100:.2f}% on {r['n']} examples", flush=True)
             nxt["hs"] += p["hs_every"]
         if final or tokens >= nxt["probe"]:
             r = probes.memory_report(model, pwin, device, batch=min(micro, 16))
             run.log("metrics.jsonl", {"kind": "memory", **base, **r})
             latest["recall_acc"] = r["recall_acc"]
-            print(f"[memory] context curve {[(s, round(l, 3)) for s, l in r['context']]} | "
+            say(f"[memory] context curve {[(s, round(l, 3)) for s, l in r['context']]} | "
                   f"repeat recall {r['recall_acc'] * 100:.1f}%", flush=True)
             if hasattr(model, "belt"):
                 from tide.model import draft_report
                 r = draft_report(model, pwin, device, batch=min(micro, 16))
                 run.log("metrics.jsonl", {"kind": "drafts", **base, **r})
                 latest["draft_acc"] = r["draft_acc"]
-                print(f"[drafts] loss by words ahead {[round(v, 3) for v in r['draft_loss']]} | "
+                say(f"[drafts] loss by words ahead {[round(v, 3) for v in r['draft_loss']]} | "
                       f"top-1 {[round(v * 100, 1) for v in r['draft_acc']]}%", flush=True)
             if hasattr(model, "unfold"):
                 from fern.model import round_report
                 r = round_report(model, pwin, device, batch=min(micro, 16))
                 run.log("metrics.jsonl", {"kind": "rounds", **base, **r})
                 latest["round_loss"] = r["round_loss"]
-                print(f"[rounds] loss by round {[round(v, 3) for v in r['round_loss']]} | "
+                say(f"[rounds] loss by round {[round(v, 3) for v in r['round_loss']]} | "
                       f"top-1 {[round(v * 100, 1) for v in r['round_acc']]}%", flush=True)
             if isinstance(model, Engram):
                 snap = probes.snapshot(model, enc)
@@ -434,7 +451,7 @@ def main():
         if act == "pause":
             save_ckpt(run, model, opt, ckpt_meta())
             last_ckpt = time.time()
-            print(f"paused at step {step} (checkpoint saved). Resume or end it from the app.", flush=True)
+            say(f"paused at step {step} (checkpoint saved). Resume or end it from the app.", flush=True)
             status("paused")
             while not stop["flag"]:
                 act = control()
@@ -443,7 +460,7 @@ def main():
                 status("paused")                     # keeps the card fresh
                 time.sleep(2)
             if act == "resume":
-                print("resumed", flush=True)
+                say("resumed", flush=True)
                 status("running")
                 t_log, tok_log, acc_loss, acc_n = time.time(), tokens, 0.0, 0
         if act == "end":
@@ -468,7 +485,7 @@ def main():
             except Exception as e:
                 if model._compiled is None:
                     raise
-                print(f"torch.compile failed ({type(e).__name__}: {e}); continuing without compile", flush=True)
+                say(f"torch.compile failed ({type(e).__name__}: {e}); continuing without compile", flush=True)
                 model._compiled = None
                 with amp(device):
                     _, loss, st = model(x, y)
@@ -494,7 +511,7 @@ def main():
             eta = (total - tokens) / max(tps, 1)
             run.status({**info, "state": "running", "step": step, "tokens": tokens, "elapsed": elapsed,
                         "tok_s": tps, "eta_s": eta, "loss": rec["loss"], "latest": latest, "updated": time.time()})
-            print(f"step {step:6d} | {tokens / 1e6:8.1f}M tok | loss {rec['loss']:.4f} | lr {cur_lr:.2e} | "
+            say(f"step {step:6d} | {tokens / 1e6:8.1f}M tok | loss {rec['loss']:.4f} | lr {cur_lr:.2e} | "
                   f"gnorm {float(gnorm):.2f} | {tps / 1e3:6.1f}k tok/s | eta {eta / 60:6.1f} min", flush=True)
 
         if time.time() - last_ckpt > args.ckpt_min * 60:
@@ -504,16 +521,16 @@ def main():
     save_ckpt(run, model, opt, ckpt_meta())
     if tokens >= total or end_early:
         if end_early:
-            print(f"ended early from the app at {tokens / 1e6:.0f}M tokens (checkpoint saved).", flush=True)
+            say(f"ended early from the app at {tokens / 1e6:.0f}M tokens (checkpoint saved).", flush=True)
         status("finishing")
-        print("training done; final evaluation (full HellaSwag takes a few minutes)...", flush=True)
+        say("training done; final evaluation (full HellaSwag takes a few minutes)...", flush=True)
         evaluations(final=True)
         status("done", ended_early=end_early)
-        print(f"finished: {json.dumps(latest)} after {elapsed / 60:.1f} min of training. checkpoint: {ck}")
+        say(f"finished: {json.dumps(latest)} after {elapsed / 60:.1f} min of training. checkpoint: {ck}")
     else:
         run.status({**info, "state": "stopped", "step": step, "tokens": tokens, "elapsed": elapsed,
                     "latest": latest, "updated": time.time()})
-        print(f"stopped at step {step}; run the same command again to resume.")
+        say(f"stopped at step {step}; run the same command again to resume.")
 
 
 if __name__ == "__main__":
