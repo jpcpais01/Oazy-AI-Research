@@ -22,13 +22,15 @@ from .data import get_tokenizer
 
 
 def load(path: Path, limit: int | None = None):
-    rows = []
+    """All questions, or `limit` of them spread evenly over the whole file.
+
+    The file is ordered by source (video captions first, then WikiHow), and the first questions are
+    much easier than the rest, so a quick check must sample across the file, not take the start."""
     with open(path) as f:
-        for line in f:
-            if line.strip():
-                rows.append(json.loads(line))
-                if limit and len(rows) >= limit:
-                    break
+        rows = [json.loads(line) for line in f if line.strip()]
+    if limit and limit < len(rows):
+        step = len(rows) / limit
+        rows = [rows[int(i * step)] for i in range(limit)]
     return rows
 
 
