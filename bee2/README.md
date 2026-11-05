@@ -62,9 +62,9 @@ bash runpod/train.sh bee2 --preset big
 python3 -m bee2.chat --port 8002
 ```
 
-## The data bundle (from Nov 5, for the next runs)
+## Tagus, our dataset (from Nov 5, for the next runs)
 
-`python3 -m oazy.bundle --run-tokens 2.5e9` prepares seven kinds of text in SmolLM2's pieces,
+`python3 -m oazy.tagus --run-tokens 2.5e9` prepares seven kinds of text in SmolLM2's pieces,
 sized exactly for a run of that length (+5%), so nothing repeats and nothing is wasted:
 
 | source | main phase (first 80%) | cool-down (last 20%) | a 2.5B run reads |
@@ -78,7 +78,7 @@ sized exactly for a run of that length (+5%), so nothing repeats and nothing is 
 | Python code (codeparrot-clean) | 5% | 5% | 125M |
 
 The first three are already on the pod (`oazy.retok`); the other four are streamed from Hugging
-Face. Once `<data>/smol/cosmo` exists, `--model bee2` reads this mix by default (`--mix v1` for
+Face. Once `<data>/smol/cosmo` exists, `--model bee2` reads Tagus by default (`--mix v1` for
 the old one). Every source has 2M held-out tokens, so the dashboard shows a loss per kind of text.
 
 ## Files
