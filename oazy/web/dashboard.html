@@ -257,8 +257,8 @@
 <script src="common.js"></script>
 <script>
 "use strict";
-const C = { memtrix: UI.css("--brand"), tide: UI.css("--teal"), fern: UI.css("--fern"), ember: UI.css("--ember"), fern2: UI.css("--fern2"), fern3: UI.css("--fern3"), gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
-const NAMES = { memtrix: "Memtrix", tide: "Tide", fern: "Fern", ember: "Ember", fern2: "Fern2", fern3: "Fern3", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };
+const C = { memtrix: UI.css("--brand"), tide: UI.css("--teal"), fern: UI.css("--fern"), ember: UI.css("--ember"), fern2: UI.css("--fern2"), fern3: UI.css("--fern3"), bee: UI.css("--bee"), gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
+const NAMES = { memtrix: "Memtrix", tide: "Tide", fern: "Fern", ember: "Ember", fern2: "Fern2", fern3: "Fern3", bee: "Bee0.2B", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };
 // Every model of the lab. role: "ours" (our architectures), "baseline" (the GPT-2 we train the same way), "reference" (OpenAI's).
 const MODELS = {
   memtrix: { name: "Memtrix", color: C.memtrix, role: "ours", blurb: "Learns while it reads: small memories fixed by their own surprise, word by word." },
@@ -267,6 +267,7 @@ const MODELS = {
   ember: { name: "Ember", color: C.ember, role: "ours", blurb: "Memtrix's memory, raised to learn fast: grows from 4 to 12 blocks, learns from GPT-2 medium early on, Muon optimizer." },
   fern2: { name: "Fern2", color: C.fern2, role: "ours", blurb: "Fern, smaller (119M) and raised the Ember way: both halves grow, the reader also learns next words from GPT-2 medium, Muon. Not a next-word model." },
   fern3: { name: "Fern3", color: C.fern3, role: "ours", blurb: "Fern that remembers like you do: every old passage folded into a gist, and the 3 whose gists match best read again in full. No fixed-size memory. Not a next-word model." },
+  bee: { name: "Bee0.2B", color: C.bee, role: "ours", blurb: "Our main model (204M, next-word): a modern hybrid, 3 Memtrix memory layers to 1 attention layer, learns from GPT-2 large early on, Muon, a mix of FineWeb-Edu, DCLM and (at the end) conversations." },
   gpt: { name: NAMES.gpt, color: C.gpt, role: "baseline", blurb: "GPT-2 small (124M), trained on the same text, in the same order, with the same schedule." },
   "openai-gpt2": { name: NAMES.openai, color: C.ref, role: "reference", blurb: "OpenAI's 2019 GPT-2 small, measured with the same tests: the line to beat." },
 };
@@ -332,7 +333,10 @@ function runCard(r) {
   const frac = cf.total_tokens ? Math.min(1, (st.tokens || 0) / cf.total_tokens) : 0;
   const latest = st.latest || {};
   const col = colorOf(r.name);
-  const mem = cf.memory_numbers ? `memory ${UI.fmtTokens(cf.memory_numbers)} numbers (fixed)` : cf.recall ? `recalls the ${cf.recall} best-matching old passages by gist` : `remembers by looking back at every word`;
+  const lastT = cf.layout ? (DATA[r.name]?.metrics || []).filter((x) => x.kind === "train").pop() : null;
+  const MIXN = { fwe: "FineWeb-Edu", dclm: "DCLM", chat: "chats" };
+  const mixT = lastT && lastT.mix ? " · reading " + Object.entries(lastT.mix).map(([k, v]) => `${Math.round(v * 100)}% ${MIXN[k] || k}`).join(", ") + ` in windows of ${lastT.context.toLocaleString()} words` : "";
+  const mem = cf.layout ? cf.layout + mixT : cf.memory_numbers ? `memory ${UI.fmtTokens(cf.memory_numbers)} numbers (fixed)` : cf.recall ? `recalls the ${cf.recall} best-matching old passages by gist` : `remembers by looking back at every word`;
   const stat = (k, v, h) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div>${h ? `<div class="h">${h}</div>` : ""}</div>`;
   const hs = latest.hellaswag_full != null ? pct(latest.hellaswag_full) : latest.hellaswag != null ? pct(latest.hellaswag) : "–";
   const hsH = latest.hellaswag_full != null ? "all 10,042" : latest.hellaswag != null ? "1,000 sample" : "";
@@ -463,7 +467,7 @@ function scoreboard() {
   const row = (n, v, w, fmt) => `<div class="row"><span>${nameOf(n)}</span><div class="track"><div style="width:${Math.max(2, w * 100).toFixed(1)}%;background-color:${colorOf(n)}"></div></div><b>${fmt(v)}</b></div>`;
   let verdictL = "", verdictH = "";
   const target = ref(val) != null ? ["OpenAI GPT-2", ref(val)] : val.gpt != null ? [NAMES.gpt, val.gpt] : null;
-  for (const me of ["memtrix", "tide", "fern", "ember", "fern2", "fern3"]) {
+  for (const me of ["bee", "memtrix", "tide", "fern", "ember", "fern2", "fern3"]) {
     const nm = nameOf(me), br = verdictL ? "<br>" : "";
     if (val[me] != null && target) {
       const d = val[me] - target[1];
@@ -716,7 +720,7 @@ async function refresh() {
   const pill = document.getElementById("updated");
   try {
     RUNS = await getJSON("api/runs");
-    const ORDER = ["fern3", "fern2", "ember", "fern", "tide", "memtrix", "gpt", "openai-gpt2"];
+    const ORDER = ["bee", "fern3", "fern2", "ember", "fern", "tide", "memtrix", "gpt", "openai-gpt2"];
     RUNS.sort((a, b) => ORDER.indexOf(a.name) - ORDER.indexOf(b.name));
     for (const r of RUNS) {
       const [metrics, samples] = await Promise.all([getJSON(`api/run/${r.name}/metrics`), getJSON(`api/run/${r.name}/samples`)]);
