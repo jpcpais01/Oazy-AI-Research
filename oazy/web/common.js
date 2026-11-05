@@ -126,7 +126,7 @@ const UI = (() => {
       ctx.save();
       ctx.beginPath(); ctx.rect(pad.l, pad.t - 4, w - pad.l - pad.r, bottom - pad.t + 6); ctx.clip();
       for (const s of o.series) {
-        if (!s.points.length) continue;
+        if (!s.points.length || s.ghost) continue;      // ghost: only in the tooltip
         const pts = s.points.filter((p) => isFinite(p[1]));
         if (s.area && pts.length > 1) {
           const g = ctx.createLinearGradient(0, pad.t, 0, bottom);
@@ -148,12 +148,6 @@ const UI = (() => {
         pts.forEach((p, i) => (i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1]))));
         ctx.stroke();
         ctx.setLineDash([]);
-        if (s.dots) {
-          for (const p of pts) {
-            ctx.fillStyle = css("--solid") || css("--surface"); ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), 2.8, 0, 7); ctx.fill();
-            ctx.fillStyle = s.color; ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), 1.8, 0, 7); ctx.fill();
-          }
-        }
         ctx.globalAlpha = 1;
       }
       ctx.restore();
@@ -167,8 +161,7 @@ const UI = (() => {
       labels.sort((a, b) => a.y - b.y);
       for (let i = 1; i < labels.length; i++) if (labels[i].y - labels[i - 1].y < 15) labels[i].y = labels[i - 1].y + 15;
       for (const L of labels) {
-        ctx.fillStyle = css("--solid"); ctx.beginPath(); ctx.arc(L.x, L.y, 5, 0, 7); ctx.fill();
-        ctx.fillStyle = L.color; ctx.beginPath(); ctx.arc(L.x, L.y, 3.5, 0, 7); ctx.fill();
+        ctx.fillStyle = L.color;
         ctx.font = font(11.5, 600); ctx.textAlign = "left"; ctx.textBaseline = "middle";
         ctx.fillText(L.text, w - pad.r + 8, Math.max(pad.t, Math.min(bottom, L.y)));
       }
@@ -184,10 +177,12 @@ const UI = (() => {
           if (!s.points.length || s.noTip) continue;
           let best = s.points[0];
           for (const p of s.points) if (Math.abs(p[0] - xv) < Math.abs(best[0] - xv)) best = p;
-          ctx.fillStyle = css("--solid");
-          ctx.beginPath(); ctx.arc(X(best[0]), Y(best[1]), 6, 0, 7); ctx.fill();
-          ctx.strokeStyle = s.color; ctx.lineWidth = 1.5;
-          ctx.beginPath(); ctx.arc(X(best[0]), Y(best[1]), 4, 0, 7); ctx.stroke();
+          if (!s.ghost) {
+            ctx.fillStyle = css("--solid");
+            ctx.beginPath(); ctx.arc(X(best[0]), Y(best[1]), 4.5, 0, 7); ctx.fill();
+            ctx.strokeStyle = s.color; ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.arc(X(best[0]), Y(best[1]), 3, 0, 7); ctx.stroke();
+          }
           const f = s.tipFmt || o.tipFmt || o.yFmt || ((x) => x);
           rows.push(`<div class="tiprow"><span class="sw" style="background:${s.color};opacity:${s.alpha && s.alpha < 1 ? 0.5 : 1}"></span>${s.name}<b>${f(best[1])}</b></div>`);
         }

@@ -117,13 +117,13 @@
   <div class="grid">
     <div class="card span7">
       <div class="cardhead">
-        <div class="titles"><h2>How wrong the models still are</h2><div class="sub">Next-word loss on web pages they never train on. Lower is better.</div></div>
+        <div class="titles"><h2>How wrong the models still are</h2><div class="sub">Next-word loss as they train. Hover to also see the loss on held-out web pages. Lower is better.</div></div>
         <div class="tools"><div class="seg" id="xmode"><button data-x="tokens" class="on">Words read</button><button data-x="minutes">Training time</button></div></div>
       </div>
       <details class="why"><summary>What is loss?</summary><div class="body">
         <p>At every word, a model gives each possible next word a chance. <b>Loss</b> measures how surprised it was by the word that really came next. Lower means it saw it coming.</p>
         <p>A loss of <b>L</b> is as hard as picking the right word out of about <b>e<sup>L</sup></b> equally likely ones: 3.3 is like choosing among 27 words.</p>
-        <p><b>Solid lines</b> are held-out text, <b>faint lines</b> are training batches. The dashed line is OpenAI's own GPT-2 (124M) measured on the same text, if you ran <span class="kbd">oazy.compare</span>.</p>
+        <p>The <b>lines</b> are the loss on the training batches as they go by. Hover to also see the loss on <b>held-out</b> text the models never train on (the "finish line" scores above use those). The dashed line is OpenAI's own GPT-2 (124M) measured on the same text, if you ran <span class="kbd">oazy.compare</span>.</p>
       </div></details>
       <div class="legend" id="lossLegend" style="margin-bottom:10px"></div>
       <div class="chart"><canvas id="loss" style="height:300px"></canvas><div class="tip" id="lossTip"></div></div>
@@ -486,8 +486,8 @@ function drawLearning() {
     }
     const tr = m.filter((x) => x.kind === "train"), ev = m.filter((x) => x.kind === "eval"), hs = m.filter(hsOK);
     const step = Math.max(1, Math.floor(tr.length / 400));
-    series.push({ name: nameOf(r.name) + " (train)", color: col, alpha: 0.3, width: 1.2, noTip: true, points: tr.filter((_, i) => i % step === 0).map((x) => [xOf(x), x.loss]) });
-    series.push({ name: nameOf(r.name), color: col, width: 2.4, dots: ev.length < 40, endLabel: true, points: ev.map((x) => [xOf(x), x.val_loss]) });
+    series.push({ name: nameOf(r.name), color: col, width: 2, endLabel: true, points: tr.filter((_, i) => i % step === 0).map((x) => [xOf(x), x.loss]) });
+    series.push({ name: nameOf(r.name) + " · held-out", color: col, ghost: true, points: ev.map((x) => [xOf(x), x.val_loss]) });
     hsS.push({ name: nameOf(r.name), color: col, width: 2.4, dots: true, endLabel: true, points: hs.map((x) => [xOf(x), x.acc_norm]) });
     leg.push([nameOf(r.name), col]); hleg.push([nameOf(r.name), col]);
   }
@@ -506,7 +506,7 @@ function drawLearning() {
   legend("lossLegend", leg); legend("hsLegend", hleg);
   const xf = xmode === "tokens" ? UI.fmtTokens : (v) => Math.round(v) + " min";
   charts.loss.set({ series, xFmt: xf, yFmt: (v) => v.toFixed(2), tipFmt: fmtL, yClip: (ys) => Math.min(...ys) + 2.5,
-    tipNote: () => "solid: held-out text · faint: training batches" });
+    tipNote: () => "lines: training batches · held-out: text never trained on" });
   charts.hs.set({ series: hsS, xFmt: xf, yFmt: (v) => (v * 100).toFixed(0) + "%", tipFmt: pct, empty: "Waiting for the first HellaSwag check" });
 }
 
