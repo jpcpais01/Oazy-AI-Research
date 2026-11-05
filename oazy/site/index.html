@@ -533,6 +533,24 @@ vec3 tint(float r) {
   return vec3(0.52, 1.00, 0.76);                 // mint
 }
 
+// a smooth, looping gradient of the tunnel's colours
+vec3 field(float h) {
+  h = fract(h) * 6.0;
+  vec3 c0 = vec3(0.84, 0.80, 1.00);   // lilac white
+  vec3 c1 = vec3(0.60, 0.46, 1.00);   // violet
+  vec3 c2 = vec3(0.44, 0.60, 1.00);   // electric blue
+  vec3 c3 = vec3(0.44, 0.86, 1.00);   // cyan
+  vec3 c4 = vec3(0.86, 0.70, 1.00);   // pale orchid
+  vec3 c5 = vec3(1.00, 0.52, 0.78);   // magenta rose
+  float t = smoothstep(0.0, 1.0, fract(h));
+  if (h < 1.0) return mix(c0, c1, t);
+  if (h < 2.0) return mix(c1, c2, t);
+  if (h < 3.0) return mix(c2, c3, t);
+  if (h < 4.0) return mix(c3, c4, t);
+  if (h < 5.0) return mix(c4, c5, t);
+  return mix(c5, c0, t);
+}
+
 vec3 layer(vec2 p, float aspect, float id, float N, float waist, float flare, float gain, float spd) {
   float depth = id / 3.0;
   float xn = p.x / (0.5 * aspect) - uMouse.x * 0.04 * (0.3 + depth);
@@ -560,38 +578,44 @@ vec3 layer(vec2 p, float aspect, float id, float N, float waist, float flare, fl
   // perspective along the tunnel: log distance, so streaks are tiny far away
   // (in the middle) and long close up (at the edges), and speed up outwards
   float u = log(ax + 0.035);
-  float sp = spd * mix(0.7, 1.5, r1);
+  // each lane has its own pace, and that pace itself ebbs and flows smoothly
+  float sp = spd * mix(0.5, 1.6, r1);
+  float wf = mix(0.07, 0.19, r2);
+  float travel = uTime * sp + 0.7 * sp / wf * sin(uTime * wf + r4 * 6.283);
   float r5 = h11(lane * 7.77 + id * 3.33 + 5.9);
   float lit = smoothstep(0.22, 0.42, r5);
 
   // 1. wisps: soft segments that drift outwards and slowly change shape
   float freq = mix(1.6, 4.2, r2);
-  float evolve = uTime * mix(0.16, 0.42, r1);
-  float n = vnoise(vec2(u * freq - uTime * sp + r3 * 40.0, evolve + r4 * 31.0));
-  float n2 = vnoise(vec2(u * freq * 3.1 - uTime * sp * 1.3 + r2 * 23.0, evolve * 1.7 + 7.0));
+  float evolve = uTime * mix(0.06, 0.16, r3);
+  float n = vnoise(vec2(u * freq - travel + r3 * 40.0, evolve + r4 * 31.0));
+  float n2 = vnoise(vec2(u * freq * 3.1 - travel * 1.3 + r2 * 23.0, evolve * 1.7 + 7.0));
   float wisp = smoothstep(0.55, 0.95, n) * smoothstep(0.15, 0.6, n2);
   wisp = wisp * wisp * (3.0 - 2.0 * wisp);
 
-  // 2. comets: bright heads with long fading tails that race outwards
+  // 2. comets: now and then a brighter head with a long tail glides out
   float cf = mix(0.7, 1.6, r4);
-  float ph = u * cf - uTime * sp * 2.4 + r2 * 9.0;
+  float ph = u * cf - travel * 1.6 + r2 * 9.0;
   float f = fract(ph);
-  float duty = mix(0.35, 0.8, r3);
+  float duty = mix(0.4, 0.85, r3);
   float aa = min(fwidth(ph) * 1.2 + 0.004, 0.25);
-  float comet = pow(smoothstep(0.0, duty, f), 2.6) * (1.0 - smoothstep(duty - aa, duty + aa * 0.5, f));
-  comet *= step(0.62, h11(lane * 3.9 + id * 11.1 + floor(ph) * 7.31));   // not every lap, not every lane
+  float comet = pow(smoothstep(0.0, duty, f), 2.2) * (1.0 - smoothstep(duty - aa * 2.0, duty + aa, f));
+  comet *= step(0.74, h11(lane * 3.9 + id * 11.1 + floor(ph) * 7.31));   // not every lap, not every lane
   float head = smoothstep(duty * 0.82, duty, f) * comet;
 
-  // 3. surges: waves of extra light that run through the whole tunnel
-  float surge = 0.72 + 0.75 * pow(0.5 + 0.5 * sin(u * 2.2 - uTime * 1.7), 8.0);
+  // 3. swells: soft, local waves of extra light rolling through parts of the tunnel
+  float swell = 0.8 + 0.55 * pow(0.5 + 0.5 * sin(u * 1.8 - uTime * 0.7 + s * 1.3 + id * 1.9), 5.0);
 
-  float streak = (wisp * 0.85 + comet * 1.25) * lit * surge;
-  float bright = 1.35 * (0.3 + 0.7 * r1 * r1) * (r2 > 0.955 ? 2.4 : 1.0);   // a few hero streaks
+  float streak = (wisp * 0.9 + comet * 1.05) * lit * swell;
+  float bright = 1.35 * (0.3 + 0.7 * r1 * r1) * (r2 > 0.955 ? 2.2 : 1.0);   // a few hero streaks
 
   float xg = mix(0.32, 1.0, smoothstep(0.0, 0.9, ax));                     // brighter close up
-  vec3 col = tint(fract(r3 * 7.13 + r1));
-  // light disperses as it comes closer: cooler violet far away, warmer at the edges
-  col *= mix(vec3(0.82, 0.78, 1.18), vec3(1.12, 0.96, 0.92), smoothstep(0.15, 1.0, ax));
+  // colour comes from slowly drifting regions, so neighbouring streaks share a hue
+  float hue = vnoise(vec2(u * 0.75 + uTime * 0.03 + id * 3.1, s * 1.5 - uTime * 0.022 + id * 7.7));
+  hue = fract(hue * 1.35 + 0.35 * vnoise(vec2(s * 0.6 + 19.0, uTime * 0.017 + u * 0.3)));
+  vec3 col = mix(field(hue), tint(fract(r3 * 7.13 + r1)), 0.15);
+  // light disperses as it comes closer: cooler far away, slightly warmer at the edges
+  col *= mix(vec3(0.86, 0.82, 1.12), vec3(1.08, 0.97, 0.95), smoothstep(0.15, 1.0, ax));
   col = mix(col, vec3(1.0, 0.97, 1.0), head * 0.75);                       // white-hot heads
   vec3 line = col * prof * streak * bright;
 
@@ -609,10 +633,10 @@ void main() {
   p.y *= mix(1.7, 1.0, (sq - 0.55) / 0.45);        // keep the hourglass on tall phones
 
   vec3 c = vec3(0.0);
-  c += layer(p, aspect, 0.0, 170.0, 0.150, 0.16, 0.85, 0.16);
-  c += layer(p, aspect, 1.0, 120.0, 0.170, 0.22, 1.00, 0.22);
-  c += layer(p, aspect, 2.0, 105.0, 0.195, 0.29, 1.15, 0.30);
-  c += layer(p, aspect, 3.0,  58.0, 0.225, 0.38, 1.35, 0.40);
+  c += layer(p, aspect, 0.0, 170.0, 0.150, 0.16, 0.85, 0.075);
+  c += layer(p, aspect, 1.0, 120.0, 0.170, 0.22, 1.00, 0.10);
+  c += layer(p, aspect, 2.0, 105.0, 0.195, 0.29, 1.15, 0.135);
+  c += layer(p, aspect, 3.0,  58.0, 0.225, 0.38, 1.35, 0.18);
   OUT = vec4(c * uScale, 1.0);
 }`;
 
@@ -638,14 +662,20 @@ float h21(vec2 p) { p = fract(p * vec2(233.34, 851.73)); p += dot(p, p + 23.45);
 void main() {
   vec2 uv = vUv;
   vec2 d = uv - vec2(0.5, uCenter);
-  // colour fringing grows towards the edges, along the direction the light travels
-  vec2 ca = vec2(d.x * 0.010, d.y * 0.004);
-  vec3 sc;
-  sc.r = TEX(uScene, uv + ca).r;
-  sc.g = TEX(uScene, uv).g;
-  sc.b = TEX(uScene, uv - ca).b;
-  vec3 b1 = TEX(uB1, uv + ca * 0.5).rgb;
-  vec3 b2 = TEX(uB2, uv).rgb;
+  // real lens-style dispersion: the image is smeared through the spectrum,
+  // more strongly towards the edges, so bright streaks get rainbow fringes
+  vec2 ca = d * (0.010 + 0.035 * dot(d, d));
+  vec3 sc = vec3(0.0), wsum = vec3(0.0);
+  for (int i = 0; i < 9; i++) {
+    float t = float(i) / 8.0;                                  // 0 = red .. 1 = violet
+    vec3 w = max(vec3(0.0), 1.0 - abs(vec3(t) - vec3(0.12, 0.48, 0.82)) * vec3(3.0, 3.4, 3.0));
+    w.r += 0.35 * smoothstep(0.78, 1.0, t);                    // violet carries a little red
+    sc += TEX(uScene, uv + ca * (0.5 - t) * 2.0).rgb * w;
+    wsum += w;
+  }
+  sc /= wsum;
+  vec3 b1 = vec3(TEX(uB1, uv + ca * 1.6).r, TEX(uB1, uv).g, TEX(uB1, uv - ca * 1.6).b);
+  vec3 b2 = vec3(TEX(uB2, uv + ca * 2.4).r, TEX(uB2, uv).g, TEX(uB2, uv - ca * 2.4).b);
   vec3 c = (sc + b1 * 0.55 + b2 * 0.75) / uScale;
 
   // a faint violet breath behind the waist
