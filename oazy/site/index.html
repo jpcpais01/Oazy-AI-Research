@@ -523,15 +523,14 @@ float vnoise(vec2 p) {
 }
 
 vec3 tint(float r) {
-  // mostly pale lilac and ice blue, with rare warm and green sparks
-  vec3 c = r < 0.38 ? vec3(0.80, 0.78, 1.00)
-         : r < 0.62 ? vec3(0.62, 0.68, 1.00)
-         : r < 0.78 ? vec3(0.66, 0.56, 1.00)
-         : r < 0.86 ? vec3(0.60, 0.88, 1.00)
-         : r < 0.92 ? vec3(1.00, 0.62, 0.66)
-         : r < 0.97 ? vec3(0.62, 1.00, 0.80)
-         :            vec3(1.00, 0.80, 0.55);
-  return c;
+  // pale lilac and ice blue carry the scene; violet, magenta, cyan, ember and mint add life
+  if (r < 0.30) return vec3(0.84, 0.82, 1.00);   // lilac white
+  if (r < 0.50) return vec3(0.52, 0.62, 1.00);   // ice blue
+  if (r < 0.66) return vec3(0.62, 0.46, 1.00);   // violet
+  if (r < 0.76) return vec3(0.42, 0.86, 1.00);   // cyan
+  if (r < 0.85) return vec3(1.00, 0.46, 0.80);   // magenta
+  if (r < 0.92) return vec3(1.00, 0.64, 0.46);   // ember
+  return vec3(0.52, 1.00, 0.76);                 // mint
 }
 
 vec3 layer(vec2 p, float aspect, float id, float N, float waist, float flare, float gain, float spd) {
@@ -561,17 +560,39 @@ vec3 layer(vec2 p, float aspect, float id, float N, float waist, float flare, fl
   // perspective along the tunnel: log distance, so streaks are tiny far away
   // (in the middle) and long close up (at the edges), and speed up outwards
   float u = log(ax + 0.035);
-  float freq = mix(1.8, 4.6, r2);
-  float evolve = uTime * mix(0.05, 0.16, r1);
-  float n = vnoise(vec2(u * freq - uTime * spd * mix(0.6, 1.4, r1) + r3 * 40.0, evolve + r4 * 31.0));
-  float n2 = vnoise(vec2(u * freq * 3.1 - uTime * spd * 1.7 + r2 * 23.0, evolve * 1.6 + 7.0));
+  float sp = spd * mix(0.7, 1.5, r1);
   float r5 = h11(lane * 7.77 + id * 3.33 + 5.9);
-  float streak = smoothstep(0.56, 0.95, n) * smoothstep(0.15, 0.6, n2) * smoothstep(0.25, 0.45, r5);
-  streak = streak * streak * (3.0 - 2.0 * streak);
-  float bright = 1.35 * (0.25 + 0.75 * r1 * r1) * (r2 > 0.955 ? 2.6 : 1.0);   // a few hero streaks
+  float lit = smoothstep(0.22, 0.42, r5);
 
-  float xg = mix(0.32, 1.0, smoothstep(0.0, 0.9, ax));                 // brighter close up
+  // 1. wisps: soft segments that drift outwards and slowly change shape
+  float freq = mix(1.6, 4.2, r2);
+  float evolve = uTime * mix(0.16, 0.42, r1);
+  float n = vnoise(vec2(u * freq - uTime * sp + r3 * 40.0, evolve + r4 * 31.0));
+  float n2 = vnoise(vec2(u * freq * 3.1 - uTime * sp * 1.3 + r2 * 23.0, evolve * 1.7 + 7.0));
+  float wisp = smoothstep(0.55, 0.95, n) * smoothstep(0.15, 0.6, n2);
+  wisp = wisp * wisp * (3.0 - 2.0 * wisp);
+
+  // 2. comets: bright heads with long fading tails that race outwards
+  float cf = mix(0.7, 1.6, r4);
+  float ph = u * cf - uTime * sp * 2.4 + r2 * 9.0;
+  float f = fract(ph);
+  float duty = mix(0.35, 0.8, r3);
+  float aa = min(fwidth(ph) * 1.2 + 0.004, 0.25);
+  float comet = pow(smoothstep(0.0, duty, f), 2.6) * (1.0 - smoothstep(duty - aa, duty + aa * 0.5, f));
+  comet *= step(0.62, h11(lane * 3.9 + id * 11.1 + floor(ph) * 7.31));   // not every lap, not every lane
+  float head = smoothstep(duty * 0.82, duty, f) * comet;
+
+  // 3. surges: waves of extra light that run through the whole tunnel
+  float surge = 0.72 + 0.75 * pow(0.5 + 0.5 * sin(u * 2.2 - uTime * 1.7), 8.0);
+
+  float streak = (wisp * 0.85 + comet * 1.25) * lit * surge;
+  float bright = 1.35 * (0.3 + 0.7 * r1 * r1) * (r2 > 0.955 ? 2.4 : 1.0);   // a few hero streaks
+
+  float xg = mix(0.32, 1.0, smoothstep(0.0, 0.9, ax));                     // brighter close up
   vec3 col = tint(fract(r3 * 7.13 + r1));
+  // light disperses as it comes closer: cooler violet far away, warmer at the edges
+  col *= mix(vec3(0.82, 0.78, 1.18), vec3(1.12, 0.96, 0.92), smoothstep(0.15, 1.0, ax));
+  col = mix(col, vec3(1.0, 0.97, 1.0), head * 0.75);                       // white-hot heads
   vec3 line = col * prof * streak * bright;
 
   // where lanes pack tighter than a few pixels, show their average light (no shimmer)
@@ -588,10 +609,10 @@ void main() {
   p.y *= mix(1.7, 1.0, (sq - 0.55) / 0.45);        // keep the hourglass on tall phones
 
   vec3 c = vec3(0.0);
-  c += layer(p, aspect, 0.0, 170.0, 0.150, 0.16, 0.85, 0.050);
-  c += layer(p, aspect, 1.0, 120.0, 0.170, 0.22, 1.00, 0.075);
-  c += layer(p, aspect, 2.0, 105.0, 0.195, 0.29, 1.15, 0.110);
-  c += layer(p, aspect, 3.0,  58.0, 0.225, 0.38, 1.35, 0.160);
+  c += layer(p, aspect, 0.0, 170.0, 0.150, 0.16, 0.85, 0.16);
+  c += layer(p, aspect, 1.0, 120.0, 0.170, 0.22, 1.00, 0.22);
+  c += layer(p, aspect, 2.0, 105.0, 0.195, 0.29, 1.15, 0.30);
+  c += layer(p, aspect, 3.0,  58.0, 0.225, 0.38, 1.35, 0.40);
   OUT = vec4(c * uScale, 1.0);
 }`;
 
@@ -729,7 +750,9 @@ void main() {
   }, { passive: true });
 
   let visible = true, running = false, last = 0, simT = 20.0, start = 0, fade = 1, intro = 0;
-  let frames = 0, acc = 0;
+  let frames = 0, acc = 0, frozen = false;
+  // lets a test render any moment of the animation exactly
+  window.__oazyWarp = { render(t) { frozen = true; simT = t; intro = 1; fade = 1; draw(); } };
 
   function draw() {
     // 1. streak field
@@ -764,12 +787,12 @@ void main() {
     if (!start) start = now;
     const k = Math.min(1, (now - start) / 2200);
     intro = 1 - Math.pow(1 - k, 3);
-    simT += dt * (1 + 7 * Math.pow(1 - k, 2.4));          // rush in, then drift
+    simT += dt * (1 + 4 * Math.pow(1 - k, 2.4));          // rush in, then cruise
     mouse[0] += (mouseT[0] - mouse[0]) * Math.min(1, dt * 1.8);
     mouse[1] += (mouseT[1] - mouse[1]) * Math.min(1, dt * 1.8);
     const hr = hero.getBoundingClientRect();
     fade = Math.max(0.25, Math.min(1, 1 + hr.top / (hr.height * 0.9)));
-    draw();
+    if (!frozen) draw();
 
     // keep it smooth on slower GPUs: lower the resolution if frames run long
     if (k >= 1) {
