@@ -102,6 +102,8 @@ class Glance(nn.Module):
             cos, sin = rope
             q = rotary(q, cos[:, -S:].to(q.dtype), sin[:, -S:].to(q.dtype))
             k = rotary(k, cos.to(k.dtype), sin.to(k.dtype))
+        if mask.is_floating_point():
+            mask = mask.to(q.dtype)                 # (Fern3: a mask that also weights recalled passages)
         y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
         return self.out(y.transpose(1, 2).reshape(G, S, D))
 
@@ -133,7 +135,7 @@ class Fern(nn.Module):
         self.rounds = L + 1
         D = cfg.d_model
         self.embed = nn.Embedding(cfg.vocab_size, D)
-        self.blocks = nn.ModuleList(ReaderBlock(cfg) for _ in range(cfg.n_layer))     # the reader
+        self.blocks = nn.ModuleList(self._reader_block(cfg) for _ in range(cfg.n_layer))   # the reader
         self.norm = RMSNorm(D)
         self.unfold = nn.ModuleList(UnfoldBlock(cfg) for _ in range(cfg.unfold_layers))
         self.out_norm = RMSNorm(D)
@@ -176,11 +178,15 @@ class Fern(nn.Module):
                     or n.endswith("glance.out.weight"):
                 nn.init.normal_(p, std=0.02 / math.sqrt(2 * depth))
         for b in self.blocks:
-            b.mem.reset_memory_params()
+            if hasattr(b, "mem"):
+                b.mem.reset_memory_params()
         with torch.no_grad():
             for t in (self.blank, self.where, self.round_emb, self.past_where):
                 t.normal_(0, 0.02)
         self._compiled = None
+
+    def _reader_block(self, cfg):
+        return ReaderBlock(cfg)
 
     @staticmethod
     def _init(m):
