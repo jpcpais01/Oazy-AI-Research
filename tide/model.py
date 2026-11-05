@@ -48,8 +48,9 @@ from engram.model import Engram, EngramConfig, RMSNorm, sample_logits  # noqa: F
 class TideConfig(EngramConfig):
     lookahead: int = 8           # K: how many words ahead the belt drafts
     refine_hidden: int = 1536    # width of the clean-up network (one network, shared by all slots)
-    draft_weight: float = 0.5    # how much the far drafts' own guesses count in training (total)
+    draft_weight: float = 0.1    # how much the far drafts' own guesses count in training (0 = free, wordless drafts)
     draft_frac: float = 0.125    # fraction of positions where far drafts are scored (keeps it cheap)
+    skip: bool = True            # a draft is read out on top of "what the memories say now"
 
 
 class Refiner(nn.Module):
@@ -126,9 +127,13 @@ class Tide(Engram):
             slots[d] = self.refiner(own, ctx, ahead, d)
         return torch.stack(slots)
 
+    def readout(self, slots, ctx):
+        """Drafts -> vectors compared with every word. With skip, a draft is a correction to the present."""
+        return self.out_norm(slots + ctx) if self.cfg.skip else self.out_norm(slots)
+
     def _slots(self, idx):
         ctx, _ = self.backbone(idx)
-        return self.out_norm(self.belt(ctx))
+        return self.readout(self.belt(ctx), ctx)
 
     def enable_compile(self):
         self._compiled = torch.compile(self._slots)
@@ -163,20 +168,21 @@ class Tide(Engram):
     # ------------------------------------------------------------------ reading as a stream
     def read(self, idx, states=None):
         """Read tokens (B, T) carrying memories and belt along. states = (block states, belt (B, K, D))."""
-        blocks, prev = states if states is not None else (None, None)
+        blocks, prev = states[:2] if states is not None else (None, None)
         ctx, blocks = self.backbone(idx, blocks)
         raw = self.belt(ctx, prev)
-        logits = F.linear(self.out_norm(raw[0]), self.embed.weight)
-        return logits, (blocks, raw[:, :, -1].transpose(0, 1).contiguous())
+        logits = F.linear(self.readout(raw[0], ctx), self.embed.weight)
+        return logits, (blocks, raw[:, :, -1].transpose(0, 1).contiguous(), ctx[:, -1:])
 
-    def draft_logits(self, belt):
-        """The belt (B, K, D) as word guesses for 1..K words ahead: (B, K, vocab)."""
-        return F.linear(self.out_norm(belt), self.embed.weight)
+    def draft_logits(self, states):
+        """The live belt as word guesses for 1..K words ahead: (B, K, vocab)."""
+        _, belt, ctx = states
+        return F.linear(self.readout(belt, ctx), self.embed.weight)
 
     @torch.no_grad()
     def inspect(self, idx, states=None):
         """Engram's lid-off view of the backbone (for the dashboard snapshot); logits are Tide's own."""
-        blocks, prev = states if states is not None else (None, None)
+        blocks, prev = states[:2] if states is not None else (None, None)
         x = self.embed(idx)
         blocks = blocks or [None] * len(self.blocks)
         new, infos = [], []
@@ -187,8 +193,8 @@ class Tide(Engram):
                 x = x + b.mlp(b.n2(x))
             new.append(s)
             infos.append(info)
-        raw = self.belt(self.norm(x), prev)
-        return F.linear(self.out_norm(raw[0]), self.embed.weight), new, infos
+        ctx = self.norm(x)
+        return F.linear(self.readout(self.belt(ctx, prev)[0], ctx), self.embed.weight), new, infos
 
     @torch.no_grad()
     def generate(self, prompt_ids, max_new_tokens=100, temperature=0.8, top_k=40, eos=None):

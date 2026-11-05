@@ -44,3 +44,20 @@ GPT-2 small's 124.4M. Each word costs about 1.4 × an Engram word to train.
 
 RunPod guide: `docs/TIDE_RUNPOD.md`. Family: multi-token prediction, rolling diffusion, diffusion
 forcing, block diffusion; fast-weight memories (DeltaNet) as in Engram.
+
+## First CPU test (toy corpus, 400k tokens, ~7M-parameter versions of each model)
+
+| model | val loss | toy HellaSwag |
+|---|---|---|
+| GPT (trained here) | 1.249 | 48% |
+| Engram | 0.681 | 63% |
+| Tide, far drafts weight 0.5 | 0.877 | 72% |
+| Tide, weight 0.25 | 0.788 | 66% |
+| Tide, **weight 0.1 (default)** | 0.725 | 69% |
+| Tide, weight 0 (free, wordless drafts) | **0.668** | 65% |
+
+Training the far drafts to be real word guesses costs next-word loss at this tiny size (the same is
+reported for multi-token prediction in small models, and it reverses in bigger ones). With weight 0
+the belt is free "subconscious" workspace and Tide edges past Engram, but its drafts stop meaning
+words. Change it with `--set draft_weight=0`. Tide at weight 0.1 drafts the word 2 ahead right 53%
+of the time on this toy text.

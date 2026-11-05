@@ -68,7 +68,7 @@ def main():
     # the belt after reading word t, as guesses for 1..K words ahead == the training slots at t
     with torch.no_grad():
         _, st = m.read(x[:, :50])
-        a = m.draft_logits(st[1])                                   # (B, K, V)
+        a = m.draft_logits(st)                                   # (B, K, V)
         b = torch.stack([torch.nn.functional.linear(S[d][:, 49], m.embed.weight) for d in range(cfg.lookahead)], 1)
     check("the live belt == what training scores", (a - b).abs().max().item() < 1e-3)
 

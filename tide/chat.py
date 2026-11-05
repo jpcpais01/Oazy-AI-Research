@@ -77,9 +77,10 @@ class TideBrain(engram_chat.Brain):
             new.append(s)
             infos.append(info)
         self.states = new
-        raw = m.belt(m.norm(x), self.belt_state)                       # (K, 1, 1, D)
+        ctx = m.norm(x)
+        raw = m.belt(ctx, self.belt_state)                             # (K, 1, 1, D)
         self.belt_state = raw[:, :, -1].transpose(0, 1).contiguous()   # (1, K, D)
-        probs = F.softmax(m.draft_logits(self.belt_state)[0, :, :VOCAB].float(), -1)   # (K, vocab)
+        probs = F.softmax(m.draft_logits((None, self.belt_state, ctx))[0, :, :VOCAB].float(), -1)   # (K, vocab)
         self.history.append(probs)
         self.logits = torch.log(probs[0] + 1e-12)
         belt = []
