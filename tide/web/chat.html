@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Oazy AI Research · Watch Tide think ahead</title>
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="stylesheet" href="style.css">
+<style>
+  .topbar .pills { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill b { color: var(--text); font-weight: 600; }
+  .status { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); padding: 3px 10px; border-radius: 99px; border: 1px solid var(--border); }
+  .status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+  .status.on { color: var(--text-2); } .status.on .dot { background: var(--brand); animation: ping 1.4s infinite; }
+
+  .story { font-size: 18px; line-height: 2; min-height: 180px; max-height: 46vh; overflow-y: auto; padding: 2px 2px 8px; }
+  .story .w { border-radius: 5px; padding: 2px 0; cursor: pointer; box-decoration-break: clone; -webkit-box-decoration-break: clone; transition: background .3s; }
+  .story .you { color: var(--text); }
+  .story .model { color: #c9f1ff; }
+  .story .sel { outline: 1.5px solid rgba(255,255,255,.85); outline-offset: 1px; }
+  .story .fresh { animation: pop .5s ease-out; }
+  @keyframes pop { from { background: rgba(160, 240, 255, .45); } }
+  .story .caret { display: inline-block; width: 9px; height: 18px; background: var(--brand); vertical-align: -3px; margin-left: 3px; border-radius: 2px; animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .story .hint { color: var(--muted); font-size: 15px; line-height: 1.7; }
+
+  .composer { margin-top: 14px; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: 14px; padding: 12px 12px 10px 16px; }
+  .composer:focus-within { border-color: rgba(79, 216, 255, .6); box-shadow: 0 0 0 3px rgba(79, 216, 255, .12); }
+  .composer textarea { width: 100%; background: transparent; border: 0; color: var(--text); font: 15.5px/1.6 var(--sans); resize: none; outline: none; min-height: 52px; }
+  .composer .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .composer .row .spacer { flex: 1; }
+  .controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 22px; margin-top: 18px; }
+  @media (max-width: 760px) { .controls { grid-template-columns: 1fr; } }
+  .ctl .top { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-2); margin-bottom: 4px; }
+  .ctl .top b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .ctl input[type=range] { width: 100%; }
+  .ctl .h { font-size: 11.5px; color: var(--muted); margin-top: 4px; line-height: 1.45; }
+
+  /* the belt: slot 1 (next word) on the left, the far future on the right, fading into the mist */
+  .belt { display: grid; gap: 8px; grid-template-columns: repeat(var(--k), minmax(0, 1fr)); }
+  @media (max-width: 760px) { .belt { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+  .slot { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 9px 9px 8px; min-height: 128px; transition: border-color .3s; }
+  .slot .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 6px; }
+  .slot.front { border-color: rgba(79, 216, 255, .7); box-shadow: 0 0 0 3px rgba(79, 216, 255, .10); }
+  .slot .g { display: flex; justify-content: space-between; gap: 6px; font-size: 12.5px; margin: 4px 0; }
+  .slot .g span { font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .slot .g b { font-weight: 500; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .slot .bar { height: 4px; border-radius: 99px; background: var(--surface-3); overflow: hidden; margin-top: -1px; }
+  .slot .bar div { height: 100%; background: var(--brand); border-radius: 99px; transition: width .25s; }
+  .slot .g:first-of-type span { color: var(--text); font-weight: 600; }
+
+  .ins h4 { font-size: 11.5px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); margin: 20px 0 10px; font-weight: 600; }
+  .ins h4:first-child { margin-top: 0; }
+  .bigword { font-size: 24px; font-weight: 650; letter-spacing: -0.01em; font-family: var(--mono); }
+  .arrive { display: grid; grid-template-columns: 74px 1fr 110px 54px; gap: 10px; align-items: center; font-size: 13px; margin: 7px 0; }
+  .arrive .a { color: var(--muted); font-size: 12px; }
+  .arrive .t { height: 7px; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
+  .arrive .t div { height: 100%; border-radius: 99px; background: var(--brand); }
+  .arrive .gw { font-family: var(--mono); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-2); }
+  .arrive .gw.hit { color: var(--good); }
+  .arrive b { text-align: right; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .stripbox { position: relative; overflow-x: auto; }
+  .stripbox canvas { display: block; }
+  .keyrow { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .keyrow .ramp { width: 80px; height: 8px; border-radius: 99px; display: inline-block; vertical-align: middle; margin: 0 6px; }
+</style>
+</head>
+<body>
+<header class="topbar"><div class="inner">
+  <div class="brand"><img class="logo" src="icon.svg" alt="">
+    <h1>Oazy AI Research <span class="tag">Watch Tide think ahead</span></h1></div>
+  <div class="spacer"></div>
+  <div class="pills" id="pills"></div>
+  <button class="btn" id="reset" title="Wipe the memories and the drafts, start a new text"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 8a5 5 0 1 0 1.6-3.7"/><path d="M3 2.5v3h3"/></svg>New text</button>
+</div></header>
+
+<div class="wrap">
+  <div class="grid">
+    <div class="card span12">
+      <div class="cardhead">
+        <div class="titles"><h2>The drafts rolling in</h2><div class="sub">What Tide is thinking 1, 2, 3 … words ahead, right now. Every word read moves the belt one step left and cleans every draft once.</div></div>
+        <div class="tools"><span class="status" id="status"><span class="dot"></span><span>ready</span></span></div>
+      </div>
+      <details class="why"><summary>What am I looking at?</summary><div class="body">
+        <p>Tide is still a <b>next-word</b> model: it is scored on its guess of the very next word, like GPT-2. But that guess is the front of a <b>belt of drafts</b>. The rightmost draft is a brand-new, blurry thought about the word several words away. As each real word is read, every draft moves one place closer to now and gets one <b>clean-up</b> that weighs what was read so far (its memories) and the drafts behind it (the further future). By the time a thought reaches the front, it has been cleaned once per slot.</p>
+        <p>Far drafts are naturally unsure (several words ahead is hard to know). Watch how a draft sharpens as it moves left.</p>
+      </div></details>
+      <div class="belt" id="belt"></div>
+    </div>
+
+    <div class="card span7">
+      <div class="cardhead">
+        <div class="titles"><h2>The text so far</h2><div class="sub">Your words in white, Tide's in light blue, shaded by how far ahead Tide saw each word coming.</div></div>
+        <div class="tools"><div class="seg" id="colorBy"><button data-c="foresight" class="on">Foresight</button><button data-c="p">Word surprise</button><button data-c="none">Plain</button></div></div>
+      </div>
+      <div class="story" id="story"><div class="hint">Type the start of a text below and press <b>Continue</b>. Click any word to see how its thought arrived.</div></div>
+      <div class="composer">
+        <textarea id="input" placeholder="Write the beginning, or leave it empty to let Tide carry on…" rows="2"></textarea>
+        <div class="row"><span class="small muted">Enter to send · Shift+Enter for a new line</span><div class="spacer"></div>
+          <button class="btn ghost" id="stop" disabled>Stop</button><button class="btn primary" id="go">Continue</button></div>
+      </div>
+      <div class="controls">
+        <div class="ctl"><div class="top"><span>Words to write</span><b id="nv">60</b></div><input type="range" id="n" min="0" max="300" value="60"><div class="h">0 = only read what you typed</div></div>
+        <div class="ctl"><div class="top"><span>Temperature</span><b id="tv">0.8</b></div><input type="range" id="temp" min="0" max="1.5" step="0.05" value="0.8"><div class="h">Low = safe and repetitive · high = adventurous</div></div>
+        <div class="ctl"><div class="top"><span>Choices per word</span><b id="kv">40</b></div><input type="range" id="topk" min="1" max="200" value="40"><div class="h">Only the top few words can be picked</div></div>
+      </div>
+    </div>
+
+    <div class="card span5 ins">
+      <h4>The selected word</h4>
+      <div class="bigword" id="word">–</div>
+      <h4>How this thought arrived</h4>
+      <div class="small muted" style="margin-bottom:8px">Each row is the draft of this word, made that many words before it arrived: the bar is the chance the draft gave to the word that really came, and the text is the draft's own best guess.</div>
+      <div id="arrival"><div class="muted small">–</div></div>
+    </div>
+
+    <div class="card span12">
+      <div class="cardhead"><div class="titles"><h2>Memory surprise in every block</h2><div class="sub">Tide reads with Memtrix's learn-while-reading memories. Rows are blocks (bottom: first), columns are words. Bright = the memories did not see it coming.</div></div></div>
+      <div class="stripbox" id="stripbox"><canvas id="strip" style="height:150px"></canvas><div class="tip" id="stripTip"></div></div>
+      <div class="keyrow"><span>expected<span class="ramp" id="ramp1"></span>new to the memories</span></div>
+    </div>
+  </div>
+</div>
+
+<script src="common.js"></script>
+<script>
+"use strict";
+let INFO = null, WORDS = [], SEL = null, es = null, colorBy = "foresight", K = 8;
+const $ = (id) => document.getElementById(id);
+
+async function init() {
+  INFO = await (await fetch("api/info")).json();
+  K = INFO.lookahead || 8;
+  $("belt").style.setProperty("--k", K);
+  $("pills").innerHTML = `<span class="pill"><b>${(INFO.params / 1e6).toFixed(0)}M</b> parameters</span>
+    <span class="pill">drafts <b>${K}</b> words ahead</span>
+    ${INFO.tokens ? `<span class="pill">trained on <b>${UI.fmtTokens(INFO.tokens)}</b> tokens</span>` : ""}`;
+  $("ramp1").style.background = UI.heatCSS();
+  UI.watchRanges();
+  [["n", "nv"], ["temp", "tv"], ["topk", "kv"]].forEach(([a, b]) => $(a).addEventListener("input", () => ($(b).textContent = $(a).value)));
+  drawBelt(null);
+}
+
+const label = (t) => UI.escapeHtml(UI.pieceLabel(t));
+
+function drawBelt(belt) {
+  $("belt").innerHTML = Array.from({ length: K }, (_, d) => {
+    const g = belt ? belt[d] : [];
+    const fade = 1 - 0.45 * d / Math.max(1, K - 1);
+    return `<div class="slot${d === 0 ? " front" : ""}" style="opacity:${belt ? fade : 0.5}">
+      <div class="k">${d === 0 ? "next word" : "+" + (d + 1) + " words"}</div>
+      ${g.map(([w, p]) => `<div class="g"><span>${label(w)}</span><b>${(p * 100).toFixed(p < 0.1 ? 1 : 0)}%</b></div><div class="bar"><div style="width:${(p * 100).toFixed(1)}%"></div></div>`).join("") || `<div class="muted small">blank</div>`}
+    </div>`;
+  }).join("");
+}
+
+// foresight: the farthest draft that already had this word as its best guess (0 = never)
+function foresight(w) {
+  let f = 0;
+  for (const a of w.arrival || []) if (a.top === w.text) f = Math.max(f, a.ahead);
+  return f;
+}
+
+function shade(w) {
+  if (colorBy === "none") return "";
+  let u;
+  if (colorBy === "p") { if (w.p == null) return ""; u = Math.min(1, -Math.log(Math.max(w.p, 1e-9)) / 10); }
+  else { const f = foresight(w); if (!f) return ""; u = f / K; return `background:rgba(79,216,255,${0.12 + 0.6 * u})`; }
+  const [r, g, b] = UI.heatRGB(u);
+  return `background:rgba(${r},${g},${b},${0.12 + 0.6 * u})`;
+}
+
+function renderStory(last) {
+  const box = $("story");
+  box.innerHTML = WORDS.map((w, i) => `<span class="w ${w.source}${i === SEL ? " sel" : ""}${last && i === WORDS.length - 1 ? " fresh" : ""}" data-i="${i}" style="${shade(w)}">${UI.escapeHtml(w.text).replace(/\n/g, "⏎<br>")}</span>`).join("") + (es ? `<span class="caret"></span>` : "");
+  box.scrollTop = box.scrollHeight;
+}
+
+function inspect(i) {
+  SEL = i; const w = WORDS[i]; if (!w) return;
+  $("word").textContent = UI.pieceLabel(w.text);
+  const rows = (w.arrival || []).slice().sort((a, b) => b.ahead - a.ahead);
+  $("arrival").innerHTML = rows.length ? rows.map((a) => `<div class="arrive"><span class="a">${a.ahead === 1 ? "1 word before" : a.ahead + " words before"}</span><div class="t"><div style="width:${Math.max(1, a.p * 100).toFixed(1)}%"></div></div><span class="gw${a.top === w.text ? " hit" : ""}">${label(a.top)}</span><b>${(a.p * 100).toFixed(a.p < 0.1 ? 1 : 0)}%</b></div>`).join("")
+    : `<div class="muted small">The first word of a text: no drafts of it existed yet.</div>`;
+  renderStory(false);
+}
+
+function drawStrip() {
+  const cv = $("strip"); if (!WORDS.length) return;
+  const L = WORDS[0].surprise.length, T = WORDS.length, cw = 9;
+  const boxW = $("stripbox").clientWidth;
+  cv.style.width = Math.max(boxW, 50 + T * cw) + "px";
+  const { ctx, w, h } = UI.fitCanvas(cv, Math.max(100, Math.min(200, L * 13)));
+  ctx.clearRect(0, 0, w, h);
+  const padL = 50, ch = h / L;
+  for (let l = 0; l < L; l++) {
+    for (let t = 0; t < T; t++) {
+      ctx.fillStyle = UI.heat(Math.max(0, Math.min(1, (WORDS[t].surprise[l] - 0.3) / 0.9)));
+      ctx.fillRect(padL + t * cw, (L - 1 - l) * ch, cw - 1, ch - 1);
+    }
+    if (L <= 12 || l % 2 === 0) { ctx.fillStyle = UI.css("--muted"); ctx.font = UI.font(10.5); ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.fillText("block " + (l + 1), padL - 6, (L - 1 - l + 0.5) * ch); }
+  }
+  const tip = $("stripTip");
+  cv.onmousemove = (e) => {
+    const t = Math.floor((e.offsetX - padL) / cw), l = L - 1 - Math.floor(e.offsetY / ch);
+    if (t < 0 || t >= T || l < 0 || l >= L) { tip.style.display = "none"; return; }
+    tip.innerHTML = `<div class="tipword">${label(WORDS[t].text)}</div><div class="tiprow">block<b>${l + 1}</b></div><div class="tiprow">memory surprise<b>${WORDS[t].surprise[l].toFixed(3)}</b></div>`;
+    UI.placeTip(tip, e.offsetX - $("stripbox").scrollLeft, e.offsetY, boxW);
+  };
+  cv.onmouseleave = () => (tip.style.display = "none");
+  cv.onclick = (e) => { const t = Math.floor((e.offsetX - padL) / cw); if (t >= 0 && t < T) inspect(t); };
+  $("stripbox").scrollLeft = 1e9;
+}
+
+function setBusy(b) {
+  $("go").disabled = b; $("stop").disabled = !b; $("reset").disabled = b;
+  $("status").className = "status" + (b ? " on" : ""); $("status").lastElementChild.textContent = b ? "reading & drafting" : "ready";
+}
+
+function go() {
+  if (es) return;
+  const text = $("input").value;
+  $("input").value = "";
+  const q = new URLSearchParams({ text, n: $("n").value, temp: $("temp").value, top_k: $("topk").value });
+  es = new EventSource("api/stream?" + q);
+  setBusy(true);
+  let pending = 0;
+  es.onmessage = (m) => {
+    const ev = JSON.parse(m.data);
+    if (ev.type === "word") {
+      WORDS.push(ev);
+      drawBelt(ev.belt);
+      if (++pending % 3 === 0 || ev.source === "model") { renderStory(true); inspect(WORDS.length - 1); drawStrip(); }
+    } else if (ev.type === "end" || ev.type === "eos") {
+      es.close(); es = null; setBusy(false); renderStory(false); if (WORDS.length) inspect(WORDS.length - 1); drawStrip();
+    }
+  };
+  es.onerror = () => { if (es) { es.close(); es = null; } setBusy(false); };
+}
+
+$("go").onclick = go;
+$("stop").onclick = () => { if (es) { es.close(); es = null; setBusy(false); renderStory(false); } };
+$("input").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); go(); } });
+$("reset").onclick = async () => { await fetch("api/reset"); WORDS = []; SEL = null; $("story").innerHTML = `<div class="hint">Memories and drafts wiped. Start a new text below.</div>`; $("strip").getContext("2d").clearRect(0, 0, 1e4, 1e4); drawBelt(null); $("arrival").innerHTML = ""; };
+$("story").addEventListener("click", (e) => { const s = e.target.closest(".w"); if (s) inspect(+s.dataset.i); });
+$("colorBy").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; colorBy = b.dataset.c; document.querySelectorAll("#colorBy button").forEach((x) => x.classList.toggle("on", x === b)); renderStory(false); });
+window.addEventListener("resize", drawStrip);
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# One-time setup of the Oazy AI Research lab on a RunPod GPU pod (B200, B300, H100, ...). Safe to re-run.
+#
+#   bash runpod/setup.sh               # prepares 4B tokens of FineWeb-Edu (enough for the "full" run)
+#   OAZY_PREP_TOKENS=8e9 bash runpod/setup.sh   # more text, for the "big" run
+#   bash runpod/setup.sh bee           # also Bee0.2B's mix: 2B tokens of DCLM + conversations (~40-60 min more)
+#   bash runpod/setup.sh bee2          # Bee0.2B's mix (if missing), then all of it re-cut with SmolLM2's tokenizer
+#                                      # (CPU only, ~15-40 min; safe while another model trains)
+#
+# 1. makes sure PyTorch can use this GPU (Blackwell needs a recent build),
+# 2. installs the tokenizer, dataset tools, and the flash-linear-attention kernels (optional speed-up),
+# 3. downloads FineWeb-Edu and tokenizes it into /workspace/oazy_data (or the existing engram_data) (~10-20 min), plus HellaSwag,
+# 4. checks the shared memory kernel on the GPU (OAZY_TEST_ALL=1: every model's self-tests).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+DATA="$(python3 -c "from oazy.data import default_dir; print(default_dir('data'))")"
+TOKENS="${OAZY_PREP_TOKENS:-4e9}"
+
+echo "== apt packages"
+export DEBIAN_FRONTEND=noninteractive
+if ! command -v tmux >/dev/null; then
+    apt-get update -qq && apt-get install -y -qq tmux > /dev/null
+fi
+
+echo "== checking that PyTorch supports this GPU"
+if ! python3 - <<'PY'
+import sys, torch
+assert torch.cuda.is_available(), "no CUDA GPU visible"
+cap = torch.cuda.get_device_capability()
+arch = f"sm_{cap[0]}{cap[1]}"
+ok = arch in torch.cuda.get_arch_list() or any(a.startswith(f"sm_{cap[0]}") for a in torch.cuda.get_arch_list())
+x = torch.randn(256, 256, device="cuda", dtype=torch.bfloat16)
+(x @ x).sum().item()
+print(f"torch {torch.__version__}, {torch.cuda.get_device_name()} ({arch}) OK")
+sys.exit(0 if ok else 1)
+PY
+then
+    echo "-- this PyTorch is too old for the GPU; installing the current release (takes a few minutes)"
+    python3 -m pip install -q --upgrade torch
+fi
+
+echo "== python packages"
+python3 -m pip install -q --upgrade pip
+python3 -m pip install -q -r oazy/requirements.txt
+# the fast Triton kernels for the memory rule; pinned to the installed torch so pip never swaps it out
+TV=$(python3 -c "import torch; print(torch.__version__)")
+python3 -m pip install -q flash-linear-attention --constraint <(echo "torch==${TV}") \
+    || echo "-- flash-linear-attention did not install; Memtrix will use its pure-PyTorch version (slower, same maths)"
+
+echo "== FineWeb-Edu (${TOKENS} tokens) -> ${DATA}"
+python3 -m oazy.data --out "${DATA}" --tokens "${TOKENS}"
+
+# Only the shared memory kernel is checked here; each model's own tests are run when you want that model
+# (e.g. python3 -m fern3.tests --device cuda). OAZY_TEST_ALL=1 runs every model's tests.
+echo "== self-test of the shared memory kernel (Memtrix)"
+python3 -m memtrix.tests --device cuda
+if [ "${OAZY_TEST_ALL:-0}" = 1 ]; then
+    echo "== self-tests of every model"
+    for m in tide ember fern2 fern3 bee bee2; do python3 -m $m.tests --device cuda; done
+fi
+
+if [ "${1:-}" = bee ] || [ "${1:-}" = bee2 ]; then
+    echo "== Bee0.2B's text mix: DCLM (2B tokens) and conversations (smol-smoltalk)"
+    python3 -m oazy.mix --source dclm --data "${DATA}" --tokens 2e9
+    python3 -m oazy.mix --source chat --data "${DATA}" --tokens 4e8
+fi
+if [ "${1:-}" = bee2 ]; then
+    echo "== Bee_v2_0.2B: the same text re-cut with SmolLM2's tokenizer -> ${DATA}/smol, and its mentor SmolLM2-360M"
+    nice -n 10 python3 -m oazy.retok --to smollm2 --data "${DATA}"
+    python3 -c "from transformers import AutoModelForCausalLM as M; M.from_pretrained('HuggingFaceTB/SmolLM2-360M'); print('SmolLM2-360M downloaded')"
+    python3 -m bee2.tests --device cuda
+fi
+
+echo "== setup complete. Next: python3 -m oazy.train --bench --model tide --hours 2"
