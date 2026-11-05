@@ -9,6 +9,7 @@
 #   bash runpod/train.sh fern2 --tokens 2e9         # Fern2 (Fern, smaller, raised the Ember way)
 #   bash runpod/train.sh fern3 --tokens 2e9         # Fern3 (Fern + remembers old passages by their gist)
 #   bash runpod/train.sh bee --tokens 5e9           # Bee0.2B, the main model (needs: bash runpod/setup.sh bee)
+#   bash runpod/train.sh bee2 --preset big          # Bee0.2B v2, SmolLM2-360M mentor (needs: bash runpod/setup.sh bee2)
 #
 # Each model gets its own tmux window; the app (dashboard, port 8000) gets one too, and OpenAI's
 # GPT-2 is measured once as the reference line. Running it again for another model adds that model.
@@ -20,7 +21,7 @@ cd "$(dirname "$0")/.."
 REPO="$(pwd)"
 MODEL="${1:-}"
 [ "$MODEL" = engram ] && MODEL=memtrix          # Memtrix's old name
-case "$MODEL" in memtrix|tide|fern|ember|fern2|fern3|bee|gpt) shift ;; *) echo "usage: bash runpod/train.sh memtrix|tide|fern|ember|fern2|fern3|bee|gpt [--gpt] [trainer options]"; exit 1 ;; esac
+case "$MODEL" in memtrix|tide|fern|ember|fern2|fern3|bee|bee2|gpt) shift ;; *) echo "usage: bash runpod/train.sh memtrix|tide|fern|ember|fern2|fern3|bee|bee2|gpt [--gpt] [trainer options]"; exit 1 ;; esac
 WITH_GPT=0
 ARGS=()
 for a in "$@"; do if [ "$a" = "--gpt" ]; then WITH_GPT=1; else ARGS+=("$a"); fi; done
@@ -38,6 +39,10 @@ if [ "${NGPU:-1}" -ge 2 ]; then GPU_G=$(( (GPU_M + 1) % NGPU )); else GPU_G=0; f
 echo "data $DATA, runs $RUNS. GPUs: ${NGPU}. $MODEL on GPU ${GPU_M}."
 if [ "$MODEL" = bee ] && { [ ! -f "$DATA/dclm/train.bin" ] || [ ! -f "$DATA/chat/train.bin" ]; }; then
     echo "note: Bee's DCLM or chat text is missing, so it will train on what is there. Prepare it with: bash runpod/setup.sh bee"
+fi
+if [ "$MODEL" = bee2 ] && [ ! -f "$DATA/smol/train.bin" ]; then
+    echo "Bee0.2B v2 needs the text re-cut with SmolLM2's tokenizer first: bash runpod/setup.sh bee2"
+    exit 1
 fi
 
 tmux has-session -t oazy 2>/dev/null || tmux new-session -d -s oazy -n app -c "$REPO"

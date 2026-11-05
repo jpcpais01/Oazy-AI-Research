@@ -4,6 +4,8 @@
 #   bash runpod/setup.sh               # prepares 4B tokens of FineWeb-Edu (enough for the "full" run)
 #   OAZY_PREP_TOKENS=8e9 bash runpod/setup.sh   # more text, for the "big" run
 #   bash runpod/setup.sh bee           # also Bee0.2B's mix: 2B tokens of DCLM + conversations (~40-60 min more)
+#   bash runpod/setup.sh bee2          # Bee0.2B's mix (if missing), then all of it re-cut with SmolLM2's tokenizer
+#                                      # (CPU only, ~15-40 min; safe while another model trains)
 #
 # 1. makes sure PyTorch can use this GPU (Blackwell needs a recent build),
 # 2. installs the tokenizer, dataset tools, and the flash-linear-attention kernels (optional speed-up),
@@ -54,13 +56,19 @@ echo "== self-test of the shared memory kernel (Memtrix)"
 python3 -m memtrix.tests --device cuda
 if [ "${OAZY_TEST_ALL:-0}" = 1 ]; then
     echo "== self-tests of every model"
-    for m in tide ember fern2 fern3 bee; do python3 -m $m.tests --device cuda; done
+    for m in tide ember fern2 fern3 bee bee2; do python3 -m $m.tests --device cuda; done
 fi
 
-if [ "${1:-}" = bee ]; then
+if [ "${1:-}" = bee ] || [ "${1:-}" = bee2 ]; then
     echo "== Bee0.2B's text mix: DCLM (2B tokens) and conversations (smol-smoltalk)"
     python3 -m oazy.mix --source dclm --data "${DATA}" --tokens 2e9
     python3 -m oazy.mix --source chat --data "${DATA}" --tokens 4e8
+fi
+if [ "${1:-}" = bee2 ]; then
+    echo "== Bee0.2B v2: the same text re-cut with SmolLM2's tokenizer -> ${DATA}/smol, and its mentor SmolLM2-360M"
+    nice -n 10 python3 -m oazy.retok --to smollm2 --data "${DATA}"
+    python3 -c "from transformers import AutoModelForCausalLM as M; M.from_pretrained('HuggingFaceTB/SmolLM2-360M'); print('SmolLM2-360M downloaded')"
+    python3 -m bee2.tests --device cuda
 fi
 
 echo "== setup complete. Next: python3 -m oazy.train --bench --model tide --hours 2"
