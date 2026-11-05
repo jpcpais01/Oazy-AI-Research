@@ -153,9 +153,10 @@
       <div class="chart"><canvas id="pos" style="height:260px"></canvas><div class="tip" id="posTip"></div></div>
     </div>
     <div class="card span12">
-      <div class="cardhead"><div class="titles"><h2>Exact recall</h2><div class="sub">A passage of 128 tokens, then the very same passage again: how much of the repeat does each model get exactly right?</div></div></div>
+      <div class="cardhead"><div class="titles"><h2>Exact recall</h2><div class="sub">A passage of 128 tokens, then the very same passage again: how much of the repeat does each model get exactly right? It applies to every model: Tide reads with the same kind of memories as Engram.</div></div></div>
       <details class="why"><summary>Why this test?</summary><div class="body">
         <p>This is the hardest test for a memory of fixed size. A transformer keeps every past word and can look back and copy. Engram has to have <b>stored</b> the passage in its memories as it read. The first time through, the passage is new to both models; the second time, a perfect memory gets almost every word.</p>
+        <p><b>Tide</b> is built on Engram: underneath its belt of drafts it has the very same 12 blocks of 64×64 memories, written word by word by surprise. So this test measures Tide's memory just as it does Engram's. Its drafts could even help here: once Tide recognises the repeat, its drafts of the next few words can already be right.</p>
       </div></details>
       <div class="legend" id="recLegend" style="margin-bottom:10px"></div>
       <div class="chart"><canvas id="rec" style="height:220px"></canvas><div class="tip" id="recTip"></div></div>
