@@ -60,8 +60,4 @@ then in Settings → Git set the **Production Branch** to `oazy-ai-research`. On
 Memtrix was called Engram until Nov 5 2026: old run folders (`runs/engram`, `/workspace/engram_*`) and
 `--model engram` still work.
 
-## Older projects
-
-Earlier work that is no longer developed: the candle-flame simulation this repo started with (in this
-branch's history, `git checkout 0286d44`), Settle, the thinking-sheet model (branch `archive-settle`), and
-Basin, the energy-landscape model (branch `archive-basin`).
+This repo started as a candle-flame simulation; it is still in this branch's history (`git checkout 0286d44`).
