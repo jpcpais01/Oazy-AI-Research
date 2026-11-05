@@ -62,6 +62,25 @@ bash runpod/train.sh bee2 --preset big
 python3 -m bee2.chat --port 8002
 ```
 
+## The data bundle (from Nov 5, for the next runs)
+
+`python3 -m oazy.bundle --run-tokens 2.5e9` prepares seven kinds of text in SmolLM2's pieces,
+sized exactly for a run of that length (+5%), so nothing repeats and nothing is wasted:
+
+| source | main phase (first 80%) | cool-down (last 20%) | a 2.5B run reads |
+|---|---|---|---|
+| FineWeb-Edu (educational web) | 45% | 30% | 1,050M |
+| DCLM (varied web) | 25% | 5% | 525M |
+| Cosmopedia v2 (synthetic textbooks) | 12% | 15% | 315M |
+| conversations (smol-smoltalk) | 3% | 30% | 210M |
+| FineMath 4+ (maths) | 5% | 10% | 150M |
+| Wikipedia (EN) | 5% | 5% | 125M |
+| Python code (codeparrot-clean) | 5% | 5% | 125M |
+
+The first three are already on the pod (`oazy.retok`); the other four are streamed from Hugging
+Face. Once `<data>/smol/cosmo` exists, `--model bee2` reads this mix by default (`--mix v1` for
+the old one). Every source has 2M held-out tokens, so the dashboard shows a loss per kind of text.
+
 ## Files
 
 `model.py` (Bee0.2B's model with SmolLM2's vocabulary), `chat.py` (Bee0.2B's chat app, opening

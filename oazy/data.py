@@ -78,14 +78,19 @@ def get_tokenizer():
         )
 
 
-def _encode_batch(texts):
-    enc = get_tokenizer()
+def _encode_batch(texts, tokenizer="gpt2"):
+    if tokenizer == "gpt2":
+        enc, eot = get_tokenizer(), EOT
+    else:
+        from . import tok
+        enc = tok.get(tokenizer)
+        eot = enc.eot_token
     out = enc.encode_ordinary_batch(texts)
-    arr = np.fromiter((t for ids in out for t in ids + [EOT]), dtype=np.uint16)
+    arr = np.fromiter((t for ids in out for t in ids + [eot]), dtype=np.uint16)
     return arr
 
 
-def write_tokens(text_batches, out: Path, val_tokens: int, train_tokens: int, workers: int = 0):
+def write_tokens(text_batches, out: Path, val_tokens: int, train_tokens: int, workers: int = 0, tokenizer: str = "gpt2"):
     """Tokenize batches of documents in parallel; fill val.bin first (whole documents), then train.bin."""
     from multiprocessing import Pool
     workers = workers or max(1, min(64, (os.cpu_count() or 2) - 1))
@@ -99,7 +104,7 @@ def write_tokens(text_batches, out: Path, val_tokens: int, train_tokens: int, wo
             if not group:
                 print("  the dataset ran out before the requested number of tokens", flush=True)
                 break
-            for arr in pool.imap(_encode_batch, group):
+            for arr in pool.imap(functools.partial(_encode_batch, tokenizer=tokenizer), group):
                 if nv < val_tokens:
                     fv.write(arr.tobytes())
                     nv += arr.size

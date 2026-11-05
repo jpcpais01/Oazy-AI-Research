@@ -39,7 +39,18 @@ import numpy as np
 from .data import write_tokens, default_dir, get_tokenizer
 
 DEFAULT_MIX = "fwe:0.65,dclm:0.35@0;fwe:0.45,dclm:0.25,chat:0.3@0.8"
-SOURCES = {"fwe": "", "dclm": "dclm", "chat": "chat"}         # name -> sub-folder of the data folder
+# the bundle (oazy/bundle.py; SmolLM2-tokenizer models only): seven kinds of text, conversations a pinch
+# throughout and 30% of the cool-down
+BUNDLE_MIX = ("fwe:0.45,dclm:0.25,cosmo:0.12,wiki:0.05,math:0.05,code:0.05,chat:0.03@0;"
+              "fwe:0.30,dclm:0.05,cosmo:0.15,wiki:0.05,math:0.10,code:0.05,chat:0.30@0.8")
+MIXES = {"default": DEFAULT_MIX, "v1": DEFAULT_MIX, "bundle": BUNDLE_MIX}
+SOURCES = {"fwe": "", "dclm": "dclm", "chat": "chat",          # name -> sub-folder of the data folder
+           "cosmo": "cosmo", "wiki": "wiki", "math": "math", "code": "code"}
+
+
+def resolve_mix(text):
+    """A mix by name ("bundle", "v1") or written out."""
+    return MIXES.get(text, text) if text else text
 
 
 def parse_mix(text: str):
@@ -99,7 +110,7 @@ class Mix:
     Set `progress` (0..1) before each get(); set_block(T) changes the window length."""
 
     def __init__(self, data: Path, mix: str, T: int, batch: int, seed: int = 0, lengths=(1024,), log=print):
-        self.plan = parse_mix(mix)
+        self.plan = parse_mix(resolve_mix(mix))
         tmin = min(lengths)
         self.slot = (tmin + 1) * math.ceil((max(lengths) + 1) / (tmin + 1))
         names = sorted({k for _, w in self.plan for k in w})
