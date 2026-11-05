@@ -1,4 +1,4 @@
-"""Talk to Bee0.2B v2 (same app as Bee0.2B: bee/chat.py).
+"""Talk to Bee_v2_0.2B (same app as Bee0.2B: bee/chat.py).
 
     python3 -m bee2.chat --port 8002
 """

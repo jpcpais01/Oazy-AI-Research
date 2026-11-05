@@ -6,8 +6,8 @@ for every word of the vocabulary at once. That richer signal is why distilled sm
 270M among them) learn far more per word read.
 
 The mentor here is OpenAI's GPT-2 medium (355M; or gpt2-large / gpt2-xl): same tokenizer as our
-data, so no conversion. Bee0.2B v2 uses SmolLM2-360M (Hugging Face, 2024) instead: smarter, cheaper,
-and it reads SmolLM2's own tokenizer, which Bee0.2B v2 reads too ("smollm2-360m"; also
+data, so no conversion. Bee_v2_0.2B uses SmolLM2-360M (Hugging Face, 2024) instead: smarter, cheaper,
+and it reads SmolLM2's own tokenizer, which Bee_v2_0.2B reads too ("smollm2-360m"; also
 "smollm2-135m", "smollm2-1.7b"). It only reads (no learning, no gradients), in bf16, and costs roughly 25-50%
 of an Ember training step while it is active. Its weight fades linearly from `weight` at the start
 to 0 at `until` (fraction of training), after which it is not run at all.

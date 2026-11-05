@@ -1,4 +1,4 @@
-# Bee0.2B v2: Bee0.2B with SmolLM2-360M as its mentor
+# Bee_v2_0.2B: Bee0.2B with SmolLM2-360M as its mentor
 
 **Next-word model**, exactly like Bee0.2B and GPT-2: it reads text and guesses the very next token.
 
@@ -6,7 +6,7 @@
 the first half of training) is **SmolLM2-360M** (Hugging Face, 2024) instead of OpenAI's GPT-2 large
 (2019). Everything else is Bee0.2B's: the body (18 Memtrix memory layers + 6 gated attention layers,
 3:1), Muon, the WSD schedule, the 1,024 → 2,048 windows, the FineWeb-Edu + DCLM + conversations mix,
-524k tokens per step. So Bee0.2B against Bee0.2B v2 measures one thing: the teacher.
+524k tokens per step. So Bee0.2B against Bee_v2_0.2B measures one thing: the teacher.
 
 | mentor | size | HellaSwag (published) | reading cost per token | trained on |
 |---|---|---|---|---|
@@ -53,7 +53,7 @@ but ~2x GPT-2 large's cost).
 
 ## Run it (RunPod)
 
-See `docs/RUNPOD.md`, section "Bee0.2B v2". In short:
+See `docs/RUNPOD.md`, section "Bee_v2_0.2B". In short:
 
 ```bash
 nice -n 10 python3 -m oazy.retok                         # once: re-cut the text (CPU; fine while Bee0.2B trains)

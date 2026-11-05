@@ -1,9 +1,9 @@
 """The lab's two tokenizers (how text is cut into the pieces, "tokens", a model reads and guesses).
 
-  gpt2     GPT-2's 50,257 pieces (OpenAI, 2019). Every model before Bee0.2B v2 uses it, so GPT-2's
+  gpt2     GPT-2's 50,257 pieces (OpenAI, 2019). Every model before Bee_v2_0.2B uses it, so GPT-2's
            family can be their mentor.
   smollm2  SmolLM2's 49,152 pieces (Hugging Face, 2024), trained on modern web text, code and maths.
-           Bee0.2B v2 uses it so that SmolLM2-360M can be its mentor (a mentor and its student must
+           Bee_v2_0.2B uses it so that SmolLM2-360M can be its mentor (a mentor and its student must
            cut text the same way, or their guesses cannot be compared piece by piece).
 
 Both are "byte-level BPE": any text can be written, nothing is ever unknown. They cut differently,
@@ -95,7 +95,7 @@ def get(name: str = "gpt2"):
 
 
 def name_of(model) -> str:
-    """Which tokenizer a model reads (from its config; every model before Bee0.2B v2 reads GPT-2's)."""
+    """Which tokenizer a model reads (from its config; every model before Bee_v2_0.2B reads GPT-2's)."""
     return getattr(getattr(model, "cfg", None), "tokenizer", "gpt2")
 
 

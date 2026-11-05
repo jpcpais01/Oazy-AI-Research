@@ -1,4 +1,4 @@
-"""Self-tests for Bee0.2B v2: its size, its tokenizer, the re-cutting of the text, the SmolLM2 mentor,
+"""Self-tests for Bee_v2_0.2B: its size, its tokenizer, the re-cutting of the text, the SmolLM2 mentor,
 the fair losses, and one whole (tiny) training run end to end.
 
     python -m bee2.tests                 (CPU, ~1-2 min; without internet it uses stand-in tokenizers)
@@ -72,7 +72,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", default="cpu")
     dev = torch.device(ap.parse_args().device)
-    print(f"Bee0.2B v2 self-tests on {dev}")
+    print(f"Bee_v2_0.2B self-tests on {dev}")
     torch.manual_seed(0)
     tmp_ctx = tempfile.TemporaryDirectory()
     tmp = Path(tmp_ctx.name)
@@ -183,7 +183,7 @@ def main():
     check("the run finished", st["state"] == "done", f"val loss {st['latest']['val_loss']:.3f}")
     from oazy.train import load_model
     mdl, ck = load_model(rd / "ckpt.pt", dev)
-    check("its checkpoint loads as Bee0.2B v2", ck["kind"] == "bee2" and tok.name_of(mdl) == "smollm2")
+    check("its checkpoint loads as Bee_v2_0.2B", ck["kind"] == "bee2" and tok.name_of(mdl) == "smollm2")
     out, _ = mdl.generate(enc.encode_ordinary("The cat"), max_new_tokens=5)
     check("it writes", len(out) <= 5 and all(0 <= t < 49152 for t in out), repr(enc.decode(out)))
 
@@ -203,7 +203,7 @@ def main():
         loss.backward()
         check("bf16 training step on the GPU", torch.isfinite(loss).item())
     tmp_ctx.cleanup()
-    print("all Bee0.2B v2 self-tests passed")
+    print("all Bee_v2_0.2B self-tests passed")
 
 
 if __name__ == "__main__":

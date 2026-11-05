@@ -7,7 +7,7 @@ A model "chooses" the ending it finds least surprising: we measure its average l
 ending's tokens after reading the context and pick the lowest (the "acc_norm" scoring used by
 nanoGPT / llm.c). We also report "acc_char": the ending's total loss divided by its number of
 letters, which is what lm-evaluation-harness calls acc_norm. It does not depend on how a tokenizer
-cuts the endings, so it is the fairest way to compare models with different tokenizers (Bee0.2B v2
+cuts the endings, so it is the fairest way to compare models with different tokenizers (Bee_v2_0.2B
 reads SmolLM2's pieces, the others GPT-2's). Each model is given the text cut its own way. OpenAI's GPT-2 124M scores 29.6% this way (see memtrix/compare.py to measure it
 on this machine). Works for any model with the forward(idx) -> logits interface.
 
