@@ -551,14 +551,17 @@ function trails(key, fmt) {
 }
 
 function drawLearning() {
-  const xOf = (r) => xmode === "tokens" ? r.tokens : r.elapsed / 60;
+  // training time in minutes, or in hours once the runs are long (ticks at 2 h, 4 h… rather than 200 min, 400 min…)
+  const hours = xmode !== "tokens" && VIS().some((r) => (r.status?.elapsed || (DATA[r.name]?.metrics || []).at(-1)?.elapsed || 0) > 3 * 3600);
+  const tu = hours ? 60 : 1;
+  const xOf = (r) => xmode === "tokens" ? r.tokens : r.elapsed / 60 / tu;
   const series = [], hsS = [], leg = [], hleg = [];
   let anyFore = false, anyHsFore = false, foreFrom = Infinity;
   for (const r of VIS()) {
     const m = DATA[r.name]?.metrics || [], col = colorOf(r.name);
     if (r.name === "openai-gpt2") {
       const e = lastOf(r.name, "eval");
-      if (e) { series.push({ name: NAMES.openai, color: col, dash: [6, 5], width: 1.5, points: [], hline: e.val_loss }); leg.push([NAMES.openai, col, true]); }
+      if (e) { series.push({ name: NAMES.openai, color: col, dash: [6, 5], width: 1.5, points: [], hline: e.val_loss, keep: true }); leg.push([NAMES.openai, col, true]); }
       continue;
     }
     const tr = m.filter((x) => x.kind === "train"), ev = m.filter((x) => x.kind === "eval"), hs = m.filter(hsOK);
@@ -567,7 +570,7 @@ function drawLearning() {
     series.push({ name: nameOf(r.name) + " · held-out", color: col, ghost: true, points: ev.map((x) => [xOf(x), x.val_loss]) });
     hsS.push({ name: nameOf(r.name), color: col, width: 2.4, dots: true, endLabel: true, points: hs.map((x) => [xOf(x), x.acc_norm]) });
     // the dashed forecasts, out to the planned number of words
-    const F = FORE[r.name] || {}, mx = xmode === "tokens" ? (t) => t : minutesAt(r);
+    const F = FORE[r.name] || {}, mAt = xmode === "tokens" ? null : minutesAt(r), mx = xmode === "tokens" ? (t) => t : mAt && ((t) => mAt(t) / tu);
     const fc = (f) => f.curve.map(([t, y]) => [mx(t), y]);
     const fcb = (b) => b.map(([t, l, h]) => [mx(t), l, h]);
     // earlier forecasts, stacked at the end line like a trail: older ones fainter
@@ -602,13 +605,13 @@ function drawLearning() {
   if (anyFore) leg.push(["forecast to the planned end", C.muted, true]);
   if (anyHsFore) hleg.push(["forecast", C.muted, true]);
   legend("lossLegend", leg); legend("hsLegend", hleg);
-  const xf = xmode === "tokens" ? UI.fmtTokens : (v) => Math.round(v) + " min";
-  charts.loss.set({ series, xFmt: xf, yFmt: (v) => v.toFixed(2), tipFmt: fmtL, yClip: (ys) => Math.min(...ys) + 2.5,
+  const xf = xmode === "tokens" ? UI.fmtTokens : hours ? (v) => +v.toFixed(1) + " h" : (v) => Math.round(v) + " min";
+  charts.loss.set({ series, xFmt: xf, yFmt: (v, d) => v.toFixed(d), tipFmt: fmtL, yFocus: 0.04,
     tipNote: (xv) => xv > foreFrom
       ? "dashed: forecast · dots: earlier forecasts · shade: their recent swing"
         + trails("loss", fmtL) + (VIS().some((r) => FORE[r.name]?.loss?.wsd) ? "<br>the final cool-down usually pulls it lower still" : "")
       : "lines: training batches · held-out: text never trained on" });
-  charts.hs.set({ series: hsS, xFmt: xf, yFmt: (v) => (v * 100).toFixed(0) + "%", tipFmt: pct, empty: "Waiting for the first HellaSwag check",
+  charts.hs.set({ series: hsS, xFmt: xf, yFmt: (v, d) => (v * 100).toFixed(Math.max(0, d - 2)) + "%", tipFmt: pct, empty: "Waiting for the first HellaSwag check",
     tipNote: () => anyHsFore ? "dashed: forecast · dots: earlier forecasts · shade: their recent swing" + trails("hs", pct) : "" });
 }
 
@@ -628,10 +631,10 @@ function drawMemoryUse() {
   const rx = recS.flatMap((s) => s.points.map((p) => p[0]));
   for (const s of recS) if (s.hline != null) s.points = rx.length ? [[Math.min(...rx), s.hline], [Math.max(...rx), s.hline]] : [];
   legend("ctxLegend", leg); legend("posLegend", leg); legend("recLegend", leg);
-  charts.ctx.set({ series: ctxS, xFmt: (v) => Math.round(2 ** v) + " words", xTip: (v) => "may use the last " + Math.round(2 ** v) + " words", yFmt: (v) => v.toFixed(2), tipFmt: fmtL, empty: "Waiting for the first memory check" });
+  charts.ctx.set({ series: ctxS, xFmt: (v) => Math.round(2 ** v) + " words", xTip: (v) => "may use the last " + Math.round(2 ** v) + " words", yFmt: (v, d) => v.toFixed(d), tipFmt: fmtL, empty: "Waiting for the first memory check" });
   const posLab = (v) => POSLAB[Math.round(v)] || "";
-  charts.pos.set({ series: posS, xFmt: posLab, xTip: posLab, yFmt: (v) => v.toFixed(2), tipFmt: fmtL, empty: "Waiting for the first memory check" });
-  charts.rec.set({ series: recS, xFmt: UI.fmtTokens, xTip: (v) => UI.fmtTokens(v) + " tokens read", yMin: 0, yFmt: (v) => (v * 100).toFixed(0) + "%", tipFmt: pct,
+  charts.pos.set({ series: posS, xFmt: posLab, xTip: posLab, yFmt: (v, d) => v.toFixed(d), tipFmt: fmtL, empty: "Waiting for the first memory check" });
+  charts.rec.set({ series: recS, xFmt: UI.fmtTokens, xTip: (v) => UI.fmtTokens(v) + " tokens read", yMin: 0, yFmt: (v, d) => (v * 100).toFixed(Math.max(0, d - 2)) + "%", tipFmt: pct,
     empty: "Waiting for the first memory check", tipNote: () => "share of the repeated passage predicted exactly" });
 }
 
@@ -644,7 +647,7 @@ function drawDrafts() {
     width: i === pick.length - 1 ? 2.6 : 1.4, dots: true, endLabel: i === pick.length - 1, points: h.draft_loss.map((l, d) => [d + 1, l]) }));
   legend("draftLegend", pick.map((h, i) => ["after " + UI.fmtTokens(h.tokens) + " tokens", UI.alpha ? UI.alpha(C.tide, 0.25 + 0.75 * (i + 1) / pick.length) : C.tide]));
   charts.drafts.set({ series, xFmt: (v) => Math.round(v) === 1 ? "next word" : "+" + Math.round(v), xTip: (v) => Math.round(v) + " words ahead",
-    yFmt: (v) => v.toFixed(1), tipFmt: fmtL });
+    yFmt: (v, d) => v.toFixed(d), tipFmt: fmtL });
 }
 
 function drawRounds() {
@@ -669,7 +672,7 @@ function drawRounds() {
   const words = pick[pick.length - 1].round_words || [];
   const what = ["where the passage goes", "the middle", "quarters", "eighths", "last details"];
   charts.rounds.set({ series, xFmt: (v) => "round " + Math.round(v), xTip: (v) => `round ${Math.round(v)}: ${what[Math.round(v) - 1] || ""}` + (words[Math.round(v) - 1] ? ` (${words[Math.round(v) - 1]} words per text)` : ""),
-    yFmt: (v) => v.toFixed(1), tipFmt: fmtL });
+    yFmt: (v, d) => v.toFixed(d), tipFmt: fmtL });
 }
 
 // ---------------------------------------------------------------- inside the memory
