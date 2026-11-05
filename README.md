@@ -62,6 +62,6 @@ Memtrix was called Engram until Nov 5 2026: old run folders (`runs/engram`, `/wo
 
 ## Older projects
 
-Earlier work that is no longer developed is kept as tags, not branches: `archive/candle` (the candle-flame
-simulation this repo started with), `archive/settle` (the thinking-sheet model), `archive/basin` (the
-energy-landscape model). `git checkout archive/settle` brings one back.
+Earlier work that is no longer developed: the candle-flame simulation this repo started with (in this
+branch's history, `git checkout 0286d44`), Settle, the thinking-sheet model (branch `archive-settle`), and
+Basin, the energy-landscape model (branch `archive-basin`).
