@@ -99,7 +99,7 @@
 </head>
 <body>
 <header class="lab-bar" id="bar"><div class="bar-in">
-  <a class="mark" href="#top" aria-label="Oazy AI Research, back to top"><img src="icon.svg" alt=""><span class="word">OAZY<small>TRAINING LAB</small></span></a>
+  <a class="mark" href="#top" aria-label="Oazy AI Research, back to top"><img src="icon.svg" alt=""><span class="word">OAZY<small>TRAINING LAB <span class="ver" id="ver"></span></small></span></a>
   <nav class="tabs" id="tabs" aria-label="Sections"><span class="tabpill" id="tabpill"></span>
     <a href="#now" data-sec="now">Now</a><a href="#scores" data-sec="scores">Scores</a><a href="#learning" data-sec="learning">Learning</a>
     <a href="#memory" data-sec="memory">Memory</a><a href="#writing" data-sec="writing">Writing</a><a href="#models" data-sec="models">Models</a></nav>
@@ -272,6 +272,13 @@
 <script src="common.js"></script>
 <script src="lab.js"></script>
 <script>
+// the version, from git on the pod (moves on with every git pull)
+fetch("api/version").then((r) => r.json()).then((v) => {
+  if (!v || !v.version) return;
+  const el = document.getElementById("ver");
+  el.textContent = v.version;
+  el.title = `commit ${v.commit}${v.date ? ", " + v.date : ""}`;
+}).catch(() => {});
 "use strict";
 const C = { memtrix: UI.css("--brand"), tide: UI.css("--teal"), fern: UI.css("--fern"), ember: UI.css("--ember"), fern2: UI.css("--fern2"), fern3: UI.css("--fern3"), bee: UI.css("--bee"), bee2: UI.css("--bee2"), gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
 const NAMES = { memtrix: "Memtrix", tide: "Tide", fern: "Fern", ember: "Ember", fern2: "Fern2", fern3: "Fern3", bee: "Bee0.2B", bee2: "Bee_v2_0.2B", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
+import time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, unquote
@@ -40,6 +42,24 @@ def read_json(path: Path):
         return None
 
 
+_VER = {"t": 0.0, "v": None}
+
+
+def version():
+    """The lab's version: v<number of commits>, from git (so every `git pull` moves it on), plus the commit."""
+    if time.time() - _VER["t"] > 30:
+        repo = Path(__file__).resolve().parent.parent
+        try:
+            git = lambda *a: subprocess.run(["git", "-C", str(repo), *a], capture_output=True, text=True,  # noqa: E731
+                                            timeout=5).stdout.strip()
+            n, sha, when = git("rev-list", "--count", "HEAD"), git("rev-parse", "--short", "HEAD"), git("log", "-1", "--format=%cs")
+            _VER["v"] = {"version": f"v{n}" if n else None, "commit": sha or None, "date": when or None}
+        except Exception:
+            _VER["v"] = {"version": None, "commit": None, "date": None}
+        _VER["t"] = time.time()
+    return _VER["v"]
+
+
 def make_handler(runs: Path, web: Path = WEB):
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a):
@@ -64,6 +84,8 @@ def make_handler(runs: Path, web: Path = WEB):
             if len(parts) == 1 and parts[0].endswith((".js", ".css", ".svg")) and (web / parts[0]).is_file():
                 ctype = "text/javascript" if parts[0].endswith(".js") else "image/svg+xml" if parts[0].endswith(".svg") else "text/css"
                 return self.send(200, (web / parts[0]).read_bytes(), ctype + "; charset=utf-8")
+            if parts == ["api", "version"]:
+                return self.js(version())
             if parts == ["api", "runs"]:
                 out = []
                 if runs.exists():
