@@ -231,6 +231,17 @@ footer { padding-block: 40px calc(40px + env(safe-area-inset-bottom, 0px)); }
 .foot nav a:hover { color: var(--ink); }
 .foot .label { text-transform: none; letter-spacing: 0.02em; }
 
+/* ---------- custom scrollbar: the native one is hidden, a slim light rail replaces it ---------- */
+html { scrollbar-width: none; }
+html::-webkit-scrollbar { display: none; }
+.rail { position: fixed; z-index: 70; top: calc(env(safe-area-inset-top, 0px) + 10px); bottom: calc(env(safe-area-inset-bottom, 0px) + 10px); right: calc(env(safe-area-inset-right, 0px) + 4px); width: 14px; opacity: 0; transition: opacity .5s; cursor: pointer; }
+.rail::before { content: ""; position: absolute; top: 0; bottom: 0; right: 4px; width: 2px; border-radius: 2px; background: rgba(236, 235, 243, 0.06); transition: background .3s; }
+.rail.on, .rail:hover, .rail.drag { opacity: 1; }
+.rail:hover::before, .rail.drag::before { background: rgba(236, 235, 243, 0.10); }
+.thumb { position: absolute; right: 3px; top: 0; width: 4px; min-height: 36px; border-radius: 4px; background: linear-gradient(180deg, var(--cyan), var(--violet-2) 55%, var(--pink)); box-shadow: 0 0 10px rgba(143, 123, 255, .55), 0 0 2px rgba(255, 255, 255, .6) inset; transition: width .2s, right .2s, box-shadow .3s; will-change: transform; }
+.rail:hover .thumb, .rail.drag .thumb { width: 6px; right: 2px; box-shadow: 0 0 16px rgba(143, 123, 255, .8), 0 0 2px rgba(255, 255, 255, .7) inset; }
+@media (pointer: coarse) { .rail { display: none; } }
+
 /* reveal: content is visible at rest; this only adds a gentle rise when it scrolls in */
 .rv { transition: transform .9s cubic-bezier(.2,.8,.2,1), opacity .9s; }
 .js .rv.pre { transform: translateY(18px); opacity: .35; }
@@ -255,6 +266,8 @@ footer { padding-block: 40px calc(40px + env(safe-area-inset-bottom, 0px)); }
     </symbol>
   </defs>
 </svg>
+
+<div class="rail" id="rail" aria-hidden="true"><div class="thumb" id="thumb"></div></div>
 
 <header class="bar" id="bar">
   <div class="wrap bar-in">
@@ -536,12 +549,12 @@ vec3 tint(float r) {
 // a smooth, looping gradient of the tunnel's colours
 vec3 field(float h) {
   h = fract(h) * 6.0;
-  vec3 c0 = vec3(0.78, 0.74, 1.00);   // lilac
-  vec3 c1 = vec3(0.46, 0.42, 1.00);   // blue violet
-  vec3 c2 = vec3(0.32, 0.56, 1.00);   // electric blue
-  vec3 c3 = vec3(1.00, 0.44, 0.36);   // coral
-  vec3 c4 = vec3(0.70, 0.44, 1.00);   // violet
-  vec3 c5 = vec3(0.38, 0.95, 0.74);   // sea green
+  vec3 c0 = vec3(0.84, 0.80, 1.00);   // lilac white
+  vec3 c1 = vec3(0.60, 0.46, 1.00);   // violet
+  vec3 c2 = vec3(0.44, 0.60, 1.00);   // electric blue
+  vec3 c3 = vec3(0.44, 0.86, 1.00);   // cyan
+  vec3 c4 = vec3(0.86, 0.70, 1.00);   // pale orchid
+  vec3 c5 = vec3(1.00, 0.52, 0.78);   // magenta rose
   float t = smoothstep(0.0, 1.0, fract(h));
   if (h < 1.0) return mix(c0, c1, t);
   if (h < 2.0) return mix(c1, c2, t);
@@ -556,7 +569,7 @@ vec3 layer(vec2 p, float aspect, float id, float N, float waist, float flare, fl
   float xn = p.x / (0.5 * aspect) - uMouse.x * 0.04 * (0.3 + depth);
   float ax = abs(xn);
   float y = p.y + uMouse.y * 0.02 * (0.3 + depth) + 0.010 * sin(xn * 1.7 + uTime * 0.11 + id * 1.7) * ax;
-  float w = waist + flare * pow(ax, 2.6);                        // half-height of the bundle here
+  float w = waist + flare * ax * ax;                 // half-height of the bundle here
   float s = y / w;                                   // which lane we are in
   float env = exp(-s * s * 1.35) * (0.55 + 0.45 * exp(-s * s * 5.0));
   if (env < 0.003) return vec3(0.0);
@@ -590,7 +603,7 @@ vec3 layer(vec2 p, float aspect, float id, float N, float waist, float flare, fl
   float evolve = uTime * mix(0.06, 0.16, r3);
   float n = vnoise(vec2(u * freq - travel + r3 * 40.0, evolve + r4 * 31.0));
   float n2 = vnoise(vec2(u * freq * 3.1 - travel * 1.3 + r2 * 23.0, evolve * 1.7 + 7.0));
-  float wisp = smoothstep(0.58, 0.95, n) * smoothstep(0.15, 0.6, n2);
+  float wisp = smoothstep(0.55, 0.95, n) * smoothstep(0.15, 0.6, n2);
   wisp = wisp * wisp * (3.0 - 2.0 * wisp);
 
   // 2. comets: now and then a brighter head with a long tail glides out
@@ -613,10 +626,20 @@ vec3 layer(vec2 p, float aspect, float id, float N, float waist, float flare, fl
   // colour comes from slowly drifting regions, so neighbouring streaks share a hue
   float hue = vnoise(vec2(u * 0.75 + uTime * 0.03 + id * 3.1, s * 1.5 - uTime * 0.022 + id * 7.7));
   hue = fract(hue * 1.35 + 0.35 * vnoise(vec2(s * 0.6 + 19.0, uTime * 0.017 + u * 0.3)));
-  vec3 col = mix(field(hue), tint(fract(r3 * 7.13 + r1)), 0.18);
+  vec3 col = mix(field(hue), tint(fract(r3 * 7.13 + r1)), 0.15);
+  // colour blobs: soft, random patches of stronger colour that ride along with the flowing light
+  float flow = uTime * spd * 0.9;
+  vec2 bq = vec2(u * 1.1 - flow + id * 5.3, s * 1.9 + id * 2.1);
+  float bm = vnoise(bq + vec2(0.0, uTime * 0.05)) * 0.65 + vnoise(bq * 2.3 + vec2(17.0, -uTime * 0.08)) * 0.35;
+  bm = smoothstep(0.48, 0.80, bm);
+  float bh = vnoise(vec2(u * 0.35 - flow * 0.5 + 41.0, s * 0.7 + id * 9.0 + uTime * 0.02));
+  vec3 blobCol = bh < 0.25 ? mix(vec3(1.00, 0.42, 0.40), vec3(1.00, 0.36, 0.78), bh / 0.25)          // coral -> magenta
+               : bh < 0.50 ? mix(vec3(1.00, 0.36, 0.78), vec3(0.42, 0.40, 1.00), (bh - 0.25) / 0.25)  // magenta -> blue violet
+               : bh < 0.75 ? mix(vec3(0.42, 0.40, 1.00), vec3(0.25, 0.90, 1.00), (bh - 0.50) / 0.25)  // -> cyan
+               :             mix(vec3(0.25, 0.90, 1.00), vec3(0.40, 1.00, 0.62), (bh - 0.75) / 0.25); // -> mint
+  col = mix(col, blobCol, bm * 0.85);
   // light disperses as it comes closer: cooler far away, slightly warmer at the edges
   col *= mix(vec3(0.86, 0.82, 1.12), vec3(1.08, 0.97, 0.95), smoothstep(0.15, 1.0, ax));
-  col = max(mix(vec3(dot(col, vec3(0.3, 0.5, 0.2))), col, 1.3), 0.0);       // a touch more saturated
   col = mix(col, vec3(1.0, 0.97, 1.0), head * 0.75);                       // white-hot heads
   vec3 line = col * prof * streak * bright;
 
@@ -634,10 +657,10 @@ void main() {
   p.y *= mix(1.7, 1.0, (sq - 0.55) / 0.45);        // keep the hourglass on tall phones
 
   vec3 c = vec3(0.0);
-  c += layer(p, aspect, 0.0, 150.0, 0.100, 0.42, 0.85, 0.075);
-  c += layer(p, aspect, 1.0, 110.0, 0.115, 0.52, 1.00, 0.10);
-  c += layer(p, aspect, 2.0,  90.0, 0.130, 0.66, 1.15, 0.135);
-  c += layer(p, aspect, 3.0,  52.0, 0.150, 0.84, 1.35, 0.18);
+  c += layer(p, aspect, 0.0, 170.0, 0.150, 0.16, 0.85, 0.075);
+  c += layer(p, aspect, 1.0, 120.0, 0.170, 0.22, 1.00, 0.10);
+  c += layer(p, aspect, 2.0, 105.0, 0.195, 0.29, 1.15, 0.135);
+  c += layer(p, aspect, 3.0,  58.0, 0.225, 0.38, 1.35, 0.18);
   OUT = vec4(c * uScale, 1.0);
 }`;
 
@@ -681,8 +704,6 @@ void main() {
   vec3 b1 = vec3(TEX(uB1, uv + ca * 1.6).r, TEX(uB1, uv).g, TEX(uB1, uv - ca * 1.6).b);
   vec3 b2 = vec3(TEX(uB2, uv + ca * 2.4).r, TEX(uB2, uv).g, TEX(uB2, uv - ca * 2.4).b);
   vec3 c = (sc + b1 * 0.32 + b2 * 0.45) / uScale;
-  // the bright core where the light pinches through the waist
-  c += vec3(0.62, 0.66, 1.00) * 0.16 * exp(-(d.x * d.x * 14.0 + pow(d.y / 0.055, 2.0)));
 
   // a faint violet breath behind the waist
   float ax = abs(d.x) * 2.0;
@@ -863,6 +884,49 @@ void main() {
   const bar = document.getElementById('bar');
   const onScroll = () => bar.classList.toggle('solid', scrollY > 24);
   addEventListener('scroll', onScroll, { passive: true }); onScroll();
+
+  // ---------- custom scrollbar ----------
+  const rail = document.getElementById('rail'), thumb = document.getElementById('thumb');
+  let hideT = null, dragging = false, dragY = 0, dragTop = 0;
+  function sizes() {
+    const doc = document.documentElement, view = innerHeight, full = doc.scrollHeight, track = rail.clientHeight;
+    const th = Math.max(36, track * view / full);
+    return { view, full, track, th, max: full - view };
+  }
+  function placeThumb() {
+    const z = sizes();
+    thumb.style.height = z.th + 'px';
+    const y = z.max > 0 ? (scrollY / z.max) * (z.track - z.th) : 0;
+    thumb.style.transform = 'translateY(' + y + 'px)';
+    rail.style.display = z.max > 4 ? '' : 'none';
+  }
+  function wake() {
+    rail.classList.add('on');
+    clearTimeout(hideT);
+    hideT = setTimeout(() => { if (!dragging) rail.classList.remove('on'); }, 1100);
+  }
+  addEventListener('scroll', () => { placeThumb(); wake(); }, { passive: true });
+  addEventListener('resize', placeThumb);
+  new ResizeObserver(placeThumb).observe(document.body);
+  thumb.addEventListener('pointerdown', e => {
+    dragging = true; dragY = e.clientY; dragTop = scrollY;
+    rail.classList.add('drag'); thumb.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation();
+  });
+  thumb.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const z = sizes();
+    window.scrollTo({ top: dragTop + (e.clientY - dragY) * z.max / Math.max(1, z.track - z.th), behavior: 'instant' });
+  });
+  const endDrag = () => { dragging = false; rail.classList.remove('drag'); wake(); };
+  thumb.addEventListener('pointerup', endDrag);
+  thumb.addEventListener('pointercancel', endDrag);
+  rail.addEventListener('pointerdown', e => {
+    if (e.target !== rail) return;
+    const z = sizes(), r = rail.getBoundingClientRect();
+    const frac = (e.clientY - r.top - z.th / 2) / Math.max(1, z.track - z.th);
+    window.scrollTo({ top: Math.max(0, Math.min(1, frac)) * z.max, behavior: 'smooth' });
+  });
+  placeThumb();
 
   // sliding pill under the active tab (as in the Oazy launcher)
   const tabs = document.getElementById('tabs'), pill = document.getElementById('pill');
