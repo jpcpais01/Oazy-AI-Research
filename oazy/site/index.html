@@ -302,28 +302,30 @@ section.block::before { content: ""; position: absolute; top: 0; left: 50%; widt
 .q p { color: var(--ink-2); font-size: 15px; }
 .close .btn-ghost { height: 46px; padding: 0 20px; }
 
-/* Tagus, the dataset: two mix bars, a legend, three rules */
-.tagus { border: 1px solid var(--line); border-radius: 22px; padding: 28px; display: grid; gap: 22px; }
-.phase { display: grid; gap: 10px; }
-.mix { display: flex; height: 38px; border-radius: 10px; overflow: hidden; gap: 2px; }
-.mix i { min-width: 0; position: relative; display: flex; align-items: center; padding-left: 10px; font: 500 12px/1 var(--mono); font-style: normal; color: #0a0a10;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--c) 100%, #fff 12%), color-mix(in srgb, var(--c) 78%, #000)); box-shadow: 0 0 22px -6px var(--c); }
-.mix i span { white-space: nowrap; }
-.legend { list-style: none; margin: 6px 0 0; padding: 18px 0 0; border-top: 1px solid var(--line); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 40px; }
-.legend li { display: grid; grid-template-columns: 12px auto minmax(0, 1fr) auto; gap: 4px 12px; align-items: baseline; font-size: 14.5px; }
-.legend .sw { width: 10px; height: 10px; border-radius: 3px; background: var(--c); box-shadow: 0 0 10px var(--c); align-self: center; }
-.legend b { font-weight: 500; white-space: nowrap; }
-.legend .what { color: var(--muted); font-size: 13.5px; min-width: 0; }
-.legend .pc { font: 500 12px/1 var(--mono); color: var(--ink-2); white-space: nowrap; }
-@media (max-width: 820px) { .legend { grid-template-columns: 1fr; } }
-@media (max-width: 520px) { .tagus { padding: 20px; } .legend li { grid-template-columns: 12px minmax(0, 1fr) auto; } .legend .what { grid-column: 2 / -1; } .mix i { padding-left: 6px; font-size: 10.5px; } }
-.rules { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-top: 24px; }
-@media (max-width: 820px) { .rules { grid-template-columns: 1fr; } }
-.rule { border-top: 1px solid var(--line-2); padding-top: 18px; display: grid; gap: 8px; align-content: start; }
-.rule h3 { font-size: 17px; font-weight: 500; }
-.rule p { color: var(--ink-2); font-size: 14.5px; }
-.data-note { margin-top: 28px; color: var(--muted); font-size: 14.5px; max-width: 80ch; }
-
+/* Tagus, the dataset: a quiet table, one hairline meter per phase */
+.tagus { border-top: 1px solid var(--line-2); }
+.t-head, .t-rows li { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr); gap: 12px 40px; align-items: center; }
+.t-head { padding: 16px 0 12px; border-bottom: 1px solid var(--line); }
+.t-rows { list-style: none; margin: 0; padding: 0; }
+.t-rows li { padding: 18px 0; border-bottom: 1px solid var(--line); transition: background .3s; }
+.t-rows li:hover { background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .025), transparent); }
+.src { display: grid; gap: 3px; min-width: 0; }
+.src b { font-weight: 500; font-size: 16px; }
+.src span { color: var(--muted); font-size: 13.5px; }
+.m { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 14px; align-items: center; }
+.m .pc { font: 500 13px/1 var(--mono); color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; }
+.m .tr { position: relative; height: 2px; border-radius: 2px; background: rgba(236, 235, 243, .08); }
+.m .tr i { position: absolute; inset: 0 auto 0 0; border-radius: 2px; }
+.m .tr i::after { content: ""; position: absolute; right: -3px; top: -2px; width: 6px; height: 6px; border-radius: 50%; background: inherit; box-shadow: 0 0 10px 1px currentColor; }
+.m.a .tr i { background: var(--violet-2); color: var(--violet-2); box-shadow: 0 0 12px rgba(143, 123, 255, .6); }
+.m.b .tr i { background: var(--cyan); color: var(--cyan); box-shadow: 0 0 12px rgba(79, 216, 255, .5); }
+.t-foot { margin-top: 18px; text-transform: none; letter-spacing: .04em; }
+@media (max-width: 720px) {
+  .t-head { grid-template-columns: 1fr 1fr; } .t-head span:first-child { display: none; }
+  .t-rows li { grid-template-columns: 1fr 1fr; gap: 10px 20px; } .src { grid-column: 1 / -1; }
+  .m { grid-template-columns: 36px minmax(0, 1fr); gap: 10px; }
+  .t-head .label { font-size: 10.5px; letter-spacing: .06em; white-space: nowrap; }
+}
 .foot-note { margin-top: 20px; color: var(--muted); font-size: 13.5px; max-width: 90ch; }
 
 /* lab log as a lit timeline */
@@ -534,16 +536,18 @@ footer::before { content: ""; position: absolute; top: 0; left: 50%; width: min(
         <p>About 2.5B tokens of open text, read once each, in two phases. Documents never bleed into each other, and every source keeps a held-out slice. Bee_v3 will be the first model trained on it.</p>
       </div>
 
-      <div class="tagus glass rv">
-        <div class="phase">
-          <div class="phase-top"><span class="label"><b>Main phase</b> · first 80% of training</span></div>
-          <div class="mix" role="img" aria-label="Main phase: FineWeb-Edu 45%, DCLM 25%, Cosmopedia v2 12%, Wikipedia 5%, FineMath 5%, Python code 5%, smol-smoltalk 3%"><i style="flex:45;--c:#8f7bff" title="FineWeb-Edu 45%"><span>45%</span></i><i style="flex:25;--c:#4fd8ff" title="DCLM 25%"><span>25%</span></i><i style="flex:12;--c:#ff5fae" title="Cosmopedia v2 12%"><span>12%</span></i><i style="flex:5;--c:#d9d6ea" title="Wikipedia (EN) 5%"></i><i style="flex:5;--c:#4cf2c4" title="FineMath 5%"></i><i style="flex:5;--c:#ffd78a" title="Python code 5%"></i><i style="flex:3;--c:#6a8cff" title="smol-smoltalk 3%"></i></div>
-        </div>
-        <div class="phase">
-          <div class="phase-top"><span class="label"><b>Cool-down</b> · last 20%</span></div>
-          <div class="mix" role="img" aria-label="Cool-down: FineWeb-Edu 30%, smol-smoltalk 30%, Cosmopedia v2 15%, FineMath 10%, DCLM 5%, Wikipedia 5%, Python code 5%"><i style="flex:30;--c:#8f7bff" title="FineWeb-Edu 30%"><span>30%</span></i><i style="flex:5;--c:#4fd8ff" title="DCLM 5%"></i><i style="flex:15;--c:#ff5fae" title="Cosmopedia v2 15%"><span>15%</span></i><i style="flex:5;--c:#d9d6ea" title="Wikipedia (EN) 5%"></i><i style="flex:10;--c:#4cf2c4" title="FineMath 10%"><span>10%</span></i><i style="flex:5;--c:#ffd78a" title="Python code 5%"></i><i style="flex:30;--c:#6a8cff" title="smol-smoltalk 30%"><span>30%</span></i></div>
-        </div>
-        <ul class="legend"><li><span class="sw" style="--c:#8f7bff"></span><b>FineWeb-Edu</b><span class="what">Web pages kept for their teaching value</span><span class="pc">45% → 30%</span></li><li><span class="sw" style="--c:#4fd8ff"></span><b>DCLM</b><span class="what">Broad, quality-filtered web text</span><span class="pc">25% → 5%</span></li><li><span class="sw" style="--c:#ff5fae"></span><b>Cosmopedia v2</b><span class="what">Synthetic textbooks and stories</span><span class="pc">12% → 15%</span></li><li><span class="sw" style="--c:#d9d6ea"></span><b>Wikipedia (EN)</b><span class="what">Encyclopedic facts</span><span class="pc">5% → 5%</span></li><li><span class="sw" style="--c:#4cf2c4"></span><b>FineMath</b><span class="what">Math explanations and worked problems</span><span class="pc">5% → 10%</span></li><li><span class="sw" style="--c:#ffd78a"></span><b>Python code</b><span class="what">Real code, for structure and precision</span><span class="pc">5% → 5%</span></li><li><span class="sw" style="--c:#6a8cff"></span><b>smol-smoltalk</b><span class="what">Short conversations</span><span class="pc">3% → 30%</span></li></ul>
+      <div class="tagus rv">
+        <div class="t-head" aria-hidden="true"><span></span><span class="label">Main <b>· first 80%</b></span><span class="label">Cool-down <b>· last 20%</b></span></div>
+        <ol class="t-rows" aria-label="Tagus mix by source: share of the main phase and of the cool-down">
+<li><div class="src"><b>FineWeb-Edu</b><span>Web pages kept for their teaching value</span></div><div class="m a"><span class="pc">45%</span><span class="tr"><i style="width:100.0%"></i></span></div><div class="m b"><span class="pc">30%</span><span class="tr"><i style="width:66.7%"></i></span></div></li>
+<li><div class="src"><b>DCLM</b><span>Broad, quality-filtered web text</span></div><div class="m a"><span class="pc">25%</span><span class="tr"><i style="width:55.6%"></i></span></div><div class="m b"><span class="pc">5%</span><span class="tr"><i style="width:11.1%"></i></span></div></li>
+<li><div class="src"><b>Cosmopedia v2</b><span>Synthetic textbooks and stories</span></div><div class="m a"><span class="pc">12%</span><span class="tr"><i style="width:26.7%"></i></span></div><div class="m b"><span class="pc">15%</span><span class="tr"><i style="width:33.3%"></i></span></div></li>
+<li><div class="src"><b>Wikipedia</b><span>Encyclopedic facts, in English</span></div><div class="m a"><span class="pc">5%</span><span class="tr"><i style="width:11.1%"></i></span></div><div class="m b"><span class="pc">5%</span><span class="tr"><i style="width:11.1%"></i></span></div></li>
+<li><div class="src"><b>FineMath</b><span>Math explanations and worked problems</span></div><div class="m a"><span class="pc">5%</span><span class="tr"><i style="width:11.1%"></i></span></div><div class="m b"><span class="pc">10%</span><span class="tr"><i style="width:22.2%"></i></span></div></li>
+<li><div class="src"><b>Python code</b><span>Real code, for structure and precision</span></div><div class="m a"><span class="pc">5%</span><span class="tr"><i style="width:11.1%"></i></span></div><div class="m b"><span class="pc">5%</span><span class="tr"><i style="width:11.1%"></i></span></div></li>
+<li><div class="src"><b>smol-smoltalk</b><span>Short conversations</span></div><div class="m a"><span class="pc">3%</span><span class="tr"><i style="width:6.7%"></i></span></div><div class="m b"><span class="pc">30%</span><span class="tr"><i style="width:66.7%"></i></span></div></li>
+        </ol>
+        <p class="t-foot label">≈ 2.5B tokens · SmolLM2 tokenizer · every token read once</p>
       </div>
 
     </div>
