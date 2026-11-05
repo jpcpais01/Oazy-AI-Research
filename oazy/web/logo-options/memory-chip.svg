@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="chip" x1="0.1" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#8ef0ff"/><stop offset="0.4" stop-color="#2fa8ff"/><stop offset="0.85" stop-color="#2a55e8"/><stop offset="1" stop-color="#6a3cff"/></linearGradient>
+    <radialGradient id="lit" cx="0.4" cy="0.35" r="0.8"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#8ff5ff"/></radialGradient>
+    <clipPath id="cc"><rect x="18" y="18" width="64" height="64" rx="16"/></clipPath>
+    <filter id="sh" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#0a2a80" flood-opacity="0.45"/></filter>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.8"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <radialGradient id="node" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#fff"/><stop offset="0.5" stop-color="#dffaff"/><stop offset="1" stop-color="#7fe0ff"/></radialGradient>
+  </defs>
+  <g stroke="#9fe8ff" stroke-opacity="0.75" stroke-width="3.2" stroke-linecap="round">
+    <path d="M34 8 V18 M50 8 V18 M66 8 V18 M34 82 V92 M50 82 V92 M66 82 V92 M8 34 H18 M8 50 H18 M8 66 H18 M82 34 H92 M82 50 H92 M82 66 H92"/>
+  </g>
+  <g filter="url(#sh)"><rect x="18" y="18" width="64" height="64" rx="16" fill="url(#chip)"/></g>
+  <g transform="translate(4.5 4.5)">
+    <rect x="29" y="29" width="9" height="9" rx="2.5" fill="url(#lit)"/><rect x="41" y="29" width="9" height="9" rx="2.5" fill="#fff" fill-opacity="0.22"/><rect x="53" y="29" width="9" height="9" rx="2.5" fill="#fff" fill-opacity="0.22"/>
+    <rect x="29" y="41" width="9" height="9" rx="2.5" fill="#fff" fill-opacity="0.22"/><rect x="41" y="41" width="9" height="9" rx="2.5" fill="url(#lit)"/><rect x="53" y="41" width="9" height="9" rx="2.5" fill="#fff" fill-opacity="0.22"/>
+    <rect x="29" y="53" width="9" height="9" rx="2.5" fill="#fff" fill-opacity="0.22"/><rect x="41" y="53" width="9" height="9" rx="2.5" fill="#fff" fill-opacity="0.22"/><rect x="53" y="53" width="9" height="9" rx="2.5" fill="url(#lit)"/>
+  </g>
+  <g clip-path="url(#cc)"><path d="M18 18 H82 V40 C62 50 38 48 18 42 Z" fill="url(#gloss)" opacity="0.6"/></g>
+  <rect x="18.8" y="18.8" width="62.4" height="62.4" rx="15.3" fill="none" stroke="#fff" stroke-opacity="0.6" stroke-width="1.6"/>
+</svg>

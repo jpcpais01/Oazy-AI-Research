@@ -1,24 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <!-- Oazy mark: a liquid-glass orb holding an oasis horizon (sky, water, a sun) -->
+  <!-- Oazy mark: a liquid-glass orb with a small neural network inside -->
   <defs>
-    <radialGradient id="b-sky" cx="0.35" cy="0.25" r="0.9">
-      <stop offset="0" stop-color="#d6fbff"/><stop offset="0.35" stop-color="#6fd8ff"/><stop offset="0.75" stop-color="#2d72ff"/><stop offset="1" stop-color="#3a2fb0"/>
-    </radialGradient>
-    <linearGradient id="b-sea" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#5ef2c2"/><stop offset="1" stop-color="#0b6fd0"/>
-    </linearGradient>
-    <linearGradient id="b-gloss" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#fff" stop-opacity="0.85"/><stop offset="1" stop-color="#fff" stop-opacity="0"/>
-    </linearGradient>
-    <clipPath id="b-c"><circle cx="50" cy="50" r="42"/></clipPath>
-    <filter id="b-sh" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#0a2a80" flood-opacity="0.45"/></filter>
+    <radialGradient id="sky" cx="0.35" cy="0.25" r="0.95"><stop offset="0" stop-color="#bdf6ff"/><stop offset="0.35" stop-color="#4cc4ff"/><stop offset="0.75" stop-color="#2a63f0"/><stop offset="1" stop-color="#4a2fc0"/></radialGradient>
+    <clipPath id="c"><circle cx="50" cy="50" r="42"/></clipPath>
+    <filter id="sh" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#0a2a80" flood-opacity="0.45"/></filter>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.8"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <radialGradient id="node" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#fff"/><stop offset="0.5" stop-color="#dffaff"/><stop offset="1" stop-color="#7fe0ff"/></radialGradient>
   </defs>
-  <g filter="url(#b-sh)"><circle cx="50" cy="50" r="42" fill="url(#b-sky)"/></g>
-  <g clip-path="url(#b-c)">
-    <path d="M0 58 C16 50 30 50 44 57 C58 64 72 64 100 54 V100 H0 Z" fill="url(#b-sea)" opacity="0.92"/>
-    <path d="M0 66 C18 60 32 61 46 67 C60 73 76 72 100 64" fill="none" stroke="#fff" stroke-opacity="0.5" stroke-width="1.6"/>
-    <ellipse cx="44" cy="25" rx="27" ry="15" fill="url(#b-gloss)"/>
+  <g filter="url(#sh)"><circle cx="50" cy="50" r="42" fill="url(#sky)"/></g>
+  <g stroke="#fff" stroke-width="1.8" stroke-opacity="0.55" stroke-linecap="round">
+    <path d="M28 38 L50 30 M28 38 L50 50 M28 38 L50 70 M28 62 L50 30 M28 62 L50 50 M28 62 L50 70 M50 30 L72 50 M50 50 L72 50 M50 70 L72 50"/>
   </g>
+  <g fill="url(#node)" stroke="#fff" stroke-opacity="0.9" stroke-width="1">
+    <circle cx="28" cy="38" r="5"/><circle cx="28" cy="62" r="5"/>
+    <circle cx="50" cy="30" r="5"/><circle cx="50" cy="50" r="5"/><circle cx="50" cy="70" r="5"/>
+    <circle cx="72" cy="50" r="7"/>
+  </g>
+  <g clip-path="url(#c)"><ellipse cx="44" cy="22" rx="28" ry="13" fill="url(#gloss)" opacity="0.75"/></g>
   <circle cx="50" cy="50" r="41.2" fill="none" stroke="#fff" stroke-opacity="0.6" stroke-width="1.6"/>
-  <circle cx="68" cy="38" r="5" fill="#fff" fill-opacity="0.95"/>
 </svg>
