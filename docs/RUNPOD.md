@@ -49,7 +49,21 @@ python3 -m tide.chat --port 8002
 python3 -m fern.chat --port 8002
 python3 -m memtrix.chat --run ember --port 8002
 python3 -m fern.chat --run fern2 --port 8002
+python3 -m bee.chat --port 8002
 ```
+
+## Bee0.2B (204M, the main model)
+
+```bash
+cd /workspace/oazy && git pull
+bash runpod/setup.sh bee                                # once: self-tests + DCLM (2B tokens) + conversations (~1 h)
+python3 -m oazy.train --bench --model bee --preset big  # speed, mentor included, and the hours for 5B tokens
+bash runpod/train.sh bee --preset big                   # 5B tokens (~10 h on a B200); downloads GPT-2 large once
+python3 -m bee.chat --port 8002                         # chat (Chat or Write), from its latest checkpoint
+```
+
+On a 32 GB GPU (RTX 5090) add `--micro 8`. If DCLM or the conversations are missing it trains on
+what is there and says so. Ablations are in `bee/README.md`.
 
 ## Fern2 (119M, Fern raised the Ember way)
 

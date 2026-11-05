@@ -32,9 +32,11 @@ from memtrix.model import Memtrix, MemtrixConfig
 from memtrix import memory
 from . import hellaswag, probes
 
-KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "gpt"]
-NICE = {"memtrix": "Memtrix", "tide": "Tide", "fern": "Fern", "ember": "Ember", "fern2": "Fern2", "fern3": "Fern3", "gpt": "GPT"}
-FAST = ("ember", "fern2", "fern3")       # raised the fast way: Muon and the GPT-2 medium mentor by default
+KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "gpt"]
+NICE = {"memtrix": "Memtrix", "tide": "Tide", "fern": "Fern", "ember": "Ember", "fern2": "Fern2", "fern3": "Fern3",
+        "bee": "Bee0.2B", "gpt": "GPT"}
+FAST = ("ember", "fern2", "fern3", "bee")    # raised the fast way: Muon and a GPT-2 mentor by default
+MENTOR = {"bee": "gpt2-large"}                 # default mentor (the others: gpt2-medium)
 
 
 def say(*a, **k):
@@ -69,6 +71,12 @@ def _fern3():
     from fern3.model import Fern3, Fern3Config       # fern3/ = Fern's unfolding + gist-indexed recall
     return Fern3, Fern3Config
 
+
+def _bee():
+    from bee.model import Bee, BeeConfig             # bee/ = modern hybrid: Memtrix memory layers + attention, 3:1
+    return Bee, BeeConfig
+
+
 PRESETS = {
     # a laptop-CPU test of the whole pipeline (minutes)
     "tiny": dict(
@@ -80,6 +88,8 @@ PRESETS = {
         fern2=dict(n_layer=4, unfold_layers=2, unfold_heads=2, unfold_hidden=256, grow="2:0,4:0.25", unfold_grow="1:0,2:0.25"),
         fern3=dict(n_layer=2, unfold_layers=2, think_layers=1, unfold_heads=2, unfold_hidden=256, max_len=512,
                    grow="1:0,2:0.25", unfold_grow="1:0,2:0.25"),
+        bee=dict(d_model=128, n_layer=4, n_head=2, head_k=64, head_v=64, attn_heads=4, attn_kv_heads=2, attn_head_dim=32,
+                 mlp_hidden=256, max_len=512, ctx="256:0,512:0.5"),
         micro=16, accum=1, lr=3e-3, warmup=50, tokens=3_000_000,
         eval_every=250_000, probe_every=1_000_000, hs_every=1_000_000, sample_every=1_000_000,
         val_windows=64, hs_quick=200, sample_len=40,
@@ -94,20 +104,22 @@ PRESETS = {
         fern2=dict(n_layer=2, unfold_layers=1, unfold_heads=1, unfold_hidden=128, grow="1:0,2:0.3", unfold_grow="1:0"),
         fern3=dict(n_layer=2, unfold_layers=1, think_layers=1, unfold_heads=1, unfold_hidden=128, max_len=256,
                    grow="1:0,2:0.3", unfold_grow="1:0", recall_warm_until=0.2),
+        bee=dict(d_model=64, n_layer=4, n_head=1, head_k=32, head_v=32, attn_heads=2, attn_kv_heads=1, attn_head_dim=32,
+                 mlp_hidden=128, max_len=128, ctx="64:0,128:0.5"),
         micro=8, accum=2, lr=3e-3, warmup=10, tokens=60_000,
         eval_every=20_000, probe_every=30_000, hs_every=30_000, sample_every=30_000,
         val_windows=16, hs_quick=20, sample_len=10,
     ),
     # GPT-2 small size (Memtrix 117M vs GPT-2 124M), ~2 h for both models on one B200 (check with --bench)
     "full": dict(
-        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4,
+        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288,
         micro=32, accum=8, lr=1.2e-3, warmup=400, tokens=2_000_000_000,
         eval_every=50_000_000, probe_every=250_000_000, hs_every=250_000_000, sample_every=250_000_000,
         val_windows=128, hs_quick=1000, sample_len=120,
     ),
     # the same models, 2.5x the text (e.g. a 2 x B200 pod for ~2.5 h, one model per GPU)
     "big": dict(
-        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4,
+        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288,
         micro=32, accum=8, lr=1.2e-3, warmup=600, tokens=5_000_000_000,
         eval_every=100_000_000, probe_every=500_000_000, hs_every=500_000_000, sample_every=500_000_000,
         val_windows=128, hs_quick=1000, sample_len=120,
@@ -153,6 +165,10 @@ def build(kind, preset, overrides=None):
         Fern3, Fern3Config = _fern3()
         cfg = Fern3Config(**{**p["memtrix"], **p.get("fern3", {}), **(overrides or {})})
         return Fern3(cfg), cfg
+    if kind == "bee":
+        Bee, BeeConfig = _bee()
+        cfg = BeeConfig(**{**p.get("bee", {}), **(overrides or {})})
+        return Bee(cfg), cfg
     cfg = GPTConfig(**{**p["gpt"], **(overrides or {})})
     return GPT(cfg), cfg
 
@@ -179,6 +195,9 @@ def load_model(ckpt: Path, device):
     elif kind == "fern3":
         Fern3, Fern3Config = _fern3()
         model = Fern3(Fern3Config.from_dict(st["config"]))
+    elif kind == "bee":
+        Bee, BeeConfig = _bee()
+        model = Bee(BeeConfig.from_dict(st["config"]))
     else:
         model = GPT(GPTConfig.from_dict(st["config"]))
     model.load_state_dict(st["model"])
@@ -191,8 +210,17 @@ def lr_at(progress, step, base, warmup):
     return base * (0.05 + 0.95 * 0.5 * (1 + math.cos(math.pi * min(1.0, progress))))
 
 
+def lr_wsd(progress, step, base, warmup, decay=0.2):
+    """Warm up, stay flat, then fall in a straight line to zero over the last `decay` of training
+    ("warmup-stable-decay", as in MiniCPM, SmolLM2/3, DeepSeek). The fall lines up with the cool-down data."""
+    if step < warmup:
+        return base * (step + 1) / warmup
+    return base * min(1.0, max(0.0, (1 - progress) / decay))
+
+
 MUON_GRIDS = ("mem.qkv.weight", "mem.gate.weight", "mem.out.weight", "mlp.up.weight", "mlp.down.weight",
-              "glance.qkv.weight", "glance.out.weight", ".up.weight", ".down.weight")    # (last four: Fern's unfolder)
+              "glance.qkv.weight", "glance.out.weight", ".up.weight", ".down.weight",    # (these four: Fern's unfolder)
+              "attn.q.weight", "attn.k.weight", "attn.v.weight", "attn.gate.weight", "attn.out.weight")   # Bee's attention
 
 
 def make_optimizer(model, lr, device, kind="adamw", muon_lr=0.02):
@@ -202,8 +230,9 @@ def make_optimizer(model, lr, device, kind="adamw", muon_lr=0.02):
     grids = [(n, p) for n, p in named if kind == "muon" and p.dim() == 2 and n.endswith(MUON_GRIDS)]
     gids = {id(p) for _, p in grids}
     rest = [(n, p) for n, p in named if id(p) not in gids]
-    decay = [p for n, p in rest if p.dim() >= 2 and "conv_w" not in n]
-    no_decay = [p for n, p in rest if p.dim() < 2 or "conv_w" in n]
+    keep = lambda n, p: p.dim() < 2 or "conv_w" in n or (getattr(model, "embed_no_decay", False) and n.startswith("embed"))  # noqa: E731
+    decay = [p for n, p in rest if not keep(n, p)]
+    no_decay = [p for n, p in rest if keep(n, p)]
     kw = dict(lr=lr, betas=(0.9, 0.95), eps=1e-8)
     if device.type == "cuda":
         kw["fused"] = True
@@ -298,7 +327,7 @@ def bench(args, device):
         if args.compile and device.type == "cuda":
             model.enable_compile()
         opt = make_optimizer(model, 1e-4, device)
-        T = cfg.max_len
+        T = model.ctx_at(0) if hasattr(model, "ctx_at") else cfg.max_len     # Bee: its first window length
         x = torch.randint(0, 50257, (micro, T), device=device)
         times = []
         for i in range(args.bench_steps + 3):
@@ -321,6 +350,25 @@ def bench(args, device):
             extra = f"  (memory kernel: {'flash-linear-attention' if memory._FLA_OK else 'pure PyTorch chunked'})"
         say(f"{kind:7s} params {model.num_params() / 1e6:6.1f}M  {dt * 1000:7.1f} ms per {micro}x{T}  "
               f"{tps / 1e3:8.1f}k tok/s  peak mem {mem:5.1f} GB{extra}")
+        mname = args.mentor or MENTOR.get(kind, "none")
+        if kind == "bee" and mname != "none":            # Bee's real cost includes its mentor's reading
+            from ember.mentor import Mentor
+            me = Mentor(mname, device, compile=bool(args.compile))
+            mt = []
+            for i in range(args.bench_steps + 3):
+                t0 = time.time()
+                with amp(device):
+                    me.guess(x)
+                if device.type == "cuda":
+                    torch.cuda.synchronize()
+                if i >= 3:
+                    mt.append(time.time() - t0)
+            mtps = micro * T / float(np.median(mt))
+            u = args.mentor_until
+            sec = total * (u * (1 / tps + 1 / mtps) + (1 - u) / tps)
+            say(f"mentor  {mname}: {mtps / 1e3:8.1f}k tok/s reading only. Bee0.2B with it for the first {u:.0%}: "
+                f"about {sec / 3600:.1f} h for {total / 1e9:.1f}B tokens (+ ~5-10% for 2,048-word windows and tests)")
+            del me
         del model, opt
         if device.type == "cuda":
             torch.cuda.empty_cache()
@@ -363,6 +411,10 @@ def main():
     ap.add_argument("--mentor", default=None, help="Ember's mentor: gpt2-medium (default), gpt2-large, gpt2-xl or none")
     ap.add_argument("--mentor-weight", type=float, default=0.6, help="mentor's share of the lesson at the start")
     ap.add_argument("--mentor-until", type=float, default=0.5, help="fraction of training after which the mentor is silent")
+    ap.add_argument("--schedule", choices=["cos", "wsd"], default=None,
+                    help="learning-rate shape: cos (cosine) or wsd (flat, then a straight fall over the last 20%%); default wsd for bee")
+    ap.add_argument("--mix", default=None, help="Bee's text mix over training (default in oazy/mix.py), "
+                    "e.g. 'fwe:0.65,dclm:0.35@0;fwe:0.45,dclm:0.25,chat:0.3@0.8'")
     ap.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE",
                     help="change a model setting, e.g. --set n_layer=8 (applies to the model being trained)")
     args = ap.parse_args()
@@ -388,16 +440,36 @@ def main():
     model, cfg = build(args.model, args.preset, parse_overrides(args.set))
     model.to(device)
     T = cfg.max_len
-    micro = args.micro or p.get("micro_" + args.model, p["micro"])
+    micro0 = args.micro or p.get("micro_" + args.model, p["micro"])
     # tokens per step: the preset's (at its usual 1,024-word windows, so Fern3's 4,096-word windows keep 262k)
-    accum = max(1, (args.batch_tokens or p["micro"] * p["accum"] * min(T, 1024)) // (micro * T))
+    batch_tokens = args.batch_tokens or p.get("batch_" + args.model) or p["micro"] * p["accum"] * min(T, 1024)
+    growing_ctx = hasattr(model, "ctx_at")             # Bee: 1,024-word windows first, then 2,048
+    T0 = model.ctx_at(0) if growing_ctx else T          # window length the validation uses (same all run)
+
+    def shape(T):
+        """Sequences per pass and passes per step for windows of T words (same words per step throughout)."""
+        mi = max(1, micro0 * T0 // T)
+        return mi, max(1, batch_tokens // (mi * T))
+    T = T0
+    micro, accum = shape(T)
     B = micro * accum
     opt_kind = args.opt or ("muon" if args.model in FAST else "adamw")
     new_opt = lambda: make_optimizer(model, lr, device, opt_kind, args.muon_lr)   # noqa: E731
     opt = new_opt()
-    mentor_name = args.mentor or (p.get("mentor", "gpt2-medium") if args.model in FAST else "none")
-    train = Windows(data / "train.bin", T, micro, seed=args.seed)
-    vwin = val_set(data / "val.bin", T, p["val_windows"])
+    mentor_name = args.mentor or (p.get("mentor", MENTOR.get(args.model, "gpt2-medium")) if args.model in FAST else "none")
+    schedule = args.schedule or ("wsd" if args.model == "bee" else "cos")
+    lr_fn = lr_wsd if schedule == "wsd" else lr_at
+    if args.model == "bee":
+        from .mix import Mix, DEFAULT_MIX, source_path
+        from bee.model import ctx_plan
+        train = Mix(data, args.mix or DEFAULT_MIX, T, micro, seed=args.seed,
+                    lengths=[t for _, t in ctx_plan(cfg)], log=say)
+        xval = {n: val_set(source_path(data, n, "val"), T0, 32) for n in train.src
+                if n != "fwe" and source_path(data, n, "val").exists()}
+    else:
+        train = Windows(data / "train.bin", T, micro, seed=args.seed)
+        xval = {}
+    vwin = val_set(data / "val.bin", T0, p["val_windows"])
     pwin = vwin[: min(32, len(vwin))]
     hs_path = data / "hellaswag_val.jsonl"
 
@@ -411,6 +483,11 @@ def main():
         opt.load_state_dict(state["opt"])
         step, tokens, elapsed, nxt = state["step"], state["tokens"], state["elapsed"], state["next"]
         train.set_state(state["data"])
+        if growing_ctx:
+            T = train.T
+            micro, accum = shape(T)
+            B = micro * accum
+            train.set_batch(micro)
         torch.set_rng_state(state["torch_rng"].cpu())
         say(f"resumed from {ck}: step {step}, {tokens / 1e6:.1f}M tokens, {elapsed / 60:.1f} min")
     elif args.fresh:
@@ -424,7 +501,9 @@ def main():
         "params": model.full_params() if hasattr(model, "full_params") else model.num_params(),
         "params_non_embedding": (model.full_params() if hasattr(model, "full_params") else model.num_params())
         - model.embed.weight.numel(), "optimizer": opt_kind, "mentor": mentor_name, "batch_tokens": B * T, "micro": micro,
-        "context": T, "lr": lr, "total_tokens": total, "device": str(device),
+        "context": cfg.max_len if growing_ctx else T, "lr": lr, "schedule": schedule,
+        "layout": model.layout() if hasattr(model, "layout") else None,
+        "mix": args.mix or (DEFAULT_MIX if args.model == "bee" else None), "total_tokens": total, "device": str(device),
         "gpu": torch.cuda.get_device_name() if device.type == "cuda" else "cpu",
         "memory_numbers": model.memory_numbers() if hasattr(model, "memory_numbers") else None,
         "data": json.loads((data / "meta.json").read_text()) if (data / "meta.json").exists() else None,
@@ -479,8 +558,10 @@ def main():
         """Validation loss, HellaSwag, memory checks, samples, snapshot, whenever their turn comes."""
         base = {"step": step, "tokens": tokens, "elapsed": elapsed}
         if final or tokens >= nxt["eval"]:
-            vl = val_loss(model, vwin, device, micro)
-            run.log("metrics.jsonl", {"kind": "eval", **base, "val_loss": vl})
+            vl = val_loss(model, vwin, device, micro0)
+            extra = {f"val_loss_{n}": val_loss(model, w, device, micro0) for n, w in xval.items()}
+            run.log("metrics.jsonl", {"kind": "eval", **base, "val_loss": vl, **extra})
+            latest.update(extra)
             latest["val_loss"] = vl
             say(f"[eval] step {step} | {tokens / 1e6:.0f}M tokens | val loss {vl:.4f}", flush=True)
             nxt["eval"] += p["eval_every"]
@@ -586,7 +667,18 @@ def main():
             if device.type == "cuda":
                 torch.cuda.empty_cache()
 
-        cur_lr = lr_at(tokens / total, step, lr, p["warmup"])
+        if growing_ctx and model.ctx_at(tokens / total) != T:          # Bee: time for longer windows
+            T = model.ctx_at(tokens / total)
+            micro, accum = shape(T)
+            B = micro * accum
+            train.set_block(T)
+            train.set_batch(micro)
+            say(f"[context] {tokens / 1e6:.0f}M tokens: {NICE[args.model]} now reads windows of {T} words "
+                f"({micro} x {accum} per step)", flush=True)
+            run.log("metrics.jsonl", {"kind": "context", "step": step, "tokens": tokens, "elapsed": elapsed, "context": T})
+        if hasattr(train, "progress"):
+            train.progress = tokens / total
+        cur_lr = lr_fn(tokens / total, step, lr, p["warmup"])
         for g in opt.param_groups:
             g["lr"] = cur_lr * g.get("lr_scale", 1.0)
         loss_sum, kd_sum, rd_sum, hs_sum = 0.0, 0.0, 0.0, 0.0
@@ -641,6 +733,8 @@ def main():
                    "loss": float(acc_loss) / acc_n, "lr": cur_lr, "tok_s": tps, "grad_norm": float(gnorm)}
             if hasattr(model, "grow_to"):
                 rec["depth"] = model.depth
+            if hasattr(train, "weights"):
+                rec["context"], rec["mix"] = T, {k: round(v, 3) for k, v in train.weights(tokens / total).items()}
             if mw > 0:
                 rec["mentor_w"], rec["mentor_kl"] = mw, float(kd_sum) / accum
             if rd_sum:

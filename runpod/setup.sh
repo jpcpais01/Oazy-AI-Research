@@ -3,6 +3,7 @@
 #
 #   bash runpod/setup.sh               # prepares 4B tokens of FineWeb-Edu (enough for the "full" run)
 #   OAZY_PREP_TOKENS=8e9 bash runpod/setup.sh   # more text, for the "big" run
+#   bash runpod/setup.sh bee           # also Bee0.2B's mix: 2B tokens of DCLM + conversations (~40-60 min more)
 #
 # 1. makes sure PyTorch can use this GPU (Blackwell needs a recent build),
 # 2. installs the tokenizer, dataset tools, and the flash-linear-attention kernels (optional speed-up),
@@ -53,5 +54,12 @@ python3 -m tide.tests --device cuda
 python3 -m ember.tests --device cuda
 python3 -m fern2.tests --device cuda
 python3 -m fern3.tests --device cuda
+python3 -m bee.tests --device cuda
+
+if [ "${1:-}" = bee ]; then
+    echo "== Bee0.2B's text mix: DCLM (2B tokens) and conversations (smol-smoltalk)"
+    python3 -m oazy.mix --source dclm --data "${DATA}" --tokens 2e9
+    python3 -m oazy.mix --source chat --data "${DATA}" --tokens 4e8
+fi
 
 echo "== setup complete. Next: python3 -m oazy.train --bench --model tide --hours 2"

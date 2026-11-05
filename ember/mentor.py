@@ -40,7 +40,11 @@ class Mentor:
 
     @torch.no_grad()
     def guess(self, x):
-        return self.net._compiled(x) if self.net._compiled is not None else self.net._body(x)
+        L = self.net.cfg.max_len                  # GPT-2 reads at most 1,024 words: longer windows go in pieces
+        f = self.net._compiled if self.net._compiled is not None else self.net._body
+        if x.shape[1] <= L:
+            return f(x)
+        return torch.cat([f(x[:, i:i + L]) for i in range(0, x.shape[1], L)], dim=1)
 
 
 def mentor_loss(student_logits, mentor_logits, chunk: int = 4):

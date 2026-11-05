@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Oazy AI Research · Talk to Bee0.2B</title>
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="stylesheet" href="style.css">
+<style>
+  :root { --bee-soft: rgba(255, 111, 97, .14); }
+  .topbar .pills { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill b { color: var(--text); font-weight: 600; }
+  .status { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--muted); padding: 3px 10px; border-radius: 99px; border: 1px solid var(--border); }
+  .status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+  .status.on { color: var(--text-2); } .status.on .dot { background: var(--bee); animation: ping 1.4s infinite; }
+
+  .convo { min-height: 260px; max-height: 56vh; overflow-y: auto; padding: 4px 2px 8px; display: flex; flex-direction: column; gap: 12px; }
+  .bubble { max-width: 86%; padding: 10px 14px; border-radius: 16px; font-size: 16px; line-height: 1.75; white-space: pre-wrap; word-wrap: break-word; }
+  .bubble.you { align-self: flex-end; background: var(--surface-3); border: 1px solid var(--border-2); border-bottom-right-radius: 5px; }
+  .bubble.model { align-self: flex-start; background: var(--bee-soft); border: 1px solid rgba(255, 111, 97, .35); border-bottom-left-radius: 5px; }
+  .bubble .who { display: block; font: 600 10.5px/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
+  .bubble.model .who { color: var(--bee); }
+  .story { font-size: 17px; line-height: 1.95; white-space: pre-wrap; }
+  .story .you { color: var(--text); } .story .model { color: #ffd2cc; }
+  .w { border-radius: 5px; padding: 2px 0; cursor: pointer; box-decoration-break: clone; -webkit-box-decoration-break: clone; transition: background .3s; }
+  .w.sel { outline: 1.5px solid rgba(255,255,255,.85); outline-offset: 1px; }
+  .w.fresh { animation: pop .5s ease-out; }
+  .w.hot { outline: 1.5px dashed var(--bee); outline-offset: 1px; }
+  @keyframes pop { from { background: rgba(255, 111, 97, .45); } }
+  .caret { display: inline-block; width: 9px; height: 17px; background: var(--bee); vertical-align: -3px; margin-left: 3px; border-radius: 2px; animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .hint { color: var(--muted); font-size: 15px; line-height: 1.7; }
+
+  .composer { margin-top: 14px; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: 14px; padding: 12px 12px 10px 16px; }
+  .composer:focus-within { border-color: rgba(255, 111, 97, .6); box-shadow: 0 0 0 3px rgba(255, 111, 97, .12); }
+  .composer textarea { width: 100%; background: transparent; border: 0; color: var(--text); font: 15.5px/1.6 var(--sans); resize: none; outline: none; min-height: 52px; }
+  .composer .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .composer .row .spacer { flex: 1; }
+  .controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 22px; margin-top: 18px; }
+  @media (max-width: 760px) { .controls { grid-template-columns: 1fr; } }
+  .ctl .top { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-2); margin-bottom: 4px; }
+  .ctl .top b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .ctl input[type=range] { width: 100%; }
+  .ctl .h { font-size: 11.5px; color: var(--muted); margin-top: 4px; line-height: 1.45; }
+
+  .ins h4 { font-size: 11.5px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); margin: 20px 0 10px; font-weight: 600; }
+  .ins h4:first-child { margin-top: 0; }
+  .bigword { font-size: 24px; font-weight: 650; letter-spacing: -0.01em; font-family: var(--mono); }
+  .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+  .tile { background: var(--surface-2); border: 1px solid var(--border); border-radius: 11px; padding: 9px 12px; }
+  .tile .k { font-size: 11.5px; color: var(--muted); } .tile .v { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .guess { display: grid; grid-template-columns: 110px 1fr 50px; gap: 10px; align-items: center; font-size: 13px; margin: 7px 0; }
+  .guess .gw { font-family: var(--mono); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar6 { height: 6px; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
+  .bar6 div { height: 100%; background: var(--bee); border-radius: 99px; }
+  .guess b { text-align: right; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--text-2); }
+  .look { display: grid; grid-template-columns: 62px 1fr; gap: 10px; align-items: start; font-size: 12.5px; margin: 8px 0; }
+  .look .ln { color: var(--muted); font-family: var(--mono); font-size: 11.5px; padding-top: 3px; }
+  .look .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .look .chip2 { font-family: var(--mono); font-size: 12px; padding: 2px 8px; border-radius: 8px; border: 1px solid var(--border-2); cursor: pointer; white-space: pre; }
+  .look .chip2 i { font-style: normal; color: var(--muted); margin-left: 6px; font-size: 11px; }
+  .gridwrap { position: relative; }
+  .gridwrap canvas { width: 100%; display: block; }
+  .stripbox { position: relative; overflow-x: auto; }
+  .stripbox canvas { display: block; cursor: pointer; }
+  .keyrow { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .keyrow .ramp { width: 80px; height: 8px; border-radius: 99px; display: inline-block; vertical-align: middle; margin: 0 6px; }
+</style>
+</head>
+<body>
+<header class="topbar"><div class="inner">
+  <div class="brand"><img class="logo" src="icon.svg" alt="">
+    <h1>Oazy AI Research <span class="tag">Talk to Bee0.2B</span></h1></div>
+  <div class="spacer"></div>
+  <div class="pills" id="pills"></div>
+  <button class="btn" id="reset" title="Forget everything and start over"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 8a5 5 0 1 0 1.6-3.7"/><path d="M3 2.5v3h3"/></svg>Start over</button>
+</div></header>
+
+<div class="wrap">
+  <div class="grid">
+    <div class="card span7">
+      <div class="cardhead">
+        <div class="titles"><h2 id="title">Conversation</h2><div class="sub" id="sub">Each word is shaded by how much it surprised Bee's memory layers. Click a word to look inside.</div></div>
+        <div class="tools"><div class="seg" id="mode"><button data-m="chat" class="on">Chat</button><button data-m="write">Write</button></div>
+          <div class="seg" id="colorBy"><button data-c="surprise" class="on">Memory surprise</button><button data-c="p">Word surprise</button><button data-c="none">Plain</button></div>
+          <span class="status" id="status"><span class="dot"></span><span>ready</span></span></div>
+      </div>
+      <details class="why"><summary>How does Bee read?</summary><div class="body">
+        <p>Bee is a stack of 24 layers. Three in every four are <b>memory layers</b> (Memtrix): small grids of numbers, fixed by their own surprise word after word, that carry the gist and the order of everything so far. Every fourth is an <b>attention layer</b>: the newest word may look back at <i>any</i> earlier word exactly, which is how Bee can copy a name or a number from far back.</p>
+        <p>Bee is a next-word model: it writes one word at a time. Near the end of its training it read conversations written as <span class="mono">User: … / Assistant: …</span>, so in <b>Chat</b> it answers as the assistant. <b>Write</b> lets it carry on any text. Nothing is re-read between messages: the memories and the attention layers' notes simply carry on.</p>
+      </div></details>
+      <div class="convo" id="convo"><div class="hint">Say hello, or ask something. Try telling Bee a fact early on ("My cat is called Pepper.") and asking about it later, then click the answer to see which attention layer looked back at "Pepper".</div></div>
+      <div class="composer">
+        <textarea id="input" placeholder="Message Bee…" rows="2"></textarea>
+        <div class="row"><span class="small muted" id="kbd">Enter to send · Shift+Enter for a new line</span><div class="spacer"></div>
+          <button class="btn ghost" id="stop" disabled>Stop</button><button class="btn primary" id="go">Send</button></div>
+      </div>
+      <div class="controls">
+        <div class="ctl"><div class="top"><span>Longest answer</span><b id="nv">150</b></div><input type="range" id="n" min="0" max="400" value="150"><div class="h">in words (tokens); Bee usually stops on its own</div></div>
+        <div class="ctl"><div class="top"><span>Temperature</span><b id="tv">0.7</b></div><input type="range" id="temp" min="0" max="1.5" step="0.05" value="0.7"><div class="h">Low = safe and repetitive · high = adventurous</div></div>
+        <div class="ctl"><div class="top"><span>Choices per word</span><b id="kv">40</b></div><input type="range" id="topk" min="1" max="200" value="40"><div class="h">Only the top few words can be picked</div></div>
+      </div>
+    </div>
+
+    <div class="card span5 ins">
+      <h4>The selected word</h4>
+      <div class="bigword" id="word">–</div>
+      <div class="tiles">
+        <div class="tile"><div class="k">chance it gave</div><div class="v" id="tp">–</div></div>
+        <div class="tile"><div class="k">memory surprise</div><div class="v" id="ts">–</div></div>
+        <div class="tile"><div class="k">word number</div><div class="v" id="ti">–</div></div>
+      </div>
+      <h4>What it expected next</h4>
+      <div id="guesses"><div class="muted small">–</div></div>
+      <h4>Where each attention layer looked back</h4>
+      <div id="looks"><div class="muted small">–</div></div>
+      <h4>Surprise in each memory layer</h4>
+      <div class="gridwrap"><canvas id="bars" style="height:90px"></canvas></div>
+    </div>
+
+    <div class="card span12">
+      <div class="cardhead"><div class="titles"><h2>Surprise in every memory layer, word by word</h2><div class="sub">Rows are memory layers (bottom: first), columns are words. Bright = the memories did not see it coming.</div></div></div>
+      <div class="stripbox" id="stripbox"><canvas id="strip" style="height:170px"></canvas><div class="tip" id="stripTip"></div></div>
+      <div class="keyrow"><span>expected<span class="ramp" id="ramp1"></span>brand new</span></div>
+    </div>
+  </div>
+</div>
+
+<script src="common.js"></script>
+<script>
+"use strict";
+let INFO = null, WORDS = [], SEL = null, es = null, colorBy = "surprise", MODE = "chat";
+const $ = (id) => document.getElementById(id);
+const avg = (a) => a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0;
+const surpriseU = (s) => Math.max(0, Math.min(1, (s - 0.3) / 0.9));
+
+async function init() {
+  INFO = await (await fetch("api/info")).json();
+  $("pills").innerHTML = `<span class="pill"><b>${(INFO.params / 1e6).toFixed(0)}M</b> parameters</span>
+    <span class="pill">${INFO.layout}</span>
+    ${INFO.tokens ? `<span class="pill">trained on <b>${UI.fmtTokens(INFO.tokens)}</b> tokens</span>` : ""}`;
+  $("ramp1").style.background = UI.heatCSS();
+  UI.watchRanges();
+  [["n", "nv"], ["temp", "tv"], ["topk", "kv"]].forEach(([a, b]) => $(a).addEventListener("input", () => ($(b).textContent = $(a).value)));
+}
+
+function shade(w) {
+  if (colorBy === "none" || w.source === "frame") return "";
+  let u;
+  if (colorBy === "p") { if (w.p == null) return ""; u = Math.min(1, -Math.log(Math.max(w.p, 1e-9)) / 10); }
+  else u = surpriseU(avg(w.surprise));
+  const [r, g, b] = UI.heatRGB(u);
+  return `background:rgba(${r},${g},${b},${0.10 + 0.55 * u})`;
+}
+
+const span = (w, last) => `<span class="w${w.i === SEL ? " sel" : ""}${HOT.has(w.i) ? " hot" : ""}${last ? " fresh" : ""}" data-i="${w.i}" style="${shade(w)}">${UI.escapeHtml(w.text)}</span>`;
+let HOT = new Set();
+
+function render(fresh) {
+  const box = $("convo");
+  if (!WORDS.length) return;
+  const lastI = WORDS[WORDS.length - 1].i;
+  const caret = es ? `<span class="caret"></span>` : "";
+  if (MODE === "write") {
+    box.innerHTML = `<div class="story">${WORDS.filter((w) => w.source !== "frame").map((w) => `<span class="${w.source}">${span(w, fresh && w.i === lastI)}</span>`).join("")}${caret}</div>`;
+  } else {
+    // group the words into turns: frame words ("User:", "Assistant:") are hidden, they only separate turns
+    const turns = [];
+    for (const w of WORDS) {
+      if (w.source === "frame") continue;
+      const t = turns[turns.length - 1];
+      if (t && t.who === w.source) t.words.push(w); else turns.push({ who: w.source, words: [w] });
+    }
+    box.innerHTML = turns.map((t, k) => {
+      const ws = t.words.slice();
+      while (ws.length > 1 && !ws[0].text.trim()) ws.shift();
+      return `<div class="bubble ${t.who}"><span class="who">${t.who === "you" ? "You" : "Bee"}</span>${ws.map((w) => span(w, fresh && w.i === lastI)).join("")}${k === turns.length - 1 && t.who === "model" ? caret : ""}</div>`;
+    }).join("") + (es && (!turns.length || turns[turns.length - 1].who !== "model") ? `<div class="bubble model"><span class="who">Bee</span>${caret}</div>` : "");
+  }
+  box.scrollTop = box.scrollHeight;
+}
+
+function inspect(i) {
+  SEL = i; const w = WORDS[i]; if (!w) return;
+  $("word").textContent = UI.pieceLabel(w.text);
+  $("tp").textContent = w.p == null ? "–" : (w.p * 100).toFixed(w.p < 0.01 ? 2 : 1) + "%";
+  $("ts").textContent = avg(w.surprise).toFixed(2);
+  $("ti").textContent = (i + 1).toLocaleString();
+  const next = WORDS[i + 1];
+  $("guesses").innerHTML = w.top.map(([t, p]) => `<div class="guess"><span class="gw" style="${next && next.text === t ? "color:var(--good)" : ""}">${UI.escapeHtml(UI.pieceLabel(t))}</span><div class="bar6"><div style="width:${(p * 100).toFixed(1)}%"></div></div><b>${(p * 100).toFixed(1)}%</b></div>`).join("");
+  HOT = new Set(w.looks.flat().filter(([j, x]) => j !== i && x > 0.15).map(([j]) => j));
+  $("looks").innerHTML = w.looks.map((row, k) => `<div class="look"><span class="ln">layer ${INFO.att_layers[k] + 1}</span><div class="chips">${row.map(([j, x]) => {
+    const t = WORDS[j] ? WORDS[j].text : "?", self = j === i;
+    return `<span class="chip2" data-j="${j}" style="background:rgba(255,111,97,${(0.08 + 0.5 * x).toFixed(2)})" title="word ${j + 1}">${self ? "(itself)" : UI.escapeHtml(UI.pieceLabel(t))}<i>${Math.round(x * 100)}%</i></span>`;
+  }).join("")}</div></div>`).join("");
+  drawBars(w);
+  render(false);
+}
+
+function drawBars(w) {
+  const cv = $("bars"), L = w.surprise.length;
+  const { ctx, w: W, h } = UI.fitCanvas(cv, 90);
+  ctx.clearRect(0, 0, W, h);
+  const bw = W / L, top = Math.max(0.6, ...w.surprise);
+  for (let l = 0; l < L; l++) {
+    const u = surpriseU(w.surprise[l]), bh = Math.max(2, (h - 16) * w.surprise[l] / top);
+    ctx.fillStyle = UI.heat(u);
+    ctx.fillRect(l * bw + 2, h - 14 - bh, bw - 4, bh);
+  }
+  ctx.fillStyle = UI.css("--muted"); ctx.font = UI.font(10); ctx.textAlign = "center";
+  for (let l = 0; l < L; l += 3) ctx.fillText(INFO.mem_layers[l] + 1, (l + 0.5) * bw, h - 2);
+}
+
+function drawStrip() {
+  const cv = $("strip"), ws = WORDS.filter((w) => w.surprise.length);
+  if (!ws.length) return;
+  const L = ws[0].surprise.length, T = ws.length, cw = 8;
+  const boxW = $("stripbox").clientWidth;
+  cv.style.width = Math.max(boxW, 70 + T * cw) + "px";
+  const { ctx, w, h } = UI.fitCanvas(cv, 170);
+  ctx.clearRect(0, 0, w, h);
+  const padL = 70, ch = h / L;
+  for (let l = 0; l < L; l++) {
+    for (let t = 0; t < T; t++) {
+      ctx.fillStyle = UI.heat(surpriseU(ws[t].surprise[l]));
+      ctx.fillRect(padL + t * cw, (L - 1 - l) * ch, cw - 1, ch - 1);
+    }
+    if (l % 3 === 0) { ctx.fillStyle = UI.css("--muted"); ctx.font = UI.font(10.5); ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.fillText("layer " + (INFO.mem_layers[l] + 1), padL - 6, (L - 1 - l + 0.5) * ch); }
+  }
+  const tip = $("stripTip");
+  cv.onmousemove = (e) => {
+    const t = Math.floor((e.offsetX - padL) / cw), l = L - 1 - Math.floor(e.offsetY / ch);
+    if (t < 0 || t >= T || l < 0 || l >= L) { tip.style.display = "none"; return; }
+    tip.innerHTML = `<div class="tipword">${UI.escapeHtml(UI.pieceLabel(ws[t].text))}</div><div class="tiprow">memory layer<b>${INFO.mem_layers[l] + 1}</b></div><div class="tiprow">surprise<b>${ws[t].surprise[l].toFixed(3)}</b></div>`;
+    UI.placeTip(tip, e.offsetX - $("stripbox").scrollLeft, e.offsetY, boxW);
+  };
+  cv.onmouseleave = () => (tip.style.display = "none");
+  cv.onclick = (e) => { const t = Math.floor((e.offsetX - padL) / cw); if (t >= 0 && t < T) inspect(ws[t].i); };
+  $("stripbox").scrollLeft = 1e9;
+}
+
+function setBusy(b) {
+  $("go").disabled = b; $("stop").disabled = !b; $("reset").disabled = b;
+  document.querySelectorAll("#mode button").forEach((x) => (x.disabled = b));
+  $("status").className = "status" + (b ? " on" : ""); $("status").lastElementChild.textContent = b ? (MODE === "chat" ? "answering" : "writing") : "ready";
+}
+
+function go() {
+  if (es) return;
+  const text = $("input").value;
+  if (MODE === "chat" && !text.trim()) return;
+  $("input").value = "";
+  const q = new URLSearchParams({ text, mode: MODE, n: $("n").value, temp: $("temp").value, top_k: $("topk").value });
+  es = new EventSource("api/stream?" + q);
+  setBusy(true);
+  let k = 0;
+  es.onmessage = (m) => {
+    const ev = JSON.parse(m.data);
+    if (ev.type === "word") {
+      WORDS[ev.i] = ev;
+      if (++k % 3 === 0 || ev.source === "model") { render(true); if (ev.source === "model") inspect(ev.i); drawStrip(); }
+    } else if (ev.type === "end") {
+      es.close(); es = null; setBusy(false); render(false); drawStrip();
+      const last = [...WORDS].reverse().find((w) => w.source !== "frame"); if (last) inspect(last.i);
+    }
+  };
+  es.onerror = () => { if (es) { es.close(); es = null; } setBusy(false); render(false); };
+}
+
+async function reset() {
+  await fetch("api/reset"); WORDS = []; SEL = null; HOT = new Set();
+  $("convo").innerHTML = `<div class="hint">${MODE === "chat" ? "A fresh conversation. Say hello." : "A fresh text. Write the beginning and Bee carries on."}</div>`;
+  $("strip").getContext("2d").clearRect(0, 0, 1e4, 1e4);
+}
+
+function setMode(m) {
+  MODE = m;
+  document.querySelectorAll("#mode button").forEach((x) => x.classList.toggle("on", x.dataset.m === m));
+  $("title").textContent = m === "chat" ? "Conversation" : "The text so far";
+  $("go").textContent = m === "chat" ? "Send" : "Continue";
+  $("input").placeholder = m === "chat" ? "Message Bee…" : "Write the beginning, or leave it empty to let Bee carry on…";
+  reset();
+}
+
+$("go").onclick = go;
+$("stop").onclick = () => { if (es) { es.close(); es = null; setBusy(false); render(false); } };
+$("input").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); go(); } });
+$("reset").onclick = reset;
+$("convo").addEventListener("click", (e) => { const s = e.target.closest(".w"); if (s) inspect(+s.dataset.i); });
+$("looks").addEventListener("click", (e) => { const s = e.target.closest(".chip2"); if (s && WORDS[+s.dataset.j] && WORDS[+s.dataset.j].source !== "frame") inspect(+s.dataset.j); });
+$("mode").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b && !es && b.dataset.m !== MODE) setMode(b.dataset.m); });
+$("colorBy").addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; colorBy = b.dataset.c; document.querySelectorAll("#colorBy button").forEach((x) => x.classList.toggle("on", x === b)); render(false); });
+window.addEventListener("resize", () => { if (SEL != null) drawBars(WORDS[SEL]); drawStrip(); });
+init();
+</script>
+</body>
+</html>
