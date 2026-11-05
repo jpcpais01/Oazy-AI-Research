@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Oazy AI Research · Training</title>
+<link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="stylesheet" href="style.css">
 <style>
   .runs { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
@@ -68,7 +69,7 @@
 <body>
 <header class="topbar"><div class="inner">
   <div class="brand">
-    <div class="logo"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <img class="logo" src="icon.svg" alt="">
     <h1>Oazy AI Research <span class="tag">Training</span></h1></div>
   <div class="spacer"></div>
   <span class="pill" id="updated"><span class="dot"></span><span>connecting…</span></span>
@@ -99,7 +100,7 @@
       <div class="cardhead"><div class="titles"><h2>HellaSwag</h2><div class="sub">Picking the sensible ending of a scene, out of 4. Higher is better.</div></div></div>
       <details class="why"><summary>What is HellaSwag?</summary><div class="body">
         <p>A standard test of common sense: "A woman is outside with a bucket and a dog. The dog is running around trying to avoid a bath. She…" followed by four endings, three of them silly.</p>
-        <p>The model picks the ending it finds least surprising. Guessing gives <b>25%</b>. OpenAI's GPT-2 small scores <b>29.6%</b> this way: that is the line to beat. During training a quick check uses 1,000 questions spread over the whole set; the final score uses all 10,042. (Runs from before Nov 5 used the first 1,000, which are easier: their curves read about 5 points too high.)</p>
+        <p>The model picks the ending it finds least surprising. Guessing gives <b>25%</b>. OpenAI's GPT-2 small scores <b>29.6%</b> this way: that is the line to beat. During training a quick check uses 1,000 questions spread over the whole set; the final score uses all 10,042. Older runs took the first 1,000 instead, which are easier and read about 5 points too high, so those points are hidden: for such a run only the final score is drawn.</p>
       </div></details>
       <div class="legend" id="hsLegend" style="margin-bottom:10px"></div>
       <div class="chart"><canvas id="hs" style="height:300px"></canvas><div class="tip" id="hsTip"></div></div>
@@ -181,6 +182,9 @@ const NAMES = { engram: "Engram", gpt: "GPT-2 (trained here)", openai: "OpenAI G
 const colorOf = (n) => n.startsWith("engram") ? C.engram : n.startsWith("gpt") ? C.gpt : C.ref;
 const nameOf = (n) => n === "engram" ? "Engram" : n === "gpt" ? NAMES.gpt : n === "openai-gpt2" ? NAMES.openai : n;
 const HS_GPT2 = 0.2955;
+// HellaSwag points worth drawing: full scores, and quick checks on the evenly spread sample.
+// Runs before Nov 5 took the first 1,000 questions (easier, ~5 points too high); those are hidden.
+const hsOK = (x) => x.kind === "hellaswag" && (x.full || x.sample === "spread" || x.n < 1000);
 let RUNS = [], DATA = {}, SNAPS = [], SNAP = null, xmode = "tokens", colorBy = "surprise", POSLAB = [];
 
 const fmtL = (v) => v.toFixed(3);
@@ -243,7 +247,7 @@ function scoreboard() {
   for (const n of names) {
     const e = lastOf(n, "eval"); if (e) val[n] = e.val_loss;
     const m = DATA[n]?.metrics || [];
-    const full = m.filter((x) => x.kind === "hellaswag" && x.full).pop(), quick = m.filter((x) => x.kind === "hellaswag").pop();
+    const full = m.filter((x) => x.kind === "hellaswag" && x.full).pop(), quick = m.filter(hsOK).pop();
     if (full || quick) hs[n] = (full || quick).acc_norm;
   }
   if (!Object.keys(val).length) { box.innerHTML = `<div class="card"><div class="empty">The scoreboard fills in after the first evaluation.</div></div>`; return; }
@@ -285,7 +289,7 @@ function drawLearning() {
       if (e) { series.push({ name: NAMES.openai, color: col, dash: [6, 5], width: 1.5, points: [], hline: e.val_loss }); leg.push([NAMES.openai, col, true]); }
       continue;
     }
-    const tr = m.filter((x) => x.kind === "train"), ev = m.filter((x) => x.kind === "eval"), hs = m.filter((x) => x.kind === "hellaswag");
+    const tr = m.filter((x) => x.kind === "train"), ev = m.filter((x) => x.kind === "eval"), hs = m.filter(hsOK);
     const step = Math.max(1, Math.floor(tr.length / 400));
     series.push({ name: nameOf(r.name) + " (train)", color: col, alpha: 0.3, width: 1.2, noTip: true, points: tr.filter((_, i) => i % step === 0).map((x) => [xOf(x), x.loss]) });
     series.push({ name: nameOf(r.name), color: col, width: 2.4, dots: ev.length < 40, endLabel: true, points: ev.map((x) => [xOf(x), x.val_loss]) });

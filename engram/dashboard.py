@@ -59,8 +59,8 @@ def make_handler(runs: Path, web: Path = WEB):
             parts = [p for p in path.split("/") if p]
             if not parts:
                 return self.send(200, (web / "dashboard.html").read_bytes(), "text/html; charset=utf-8")
-            if len(parts) == 1 and parts[0].endswith((".js", ".css")) and (web / parts[0]).is_file():
-                ctype = "text/javascript" if parts[0].endswith(".js") else "text/css"
+            if len(parts) == 1 and parts[0].endswith((".js", ".css", ".svg")) and (web / parts[0]).is_file():
+                ctype = "text/javascript" if parts[0].endswith(".js") else "image/svg+xml" if parts[0].endswith(".svg") else "text/css"
                 return self.send(200, (web / parts[0]).read_bytes(), ctype + "; charset=utf-8")
             if parts == ["api", "runs"]:
                 out = []

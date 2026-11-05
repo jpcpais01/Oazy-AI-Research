@@ -68,10 +68,7 @@ b, .num { font-variant-numeric: tabular-nums; }
 .brand { display: flex; align-items: center; gap: 11px; }
 .brand h1 { font-size: 17px; font-weight: 650; }
 .brand .tag { color: var(--muted); font-weight: 450; font-size: 14px; }
-.logo { width: 26px; height: 26px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; }
-.logo i { border-radius: 2.5px; background: var(--brand); animation: logo 3.2s ease-in-out infinite; }
-.logo i:nth-child(3n+2) { animation-delay: .25s; } .logo i:nth-child(3n) { animation-delay: .5s; }
-.logo i:nth-child(n+4) { background: #c44f86; } .logo i:nth-child(n+7) { background: var(--gpt); }
+.logo { width: 28px; height: 28px; display: block; flex: none; }
 @keyframes logo { 0%, 100% { opacity: .35; } 40% { opacity: 1; } 70% { opacity: .8; } }
 .topbar .spacer { flex: 1; }
 

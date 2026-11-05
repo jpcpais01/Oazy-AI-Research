@@ -130,8 +130,8 @@ def make_handler(brain: Brain):
             name = u.path.strip("/")
             if name == "":
                 return self.send(200, (WEB / "chat.html").read_bytes(), "text/html; charset=utf-8")
-            if name.endswith((".js", ".css")) and "/" not in name and (WEB / name).is_file():
-                ctype = "text/javascript" if name.endswith(".js") else "text/css"
+            if name.endswith((".js", ".css", ".svg")) and "/" not in name and (WEB / name).is_file():
+                ctype = "text/javascript" if name.endswith(".js") else "image/svg+xml" if name.endswith(".svg") else "text/css"
                 return self.send(200, (WEB / name).read_bytes(), ctype + "; charset=utf-8")
             L, Hh = brain.cfg.n_layer, brain.cfg.n_head
             layer = min(L - 1, max(0, int(q.get("layer", L - 1))))
