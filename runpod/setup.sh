@@ -8,7 +8,7 @@
 # 1. makes sure PyTorch can use this GPU (Blackwell needs a recent build),
 # 2. installs the tokenizer, dataset tools, and the flash-linear-attention kernels (optional speed-up),
 # 3. downloads FineWeb-Edu and tokenizes it into /workspace/oazy_data (or the existing engram_data) (~10-20 min), plus HellaSwag,
-# 4. runs every model's self-tests on the GPU (including: the fast kernel agrees with the reference).
+# 4. checks the shared memory kernel on the GPU (OAZY_TEST_ALL=1: every model's self-tests).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 DATA="$(python3 -c "from oazy.data import default_dir; print(default_dir('data'))")"
@@ -48,13 +48,14 @@ python3 -m pip install -q flash-linear-attention --constraint <(echo "torch==${T
 echo "== FineWeb-Edu (${TOKENS} tokens) -> ${DATA}"
 python3 -m oazy.data --out "${DATA}" --tokens "${TOKENS}"
 
-echo "== self-tests of every model"
+# Only the shared memory kernel is checked here; each model's own tests are run when you want that model
+# (e.g. python3 -m fern3.tests --device cuda). OAZY_TEST_ALL=1 runs every model's tests.
+echo "== self-test of the shared memory kernel (Memtrix)"
 python3 -m memtrix.tests --device cuda
-python3 -m tide.tests --device cuda
-python3 -m ember.tests --device cuda
-python3 -m fern2.tests --device cuda
-python3 -m fern3.tests --device cuda
-python3 -m bee.tests --device cuda
+if [ "${OAZY_TEST_ALL:-0}" = 1 ]; then
+    echo "== self-tests of every model"
+    for m in tide ember fern2 fern3 bee; do python3 -m $m.tests --device cuda; done
+fi
 
 if [ "${1:-}" = bee ]; then
     echo "== Bee0.2B's text mix: DCLM (2B tokens) and conversations (smol-smoltalk)"
