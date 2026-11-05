@@ -238,3 +238,33 @@ def draft_report(model: Tide, windows, device, batch=16):
     if was:
         model.train()
     return {"draft_loss": (loss / cnt).tolist(), "draft_acc": (acc / cnt).tolist()}
+
+
+@torch.no_grad()
+def foresight(model: Tide, enc, text):
+    """Read a text and report, for every word, how each of its drafts saw it coming.
+
+    draft_p[d][t]   the chance the draft made d+1 words before word t gave to word t (None at the start)
+    draft_top[d][t] that draft's own best guess
+    """
+    from engram.probes import token_strings
+    was = model.training
+    model.eval()
+    dev = model.embed.weight.device
+    ids = enc.encode_ordinary(text)
+    S = model._slots(torch.tensor([ids], device=dev))               # (K, 1, T, D)
+    K, T = S.shape[0], len(ids)
+    p_rows, top_rows = [], []
+    for d in range(K):
+        pr = F.softmax(F.linear(S[d, 0], model.embed.weight)[:, :50257].float(), -1)   # draft made after word t of word t+d+1
+        tops = pr.argmax(-1).tolist()
+        row_p, row_top = [None] * T, [None] * T
+        for t in range(T - d - 1):
+            w = t + d + 1
+            row_p[w] = round(float(pr[t, ids[w]]), 4)
+            row_top[w] = tops[t]
+        p_rows.append(row_p)
+        top_rows.append([None if x is None else token_strings(enc, [x])[0] for x in row_top])
+    if was:
+        model.train()
+    return {"draft_p": p_rows, "draft_top": top_rows}

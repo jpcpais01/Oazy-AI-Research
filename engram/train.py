@@ -363,6 +363,9 @@ def main():
                       f"top-1 {[round(v * 100, 1) for v in r['draft_acc']]}%", flush=True)
             if isinstance(model, Engram):
                 snap = probes.snapshot(model, enc)
+                if hasattr(model, "belt"):
+                    from tide.model import foresight
+                    snap.update(foresight(model, enc, probes.PROBE_TEXT))
                 name = f"{step:07d}.json"
                 (run.dir / "snapshots" / name).write_text(json.dumps({**base, **snap}))
                 run.log("snapshots.jsonl", {**base, "file": name})

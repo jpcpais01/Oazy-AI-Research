@@ -145,6 +145,28 @@
     </div>
   </div>
 
+  <div id="insidePick" class="seg" style="display:none;margin:28px 0 -14px"><button data-v="tide" class="on">Inside Tide</button><button data-v="engram">Inside Engram</button></div>
+
+  <div id="tideInside" style="display:none">
+  <div class="section-title"><h3>Inside Tide: thoughts arriving</h3><div class="line"></div></div>
+  <div class="grid">
+    <div class="card span12">
+      <div class="cardhead">
+        <div class="titles"><h2>How far ahead each word was seen coming</h2><div class="sub">The same short text read by Tide. Each word is shaded by how many words before it arrived Tide's draft already had it as its best guess.</div></div>
+      </div>
+      <details class="why"><summary>What am I looking at?</summary><div class="body">
+        <p>Tide keeps a belt of drafts of the next 8 words. Every word of this text was drafted 8 times before it arrived: first 8 words ahead (a blurry guess), then 7 ahead, ..., then 1 ahead (the ordinary next-word guess). <b>Brighter</b> words were already the draft's top guess further ahead: the model saw them coming. Dark words were only guessed at the last moment, or not at all.</p>
+        <p>The grid below shows every draft: one row per distance (top: drafted 8 words before, bottom: 1 word before), one column per word, colored by the chance that draft gave to the word that really came. Hover a square to see what the draft was thinking instead. Repeated facts at the end of the text should light up higher in the grid. Drag the slider to see how this changed during training.</p>
+      </div></details>
+      <div class="snaprow"><input type="range" id="tSnapSlider" min="0" max="0" value="0"><span class="label" id="tSnapLabel">waiting for the first snapshot</span></div>
+      <div class="passage" id="tPassage"><span class="muted">Waiting for the first snapshot…</span></div>
+      <div class="stripbox"><canvas id="tGrid" style="height:180px"></canvas><div class="tip" id="tGridTip"></div></div>
+      <div class="keyrow"><span>0%<span class="ramp" id="tRamp"></span>100% chance given to the real word</span></div>
+    </div>
+  </div>
+  </div>
+
+  <div id="engramInside">
   <div class="section-title"><h3>Inside Engram's memory</h3><div class="line"></div></div>
   <div class="grid">
     <div class="card span12">
@@ -178,6 +200,8 @@
     </div>
   </div>
 
+  </div>
+
   <div class="section-title"><h3>What they write</h3><div class="line"></div></div>
   <div class="card"><div id="samples"><div class="empty">Waiting for the first samples</div></div></div>
 </div>
@@ -193,7 +217,7 @@ const HS_GPT2 = 0.2955;
 // HellaSwag points worth drawing: full scores, and quick checks on the evenly spread sample.
 // Runs before Nov 5 took the first 1,000 questions (easier, ~5 points too high); those are hidden.
 const hsOK = (x) => x.kind === "hellaswag" && (x.full || x.sample === "spread" || x.n < 1000);
-let SNAPRUN = "engram", RUNS = [], DATA = {}, SNAPS = [], SNAP = null, xmode = "tokens", colorBy = "surprise", POSLAB = [];
+let SNAPRUN = "engram", TSNAPS = [], TSNAP = null, INSIDE = "tide", RUNS = [], DATA = {}, SNAPS = [], SNAP = null, xmode = "tokens", colorBy = "surprise", POSLAB = [];
 
 const fmtL = (v) => v.toFixed(3);
 const pct = (v) => (v * 100).toFixed(1) + "%";
@@ -421,6 +445,53 @@ function drawMatrix(cv, m) {
   ctx.putImageData(img, 0, 0);
 }
 
+// ---------------------------------------------------------------- inside Tide
+async function loadTSnap(i) {
+  const s = TSNAPS[i]; if (!s) return;
+  document.getElementById("tSnapLabel").textContent = `after ${UI.fmtTokens(s.tokens)} tokens (step ${s.step})`;
+  TSNAP = await getJSON(`api/run/tide/snapshot/${s.file}`);
+  drawTide();
+}
+
+function drawTide() {
+  const S = TSNAP; if (!S || !S.draft_p || document.getElementById("tideInside").style.display === "none") return;
+  const K = S.draft_p.length, T = S.pieces.length;
+  const seen = (t) => { let f = 0; for (let d = 0; d < K; d++) if (S.draft_top[d][t] === S.pieces[t]) f = d + 1; return f; };
+  document.getElementById("tPassage").innerHTML = S.pieces.map((w, t) => {
+    const f = seen(t), u = f / K;
+    const [r, g, b] = UI.heatRGB(u);
+    const fg = u > 0.62 ? "#1a120e" : "var(--text)";
+    const title = f ? `already the best guess ${f} word${f > 1 ? "s" : ""} before` : "not the best guess of any draft";
+    return `<span class="tok" style="background:rgba(${r},${g},${b},${f ? 0.25 + 0.75 * u : 0.06});color:${fg}" title="${title}">${UI.escapeHtml(w).replace(/\n/g, "⏎")}</span>`;
+  }).join("");
+  const cv = document.getElementById("tGrid");
+  const { ctx, w, h } = UI.fitCanvas(cv, Math.max(120, K * 20 + 22));
+  ctx.clearRect(0, 0, w, h);
+  const padL = 110, padB = 18, cw = (w - padL) / T, ch = (h - padB) / K;
+  for (let d = 0; d < K; d++) {
+    const y = (K - 1 - d) * ch;
+    for (let t = 0; t < T; t++) {
+      const p = S.draft_p[d][t];
+      ctx.fillStyle = p == null ? UI.css("--surface-2") : UI.heat(Math.sqrt(p));
+      ctx.fillRect(padL + t * cw, y, Math.ceil(cw), Math.ceil(ch) - 1);
+    }
+    ctx.fillStyle = C.muted; ctx.font = UI.font(11); ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    ctx.fillText(d === 0 ? "1 word before" : (d + 1) + " words before", padL - 8, y + ch / 2);
+  }
+  ctx.fillStyle = C.muted; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText("← start of the text", padL, h - padB + 4);
+  ctx.textAlign = "right"; ctx.fillText("end →", w, h - padB + 4);
+  const tip = document.getElementById("tGridTip");
+  cv.onmousemove = (e) => {
+    const t = Math.floor((e.offsetX - padL) / cw), d = K - 1 - Math.floor(e.offsetY / ch);
+    if (t < 0 || t >= T || d < 0 || d >= K) { tip.style.display = "none"; return; }
+    const p = S.draft_p[d][t];
+    tip.innerHTML = `<div class="tipword">${UI.escapeHtml(UI.pieceLabel(S.pieces[t]))}</div><div class="tiprow">drafted<b>${d + 1} word${d ? "s" : ""} before</b></div>` +
+      (p == null ? `<div class="tiprow">too early in the text<b>–</b></div>` : `<div class="tiprow">chance given to it<b>${(p * 100).toFixed(1)}%</b></div><div class="tiprow">the draft's best guess<b>${UI.escapeHtml(UI.pieceLabel(S.draft_top[d][t]))}</b></div>`);
+    UI.placeTip(tip, e.offsetX, e.offsetY, w);
+  };
+  cv.onmouseleave = () => (tip.style.display = "none");
+}
+
 async function loadSnap(i) {
   const s = SNAPS[i]; if (!s) return;
   document.getElementById("snapLabel").textContent = `after ${UI.fmtTokens(s.tokens)} tokens (step ${s.step})`;
@@ -449,7 +520,20 @@ async function refresh() {
     }
     document.getElementById("runs").innerHTML = RUNS.length ? RUNS.map(runCard).join("") : `<div class="card"><div class="empty">No runs yet. Start training and this page fills in by itself.</div></div>`;
     scoreboard(); drawLearning(); drawMemoryUse(); drawDrafts(); drawSamples();
-    SNAPRUN = RUNS.some((r) => r.name === "engram") ? "engram" : "tide";
+    const hasT = RUNS.some((r) => r.name === "tide"), hasE = RUNS.some((r) => r.name === "engram");
+    if (!hasT) INSIDE = "engram"; else if (!hasE) INSIDE = "tide";
+    document.getElementById("insidePick").style.display = hasT && hasE ? "" : "none";
+    document.getElementById("tideInside").style.display = hasT && INSIDE === "tide" ? "" : "none";
+    document.getElementById("engramInside").style.display = hasE && INSIDE === "engram" ? "" : "none";
+    if (hasT) {
+      const ts = await getJSON("api/run/tide/snapshots"), tsl = document.getElementById("tSnapSlider");
+      const atEndT = +tsl.value >= TSNAPS.length - 1;
+      if (ts.length !== TSNAPS.length) {
+        TSNAPS = ts; tsl.max = Math.max(0, TSNAPS.length - 1);
+        if (atEndT || !TSNAP) { tsl.value = TSNAPS.length - 1; await loadTSnap(TSNAPS.length - 1); }
+        UI.syncRange(tsl);
+      }
+    }
     if (RUNS.some((r) => r.name === SNAPRUN)) {
       const snaps = await getJSON(`api/run/${SNAPRUN}/snapshots`);
       const slider = document.getElementById("snapSlider");
@@ -474,10 +558,18 @@ document.getElementById("colorBy").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   colorBy = b.dataset.c; document.querySelectorAll("#colorBy button").forEach((x) => x.classList.toggle("on", x === b)); drawSnapshot();
 });
+const tSlider = document.getElementById("tSnapSlider");
+tSlider.addEventListener("input", () => { UI.syncRange(tSlider); loadTSnap(+tSlider.value); });
+document.getElementById("tRamp").style.background = UI.heatCSS();
+document.getElementById("insidePick").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  INSIDE = b.dataset.v; document.querySelectorAll("#insidePick button").forEach((x) => x.classList.toggle("on", x === b));
+  refresh().then(() => { drawTide(); drawSnapshot(); });
+});
 const slider = document.getElementById("snapSlider");
 slider.addEventListener("input", () => { UI.syncRange(slider); loadSnap(+slider.value); });
 document.getElementById("ramp").style.background = UI.heatCSS();
-window.addEventListener("resize", () => { Object.values(charts).forEach((c) => c.draw()); drawSnapshot(); });
+window.addEventListener("resize", () => { Object.values(charts).forEach((c) => c.draw()); drawSnapshot(); drawTide(); });
 refresh(); setInterval(refresh, 15000);
 </script>
 </body>
