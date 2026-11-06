@@ -18,7 +18,7 @@ from pathlib import Path
 from .data import default_dir
 from . import term
 
-STATE = {"running": "green", "starting": "cyan", "paused": "yellow", "finishing": "cyan", "done": "blue", "stopped": "grey"}
+STATE = {"cut off": "yellow", "running": "green", "starting": "cyan", "paused": "yellow", "finishing": "cyan", "done": "blue", "stopped": "grey"}
 SOURCES = {"fwe": "", "dclm": "dclm", "cosmo": "cosmo", "wiki": "wiki", "math": "math", "code": "code", "chat": "chat"}
 
 
@@ -42,11 +42,15 @@ def gpus():
 
 
 def windows():
-    out = sh(["tmux", "list-windows", "-a", "-F", "#{session_name}:#{window_name}\t#{pane_current_command}"])
+    out = sh(["tmux", "list-windows", "-a", "-F", "#{session_name}:#{window_name}\t#{pane_current_command}\t#{pane_pid}"])
     rows = []
     for line in filter(None, out.splitlines()):
-        name, cmd = (line.split("\t") + [""])[:2]
+        name, cmd, pid = (line.split("\t") + ["", ""])[:3]
         busy = cmd not in ("bash", "zsh", "sh", "fish")
+        if not busy and pid:                        # a shell running a pipeline (python ... | tee): look at its children
+            kids = sh(["ps", "-o", "comm=", "--ppid", pid]).split()
+            if kids:
+                busy, cmd = True, kids[0]
         rows.append([name, term.c("busy", "green") if busy else term.c("idle", "grey"), cmd if busy else ""])
     return rows
 
@@ -62,7 +66,8 @@ def runs(folder: Path, every: bool):
         state = st.get("state", "?")
         age = now - float(st.get("updated") or st_path.stat().st_mtime)
         if state in ("running", "starting", "finishing") and age > 600:
-            state = "stalled?"                          # says running but has not written for 10 minutes
+            # says running but has not written for 10 minutes: stuck, or cut off (the pod stopped); rerun to resume
+            state = "stalled?" if age < 3600 else "cut off"
         if not every and state in ("done", "stopped") and age > 3 * 86400:
             continue
         tok, total = st.get("tokens") or 0, st.get("total_tokens") or 0
