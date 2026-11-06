@@ -184,8 +184,12 @@ def main():
     elif hasattr(model, "_trunk"):
         resets, mask, segs = model.doc_info(x)
         f = model._compiled or model._trunk
+        if hasattr(model, "_attn_mask"):            # Coral: what its attention layers really get in training
+            mask = model._attn_mask(x, resets, mask)
+        elif hasattr(model, "attn_mask"):
+            mask = model.attn_mask(x, resets, mask)
         with amp:
-            h = f(x, resets, model.attn_mask(x, resets, mask) if hasattr(model, "attn_mask") else mask, segs)
+            h = f(x, resets, mask, segs)
             h = (h[0] if isinstance(h, tuple) else h).detach().requires_grad_()     # Coral's training trunk: (h, balance loss)
 
         def head():
