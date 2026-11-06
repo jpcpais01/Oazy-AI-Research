@@ -7,7 +7,8 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="description" content="Oazy AI Research is an independent lab notebook: new, mind-inspired language-model architectures at 0.2B parameters, each trained on one GPU and measured against GPT-2 small on the same text, failures included.">
 <meta name="theme-color" content="#050507">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='.2' y1='0' x2='.8' y2='1'%3E%3Cstop offset='0' stop-color='%23b6f8ff'/%3E%3Cstop offset='.45' stop-color='%233cc0ff'/%3E%3Cstop offset='.8' stop-color='%232a6cff'/%3E%3Cstop offset='1' stop-color='%238a5cff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M50 50C40 34 16 32 16 50s24 16 34 0 34-18 34 0-24 16-34 0Z' fill='none' stroke='url(%23g)' stroke-width='12' stroke-linejoin='round'/%3E%3Ccircle cx='84' cy='50' r='6.5' fill='%23dffaff'/%3E%3C/svg%3E">
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
@@ -65,7 +66,7 @@ p { margin: 0; }
 .bar.solid { background: rgba(5, 5, 7, 0.72); backdrop-filter: blur(18px) saturate(140%); -webkit-backdrop-filter: blur(18px) saturate(140%); border-bottom-color: var(--line); }
 .bar-in { display: flex; align-items: center; gap: 24px; height: 68px; }
 .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; flex: none; }
-.brand svg { width: 34px; height: 34px; }
+.brand img { width: 34px; height: 34px; display: block; }
 .word { font: 800 19px/1 var(--display); letter-spacing: 0.2em; color: #fff; }
 .word small { display: block; font: 500 9.5px/1 var(--mono); letter-spacing: 0.24em; color: var(--muted); margin-top: 5px; }
 .tabs { position: relative; display: flex; gap: 2px; margin: 0 auto; padding: 4px; border-radius: 999px; background: rgba(255, 255, 255, 0.035); border: 1px solid var(--line); }
@@ -427,25 +428,13 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
 </head>
 <body>
 
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <defs>
-    <linearGradient id="oz-st" x1="0.2" y1="0" x2="0.8" y2="1"><stop offset="0" stop-color="#b6f8ff"/><stop offset="0.45" stop-color="#3cc0ff"/><stop offset="0.8" stop-color="#2a6cff"/><stop offset="1" stop-color="#8a5cff"/></linearGradient>
-    <radialGradient id="oz-node" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#fff"/><stop offset="0.5" stop-color="#dffaff"/><stop offset="1" stop-color="#7fe0ff"/></radialGradient>
-    <symbol id="oz-mark" viewBox="0 0 100 100">
-      <path d="M50 50 C40 34 16 32 16 50 C16 68 40 66 50 50 C60 34 84 32 84 50 C84 68 60 66 50 50 Z" fill="none" stroke="url(#oz-st)" stroke-width="12" stroke-linejoin="round"/>
-      <path d="M50 50 C40 34 16 32 16 50 C16 68 40 66 50 50 C60 34 84 32 84 50 C84 68 60 66 50 50 Z" fill="none" stroke="#fff" stroke-opacity="0.5" stroke-width="1.3"/>
-      <path d="M22 42 C26 36 34 36 40 40" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-opacity="0.9"/>
-      <circle cx="84" cy="50" r="6.5" fill="url(#oz-node)"/><circle cx="50" cy="50" r="4" fill="#fff"/>
-    </symbol>
-  </defs>
-</svg>
 
 <div class="rail" id="rail" aria-hidden="true"><div class="thumb" id="thumb"></div></div>
 
 <header class="bar" id="bar">
   <div class="wrap bar-in">
     <a class="brand" href="#top" aria-label="Oazy AI Research, back to top">
-      <svg aria-hidden="true"><use href="#oz-mark"/></svg>
+      <img src="logo.png" alt="">
       <span class="word">OAZY<small>AI RESEARCH</small></span>
     </a>
     <nav class="tabs" id="tabs" aria-label="Sections">
@@ -649,7 +638,7 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
 <footer>
   <div class="wrap foot">
     <a class="brand" href="#top" aria-label="Back to top">
-      <svg aria-hidden="true"><use href="#oz-mark"/></svg>
+      <img src="logo.png" alt="">
       <span class="word">OAZY<small>AI RESEARCH</small></span>
     </a>
     <nav aria-label="Footer">
