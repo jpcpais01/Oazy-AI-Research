@@ -16,12 +16,11 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from oazy import term
 
 
 def check(name, ok, detail=""):
-    print(f"  {'ok ' if ok else 'FAIL'}  {name}  {detail}")
-    if not ok:
-        raise SystemExit(f"self-test failed: {name}")
+    term.check(name, ok, detail)          # ✓ / ✗ in the lab's style (oazy/term.py)
 
 
 SMALL = dict(d_model=64, n_layer=8, n_head=2, head_k=16, head_v=16, attn_heads=4, attn_kv_heads=2,
@@ -32,7 +31,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", default="cpu")
     dev = torch.device(ap.parse_args().device)
-    print(f"Bee3 self-tests on {dev}")
+    term.tests_start("Bee3", dev)
     torch.manual_seed(0)
     from bee3.model import Bee3, Bee3Config
     from bee2.model import Bee2Config
@@ -179,7 +178,7 @@ def main():
     tmp = Path(tmp_ctx.name)
     used = stand_ins(tmp)
     if used:
-        print(f"  info  no internet: stand-in {' and '.join(used)} tokenizer(s)")
+        term.info(f"no internet: stand-in {' and '.join(used)} tokenizer(s)")
     enc = tok.get("smollm2")
     gpt = get_tokenizer()
     rng = random.Random(0)
@@ -220,7 +219,7 @@ def main():
     check("it writes", len(out) <= 5, repr(enc.decode(out)))
 
     if dev.type == "cuda":
-        print(f"  info  fast memory kernel: {'yes' if memory._FLA_OK else 'no'}; packed documents in the kernel: {'yes' if memory._FLA_SEG else 'no'}")
+        term.info(f"fast memory kernel: {'yes' if memory._FLA_OK else 'no'}; packed documents in the kernel: {'yes' if memory._FLA_SEG else 'no'}")
         mg = Bee3(Bee3Config(**{**SMALL, "head_k": 64, "head_v": 64})).to(dev)
         xg = torch.randint(1, 49152, (4, 128), device=dev)
         xg[:, 50] = 0
@@ -229,7 +228,7 @@ def main():
         loss.backward()
         check("bf16 training step on the GPU with the document rule", torch.isfinite(loss).item())
     tmp_ctx.cleanup()
-    print("all Bee3 self-tests passed")
+    term.tests_passed("Bee3")
 
 
 if __name__ == "__main__":

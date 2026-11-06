@@ -18,6 +18,7 @@ import numpy as np
 import torch
 
 from bee3.tests import check
+from oazy import term
 
 SMALL = dict(d_model=64, n_layer=4, n_head=2, head_k=16, head_v=16, attn_heads=4, attn_kv_heads=2, attn_head_dim=16,
              mlp_hidden=32, max_len=128, ctx="128:0", n_expert=8, top_k=2, expert_hidden=32)
@@ -27,7 +28,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", default="cpu")
     dev = torch.device(ap.parse_args().device)
-    print(f"Coral self-tests on {dev}")
+    term.tests_start("Coral", dev)
     torch.manual_seed(0)
     from coral.model import Coral, CoralConfig, Experts
     from oazy import tok
@@ -156,7 +157,7 @@ def main():
     tmp = Path(tmp_ctx.name)
     used_ = stand_ins(tmp)
     if used_:
-        print(f"  info  no internet: stand-in {' and '.join(used_)} tokenizer(s)")
+        term.info(f"no internet: stand-in {' and '.join(used_)} tokenizer(s)")
     enc = tok.get("smollm2")
     gpt = get_tokenizer()
     rng = random.Random(0)
@@ -223,9 +224,9 @@ def main():
               f"flex attention: {'yes' if flex_check(dev, mg.cfg) else 'no'}")
         mf, used = fp8.convert(Coral(CoralConfig(**{**SMALL, "d_model": 256, "attn_heads": 4, "attn_head_dim": 64,
                                                     "mlp_hidden": 256})).to(dev).train(), dev, print)
-        print(f"  info  FP8 on this GPU: {'yes' if used else 'no'}")
+        term.info(f"FP8 on this GPU: {'yes' if used else 'no'}")
     tmp_ctx.cleanup()
-    print("all Coral self-tests passed")
+    term.tests_passed("Coral")
 
 
 if __name__ == "__main__":

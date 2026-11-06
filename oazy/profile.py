@@ -29,6 +29,7 @@ import torch
 
 from .data import default_dir
 from . import train as T
+from . import term
 from memtrix import memory
 
 PEAK = {   # dense bf16 TFLOP/s with fp32 accumulation, the number training can at best use
@@ -106,7 +107,7 @@ def main():
     fp8 = False
     if (T.RECIPE.get(a.model, {}).get("fp8", 0) if a.fp8 is None else a.fp8):
         from oazy import fp8 as fp8_mod
-        model, fp8 = fp8_mod.convert(model, device, print)
+        model, fp8 = fp8_mod.convert(model, device, term.say)
     if hasattr(model, "fused_loss"):
         type(model).fused_loss = a.loss == "fused"
     Tw = a.ctx or (model.ctx_at(0) if hasattr(model, "ctx_at") else cfg.max_len)
@@ -129,9 +130,13 @@ def main():
            "loss": a.loss, "compile": bool(a.compile), "fla": bool(memory._FLA_OK), "fla_packed_docs": bool(memory._FLA_SEG),
            "doc_mask": bool(getattr(cfg, "doc_mask", 0)), "params": model.num_params(), "fp8": fp8,
            "memory_op": bool(memory._OP_OK), "fused_gates": bool(memory._FUSED_OK), "flex_attn": bool(getattr(model, "_flex", False))}
-    say(f"{T.NICE[a.model]} on {gpu}: {B} x {Tw} words per pass ({ntok:,} tokens), mentor {mentor_name}, loss {a.loss}, "
-        f"compile {bool(a.compile)}, memory kernel {'fla' if memory._FLA_OK else 'pure PyTorch'}"
-        + (f" (packed documents {'yes' if memory._FLA_SEG else 'no'})" if getattr(cfg, 'doc_mask', 0) else ""))
+    term.header(f"{T.NICE[a.model]} profile", gpu)
+    has_mem = "M" in "".join(getattr(cfg, "kinds", lambda: [])())
+    term.rows([("pass", f"{B} x {Tw} words = {ntok:,} tokens"), ("mentor", mentor_name),
+               ("paths", " · ".join(x for x in [f"compile {'on' if a.compile else 'off'}", "FP8" if fp8 else "bf16",
+                                               f"loss {a.loss}", "flex attention" if res["flex_attn"] else None,
+                                               (f"memory kernel {'fla' if memory._FLA_OK else 'pure PyTorch'}"
+                                                + (" + operator" if memory._OP_OK else "")) if has_mem else None] if x))])
     ms = {}
 
     def pass_(with_mentor):
@@ -232,9 +237,10 @@ def main():
     model.zero_grad(set_to_none=True)
     # --- report
     whole = ms.get("pass with mentor", ms["pass, student alone"])
-    say(f"\n{'piece':40s} {'ms / pass':>10s} {'share':>7s}    (the pieces are measured alone; they overlap and need not add up)")
-    for k, v in ms.items():
-        say(f"{k:40s} {v:10.1f} {v / whole * 100:6.0f}%")
+    say("")
+    term.header("where a pass spends its time", "pieces timed alone; they overlap, so they need not add up", color="blue")
+    term.table(["piece", "ms / pass", "share", ""],
+               [[k, f"{v:,.1f}", f"{v / whole * 100:.0f}%", term.bar(v / whole, 16, "blue")] for k, v in ms.items()], right=(1, 2))
     tps = ntok / (whole / 1000)
     tps_alone = ntok / (ms["pass, student alone"] / 1000)
     n_attn = sum(1 for k in getattr(cfg, "kinds", lambda: [])() if k == "A")
@@ -245,9 +251,11 @@ def main():
     pk = peak_tflops(gpu)
     res.update({"ms": ms, "tokens_per_s": tps, "tokens_per_s_student_alone": tps_alone, "peak_mem_gb": peak_mem,
                 "flops_per_token": flops_tok, "mfu": (tps * flops_tok / 1e12 / pk) if pk else None})
-    say(f"\n{tps / 1e3:.1f}k tokens/s with everything ({tps_alone / 1e3:.1f}k student alone); peak memory {peak_mem:.1f} GB")
-    if pk:
-        say(f"about {res['mfu'] * 100:.0f}% of the chip's arithmetic ({flops_tok / 1e9:.2f} GFLOP per token against {pk} TFLOP/s)")
+    say("")
+    term.header("result", color="green")
+    term.rows([("speed", term.c(term.rate(tps), "bold", "green") + (f"  ({term.rate(tps_alone)} without the mentor)" if mentor is not None else "")),
+               ("chip use", f"about {res['mfu'] * 100:.0f}% of its bf16 arithmetic ({flops_tok / 1e9:.2f} GFLOP per token, peak {pk} TFLOP/s)" if pk else None),
+               ("memory", f"{peak_mem:.1f} GB at the peak")])
     # --- a whole run's speed: the optimizer once per step, and the mentor only where the recipe runs it
     rec = T.RECIPE.get(a.model, {})
     batch = p.get("batch_" + a.model) or ntok
@@ -260,9 +268,10 @@ def main():
         run_ms = ms["pass, student alone"] + read * (ms["pass with mentor"] - ms["pass, student alone"]) \
             + ms["optimizer step (once per step)"] * ntok / batch
         res.update({"mentor_reads": read, "run_tokens_per_s": ntok / (run_ms / 1000)})
-        say(f"a whole run (the mentor reads {read:.0%} of the passes, one optimizer step per {batch:,} tokens): "
-            f"about {res['run_tokens_per_s'] / 1e3:.1f}k tokens/s"
-            + (" at full depth (it starts shallower and grows, so the run's average is faster)" if hasattr(model, "grow_to") else ""))
+        term.rows([("whole run", term.c(f"about {term.rate(res['run_tokens_per_s'])}", "bold")
+                    + f"  (the mentor reads {read:.0%} of the passes, one optimizer step per {term.tokens(batch)} tokens"
+                    + ("; measured at full depth, and it starts shallower, so the run's average is a little faster)"
+                       if hasattr(model, "grow_to") else ")"))])
     # --- the slowest kernels
     if device.type == "cuda" and a.kernels:
         from torch.profiler import profile, ProfilerActivity
@@ -272,23 +281,25 @@ def main():
             tot = sum(dt(e) for e in rows) or 1
             out = []
             for e in rows[:n]:
-                say(f"  {dt(e) / tot * 100:5.1f}%  {dt(e) / per / 1000:8.1f} ms  {e.key[:90]}")
                 out.append({"name": e.key, "share": dt(e) / tot, "ms": dt(e) / per / 1000})
+            term.table(["share", "ms", "GPU kernel"], [[f"{o['share'] * 100:.1f}%", f"{o['ms']:.1f}", o["name"][:80]] for o in out],
+                       right=(0, 1))
             return out
         with profile(activities=[ProfilerActivity.CUDA]) as prof:
             for _ in range(2):
                 pass_(mentor is not None)
-        say(f"\nthe {a.kernels} slowest GPU kernels of a pass (forward + backward{', mentor included' if mentor is not None else ''}):")
+        say("")
+        term.header(f"the {a.kernels} slowest GPU kernels of a pass", "forward + backward" + (", mentor included" if mentor is not None else ""), color="grey")
         res["kernels"] = top(prof, a.kernels, 2)
         with profile(activities=[ProfilerActivity.CUDA]) as prof:
             opt.step()
         model.zero_grad(set_to_none=True)
-        say("\nthe 3 slowest of the optimizer step:")
+        term.header("the 3 slowest of the optimizer step", color="grey")
         res["kernels_optimizer"] = top(prof, 3, 1)
     out = Path(a.runs or default_dir("runs")) / f"profile-{a.model}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(res, indent=1))
-    say(f"\nwritten to {out}")
+    say(term.c(f"\nsaved to {out}", "dim"))
 
 
 if __name__ == "__main__":

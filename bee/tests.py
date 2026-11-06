@@ -17,12 +17,11 @@ from .model import Bee, BeeConfig, ctx_at
 from memtrix import memory
 from oazy.mix import Mix, parse_mix, DEFAULT_MIX
 from oazy.train import make_optimizer, lr_wsd, MUON_GRIDS
+from oazy import term
 
 
 def check(name, ok, detail=""):
-    print(f"  {'ok ' if ok else 'FAIL'}  {name}  {detail}")
-    if not ok:
-        raise SystemExit(f"self-test failed: {name}")
+    term.check(name, ok, detail)          # ✓ / ✗ in the lab's style (oazy/term.py)
 
 
 SMALL = dict(vocab_size=320, d_model=64, n_layer=8, n_head=2, head_k=16, head_v=16, attn_heads=4, attn_kv_heads=2,
@@ -33,7 +32,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", default="cpu")
     dev = torch.device(ap.parse_args().device)
-    print(f"Bee0.2B self-tests on {dev}")
+    term.tests_start("Bee0.2B", dev)
     torch.manual_seed(0)
 
     # ---- the real size
@@ -161,14 +160,14 @@ def main():
     # ---- GPU: fast kernel and bf16
     if dev.type == "cuda":
         ok = memory.fla_check(dev)
-        print(f"  info  fast memory kernel: {'yes' if ok else 'no (pure PyTorch, slower)'}")
+        term.info(f"fast memory kernel: {'yes' if ok else 'no (pure PyTorch, slower)'}")
         m = Bee(BeeConfig(**{**SMALL, "head_k": 64, "head_v": 64})).to(dev)
         x = torch.randint(0, 320, (4, 128), device=dev)
         with torch.autocast("cuda", dtype=torch.bfloat16):
             _, loss, _ = m(x, x)
         loss.backward()
         check("bf16 training step on the GPU", torch.isfinite(loss).item())
-    print("all Bee0.2B self-tests passed")
+    term.tests_passed("Bee0.2B")
 
 
 if __name__ == "__main__":

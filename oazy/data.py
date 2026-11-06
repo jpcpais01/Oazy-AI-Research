@@ -20,6 +20,7 @@ import argparse
 import functools
 import json
 import os
+import time
 import threading
 import queue
 from pathlib import Path
@@ -96,6 +97,7 @@ def write_tokens(text_batches, out: Path, val_tokens: int, train_tokens: int, wo
     workers = workers or max(1, min(64, (os.cpu_count() or 2) - 1))
     fv, ft = open(out / "val.bin.tmp", "wb"), open(out / "train.bin.tmp", "wb")
     nv = nt = 0
+    t0 = time.time()
     import itertools
     it = iter(text_batches)
     with Pool(workers) as pool:
@@ -113,7 +115,12 @@ def write_tokens(text_batches, out: Path, val_tokens: int, train_tokens: int, wo
                 ft.write(arr.tobytes())
                 nt += arr.size
                 if nt // 100_000_000 != (nt - arr.size) // 100_000_000:
-                    print(f"  train.bin: {nt / 1e9:.2f}B / {train_tokens / 1e9:.2f}B tokens", flush=True)
+                    from . import term
+                    dt = max(1e-6, time.time() - t0)
+                    left = (train_tokens - nt) / max(nt / dt, 1)
+                    term.out(f"  {term.bar(nt / train_tokens, 24, 'blue')} {nt / train_tokens * 100:5.1f}%  "
+                             f"{term.tokens(nt)} / {term.tokens(train_tokens)} tokens  "
+                             + term.c(f"· {term.rate(nt / dt)} · {term.duration(left)} left", "dim"), flush=True)
     fv.close(), ft.close()
     os.replace(out / "val.bin.tmp", out / "val.bin")
     os.replace(out / "train.bin.tmp", out / "train.bin")

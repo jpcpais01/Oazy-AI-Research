@@ -19,13 +19,14 @@ import numpy as np
 import torch
 
 from bee3.tests import check, SMALL
+from oazy import term
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", default="cpu")
     dev = torch.device(ap.parse_args().device)
-    print(f"Frog self-tests on {dev}")
+    term.tests_start("Frog", dev)
     torch.manual_seed(0)
     from frog.model import Frog, FrogConfig
     from bee3.model import Bee3Config
@@ -124,7 +125,7 @@ def main():
     check("flex attention with the document block mask = the yes/no grid", e < (3e-2 if dev.type == "cuda" else 1e-4), f"max diff {e:.1e}")
     if dev.type == "cuda":
         from bee.model import flex_check
-        print(f"  info  memory kernel as a compiled operator: {'yes' if memory.op_ok(dev) else 'no'}; fused gates: "
+        term.info(f"memory kernel as a compiled operator: {'yes' if memory.op_ok(dev) else 'no'}; fused gates: "
               f"{'yes' if memory.fused_gates_ok(dev) else 'no'}; compiled flex attention: {'yes' if flex_check(dev, FrogConfig()) else 'no'}; "
               f"FP8: {'yes' if fp8.available(dev) else 'no'}")
     else:
@@ -176,7 +177,7 @@ def main():
     tmp = Path(tmp_ctx.name)
     used_ = stand_ins(tmp)
     if used_:
-        print(f"  info  no internet: stand-in {' and '.join(used_)} tokenizer(s)")
+        term.info(f"no internet: stand-in {' and '.join(used_)} tokenizer(s)")
     enc = tok.get("smollm2")
     gpt = get_tokenizer()
     rng = random.Random(0)
@@ -222,7 +223,7 @@ def main():
 
     if dev.type == "cuda":
         from memtrix import memory
-        print(f"  info  fast memory kernel: {'yes' if memory._FLA_OK else 'no'}; packed documents in the kernel: {'yes' if memory._FLA_SEG else 'no'}")
+        term.info(f"fast memory kernel: {'yes' if memory._FLA_OK else 'no'}; packed documents in the kernel: {'yes' if memory._FLA_SEG else 'no'}")
         mg = Frog(FrogConfig(**{**SMALL, "head_k": 64, "head_v": 64})).to(dev)
         xg = torch.randint(1, 49152, (4, 128), device=dev)
         xg[:, 50] = 0
@@ -231,7 +232,7 @@ def main():
         loss.backward()
         check("bf16 training step on the GPU with the document rule", torch.isfinite(loss).item())
     tmp_ctx.cleanup()
-    print("all Frog self-tests passed")
+    term.tests_passed("Frog")
 
 
 if __name__ == "__main__":

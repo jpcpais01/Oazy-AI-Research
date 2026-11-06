@@ -187,8 +187,11 @@ def _parquet_batches(repo: str, files, column: str, convert=None, batch_docs: in
             q.put(hf_hub_download(repo, f, repo_type="dataset"))
         q.put(None)
     threading.Thread(target=fetch, daemon=True).start()
+    from . import term
+    done = 0
     while (path := q.get()) is not None:
-        print(f"  reading {Path(path).name}", flush=True)
+        done += 1
+        term.out(term.c(f"  file {done}/{len(files)}: {Path(path).name}", "dim"), flush=True)
         pf = pq.ParquetFile(path)
         for rb in pf.iter_batches(batch_size=batch_docs, columns=[column]):
             rows = rb.column(0).to_pylist()

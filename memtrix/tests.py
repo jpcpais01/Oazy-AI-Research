@@ -14,12 +14,11 @@ import torch.nn.functional as F
 from . import memory
 from .model import Memtrix, MemtrixConfig
 from oazy.gpt import GPT, GPTConfig
+from oazy import term
 
 
 def check(name, ok, detail=""):
-    print(f"  {'ok ' if ok else 'FAIL'}  {name}  {detail}")
-    if not ok:
-        raise SystemExit(f"self-test failed: {name}")
+    term.check(name, ok, detail)          # ✓ / ✗ in the lab's style (oazy/term.py)
 
 
 def rand_inputs(device, B=2, T=150, H=3, K=32, V=24, seed=0):
@@ -37,7 +36,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", default="cpu")
     dev = torch.device(ap.parse_args().device)
-    print(f"Memtrix self-tests on {dev}")
+    term.tests_start("Memtrix", dev)
 
     q, k, v, lf, tr, S0 = rand_inputs(dev)
     o1, S1, s1 = memory.recurrent(q, k, v, lf, tr, S0, return_surprise=True)
@@ -98,7 +97,7 @@ def main():
     with torch.no_grad():
         d = (g(x)[0][:, :60] - g(x2)[0][:, :60]).abs().max().item()
     check("GPT baseline: no peeking", d < 1e-5)
-    print("all self-tests passed")
+    term.tests_passed("Memtrix")
 
 
 if __name__ == "__main__":

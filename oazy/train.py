@@ -31,7 +31,7 @@ from . import tok
 from .gpt import GPT, GPTConfig
 from memtrix.model import Memtrix, MemtrixConfig
 from memtrix import memory
-from . import hellaswag, probes
+from . import hellaswag, probes, term
 
 KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "black", "blackt", "gpt"]
 NICE = {"memtrix": "Memtrix", "tide": "Tide", "fern": "Fern", "ember": "Ember", "fern2": "Fern2", "fern3": "Fern3",
@@ -64,11 +64,41 @@ VAL_T = 1024                                   # held-out windows are always thi
 
 
 def say(*a, **k):
-    """print, but a closed terminal (tmux killed, `tee` gone) must never crash training before it saves."""
-    try:
-        print(*a, **k)
-    except (BrokenPipeError, OSError):
-        sys.stdout = sys.stderr = open(os.devnull, "w")
+    """print in the lab's style (a leading [tag] becomes a coloured label, oazy/term.py); a closed terminal (tmux
+    killed, `tee` gone) never crashes training before it saves."""
+    term.say(*a, **k)
+
+
+def summary(info, run_dir, resumed=None):
+    """The start of a run, short and aligned (everything else is in config.json)."""
+    nice = NICE.get(info["model"], info["model"])
+    p, pa = info.get("params") or 0, info.get("params_active")
+    size = f"{p / 1e6:,.0f}M parameters" + (f", {pa / 1e6:,.0f}M at work per word" if pa else "")
+    term.header(nice, f"next-word model · {size}" if info["model"] in BEES or info["model"] in ("gpt", "memtrix") else size)
+    bt = info.get("batch_tokens") or 0
+    sched = info.get("schedule", "")
+    lr = f"{info['lr']:.1e}" + (f" · Muon {info['muon_lr']:.2g}" if "muon_lr" in info else "") + f" · {sched}" \
+        + (f" ({info['decay_shape']} cool-down)" if info.get("decay_shape") else "")
+    mentor = info.get("mentor")
+    if mentor and mentor != "none":
+        how = "a share of the sequences" if info.get("mentor_share") else "mixed into every word"
+        mentor = (f"{mentor} · {how} · {info.get('mentor_weight', 0):.2g} at the start"
+                  + (f", none after {info['mentor_until']:.0%}" if not info.get("mentor_floor") else
+                     f", {info['mentor_floor']:.2g} from {info['mentor_until']:.0%}"))
+    term.rows([
+        ("layout", info.get("layout")),
+        ("tokens", f"{term.tokens(info['total_tokens'])}" + (f" · {info['minutes']:g} min on the clock" if info.get("minutes") else "")),
+        ("steps", f"{term.tokens(bt)} tokens each" + (f" (ramp from {term.tokens(int(info['batch_ramp'].split(':')[0]))})"
+                                                       if info.get("batch_ramp") else "") + f" · {info.get('micro')} x {info.get('context')} per pass"),
+        ("learning", lr),
+        ("mentor", mentor or "none"),
+        ("grows", info.get("grow")),
+        ("speed", " · ".join(x for x in ["FP8" if info.get("fp8") else ("bf16 (FP8 off)" if "fp8" in info else "bf16"),
+                                         "document mask" if info.get("doc_mask") else None] if x)),
+        ("text", (info.get("mix") or "")[:70] + ("…" if len(info.get("mix") or "") > 70 else "") if info.get("mix") else None),
+        ("device", info.get("gpu")),
+        ("run folder", str(run_dir) + (f"  ({resumed})" if resumed else "")),
+    ])
 
 
 def _tide():
@@ -747,7 +777,7 @@ def main():
         torch.set_rng_state(state["torch_rng"].cpu())
         old_total = state.get("total") or (state.get("info") or {}).get("total_tokens")
         anchor = state.get("mentor_anchor")
-        say(f"resumed from {ck}: step {step}, {tokens / 1e6:.1f}M tokens, {elapsed / 60:.1f} min")
+        say(f"[done] resumed from the checkpoint: step {step:,}, {term.tokens(tokens)} tokens, {term.duration(elapsed)} of training")
         if old_total and old_total != total and tokens < total:
             say(f"[length] the run's length changes: {old_total / 1e9:.2f}B -> {total / 1e9:.2f}B tokens. Every "
                 f"schedule follows the new length (cool-down, mentor, windows, text mix); the learning rate does not jump.")
@@ -790,7 +820,7 @@ def main():
                          "*_own fields are per own token"} if tk != "gpt2" else {}),
     }
     (run.dir / "config.json").write_text(json.dumps(info, indent=1))
-    say(json.dumps(info, indent=1))
+    summary(info, run.dir, f"resumed at {term.tokens(tokens)}" if tokens else None)
     if done():
         say("this run is already finished. Use --tokens to train longer or --fresh to start over.")
         return
@@ -1097,10 +1127,15 @@ def main():
                     (run.dir / "config.json").write_text(json.dumps(info, indent=1))
             run.status({**info, "state": "running", "step": step, "tokens": tokens, "elapsed": elapsed,
                         "tok_s": tps, "eta_s": eta, "loss": rec["loss"], "latest": latest, "updated": time.time()})
-            say(f"step {step:6d} | {tokens / 1e6:8.1f}M tok | loss {rec['loss']:.4f} | lr {cur_lr:.2e} | "
-                  f"gnorm {float(gnorm):.2f} | {tps / 1e3:6.1f}k tok/s | eta {eta / 60:6.1f} min"
-                  + (f" | experts uneven {rec['moe_uneven']:.2f}, dropped {rec['moe_dropped'] * 100:.1f}%" if "moe_uneven" in rec else ""),
-                  flush=True)
+            frac = min(1.0, tokens / max(total, 1)) if not budget else min(1.0, elapsed / budget)
+            sep = term.c(" │ ", "grey")
+            step_s, loss_s = term.c(f"{step:>7,}", "dim"), term.c(f"{rec['loss']:.4f}", "bold")
+            say(f"{step_s}  {term.bar(frac, 12)} {frac * 100:5.1f}%{sep}"
+                f"{term.pad(term.tokens(tokens), 7, True)}{sep}loss {loss_s}{sep}"
+                f"lr {cur_lr:.1e}{sep}gnorm {float(gnorm):.2f}{sep}{term.pad(term.rate(tps), 12, True)}{sep}"
+                f"eta {term.pad(term.duration(eta), 7, True)}"
+                + (f"{sep}experts {rec['moe_uneven']:.2f} uneven, {rec['moe_dropped'] * 100:.1f}% dropped" if "moe_uneven" in rec else ""),
+                flush=True)
 
         if time.time() - last_ckpt > args.ckpt_min * 60:
             save_ckpt(run, model, opt, ckpt_meta())

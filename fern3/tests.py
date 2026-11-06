@@ -16,6 +16,7 @@ from fern.model import level_of
 from oazy.gpt import GPT, GPTConfig
 from oazy.train import make_optimizer, carry_state
 from .model import Fern3, Fern3Config
+from oazy import term
 
 P = 4
 SMALL = dict(vocab_size=300, d_model=64, n_layer=2, max_len=128, passage=P, unfold_layers=2, unfold_heads=2,
@@ -26,7 +27,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", default="cpu")
     dev = torch.device(ap.parse_args().device)
-    print(f"Fern3 self-tests on {dev}")
+    term.tests_start("Fern3", dev)
     torch.manual_seed(0)
 
     big = Fern3(Fern3Config())
@@ -201,7 +202,7 @@ def main():
           f"(right passage recalled first: {before[1]}/64 -> {after[1]}/64)")
     check("...and writes its words again from memory", after[0] < 0.5,
           f"(loss on the repeated words {before[0]:.2f} -> {after[0]:.2f}; guessing = 5.67)")
-    print("all Fern3 self-tests passed")
+    term.tests_passed("Fern3")
 
 
 if __name__ == "__main__":
