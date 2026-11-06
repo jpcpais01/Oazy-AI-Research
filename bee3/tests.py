@@ -197,7 +197,7 @@ def main():
     retok.run(data, "smollm2", ["fwe", "chat"], workers=2)
     runs = tmp / "runs"
     sys.argv = ["train", "--model", "bee3", "--preset", "smoke", "--data", str(data), "--runs", str(runs), "--mentor", "smol-random",
-                "--device", str(dev), "--compile", "0", "--tokens", "60000", "--batch-ramp", "512:0.5", "--mix", "fwe:0.9,chat:0.1@0"]
+                "--device", str(dev), "--compile", "0", "--tokens", "60000", "--batch-ramp", "512:0.5", "--mix", "fwe:0.9,chat:0.1@0", "--micro", "4"]
     train.main()
     rd = runs / "bee3"
     cfg = json.loads((rd / "config.json").read_text())
@@ -207,6 +207,7 @@ def main():
     check("the run used Bee3's recipe", cfg["doc_mask"] and cfg["mentor_floor"] == 0.25 and cfg["mentor_off"] == 0.1
           and cfg["muon_wd"] == 0.1 and cfg["decay_shape"] == "sqrt" and cfg["loss"] == "fused" and cfg["batch_ramp"] == "512:0.5")
     check("the batch ramped up", tr[0]["batch"] < tr[-1]["batch"] == 2048, f"{tr[0]['batch']} -> {tr[-1]['batch']}")
+    check("--micro means that many sequences per pass, at Bee3's 2,048-word windows too", cfg["micro"] == 4, f"micro {cfg['micro']}")
     mws = [r.get("mentor_w", 0) for r in tr]
     check("the mentor stayed the whole run and faded out at the very end", mws[0] > 0.4 and all(w > 0 for w in mws[:-1])
           and min(mws[len(mws) // 2:-1]) >= 0.249 and mws[-1] < 0.25, f"{mws[0]:.2f} ... {mws[len(mws) // 2]:.2f} ... {mws[-1]:.3f}")

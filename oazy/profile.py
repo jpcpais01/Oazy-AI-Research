@@ -87,6 +87,8 @@ def main():
     ap.add_argument("--device", default=None)
     a = ap.parse_args()
     device = torch.device(a.device or ("cuda" if torch.cuda.is_available() else "cpu"))
+    from oazy.data import few_cpu_threads
+    few_cpu_threads(device)
     if device.type == "cuda":
         torch.backends.cuda.matmul.allow_tf32 = True
     gpu = torch.cuda.get_device_name() if device.type == "cuda" else "cpu"
