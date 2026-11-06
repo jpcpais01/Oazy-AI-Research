@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#050507">
 <title>Oazy · Training lab</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="stylesheet" href="style.css">
@@ -117,17 +118,19 @@
   </div>
 </section>
 
+<canvas id="land" aria-hidden="true"></canvas>
+
 <div class="modal" id="modal" role="dialog" aria-modal="true"><div class="card"><div class="mt"></div><div class="mb"></div>
   <div class="row"><button class="btn ghost" data-cancel>Cancel</button><button class="btn danger" data-ok></button></div></div></div>
 
 <div class="wrap">
-  <div class="section-title" id="now"><h3>Training now</h3><div class="line"></div></div>
+  <div class="section-title" id="now" data-k="now"><h3>Training now</h3><div class="line"></div></div>
   <div class="runs" id="runs"></div>
 
-  <div class="section-title" id="scores"><h3>The finish line</h3><div class="line"></div></div>
+  <div class="section-title" id="scores" data-k="scores"><h3>The finish line</h3><div class="line"></div></div>
   <div class="board" id="board"></div>
 
-  <div class="section-title" id="learning"><h3>Learning</h3><div class="line"></div></div>
+  <div class="section-title" id="learning" data-k="learning"><h3>Learning</h3><div class="line"></div></div>
   <div class="grid">
     <div class="card span7">
       <div class="cardhead">
@@ -154,7 +157,7 @@
     </div>
   </div>
 
-  <div class="section-title" id="memory"><h3>How they use what they read</h3><div class="line"></div></div>
+  <div class="section-title" id="memory" data-k="memory"><h3>How they use what they read</h3><div class="line"></div></div>
   <div class="grid">
     <div class="card span12" id="draftCard" style="display:none">
       <div class="cardhead"><div class="titles"><h2>Tide's drafts: how far ahead can it see?</h2><div class="sub">Loss of Tide's draft of the word 1, 2, … 8 words ahead (1 = the ordinary next-word loss). Each line is one check during training.</div></div></div>
@@ -203,7 +206,7 @@
   </div>
 
   <div id="tideInside" style="display:none">
-  <div class="section-title"><h3>Inside Tide: thoughts arriving</h3><div class="line"></div></div>
+  <div class="section-title" data-k="inside tide"><h3>Inside Tide: thoughts arriving</h3><div class="line"></div></div>
   <div class="grid">
     <div class="card span12">
       <div class="cardhead">
@@ -222,7 +225,7 @@
   </div>
 
   <div id="memtrixInside">
-  <div class="section-title"><h3>Inside Memtrix's memory</h3><div class="line"></div></div>
+  <div class="section-title" data-k="inside memtrix"><h3>Inside Memtrix's memory</h3><div class="line"></div></div>
   <div class="grid">
     <div class="card span12">
       <div class="cardhead">
@@ -257,10 +260,10 @@
 
   </div>
 
-  <div class="section-title" id="writing"><h3>What they write</h3><div class="line"></div></div>
+  <div class="section-title" id="writing" data-k="writing"><h3>What they write</h3><div class="line"></div></div>
   <div class="card"><div id="samples"><div class="empty">Waiting for the first samples</div></div></div>
 
-  <div class="section-title" id="models"><h3>All our models</h3><div class="line"></div></div>
+  <div class="section-title" id="models" data-k="models"><h3>All our models</h3><div class="line"></div></div>
   <div class="card">
     <div class="cardhead"><div class="titles"><h2>Model library</h2><div class="sub">Every model trained in this lab. The page shows the ones training right now; use "Show" to bring a finished one back. "Plots only" keeps a model's lines in the charts but hides its own cards (like Tide's drafts or Inside Memtrix).</div></div></div>
     <div class="libwrap"><table class="lib" id="library"></table></div>
