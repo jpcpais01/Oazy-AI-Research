@@ -157,19 +157,32 @@ def main():
         blocks = {k: [b for b, kk in zip(model.blocks, kinds) if kk == k] for k in set(kinds)}
         names = {"M": "memory layers (Memtrix)", "A": "attention layers"}
 
-        def mixer_pass(b):
-            with amp:
-                out = b.mixer()(b.n1(d), None, resets if b.kind == "M" else mask)[0]
-            out.float().sum().backward()
+        def piece(fn):      # a piece is compiled when the model is, so it is measured as it runs in training
+            return torch.compile(fn) if a.compile and device.type == "cuda" else fn
 
-        def mlp_pass(b):
+        def fwd_bwd(fn):
             with amp:
-                out = b.mlp(b.n2(d))
+                out = fn()
             out.float().sum().backward()
         for k, bs in blocks.items():
-            one = timed(lambda: mixer_pass(bs[0]), a.steps, device)
+            b = bs[0]
+            f = piece(lambda: b.mixer()(b.n1(d), None, resets if b.kind == "M" else mask)[0])
+            one = timed(lambda: fwd_bwd(f), a.steps, device)
             ms[f"{names[k]} x{len(bs)}"] = one * len(bs)
-        one = timed(lambda: mlp_pass(model.blocks[0]), a.steps, device)
+            if k == "M":                                  # the memory rule's kernel alone, on the layer's own q, k, v
+                mem = b.mixer()
+                with torch.no_grad(), amp:
+                    q, kk, v, trust, lf, _ = mem.project(b.n1(d), None, resets)
+                q, kk, v, trust, lf = (t.detach().clone().requires_grad_() for t in (q, kk, v, trust, lf))
+
+                def kern():
+                    with amp:
+                        o, _ = memory.delta_rule(q, kk, v, lf, trust.to(q.dtype), resets=resets)
+                    o.float().sum().backward()
+                one = timed(kern, a.steps, device)
+                ms[f"  of which the memory kernel x{len(bs)}"] = one * len(bs)
+        f = piece(lambda: model.blocks[0].mlp(model.blocks[0].n2(d)))
+        one = timed(lambda: fwd_bwd(f), a.steps, device)
         ms[f"MLPs x{len(model.blocks)}"] = one * len(model.blocks)
         model.zero_grad(set_to_none=True)
     # --- the optimizer step (once per several passes in training)
@@ -179,7 +192,7 @@ def main():
     model.zero_grad(set_to_none=True)
     # --- report
     whole = ms.get("pass with mentor", ms["pass, student alone"])
-    say(f"\n{'piece':40s} {'ms / pass':>10s} {'share':>7s}")
+    say(f"\n{'piece':40s} {'ms / pass':>10s} {'share':>7s}    (the pieces are measured alone; they overlap and need not add up)")
     for k, v in ms.items():
         say(f"{k:40s} {v:10.1f} {v / whole * 100:6.0f}%")
     tps = ntok / (whole / 1000)
@@ -195,19 +208,25 @@ def main():
     # --- the slowest kernels
     if device.type == "cuda" and a.kernels:
         from torch.profiler import profile, ProfilerActivity
+        def top(prof, n, per):
+            dt = lambda e: getattr(e, "device_time_total", getattr(e, "cuda_time_total", 0))   # noqa: E731
+            rows = sorted(prof.key_averages(), key=lambda e: -dt(e))
+            tot = sum(dt(e) for e in rows) or 1
+            out = []
+            for e in rows[:n]:
+                say(f"  {dt(e) / tot * 100:5.1f}%  {dt(e) / per / 1000:8.1f} ms  {e.key[:90]}")
+                out.append({"name": e.key, "share": dt(e) / tot, "ms": dt(e) / per / 1000})
+            return out
         with profile(activities=[ProfilerActivity.CUDA]) as prof:
             for _ in range(2):
                 pass_(mentor is not None)
+        say(f"\nthe {a.kernels} slowest GPU kernels of a pass (forward + backward{', mentor included' if mentor is not None else ''}):")
+        res["kernels"] = top(prof, a.kernels, 2)
+        with profile(activities=[ProfilerActivity.CUDA]) as prof:
             opt.step()
         model.zero_grad(set_to_none=True)
-        rows = sorted(prof.key_averages(), key=lambda e: -getattr(e, "device_time_total", getattr(e, "cuda_time_total", 0)))
-        tot = sum(getattr(e, "device_time_total", getattr(e, "cuda_time_total", 0)) for e in rows)
-        say(f"\nthe {a.kernels} slowest GPU kernels (over 2 passes + 1 optimizer step):")
-        res["kernels"] = []
-        for e in rows[:a.kernels]:
-            t = getattr(e, "device_time_total", getattr(e, "cuda_time_total", 0))
-            say(f"  {t / tot * 100:5.1f}%  {t / 2000:8.1f} ms/pass  {e.key[:90]}")
-            res["kernels"].append({"name": e.key, "share": t / tot, "ms_per_pass": t / 2000})
+        say("\nthe 3 slowest of the optimizer step:")
+        res["kernels_optimizer"] = top(prof, 3, 1)
     out = Path(a.runs or default_dir("runs")) / f"profile-{a.model}.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(res, indent=1))
