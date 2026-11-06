@@ -26,7 +26,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from .data import Windows, val_set, default_dir, run_dir
+from .data import Windows, val_set, default_dir, run_dir, few_cpu_threads
 from . import tok
 from .gpt import GPT, GPTConfig
 from memtrix.model import Memtrix, MemtrixConfig
@@ -452,7 +452,7 @@ def main():
     ap.add_argument("--runs", default=None)
     ap.add_argument("--name", default=None, help="run folder name (default: the model name)")
     ap.add_argument("--tokens", type=float, default=None, help="training tokens, e.g. 2e9")
-    ap.add_argument("--micro", type=int, default=None, help="sequences per forward pass (lower it if out of memory)")
+    ap.add_argument("--micro", type=int, default=None, help="sequences per forward pass at the run's first window length (lower it if out of memory; Bee3 at 2,048 words: 16 by default)")
     ap.add_argument("--batch-tokens", type=int, default=None, help="tokens per optimizer step")
     ap.add_argument("--lr", type=float, default=None)
     ap.add_argument("--compile", type=int, default=1, help="torch.compile on GPU (1/0)")
@@ -489,6 +489,7 @@ def main():
         args.model = "memtrix"
 
     device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
+    few_cpu_threads(device)
     if device.type == "cuda":
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
@@ -533,12 +534,14 @@ def main():
     growing_ctx = hasattr(model, "ctx_at")             # Bee: 1,024-word windows first, then 2,048 (Bee3: 2,048 throughout)
     T0 = model.ctx_at(0) if growing_ctx else T
     Tv = min(T0, VAL_T) if args.model in BEES else T0   # held-out windows: 1,024 for every Bee, so the losses compare
-    micro_ref = max(1, micro0 * min(T0, 1024) // 1024) if args.model in BEES else micro0   # sequences per pass at 1,024 words
+    # a preset's micro is for 1,024-word windows and is halved at 2,048, so every pass holds the same tokens; --micro given
+    # by hand means that many sequences per pass at the run's first window length
+    micro_ref = max(1, micro0 * min(T0, 1024) // 1024) if args.model in BEES and not args.micro else micro0
 
     def shape(T, progress=0.0):
         """Sequences per pass and passes per step for windows of T words (same words per step throughout,
         except for a batch ramp at the start)."""
-        mi = max(1, micro_ref * 1024 // T) if args.model in BEES else max(1, micro0 * T0 // T)
+        mi = max(1, micro_ref * 1024 // T) if args.model in BEES and not args.micro else max(1, micro_ref * T0 // T)
         return mi, max(1, round(batch_at(progress, batch_tokens, batch_ramp) / (mi * T)))
     T = T0
     micro, accum = shape(T)

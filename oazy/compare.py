@@ -31,6 +31,8 @@ def main():
     a = ap.parse_args()
     a.data, a.runs = a.data or default_dir("data"), a.runs or default_dir("runs")
     device = torch.device(a.device or ("cuda" if torch.cuda.is_available() else "cpu"))
+    from oazy.data import few_cpu_threads
+    few_cpu_threads(device)
     p = PRESETS[a.preset]
     data = Path(a.data)
     model = load_openai_gpt2(device)

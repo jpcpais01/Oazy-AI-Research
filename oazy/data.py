@@ -192,6 +192,16 @@ def prepare(out: Path, tokens: int, val_tokens: int, sample: str, workers: int =
     print("done:", meta)
 
 
+def few_cpu_threads(device, n: int = 4):
+    """On a GPU, the CPU only does small jobs (batches, offsets, bookkeeping), so PyTorch's CPU thread pool is
+    capped at n. By default it is one thread per host core (96 on a B200 pod), and those threads spin-wait
+    between jobs: on a pod with a CPU quota they starve the one thread that feeds the GPU (seen Nov 2026:
+    ~24 cores burnt, the GPU 74% busy)."""
+    import torch
+    if device.type == "cuda" and torch.get_num_threads() > n:
+        torch.set_num_threads(n)
+
+
 class Windows:
     """Training windows of T+1 tokens, in a shuffled order without repeats (reproducible and resumable)."""
 
