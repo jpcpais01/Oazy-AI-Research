@@ -79,6 +79,9 @@ def models(V):
                                      mlp_hidden=64, n_expert=8, top_k=2, expert_hidden=64, max_len=256))
     out["bee2"] = Bee2(Bee2Config(vocab_size=V, d_model=128, n_layer=4, n_head=2, head_k=32, head_v=32, attn_heads=4,
                                   attn_kv_heads=2, attn_head_dim=32, mlp_hidden=96, max_len=256))
+    from bee4.model import Bee4, Bee4Config
+    out["bee4"] = Bee4(Bee4Config(vocab_size=V, d_model=128, n_layer=4, attn_heads=4, attn_kv_heads=2, attn_head_dim=32,
+                                  mlp_hidden=96, max_len=256))
     out["coral-hybrid"] = Coral(CoralConfig(vocab_size=V, d_model=128, n_layer=4, pattern="MMMA", n_head=2, head_k=32,
                                             head_v=32, attn_heads=4, attn_kv_heads=2, attn_head_dim=32, mlp_hidden=64,
                                             n_expert=8, top_k=2, expert_hidden=64, max_len=256))
@@ -129,7 +132,7 @@ def main():
     ok = True
     for name, m in models(V).items():
         ref = torch_scores(m, ids)
-        st = {"kind": "coral" if name.startswith("coral") else "bee2", "tokens": 123, "step": 4}
+        st = {"kind": "coral" if name.startswith("coral") else ("bee4" if name == "bee4" else "bee2"), "tokens": 123, "step": 4}
         for quant, tol in (("f32", None), ("q8", 0.97), ("q4", 0.85)):
             path = TMP / f"{name}-{quant}.oazy"
             export(m, st, enc, path, quant, say=lambda *a: None)

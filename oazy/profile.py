@@ -6,6 +6,7 @@
     python3 -m oazy.profile --model bee3 --preset big --compile 0
     python3 -m oazy.profile --model frog --preset big --micro 32      # Frog: also prints a whole run's speed with its mentor share
     python3 -m oazy.profile --model coral --preset big --micro 32     # Coral: the experts timed too; MFU counts the parameters at work
+    python3 -m oazy.profile --model bee4 --preset big --micro 32      # Bee4: 296M all attention, timed at full depth
     python3 -m oazy.profile --model blackt --preset race --micro 32   # Black-T (125m; --set size=250m / 500m)
     python3 -m oazy.profile --model black --preset race --micro 32    # Code Black: phrase memory, fast and slow streams timed apart
 
