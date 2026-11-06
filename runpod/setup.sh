@@ -46,6 +46,9 @@ python3 -m pip install -q -r oazy/requirements.txt
 TV=$(python3 -c "import torch; print(torch.__version__)")
 python3 -m pip install -q flash-linear-attention --constraint <(echo "torch==${TV}") \
     || echo "-- flash-linear-attention did not install; Memtrix will use its pure-PyTorch version (slower, same maths)"
+# FP8 training for Frog's big matrix products (oazy/fp8.py); also pinned to the installed torch
+python3 -m pip install -q torchao --constraint <(echo "torch==${TV}") \
+    || echo "-- torchao did not install; Frog will train in bf16 (slower, same maths)"
 
 echo "== FineWeb-Edu (${TOKENS} tokens) -> ${DATA}"
 python3 -m oazy.data --out "${DATA}" --tokens "${TOKENS}"

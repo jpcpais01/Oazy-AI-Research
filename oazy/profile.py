@@ -82,6 +82,7 @@ def main():
     ap.add_argument("--mentor-weight", type=float, default=0.5)
     ap.add_argument("--loss", choices=["fused", "plain"], default="fused")
     ap.add_argument("--compile", type=int, default=1)
+    ap.add_argument("--fp8", type=int, choices=[0, 1], default=None, help="FP8 matrix products (default: the recipe's)")
     ap.add_argument("--steps", type=int, default=5)
     ap.add_argument("--kernels", type=int, default=10, help="how many of the slowest GPU kernels to list")
     ap.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE")
@@ -96,7 +97,13 @@ def main():
     say = print
     p = T.PRESETS[a.preset]
     model, cfg = T.build(a.model, a.preset, T.parse_overrides(a.set))
+    if hasattr(model, "grow_to"):                      # Frog starts shallow: time it at its full depth
+        model.grow_to(1.0)
     model.to(device).train()
+    fp8 = False
+    if (T.RECIPE.get(a.model, {}).get("fp8", 0) if a.fp8 is None else a.fp8):
+        from oazy import fp8 as fp8_mod
+        model, fp8 = fp8_mod.convert(model, device, print)
     if hasattr(model, "fused_loss"):
         type(model).fused_loss = a.loss == "fused"
     Tw = a.ctx or (model.ctx_at(0) if hasattr(model, "ctx_at") else cfg.max_len)
@@ -117,7 +124,8 @@ def main():
     amp = T.amp(device)
     res = {"model": a.model, "gpu": gpu, "micro": B, "context": Tw, "tokens_per_pass": ntok, "mentor": mentor_name,
            "loss": a.loss, "compile": bool(a.compile), "fla": bool(memory._FLA_OK), "fla_packed_docs": bool(memory._FLA_SEG),
-           "doc_mask": bool(getattr(cfg, "doc_mask", 0)), "params": model.num_params()}
+           "doc_mask": bool(getattr(cfg, "doc_mask", 0)), "params": model.num_params(), "fp8": fp8,
+           "memory_op": bool(memory._OP_OK), "fused_gates": bool(memory._FUSED_OK), "flex_attn": bool(getattr(model, "_flex", False))}
     say(f"{T.NICE[a.model]} on {gpu}: {B} x {Tw} words per pass ({ntok:,} tokens), mentor {mentor_name}, loss {a.loss}, "
         f"compile {bool(a.compile)}, memory kernel {'fla' if memory._FLA_OK else 'pure PyTorch'}"
         + (f" (packed documents {'yes' if memory._FLA_SEG else 'no'})" if getattr(cfg, 'doc_mask', 0) else ""))
@@ -225,7 +233,8 @@ def main():
             + ms["optimizer step (once per step)"] * ntok / batch
         res.update({"mentor_reads": read, "run_tokens_per_s": ntok / (run_ms / 1000)})
         say(f"a whole run (the mentor reads {read:.0%} of the passes, one optimizer step per {batch:,} tokens): "
-            f"about {res['run_tokens_per_s'] / 1e3:.1f}k tokens/s")
+            f"about {res['run_tokens_per_s'] / 1e3:.1f}k tokens/s"
+            + (" at full depth (it starts shallower and grows, so the run's average is faster)" if hasattr(model, "grow_to") else ""))
     # --- the slowest kernels
     if device.type == "cuda" and a.kernels:
         from torch.profiler import profile, ProfilerActivity
