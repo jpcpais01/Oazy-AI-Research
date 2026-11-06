@@ -33,12 +33,12 @@ from memtrix.model import Memtrix, MemtrixConfig
 from memtrix import memory
 from . import hellaswag, probes
 
-KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "gpt"]
+KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "gpt"]
 NICE = {"memtrix": "Memtrix", "tide": "Tide", "fern": "Fern", "ember": "Ember", "fern2": "Fern2", "fern3": "Fern3",
-        "bee": "Bee0.2B", "bee2": "Bee_v2_0.2B", "bee3": "Bee3", "frog": "Frog", "gpt": "GPT"}
-FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog")    # raised the fast way: Muon and a mentor by default
-MENTOR = {"bee": "gpt2-large", "bee2": "smollm2-360m", "bee3": "smollm2-360m", "frog": "smollm2-360m"}   # default mentor (the others: gpt2-medium)
-BEES = ("bee", "bee2", "bee3", "frog")                 # the text mix, WSD, growing windows
+        "bee": "Bee0.2B", "bee2": "Bee_v2_0.2B", "bee3": "Bee3", "frog": "Frog", "coral": "Coral", "gpt": "GPT"}
+FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral")    # raised the fast way: Muon and a mentor by default
+MENTOR = {"bee": "gpt2-large", "bee2": "smollm2-360m", "bee3": "smollm2-360m", "frog": "smollm2-360m", "coral": "smollm2-360m"}   # default mentor (the others: gpt2-medium)
+BEES = ("bee", "bee2", "bee3", "frog", "coral")                 # the text mix, WSD, growing windows
 # Bee3's recipe (bee3/README.md): the mentor stays the whole run, weight decay on the Muon grids, a batch ramp,
 # a 1-minus-square-root cool-down, twice Bee2's learning rates (the presets' lr_bee3 / muon_lr_bee3)
 RECIPE = {"bee3": dict(mentor_floor=0.25, mentor_off=0.1, muon_wd=0.1, batch_ramp="65536:0.1", decay_shape="sqrt")}
@@ -46,6 +46,12 @@ RECIPE = {"bee3": dict(mentor_floor=0.25, mentor_off=0.1, muon_wd=0.1, batch_ram
 # word (mentor_share: a share w of the passes learn only the mentor's guesses, the rest only the real next word, so the
 # mentor reads only what it teaches), and 524k-token steps after the ramp (the presets' batch_frog)
 RECIPE["frog"] = dict(RECIPE["bee3"], mentor_share=1, fp8=1)      # and FP8 matrix products where the GPU has them
+# Coral (coral/README.md): Frog's recipe for a 1.0B mixture of experts that must train at ~1M tokens/s. The mentor
+# teaches 1 pass in 4 at the start, fading to none by 30% of the run (it helps most early; at full share all run it
+# would cost ~40% of the speed). 1M-token steps after a short ramp. It reads Tagus grown to 20,000M tokens in its own
+# folder (<data>/tagus20, python3 -m oazy.tagus --run-tokens 20e9 --into tagus20), so Bee3's and Frog's Tagus stays as is.
+RECIPE["coral"] = dict(RECIPE["frog"], mentor_weight=0.25, mentor_until=0.3, mentor_floor=0.0, mentor_off=0.0,
+                       batch_ramp="262144:0.05", data_sub="tagus20")
 VAL_T = 1024                                   # held-out windows are always this long: every model, every run, same text
 
 
@@ -97,6 +103,11 @@ def _frog():
     return Frog, FrogConfig
 
 
+def _coral():
+    from coral.model import Coral, CoralConfig       # coral/ = 1.0B mixture of experts (32 experts, top 2), ~160M at work per word
+    return Coral, CoralConfig
+
+
 def _bee3():
     from bee3.model import Bee3, Bee3Config          # bee3/ = Bee2's body, no bleed between documents, the Bee3 recipe
     return Bee3, Bee3Config
@@ -115,6 +126,7 @@ PRESETS = {
                    grow="1:0,2:0.25", unfold_grow="1:0,2:0.25"),
         bee=dict(d_model=128, n_layer=4, n_head=2, head_k=64, head_v=64, attn_heads=4, attn_kv_heads=2, attn_head_dim=32,
                  mlp_hidden=256, max_len=512, ctx="256:0,512:0.5"),
+        coral=dict(n_expert=4, top_k=2, expert_hidden=64, mlp_hidden=64),
         micro=16, accum=1, lr=3e-3, warmup=50, tokens=3_000_000,
         eval_every=250_000, probe_every=1_000_000, hs_every=1_000_000, sample_every=1_000_000,
         val_windows=64, hs_quick=200, sample_len=40,
@@ -131,21 +143,24 @@ PRESETS = {
                    grow="1:0,2:0.3", unfold_grow="1:0", recall_warm_until=0.2),
         bee=dict(d_model=64, n_layer=4, n_head=1, head_k=32, head_v=32, attn_heads=2, attn_kv_heads=1, attn_head_dim=32,
                  mlp_hidden=128, max_len=128, ctx="64:0,128:0.5"),
+        coral=dict(n_expert=4, top_k=2, expert_hidden=32, mlp_hidden=32),
         micro=8, accum=2, lr=3e-3, warmup=10, tokens=60_000,
         eval_every=20_000, probe_every=30_000, hs_every=30_000, sample_every=30_000,
         val_windows=16, hs_quick=20, sample_len=10,
     ),
     # GPT-2 small size (Memtrix 117M vs GPT-2 124M), ~2 h for both models on one B200 (check with --bench)
     "full": dict(
-        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288,
-        micro=32, accum=8, lr=1.2e-3, lr_bee3=2.4e-3, muon_lr_bee3=0.04, lr_frog=1.8e-3, muon_lr_frog=0.03, warmup=400, tokens=2_000_000_000,
+        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576,
+        micro=32, accum=8, lr=1.2e-3, lr_bee3=2.4e-3, muon_lr_bee3=0.04, lr_frog=1.8e-3, muon_lr_frog=0.03,
+        lr_coral=1.8e-3, muon_lr_coral=0.03, warmup=400, tokens=2_000_000_000,
         eval_every=50_000_000, probe_every=250_000_000, hs_every=250_000_000, sample_every=250_000_000,
         val_windows=128, hs_quick=1000, sample_len=120,
     ),
     # the same models, 2.5x the text (e.g. a 2 x B200 pod for ~2.5 h, one model per GPU)
     "big": dict(
-        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288,
-        micro=32, accum=8, lr=1.2e-3, lr_bee3=2.4e-3, muon_lr_bee3=0.04, lr_frog=1.8e-3, muon_lr_frog=0.03, warmup=600, tokens=5_000_000_000,
+        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576,
+        micro=32, accum=8, lr=1.2e-3, lr_bee3=2.4e-3, muon_lr_bee3=0.04, lr_frog=1.8e-3, muon_lr_frog=0.03,
+        lr_coral=1.8e-3, muon_lr_coral=0.03, warmup=600, tokens=5_000_000_000,
         eval_every=100_000_000, probe_every=200_000_000, hs_every=200_000_000, sample_every=200_000_000,
         val_windows=128, hs_quick=1000, sample_len=120,
     ),
@@ -210,6 +225,12 @@ def build(kind, preset, overrides=None):
         cfg = FrogConfig(**{**small, **({"ctx": f"{small['max_len']}:0"} if "max_len" in small else {}),
                             **p.get("frog", {}), **(overrides or {})})
         return Frog(cfg), cfg
+    if kind == "coral":
+        Coral, CoralConfig = _coral()
+        small = {k: v for k, v in p.get("bee", {}).items() if k != "ctx"}    # the test presets' small body, as Bee3
+        cfg = CoralConfig(**{**small, **({"ctx": f"{small['max_len']}:0"} if "max_len" in small else {}),
+                             **p.get("coral", {}), **(overrides or {})})
+        return Coral(cfg), cfg
     cfg = GPTConfig(**{**p["gpt"], **(overrides or {})})
     return GPT(cfg), cfg
 
@@ -248,6 +269,9 @@ def load_model(ckpt: Path, device):
     elif kind == "frog":
         Frog, FrogConfig = _frog()
         model = Frog(FrogConfig.from_dict(st["config"]))
+    elif kind == "coral":
+        Coral, CoralConfig = _coral()
+        model = Coral(CoralConfig.from_dict(st["config"]))
     else:
         model = GPT(GPTConfig.from_dict(st["config"]))
     model.load_state_dict(st["model"])
@@ -301,12 +325,16 @@ MUON_GRIDS = ("mem.qkv.weight", "mem.gate.weight", "mem.out.weight", "mlp.up.wei
               "attn.q.weight", "attn.k.weight", "attn.v.weight", "attn.gate.weight", "attn.out.weight")   # Bee's attention
 
 
+MUON_STACKS = ("moe.w_up", "moe.w_down")      # Coral's experts: a stack of grids (E, out, in), each straightened alone
+
+
 def make_optimizer(model, lr, device, kind="adamw", muon_lr=0.02, muon_wd=0.0):
     """AdamW for everything, or (kind="muon") Muon for the blocks' weight grids + AdamW for the rest.
     Every group's learning rate follows the same schedule: lr_scale is its size relative to --lr.
     muon_wd: weight decay on the Muon grids, on AdamW's scale (0.1 = what AdamW's 0.1 does; Bee3)."""
     named = list(model.named_parameters())
-    grids = [(n, p) for n, p in named if kind == "muon" and p.dim() == 2 and n.endswith(MUON_GRIDS)]
+    grids = [(n, p) for n, p in named if kind == "muon" and ((p.dim() == 2 and n.endswith(MUON_GRIDS))
+                                                         or (p.dim() == 3 and n.endswith(MUON_STACKS)))]
     gids = {id(p) for _, p in grids}
     rest = [(n, p) for n, p in named if id(p) not in gids]
     keep = lambda n, p: p.dim() < 2 or "conv_w" in n or (getattr(model, "embed_no_decay", False) and n.startswith("embed"))  # noqa: E731
@@ -328,6 +356,8 @@ def make_optimizer(model, lr, device, kind="adamw", muon_lr=0.02, muon_wd=0.0):
             p.muon_split = [p.shape[0] // 3] * 3
         elif n.endswith(".up.weight"):           # two halves: the gate and the value of a SwiGLU
             p.muon_split = [p.shape[0] // 2] * 2
+        elif n.endswith("moe.w_up"):             # every expert's two halves, the same way
+            p.muon_split = [p.shape[-2] // 2] * 2
     muon = Muon([{"params": [p for _, p in grids], "lr_scale": muon_lr / lr}], lr=muon_lr, weight_decay=muon_wd)
     return Combined(muon, adam)
 
@@ -449,7 +479,7 @@ def bench(args, device):
                 if i >= 3:
                     mt.append(time.time() - t0)
             mtps = micro * T / float(np.median(mt))
-            u = args.mentor_until
+            u = args.mentor_until or 0.5
             sec = total * (u * (1 / tps + 1 / mtps) + (1 - u) / tps)
             say(f"mentor  {mname}: {mtps / 1e3:8.1f}k tok/s reading only. {NICE[kind]} with it for the first {u:.0%}: "
                 f"about {sec / 3600:.1f} h for {total / 1e9:.1f}B tokens (+ ~5-10% for 2,048-word windows and tests)")
@@ -501,8 +531,10 @@ def main():
                     help="Bee's loss in slices (fused, default) or on the full 32-bit scores (plain; slower, same numbers)")
     ap.add_argument("--mentor", default=None, help="the mentor: gpt2-medium (Ember's default), gpt2-large (Bee's), gpt2-xl, "
                     "smollm2-360m (Bee_v2_0.2B's; also smollm2-135m, smollm2-1.7b; only for SmolLM2-tokenizer models) or none")
-    ap.add_argument("--mentor-weight", type=float, default=0.6, help="mentor's share of the lesson at the start")
-    ap.add_argument("--mentor-until", type=float, default=0.5, help="fraction of training by which the mentor's share has fallen to --mentor-floor")
+    ap.add_argument("--mentor-weight", type=float, default=None, help="mentor's share of the lesson at the start (0.6; Coral 0.25)")
+    ap.add_argument("--mentor-until", type=float, default=None, help="fraction of training by which the mentor's share has fallen to --mentor-floor (0.5; Coral 0.3)")
+    ap.add_argument("--data-sub", default=None, help="read the SmolLM2 text from <data>/<this> instead of <data>/smol "
+                    "(Coral's default: tagus20, its 20,000M-token Tagus; --data-sub smol = the usual Tagus)")
     ap.add_argument("--mentor-floor", type=float, default=None, help="the share it keeps from then on (0 = it leaves; Bee3 0.25)")
     ap.add_argument("--mentor-off", type=float, default=None, help="over this last fraction of the run the share falls to 0 (Bee3 0.1)")
     ap.add_argument("--fp8", type=int, choices=[0, 1], default=None,
@@ -540,6 +572,10 @@ def main():
     mentor_off = recipe.get("mentor_off", 0.0) if args.mentor_off is None else args.mentor_off
     mentor_share = bool(recipe.get("mentor_share", 0) if args.mentor_share is None else args.mentor_share)
     want_fp8 = bool(recipe.get("fp8", 0) if args.fp8 is None else args.fp8)
+    if args.mentor_weight is None:
+        args.mentor_weight = recipe.get("mentor_weight", 0.6)
+    if args.mentor_until is None:
+        args.mentor_until = recipe.get("mentor_until", 0.5)
     run = Run(run_dir(args.runs, args.name or args.model))
     root = Path(args.data)
 
@@ -558,6 +594,12 @@ def main():
     if tk != "gpt2":
         from .retok import target_dir, ratio
         data = target_dir(root, tk)
+        sub = args.data_sub or recipe.get("data_sub")
+        if sub and sub != data.name:
+            data = root / sub
+            if not (data / "train.bin").exists():
+                raise SystemExit(f"no text in {data} yet: run  nice -n 10 python3 -m oazy.tagus --run-tokens 20e9 --into {sub}  "
+                                 f"first (or --data-sub smol to read the usual Tagus)")
         if not (data / "train.bin").exists():
             raise SystemExit(f"no {tk} text in {data} yet: run  python3 -m oazy.retok  first (bash runpod/setup.sh bee2)")
         # its losses per token, turned into "per GPT-2 token" so that they sit on the same scale as
@@ -676,6 +718,7 @@ def main():
         **({"fp8": fp8} if want_fp8 else {}), **({"grow": cfg.grow} if hasattr(model, "grow_to") and hasattr(cfg, "grow") else {}),
         **({"loss": args.loss, "doc_mask": bool(getattr(cfg, "doc_mask", 0)), "val_context": Tv} if args.model in BEES else {}),
         "layout": model.layout() if hasattr(model, "layout") else None,
+        **({"params_active": model.active_params()} if hasattr(model, "active_params") else {}),
         "mix": args.mix or (DEFAULT_MIX if args.model in BEES else None), "total_tokens": total, "device": str(device),
         "tokenizer": tk, "loss_scale": val_scale,
         "gpu": torch.cuda.get_device_name() if device.type == "cuda" else "cpu",
@@ -945,6 +988,8 @@ def main():
         gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         opt.step()
         opt.zero_grad(set_to_none=True)
+        if hasattr(model, "after_step"):            # Coral: the experts' balancing biases move
+            model.after_step()
         step += 1
         tokens += B * T
         acc_loss += loss_sum / accum
@@ -962,6 +1007,8 @@ def main():
                 rec["loss_own"] = own_loss
             if hasattr(model, "grow_to"):
                 rec["depth"] = model.depth
+            if hasattr(model, "moe_report"):         # Coral: how evenly the experts worked, how much overflowed
+                rec.update(model.moe_report())
             if hasattr(train, "weights"):
                 rec["context"], rec["mix"] = T, {k: round(v, 3) for k, v in train.weights(tokens / total).items()}
                 rec["batch"] = B * T
@@ -982,7 +1029,9 @@ def main():
             run.status({**info, "state": "running", "step": step, "tokens": tokens, "elapsed": elapsed,
                         "tok_s": tps, "eta_s": eta, "loss": rec["loss"], "latest": latest, "updated": time.time()})
             say(f"step {step:6d} | {tokens / 1e6:8.1f}M tok | loss {rec['loss']:.4f} | lr {cur_lr:.2e} | "
-                  f"gnorm {float(gnorm):.2f} | {tps / 1e3:6.1f}k tok/s | eta {eta / 60:6.1f} min", flush=True)
+                  f"gnorm {float(gnorm):.2f} | {tps / 1e3:6.1f}k tok/s | eta {eta / 60:6.1f} min"
+                  + (f" | experts uneven {rec['moe_uneven']:.2f}, dropped {rec['moe_dropped'] * 100:.1f}%" if "moe_uneven" in rec else ""),
+                  flush=True)
 
         if time.time() - last_ckpt > args.ckpt_min * 60:
             save_ckpt(run, model, opt, ckpt_meta())

@@ -256,12 +256,13 @@ class Block(nn.Module):
 
 class Bee(nn.Module):
     embed_no_decay = True        # the word table is not pulled towards zero (SmolLM3)
+    block_cls = Block            # the layer type (Coral: Block + its experts)
 
     def __init__(self, cfg: BeeConfig):
         super().__init__()
         self.cfg = cfg
         self.embed = nn.Embedding(cfg.vocab_size, cfg.d_model)
-        self.blocks = nn.ModuleList(Block(cfg, k) for k in cfg.kinds())
+        self.blocks = nn.ModuleList(self.block_cls(cfg, k) for k in cfg.kinds())
         self.norm = RMSNorm(cfg.d_model)
         self.apply(self._init)
         for n, p in self.named_parameters():

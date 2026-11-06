@@ -26,7 +26,7 @@ run every chat with `--port 8002`; it then opens on the pod's 8001 link.
 
 ```bash
 cd /workspace/oazy && git pull
-bash runpod/train.sh <model> [options]    # start or resume a model: bee, bee2, bee3, memtrix, tide, ember, fern, fern2, fern3, gpt
+bash runpod/train.sh <model> [options]    # start or resume a model: coral, frog, bee, bee2, bee3, memtrix, tide, ember, fern, fern2, fern3, gpt
 python3 -m oazy.train --bench --model <model> --hours 2   # how many tokens fit in 2 hours
 ```
 
@@ -123,6 +123,30 @@ python3 -m frog.chat --run frog-chat --port 8002         # chat
 ```
 
 If the loss turns noisy, resume with `--lr 1.2e-3 --muon-lr 0.02`; `--mentor-share 0` is Bee3's way of mixing the mentor in.
+
+### Coral (1,037M mixture of experts, about 160M at work per word, 20,000M tokens)
+
+A next-word model built for about 1M tokens/s on one B200 (~5.5-8 h for the run). Recipe and reasons in
+`coral/README.md`. Its Tagus is a separate folder (`tagus20`, about 42 GB), so it can be prepared while Frog trains;
+keep it at low priority so Frog's GPU-feeding thread keeps its CPU.
+
+```bash
+cd /workspace/oazy && git pull
+df -h /workspace                                         # about 45 GB free needed for tagus20 (plus a few GB of downloads at a time)
+nice -n 19 python3 -m oazy.tagus --run-tokens 20e9 --into tagus20 --workers 8   # once, a few hours of CPU (safe while Frog trains)
+# after Frog has finished (the GPU is free):
+python3 -m coral.tests --device cuda                      # self-tests: the experts, balancing, compiled step, flex, FP8
+python3 -m oazy.profile --model coral --preset big --micro 32   # tokens/s and where the time goes (paste it in the thread)
+bash runpod/train.sh coral --preset big --tokens 20e9 --micro 32 # the run; resumes if stopped
+python3 -m oazy.sft --run coral                           # afterwards: the chat fine-tune -> runs/coral-chat
+python3 -m coral.chat --run coral-chat --port 8002        # chat
+```
+
+Watch the log line's `experts uneven` (busiest expert / average, 1.0 = perfect; it should settle near 1.1-1.3)
+and `dropped` (share of word-expert pairs that found their expert full; should settle near 1%). If `uneven` stays
+above 2 after the first few hundred steps, resume with `--set balance_rate=0.003`. If the loss turns noisy, resume
+with `--lr 1.2e-3 --muon-lr 0.02`. `--set pattern=MMMA` is the Memtrix hybrid (profile it the same way to compare),
+`--mentor none` drops the mentor, `--data-sub smol` reads the usual Tagus (a quick test before tagus20 is ready).
 `--fp8 0` trains in bf16; `--set grow=28:0` starts at full depth (only on a fresh run).
 
 ## Experiments

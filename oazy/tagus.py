@@ -4,6 +4,7 @@
     python -m oazy.tagus --run-tokens 2.5e9        # prepare what a 2.5B-token run reads, + 5%
     python -m oazy.tagus --run-tokens 5e9          # for a 5B run: sources that are short are prepared again, bigger
     python -m oazy.tagus --plan --run-tokens 2.5e9 # only print what it would read and what is there
+    python -m oazy.tagus --run-tokens 20e9 --into tagus20   # Coral: a separate, 20,000M-token Tagus (see below)
 
 All of it is written in SmolLM2's pieces under <data>/smol/ (what Bee_v2_0.2B reads):
 
@@ -21,11 +22,20 @@ uses the main shares, the last 20% (the cool-down) the cool-down shares. This sc
 tokens each source needs for --run-tokens, adds --margin (5%), and downloads just that, so nothing
 is repeated and almost nothing is left unused. Every document ends with <|endoftext|>, which is how
 document boundaries are kept. Each source also gets 2M held-out tokens (val.bin), never trained on.
+
+--into NAME builds a whole Tagus in <data>/NAME instead of <data>/smol (Coral's 20,000M tokens: about 40 GB on
+disk, a few hours of CPU; run it with nice so a training run keeps its CPU). The usual Tagus in smol/ is not
+touched, so Bee3's and Frog's runs can still resume. There, FineWeb-Edu, DCLM and the conversations are streamed
+straight from Hugging Face in SmolLM2's pieces (FineWeb-Edu from its 100BT sample, which has room for it); their
+held-out text is copied from smol/ so every model is still scored on the same held-out text, and any document of
+it met in the stream is left out of training.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import itertools
+import shutil
 import json
 import os
 from pathlib import Path
@@ -41,6 +51,8 @@ NEW = {   # name: (repo, config, text fields, about)
     "math": ("HuggingFaceTB/finemath", "finemath-4plus", ("text",), "FineMath 4+"),
     "code": ("codeparrot/codeparrot-clean", None, ("content",), "Python (codeparrot-clean)"),
 }
+STREAMED = {   # Coral's --into: the sources smol/ got by re-cutting, streamed instead (name: about)
+    "fwe": "FineWeb-Edu (sample-100BT)", "dclm": "DCLM baseline", "chat": "smol-smoltalk conversations"}
 OLD = {"fwe": "python3 -m oazy.retok --sources fwe", "dclm": "python3 -m oazy.retok --sources dclm",
        "chat": "python3 -m oazy.retok --sources chat"}
 
@@ -88,6 +100,78 @@ def stream(name: str, batch_docs: int = 1024, repo=None):
         yield batch
 
 
+def streamed(name: str):
+    """Batches of document texts for a STREAMED source, read as parquet files one ahead of use (and deleted after)."""
+    from . import mix
+    if name == "dclm":
+        return mix.dclm_batches()
+    if name == "chat":
+        return mix.chat_batches("HuggingFaceTB/smol-smoltalk")
+    repo = "HuggingFaceFW/fineweb-edu"
+    files = mix._list_parquet(repo, ["sample/100BT/"])
+    rng = np.random.default_rng(0)
+    files = [files[i] for i in rng.permutation(len(files))]
+    print(f"{len(files)} parquet files in {repo} sample/100BT", flush=True)
+    return mix._parquet_batches(repo, files, "text", drop=True)
+
+
+def _key(text: str) -> bytes:
+    return hashlib.blake2b(text.strip().encode("utf-8", "ignore"), digest_size=12).digest()
+
+
+def held_out_keys(val_bin: Path):
+    """The documents of a held-out file (SmolLM2 pieces), as keys to leave out of training."""
+    from . import tok
+    enc = tok.get("smollm2")
+    arr = np.fromfile(val_bin, dtype=np.uint16)
+    ends = np.flatnonzero(arr == enc.eot_token)
+    keys, a = set(), 0
+    for e in ends:
+        keys.add(_key(enc.decode(arr[a:e].tolist())))
+        a = e + 1
+    return keys
+
+
+def without(batches, keys):
+    """The stream with the held-out documents taken out."""
+    skipped = 0
+    for b in batches:
+        keep = [t for t in b if _key(t) not in keys]
+        skipped += len(b) - len(keep)
+        if keep:
+            yield keep
+    if skipped:
+        print(f"   left out {skipped} held-out documents met in the stream", flush=True)
+
+
+def prepare_streamed(base: Path, smol: Path, name: str, tokens: int, val_tokens: int, workers: int = 0):
+    """A STREAMED source into the --into folder; held-out text copied from smol/ (same as every other model's)."""
+    out = folder(smol, name)
+    out.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "0")
+    from . import tok
+    tok.get("smollm2")
+    old = folder(base / "smol", name)
+    have_val = (old / "val.bin").exists()
+    keys = held_out_keys(old / "val.bin") if have_val else set()
+    print(f"== {name}: {STREAMED[name]} -> {out} ({tokens / 1e6:,.0f}M tokens; held-out text "
+          f"{'copied from ' + str(old) if have_val else 'new'})", flush=True)
+    nv, nt = write_tokens(without(streamed(name), keys), out, 0 if have_val else val_tokens, tokens, workers, tokenizer="smollm2")
+    meta = {"dataset": STREAMED[name], "tokenizer": "smollm2", "train_tokens": nt, "exhausted": nt < tokens}
+    if have_val:
+        shutil.copyfile(old / "val.bin", out / "val.bin")
+        try:     # the held-out text is smol/'s, so are its token ratios (the training ratio: same source, a fair estimate)
+            om = json.loads((old / "meta.json").read_text())
+            meta.update({k: om[k] for k in ("val", "train") if k in om})
+        except Exception:
+            pass
+        meta["val_tokens"] = int((out / "val.bin").stat().st_size // 2)
+    else:
+        meta["val_tokens"] = nv
+    (out / "meta.json").write_text(json.dumps(meta, indent=1))
+    print(f"   done: {meta}", flush=True)
+
+
 def prepare(smol: Path, name: str, tokens: int, val_tokens: int, workers: int = 0, repo=None):
     out = folder(smol, name)
     out.mkdir(parents=True, exist_ok=True)
@@ -112,21 +196,28 @@ def main():
     ap.add_argument("--code-repo", default=None, help="another code dataset with a 'content' column")
     ap.add_argument("--workers", type=int, default=0)
     ap.add_argument("--plan", action="store_true", help="only show what a run reads and what is there")
+    ap.add_argument("--into", default=None, help="build a separate Tagus in <data>/<this> (Coral: tagus20); every source, "
+                    "FineWeb-Edu, DCLM and the conversations streamed in SmolLM2's pieces")
     a = ap.parse_args()
-    smol = Path(a.data or default_dir("data")) / "smol"
+    base = Path(a.data or default_dir("data"))
+    smol = base / (a.into or "smol")
     want = needs(a.run_tokens, margin=a.margin)
     print(f"Tagus: a {a.run_tokens / 1e9:g}B-token run reads (with {a.margin:.0%} margin):")
     todo = []
     for k, v in sorted(want.items(), key=lambda kv: -kv[1]):
         h = have(smol, k)
-        state = "ok" if h >= v else ("to prepare" if k in NEW else f"too little: {OLD[k]} --max-tokens ...")
+        can = k in NEW or (a.into and k in STREAMED)
+        state = "ok" if h >= v else ("to prepare" if can else f"too little: {OLD[k]} --max-tokens ...")
         print(f"  {k:6s} {v / 1e6:8,.0f}M   there: {h / 1e6:8,.0f}M   {state}")
-        if h < v and k in NEW and k in a.sources.split(","):
+        if h < v and can and (k in a.sources.split(",") or k in STREAMED):
             todo.append(k)
     if a.plan:
         return
     for k in todo:
-        prepare(smol, k, want[k], int(a.val_tokens), a.workers, a.code_repo if k == "code" else None)
+        if k in NEW:
+            prepare(smol, k, want[k], int(a.val_tokens), a.workers, a.code_repo if k == "code" else None)
+        else:
+            prepare_streamed(base, smol, k, want[k], int(a.val_tokens), a.workers)
     short = [k for k in want if have(smol, k) < want[k] * 0.98]
     print("Tagus is ready." if not short else f"still short: {short} (the run repeats a little of those; fine)")
 

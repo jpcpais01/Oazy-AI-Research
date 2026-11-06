@@ -7,7 +7,8 @@ cheap matrix multiplications, Newton-Schulz) so that every direction moves the s
 model then learns its weak skills as fast as its strong ones. In the public nanoGPT speedrun it
 reached GPT-2's loss with ~1.35x fewer tokens than AdamW, at almost no extra cost per step.
 
-Muon is only for the 2-D weight grids inside the blocks. Word embeddings, norms, the memories'
+Muon is only for the weight grids inside the blocks (2-D, or a stack of them: Coral's experts, each
+straightened on its own, as Kimi K2 and Moonlight do for theirs). Word embeddings, norms, the memories'
 trust/fade knobs and other small parameters stay on AdamW (that is what Combined is for).
 
 Weight decay (Bee3: 0.1) pulls every grid a little towards zero each step, measured on AdamW's
@@ -57,9 +58,10 @@ class Muon(torch.optim.Optimizer):
                 buf = st["momentum"]
                 buf.lerp_(p.grad, 1 - g["momentum"])
                 u = p.grad.lerp(buf, g["momentum"]) if g["nesterov"] else buf
-                parts = u.split(p.muon_split, dim=0) if getattr(p, "muon_split", None) else [u]
-                u = torch.cat([straighten(x, g["ns_steps"]) * max(1.0, x.size(0) / x.size(1)) ** 0.5
-                               for x in parts], dim=0)
+                # a stack of grids (E, out, in: Coral's experts) is straightened grid by grid, in one batch
+                parts = u.split(p.muon_split, dim=-2) if getattr(p, "muon_split", None) else [u]
+                u = torch.cat([straighten(x, g["ns_steps"]) * max(1.0, x.size(-2) / x.size(-1)) ** 0.5
+                               for x in parts], dim=-2)
                 if g["weight_decay"]:       # on AdamW's scale: the group's lr_scale is Muon's rate over the AdamW rate
                     p.mul_(1 - g["lr"] / g.get("lr_scale", 1.0) * g["weight_decay"])
                 p.add_(u, alpha=-g["lr"])
