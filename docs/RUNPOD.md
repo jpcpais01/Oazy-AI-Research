@@ -149,6 +149,26 @@ with `--lr 1.2e-3 --muon-lr 0.02`. `--set pattern=MMMA` is the Memtrix hybrid (p
 `--mentor none` drops the mentor, `--data-sub smol` reads the usual Tagus (a quick test before tagus20 is ready).
 `--fp8 0` trains in bf16; `--set grow=28:0` starts at full depth (only on a fresh run).
 
+## Code Black (the flagship research line: two clocks vs a strong transformer, on the clock)
+
+Races, not one long run: every run trains for the same 30 B200 minutes, Code Black against Black-T (a modern
+transformer at 125M, 250M and 500M). The GPU must be free of anything else (Bee3, Frog, Coral), or the minutes mean
+nothing; the ladder checks. Plan, pass and kill lines in `codeblack/README.md`.
+
+```bash
+cd /workspace/oazy && git pull
+TV=$(python3 -c "import torch; print(torch.__version__)")
+python3 -m pip install -q torchao --constraint <(echo "torch==${TV}")   # once (Frog already did it): FP8 training
+python3 -m codeblack.tests --device cuda                  # self-tests: the fair next-token rule, compiled step = grids, FP8
+tmux new-window -t oazy -n race "bash codeblack/ladder.sh"   # R0-R3: 2 profiles + 6 races of 30 min, ~3.5 h, resumable
+python3 -m codeblack.race --png /workspace/oazy_runs/race.png  # the report (also printed after every race)
+```
+
+The first answer comes after the first two races (~65 min): the report's "R2 pass line" says whether Code Black
+reached Black-T 125M's 30-minute loss in 20 minutes or less. One race by hand:
+`bash runpod/train.sh black --preset race --minutes 30 --micro 32 --name black-k4 --set phrase_rows=0`.
+Out of memory: `MICRO=16 bash codeblack/ladder.sh`. The races show on the dashboard like any run.
+
 ## Experiments
 
 ### Memtrix, Tide and Ember (~120M experiments, next-word)

@@ -14,6 +14,12 @@ Everything runs on one RunPod GPU: **[docs/RUNPOD.md](docs/RUNPOD.md)** has ever
 | **Bee0.2B** | our main model (204M): a hybrid of 18 Memtrix memory layers and 6 attention layers (3:1, like Qwen3-Next), learns from GPT-2 large early on, Muon optimizer, a FineWeb-Edu + DCLM mix with conversations at the end | [`bee/`](bee/) |
 | **Bee_v2_0.2B** | Bee0.2B's body (203M) with a smarter, cheaper mentor: SmolLM2-360M instead of GPT-2 large, so it reads SmolLM2's tokenizer (the same text, re-cut) | [`bee2/`](bee2/) |
 
+**Flagship research** (Code Black): a new architecture meant to beat a strong modern transformer on the GPU's clock.
+
+| model | idea | next-word? | code |
+|---|---|---|---|
+| **Code Black** | two clocks: a narrow fast stream reads every token, a deep slow stream thinks once per 4 tokens, and a hashed table of 2- and 3-token phrases adds knowledge for almost no arithmetic; ~0.6x a 125M transformer's arithmetic per token. Raced against **Black-T** (a 2026 transformer at 125M / 250M / 500M) for the same 30 GPU minutes each | yes | [`codeblack/`](codeblack/) |
+
 **Experiments** (smaller, ~120M, each testing one idea against GPT-2 small):
 
 | model | idea | next-word? | code |

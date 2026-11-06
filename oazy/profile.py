@@ -6,6 +6,8 @@
     python3 -m oazy.profile --model bee3 --preset big --compile 0
     python3 -m oazy.profile --model frog --preset big --micro 32      # Frog: also prints a whole run's speed with its mentor share
     python3 -m oazy.profile --model coral --preset big --micro 32     # Coral: the experts timed too; MFU counts the parameters at work
+    python3 -m oazy.profile --model blackt --preset race --micro 32   # Black-T (125m; --set size=250m / 500m)
+    python3 -m oazy.profile --model black --preset race --micro 32    # Code Black: phrase memory, fast and slow streams timed apart
 
 It prints, per micro-batch (one forward + backward pass; a step is several of these):
   - the whole pass, and the pass without the mentor;
@@ -150,7 +152,31 @@ def main():
         with torch.no_grad():
             resets, mask, _ = model.doc_info(x) if hasattr(model, "doc_info") else (None, None, None)
             ms["mentor reading"] = timed(lambda: mentor.hidden(x, mask), a.steps, device)
-    if hasattr(model, "_trunk"):
+    def piece(fn):      # a piece is compiled when the model is, so it is measured as it runs in training
+        return torch.compile(fn) if a.compile and device.type == "cuda" else fn
+
+    def fwd_bwd(fn):
+        with amp:
+            out = fn()
+        out.float().sum().backward()
+    if hasattr(model, "profile_pieces"):            # Code Black: its own parts (phrase memory, fast and slow streams)
+        for name, fn, n in model.profile_pieces(x):
+            f = piece(fn)
+            ms[name] = timed(lambda: fwd_bwd(f), a.steps, device) * n
+        model.zero_grad(set_to_none=True)
+        with amp:
+            h, _ = model._run(x, compiled=True)
+        h = h.detach().requires_grad_()
+
+        def head_():
+            from oazy.lmloss import head_loss, plain_loss
+            with amp:
+                fn = head_loss if model.fused_loss else plain_loss
+                loss = fn(h, model.embed.weight, y, cfg.softcap)[0]
+            loss.backward()
+        ms["word table + loss"] = timed(head_, a.steps, device)
+        model.zero_grad(set_to_none=True)
+    elif hasattr(model, "_trunk"):
         resets, mask, segs = model.doc_info(x)
         f = model._compiled or model._trunk
         with amp:
@@ -169,14 +195,6 @@ def main():
         kinds = cfg.kinds()
         blocks = {k: [b for b, kk in zip(model.blocks, kinds) if kk == k] for k in set(kinds)}
         names = {"M": "memory layers (Memtrix)", "A": "attention layers"}
-
-        def piece(fn):      # a piece is compiled when the model is, so it is measured as it runs in training
-            return torch.compile(fn) if a.compile and device.type == "cuda" else fn
-
-        def fwd_bwd(fn):
-            with amp:
-                out = fn()
-            out.float().sum().backward()
         for k, bs in blocks.items():
             b = bs[0]
             f = piece(lambda: b.mixer()(b.n1(d), None, resets, segs)[0] if b.kind == "M" else b.mixer()(b.n1(d), None, mask)[0])
@@ -222,6 +240,8 @@ def main():
     n_attn = sum(1 for k in getattr(cfg, "kinds", lambda: [])() if k == "A")
     n_work = model.active_params() if hasattr(model, "active_params") else model.num_params()   # Coral: only the experts at work
     flops_tok = 6 * n_work + 12 * n_attn * cfg.d_model * Tw       # weights, plus attention's T x d work
+    if hasattr(model, "flops_per_token"):          # Code Black (two clocks), Black-T: their own count
+        flops_tok = model.flops_per_token(Tw)
     pk = peak_tflops(gpu)
     res.update({"ms": ms, "tokens_per_s": tps, "tokens_per_s_student_alone": tps_alone, "peak_mem_gb": peak_mem,
                 "flops_per_token": flops_tok, "mfu": (tps * flops_tok / 1e12 / pk) if pk else None})

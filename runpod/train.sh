@@ -13,6 +13,8 @@
 #   bash runpod/train.sh bee3 --preset big --tokens 2.5e9   # Bee3 on Tagus, our dataset (needs: python3 -m oazy.tagus)
 #   bash runpod/train.sh frog --preset big --tokens 4e9     # Frog, Bee3 at 406M (needs: python3 -m oazy.tagus --run-tokens 4e9)
 #   bash runpod/train.sh coral --preset big --tokens 20e9 --micro 32   # Coral, 1B experts (needs: python3 -m oazy.tagus --run-tokens 20e9 --into tagus20)
+#   bash runpod/train.sh blackt --preset race --minutes 30 --micro 32 --name blackt-125m   # a Code Black race (codeblack/README.md)
+#   (--name X: the run, its tmux window and its log are called X, so several races of one model can live side by side)
 #
 # Each model gets its own tmux window; the app (dashboard, port 8000) gets one too, and OpenAI's
 # GPT-2 is measured once as the reference line. Running it again for another model adds that model.
@@ -24,10 +26,16 @@ cd "$(dirname "$0")/.."
 REPO="$(pwd)"
 MODEL="${1:-}"
 [ "$MODEL" = engram ] && MODEL=memtrix          # Memtrix's old name
-case "$MODEL" in memtrix|tide|fern|ember|fern2|fern3|bee|bee2|bee3|frog|coral|gpt) shift ;; *) echo "usage: bash runpod/train.sh memtrix|tide|fern|ember|fern2|fern3|bee|bee2|bee3|frog|coral|gpt [--gpt] [trainer options]"; exit 1 ;; esac
+case "$MODEL" in memtrix|tide|fern|ember|fern2|fern3|bee|bee2|bee3|frog|coral|black|blackt|gpt) shift ;; *) echo "usage: bash runpod/train.sh memtrix|tide|fern|ember|fern2|fern3|bee|bee2|bee3|frog|coral|black|blackt|gpt [--gpt] [trainer options]"; exit 1 ;; esac
 WITH_GPT=0
 ARGS=()
-for a in "$@"; do if [ "$a" = "--gpt" ]; then WITH_GPT=1; else ARGS+=("$a"); fi; done
+WIN="$MODEL"
+PREV=""
+for a in "$@"; do
+    if [ "$a" = "--gpt" ]; then WITH_GPT=1; else ARGS+=("$a"); fi
+    if [ "$PREV" = "--name" ]; then WIN="$a"; fi
+    PREV="$a"
+done
 EXTRA="${ARGS[*]:-}"
 DATA="$(python3 -c "from oazy.data import default_dir; print(default_dir('data'))")"
 RUNS="$(python3 -c "from oazy.data import default_dir; print(default_dir('runs'))")"
@@ -55,6 +63,10 @@ if [ "$MODEL" = frog ] && [ ! -f "$DATA/smol/cosmo/train.bin" ]; then
     echo "Frog reads Tagus, our dataset; prepare it first: python3 -m oazy.tagus --run-tokens 4e9"
     exit 1
 fi
+if { [ "$MODEL" = black ] || [ "$MODEL" = blackt ]; } && [ ! -f "$DATA/smol/cosmo/train.bin" ]; then
+    echo "Code Black and Black-T race on Tagus, our dataset; prepare it first: python3 -m oazy.tagus --run-tokens 2.5e9"
+    exit 1
+fi
 if [ "$MODEL" = coral ] && [ ! -f "$DATA/tagus20/cosmo/train.bin" ] && [[ "$EXTRA" != *--data-sub* ]]; then
     echo "Coral reads its own 20,000M-token Tagus; prepare it first: nice -n 10 python3 -m oazy.tagus --run-tokens 20e9 --into tagus20"
     exit 1
@@ -80,12 +92,12 @@ if ! (exec 3<>/dev/tcp/127.0.0.1/8000) 2>/dev/null; then
 else
     echo "something already serves port 8000 (the app); leaving it"
 fi
-start "$MODEL" "$GPU_M" "python3 -m oazy.train --model $MODEL --data $DATA --runs $RUNS $EXTRA 2>&1 | tee -a $RUNS/$MODEL.log"
+start "$WIN" "$GPU_M" "python3 -m oazy.train --model $MODEL --data $DATA --runs $RUNS $EXTRA 2>&1 | tee -a $RUNS/$WIN.log"
 if [ "$WITH_GPT" = 1 ] && [ "$MODEL" != gpt ]; then
     start gpt "$GPU_G" "python3 -m oazy.train --model gpt --data $DATA --runs $RUNS $EXTRA 2>&1 | tee -a $RUNS/gpt.log"
 fi
 if [ ! -f "$RUNS/openai-gpt2/status.json" ]; then
     start ref "$GPU_G" "python3 -m oazy.compare --data $DATA --runs $RUNS 2>&1 | tee -a $RUNS/openai-gpt2.log"
 fi
-tmux select-window -t "oazy:$MODEL"
+tmux select-window -t "oazy:$WIN"
 echo "started. app: port 8000.  watch with: tmux attach -t oazy"
