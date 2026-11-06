@@ -26,7 +26,7 @@ run every chat with `--port 8002`; it then opens on the pod's 8001 link.
 
 ```bash
 cd /workspace/oazy && git pull
-bash runpod/train.sh <model> [options]    # start or resume a model: coral, frog, bee, bee2, bee3, memtrix, tide, ember, fern, fern2, fern3, gpt
+bash runpod/train.sh <model> [options]    # start or resume a model: coral, bee4, frog, bee, bee2, bee3, memtrix, tide, ember, fern, fern2, fern3, gpt
 python3 -m oazy.train --bench --model <model> --hours 2   # how many tokens fit in 2 hours
 python3 -m oazy.status                    # the lab at a glance: runs, GPU, tmux windows, text, disk
 watch -c -n 30 python3 -m oazy.status     # the same, refreshed every 30 s (Ctrl-C to leave)
@@ -151,9 +151,28 @@ with `--lr 1.2e-3 --muon-lr 0.02`. `--set pattern=MMMA` is the Memtrix hybrid (p
 `--mentor none` drops the mentor, `--data-sub smol` reads the usual Tagus (a quick test before tagus20 is ready).
 `--fp8 0` trains in bf16; `--set grow=28:0` starts at full depth (only on a fresh run).
 
+### Bee4 (296M, all attention, Coral's recipe, 6,000M tokens)
+
+A dense next-word model: Coral's layers with one MLP instead of experts, no Memtrix, and SmolLM2-1.7B as its mentor
+for the whole run. Recipe and reasons in `bee4/README.md`. It reads Coral's Tagus20, so there is nothing to build.
+Start it only when the GPU is free (not while Coral trains).
+
+```bash
+cd /workspace/oazy && git pull
+python3 -m bee4.tests --device cuda                       # self-tests: compiled step, FP8 (~2 min)
+python3 -m oazy.profile --model bee4 --preset big --micro 32   # tokens/s with the 1.7B mentor, memory (paste it in the thread)
+bash runpod/train.sh bee4 --preset big --tokens 6e9 --micro 32 # the run (~8.5-10 h on a B200); resumes if stopped
+python3 -m oazy.sft --run bee4                            # afterwards: the chat fine-tune -> runs/bee4-chat
+python3 -m bee4.chat --run bee4-chat --port 8002          # chat
+```
+
+The first run downloads SmolLM2-1.7B (about 3.4 GB). If the profile runs out of memory, use `--micro 16`. To make the
+run longer (e.g. `--tokens 10e9`), decide before 80% of it (the cool-down starts there). If the loss turns noisy,
+resume with `--lr 1.2e-3 --muon-lr 0.02`.
+
 ## The phone app (our models on an Android phone, offline)
 
-Any finished or running model with SmolLM2's tokenizer (Coral, Bee_v2_0.2B, Bee3, Frog, and their -chat runs) can
+Any finished or running model with SmolLM2's tokenizer (Coral, Bee4, Bee_v2_0.2B, Bee3, Frog, and their -chat runs) can
 go to the phone. The export runs on the CPU from the last saved checkpoint, so it is safe while a training runs.
 Details in `phone/README.md`.
 

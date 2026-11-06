@@ -29,8 +29,8 @@ import numpy as np
 import torch
 
 T_F32, T_Q8, T_Q4, T_BLOB = 0, 1, 2, 9
-NAMES = {"bee2": "Bee_v2_0.2B", "bee3": "Bee3", "frog": "Frog", "coral": "Coral_1B", "bee": "Bee0.2B"}
-ACCENTS = {"bee2": "#ffb347", "bee3": "#ffb347", "bee": "#ffb347", "frog": "#4cf2c4", "coral": "#ff8a78"}
+NAMES = {"bee2": "Bee_v2_0.2B", "bee3": "Bee3", "frog": "Frog", "coral": "Coral_1B", "bee4": "Bee4_0.3B", "bee": "Bee0.2B"}
+ACCENTS = {"bee2": "#ffb347", "bee3": "#ffb347", "bee": "#ffb347", "frog": "#4cf2c4", "coral": "#ff8a78", "bee4": "#ffb347"}
 
 # texts for the tokenizer check: plain English, contractions, digits, spacing, code, other scripts, emoji, chat
 TEST_TEXTS = [
