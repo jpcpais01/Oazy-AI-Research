@@ -37,6 +37,8 @@ class _HeadLoss(torch.autograd.Function):
         N, D = h.shape
         V = W.shape[0]
         dt = h.dtype
+        if h.is_cuda and dt == torch.float32:      # the GPU does these matmuls in bf16, like the rest of the model
+            dt = torch.bfloat16
         with torch.autocast(device_type=h.device.type, enabled=False):
             Wc = W.to(dt)
             valid = targets >= 0
@@ -51,7 +53,7 @@ class _HeadLoss(torch.autograd.Function):
             ce_sum = torch.zeros((), dtype=torch.float32, device=h.device)
             kd_sum = torch.zeros((), dtype=torch.float32, device=h.device)
             for i in range(0, N, chunk):
-                hc = h[i:i + chunk]
+                hc = h[i:i + chunk].to(dt)
                 tc = targets[i:i + chunk]
                 vc = valid[i:i + chunk]
                 z = (hc @ Wc.t()).float()                                   # (n, V) scores
@@ -67,7 +69,7 @@ class _HeadLoss(torch.autograd.Function):
                 g *= (vc.to(torch.float32) * ((1.0 - kd_w) / n_valid))[:, None]
                 # --- the mentor's lesson: the student's probabilities minus the mentor's
                 if kd:
-                    tz = (th[i:i + chunk] @ tWc.t()).float()                # (n, Vt) mentor scores
+                    tz = (th[i:i + chunk].to(dt) @ tWc.t()).float()         # (n, Vt) mentor scores
                     tlp = torch.log_softmax(tz, dim=-1)
                     pt = tlp.exp()
                     if Vt == V:
@@ -81,7 +83,7 @@ class _HeadLoss(torch.autograd.Function):
                 if softcap:
                     g *= 1.0 - t * t                                        # through the soft cap
                 gb = g.to(dt)
-                gh[i:i + chunk] = gb @ Wc                                   # d loss / d h
+                gh[i:i + chunk] = (gb @ Wc).to(h.dtype)                     # d loss / d h
                 gW += (gb.t() @ hc).float()                                 # d loss / d W
                 del z, lp, g, gb
         loss = (1.0 - kd_w) * ce_sum / n_valid + kd_w * kd_sum / n_all
