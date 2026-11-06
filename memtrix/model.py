@@ -98,23 +98,25 @@ class Memory(nn.Module):
         resets (B, T) bool: the "hint of the last few words" does not reach back into the previous document."""
         B, T, _ = x.shape
         H, K, V = self.H, self.K, self.V
-        z = self.qkv(x).transpose(1, 2)                                 # (B, ch, T)
+        z = self.qkv(x)                                                 # (B, T, ch)
         w = self.conv_w.shape[-1]
-        if conv_state is None:
-            conv_state = z.new_zeros(B, z.shape[1], w - 1)
-        zc = torch.cat([conv_state.to(z.dtype), z], dim=2)
-        new_conv = zc[:, :, zc.shape[2] - (w - 1):] if w > 1 else zc[:, :, :0]
-        cw = self.conv_w.to(z.dtype)
+        ch = z.shape[-1]
+        cs = z.new_zeros(B, w - 1, ch) if conv_state is None else conv_state.to(z.dtype).transpose(1, 2)
+        zc = torch.cat([cs, z], dim=1)                                  # (B, T + w - 1, ch)
+        new_conv = zc[:, zc.shape[1] - (w - 1):].transpose(1, 2)        # (B, ch, w - 1), the layout the state keeps
+        cw = self.conv_w[:, 0].to(z.dtype)                              # (ch, w)
         if resets is None or w == 1:
-            z = F.conv1d(zc, cw, groups=z.shape[1])
-        else:                                   # the same convolution, written as shifted copies, each one masked
+            z = F.conv1d(zc.transpose(1, 2), cw[:, None], groups=ch).transpose(1, 2)
+        else:
+            # the same convolution, written as shifted copies, each one masked, in the (B, T, ch) layout the
+            # rest of the layer uses: one fused pointwise kernel over contiguous channels, no transposes
             seg = resets.cumsum(1)                                      # (B, T) which document each word is in
-            z = zc[:, :, w - 1:] * cw[:, 0, w - 1][None, :, None]
+            z = zc[:, w - 1:] * cw[:, w - 1]
             for s in range(1, w):
                 same = (seg[:, s:] == seg[:, :-s]).to(z.dtype)          # word t and word t-s in the same document
                 same = F.pad(same, (s, 0))                              # (B, T): the first s words look into conv_state
-                z = z + zc[:, :, w - 1 - s:zc.shape[2] - s] * cw[:, 0, w - 1 - s][None, :, None] * same[:, None, :]
-        z = F.silu(z).transpose(1, 2)
+                z = z + zc[:, w - 1 - s:zc.shape[1] - s] * cw[:, w - 1 - s] * same[:, :, None]
+        z = F.silu(z)
         q, k, v = z.split([H * K, H * K, H * V], dim=-1)
         q = F.normalize(q.view(B, T, H, K).float(), dim=-1).to(z.dtype)
         k = F.normalize(k.view(B, T, H, K).float(), dim=-1).to(z.dtype)
