@@ -181,6 +181,11 @@ def main():
                     o.float().sum().backward()
                 one = timed(kern, a.steps, device)
                 ms[f"  of which the memory kernel x{len(bs)}"] = one * len(bs)
+                fp = piece(lambda: sum(t.float().sum() for t in mem.project(b.n1(d), None, resets)[:5]))   # the maths before the kernel, all its outputs
+                ms[f"  before it (proj., hint conv, gates) x{len(bs)}"] = timed(lambda: fwd_bwd(fp), a.steps, device) * len(bs)
+                oo = torch.randn_like(v)
+                ff = piece(lambda: mem.finish(d, oo))                               # and after it (norm, gate, out)
+                ms[f"  after it (gated norm, out) x{len(bs)}"] = timed(lambda: fwd_bwd(ff), a.steps, device) * len(bs)
         f = piece(lambda: model.blocks[0].mlp(model.blocks[0].n2(d)))
         one = timed(lambda: fwd_bwd(f), a.steps, device)
         ms[f"MLPs x{len(model.blocks)}"] = one * len(model.blocks)
