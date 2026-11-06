@@ -280,11 +280,13 @@ const UI = (() => {
 
   // Where a learning curve is headed: smooth the points (log-spaced bins, medians), leave out the early rush,
   // fit y = a + b * x^-c, and anchor it to where the line is now. Returns {g, last, yEnd, rmse} or null.
-  function forecastEnd(pts, end, { minPts = 8, skip = 0.2, bins = 40, lo = -Infinity, hi = Infinity, dir = -1 } = {}) {
+  // recent: fit only the newest share of the points (by count; at least minPts of them), instead of skipping an early share of the tokens
+  function forecastEnd(pts, end, { minPts = 8, skip = 0.2, recent = 0, bins = 40, lo = -Infinity, hi = Infinity, dir = -1 } = {}) {
     if (!pts.length) return null;
     const xl = pts[pts.length - 1][0];
     if (!(xl > 0)) return null;
-    let use = pts.filter((p) => p[0] >= xl * skip && p[0] > 0);
+    let use = recent > 0 ? pts.filter((p) => p[0] > 0) : pts.filter((p) => p[0] >= xl * skip && p[0] > 0);
+    if (recent > 0) use = use.slice(-Math.max(minPts, Math.ceil(use.length * recent)));
     if (use.length > bins) {
       const l0 = Math.log(use[0][0]), l1 = Math.log(xl) + 1e-9, B = Array.from({ length: bins }, () => []);
       for (const p of use) B[Math.min(bins - 1, Math.floor((Math.log(p[0]) - l0) / (l1 - l0) * bins))].push(p);
