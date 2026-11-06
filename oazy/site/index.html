@@ -409,7 +409,6 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
 .model, .glass { background: transparent; }
 /* the glass of each box is made in the landscape shader: it refracts the lines behind it, most at
    the rim, so its edge shows through bent light and not a drawn border. Without WebGL, a plain pane. */
-html:not(.noland) section.block::before { display: none; }
 .noland .model, .noland .glass { background: rgba(255, 255, 255, .035); border-color: rgba(255, 255, 255, .12); }
 .model::before, .glass::before { display: none; }
 .model:hover { border-color: transparent; box-shadow: none; }
@@ -1241,8 +1240,8 @@ document.querySelectorAll('.model, .glass').forEach(el => el.addEventListener('p
   el.style.setProperty('--mx', (e.clientX - r.left) + 'px'); el.style.setProperty('--my', (e.clientY - r.top) + 'px');
 }));
 
-// below the hero: the hero's light carried on down the page as a bundle of fibres that gathers
-// at every passage between sections (see land() in the shader), seen through the glass boxes.
+// below the hero: faint light caustics, as if the page lay deep under glass (see land() in the
+// shader), refracted again by the glass boxes.
 (() => {
   const cv = document.getElementById('land'); if (!cv) return;
   const gl = cv.getContext('webgl', { antialias: false, alpha: false, premultipliedAlpha: false });
@@ -1250,73 +1249,48 @@ document.querySelectorAll('.model, .glass').forEach(el => el.addEventListener('p
   const vs = 'attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}';
   const fs = `#extension GL_OES_standard_derivatives : enable
 precision highp float;
-uniform vec2 uRes; uniform float uT, uTop, uDpr, uPa, uScroll, uCw; uniform vec2 uP; uniform vec4 uB[6]; uniform float uBR[6]; uniform int uBN; uniform float uK[8]; uniform int uKN; uniform float uH0;
+uniform vec2 uRes; uniform float uT, uTop, uDpr, uPa, uScroll, uCw; uniform vec2 uP; uniform vec4 uB[6]; uniform float uBR[6]; uniform int uBN; 
 float h21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
 float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
   return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
 float fbm(vec2 p){ float s = 0., a = .55; for (int i = 0; i < 3; i++) { s += a * vn(p); p = p * 1.9 + vec2(1.7, 9.2); a *= .42; } return s; }
 float ln(float v, float w){ float d = abs(fract(v + .5) - .5); return 1. - smoothstep(.45 * w, 1.45 * w, d); }
-// the hero's light carried down the page: a bundle of fine fibres. Between two sections it fans
-// out to the margins (so the text sits on calm dark glass); at each passage from one section to
-// the next it pinches into a bright waist with a thin horizon of light, like the hero's own
-// hourglass turned on its side. Light runs down every fibre; a passage flares as it reaches the
-// middle of the screen; the fibres part around the pointer. (CSS pixels in, colour out.)
+// below the hero: light caustics, the slow web of brightness that sunlight draws on the floor
+// of a pool, very faint and very slow, as if the page were deep under glass. It drifts a little
+// with scroll (a sense of depth), splits slightly into colour like the hero's lens, gathers into
+// soft pools here and there, and stays calmer behind the reading column. (CSS pixels in, colour out.)
 vec3 field(float h){
   h = fract(h) * 4.;
   vec3 a = vec3(.80, .76, 1.), b = vec3(.58, .46, 1.), c = vec3(.45, .82, 1.), d = vec3(1., .58, .84);
   float t = smoothstep(0., 1., fract(h));
   if (h < 1.) return mix(a, b, t); if (h < 2.) return mix(b, c, t); if (h < 3.) return mix(c, d, t); return mix(d, a, t);
 }
+float caus(vec2 p, float t){
+  vec2 i = p; float c = 1.;
+  for (int n = 0; n < 4; n++) {
+    float tt = t * (1. - 3.5 / float(n + 1));
+    i = p + vec2(cos(tt - i.x) + sin(tt + i.y), sin(tt - i.y) + cos(tt + i.x));
+    c += 1. / length(vec2(1.25 / (sin(i.x + tt) + 1e-4), 1.25 / (cos(i.y + tt) + 1e-4)));
+  }
+  c /= 4.;
+  c = 1.17 - pow(c, 1.4);
+  return pow(abs(c), 8.);
+}
 vec3 land(vec2 css, float wIn, out float wOut){
   wOut = 1.;
-  float vw = uRes.x / uDpr, vh = uRes.y / uDpr;
-  float py = css.y + uScroll;
-  // the two passages around this point
-  float b0 = -1e6, b1 = 1e6;
-  for (int i = 0; i < 8; i++) { if (i >= uKN) break; float k = uK[i]; if (k <= py) b0 = k; else b1 = min(b1, k); }
-  if (b0 < -1e5) b0 = 2. * uH0 - b1;                          // the hero's foot is mid-flow: fibres leave its flared edges if (b1 > 1e5) b1 = b0 + 1500.;
-  float t = clamp((py - b0) / (b1 - b0), 0., 1.);
-  float open = pow(sin(3.14159 * t), .5);                       // 0 at a passage, 1 mid-section
-  float W = mix(22., vw * .5 + 140., open);                     // half-width of the bundle
-  float cx = vw * .5 + 16. * sin(py / 650. + uT * .05) * open;
-  // the pointer parts the fibres
-  vec2 dp = css - uP; float r2 = dot(dp, dp);
-  float x = css.x - 26. * uPa * dp.x / (sqrt(r2) + 1.) * exp(-r2 / 16000.);
-  float dx = x - cx, s = dx / W;
-  float N = floor((vw * .5 + 140.) / 11.);                    // about one fibre per 11px when fanned out
-  float lane = floor(s * N);
-  float r1 = h21(vec2(lane, 1.7)), r2h = h21(vec2(lane, 5.3)), r3 = h21(vec2(lane, 9.1)), r4 = h21(vec2(lane, 13.9));
-  float sc = (lane + .5 + (r4 - .5) * .6) / N;
-  float dpx = (s - sc) * W, lanePx = W / N;
-  float ab = .5 + .9 * min(abs(s), 1.2);                         // colour split, more towards the edges
-  float tt = .72;
-  vec3 prof = exp(-pow(vec3(dpx + ab, dpx, dpx - ab) / tt, vec3(2.)));
-  // light running down each fibre: soft wisps, and now and then a comet with a long tail
-  float sp = mix(.35, 1.05, r1);
-  float wisp = smoothstep(.52, .93, vn(vec2(py / mix(170., 420., r2h) - uT * sp, r3 * 50.)));
-  float ph = py / 1100. * mix(.7, 1.4, r4) - uT * sp * .3 + r2h * 9.;
-  float f = fract(ph);
-  float comet = pow(f, 7.) * (1. - smoothstep(.975, 1., f)) * step(.72, h21(vec2(lane * 3.1, floor(ph))));
-  float streak = .22 + .85 * wisp + 1.6 * comet;
-  float bright = (.3 + .7 * r1 * r1) * (r2h > .94 ? 1.9 : 1.);
-  vec3 col = field(vn(vec2(py / 1300. - uT * .015, lane * .04 + 3.)) * 1.3 + r3 * .2);
-  col = mix(col, vec3(1.), comet * smoothstep(.9, .99, f) * .7);  // white-hot heads
-  vec3 line = col * prof * streak * bright;
-  vec3 haze = vec3(.70, .66, 1.) * .38 * min(1., 1.6 * tt / max(lanePx, .001));
-  vec3 c = mix(haze, line, smoothstep(1.3, 3.6, lanePx));
-  // keep the reading column calm in the middle of a section
-  float m = smoothstep(uCw - 30., uCw + 80., abs(css.x - cx));
-  c *= mix(1., .09 + .91 * m, smoothstep(.15, .6, open)) * exp(-s * s * .35);
-  // the nearest passage, and how close it is to the middle of the screen
-  float pn = t < .5 ? b0 : b1, dist = py - pn;
-  float arr = exp(-pow((pn - uScroll - .5 * vh) / (.32 * vh), 2.));
-  c *= .55 * (1. + 1.4 * arr * exp(-abs(dist) / 240.));
-  // at the waist: a soft glow and a thin horizon of light, split into colour at its ends
-  float gs = min(190., vw * .2), ex = exp(-dx * dx / (2. * gs * gs));
-  c += vec3(.55, .5, 1.) * exp(-dist * dist / 2200.) * ex * (.03 + .12 * arr);
-  float hx = exp(-dx * dx / (2. * 420. * 420.)), sp2 = .6 + 1.6 * abs(dx) / 420.;
-  vec3 hz = exp(-pow(vec3(dist + sp2, dist, dist - sp2) / .9, vec3(2.)));
-  c += hz * hx * vec3(.9, .9, 1.) * (.05 + .3 * arr);
+  float vw = uRes.x / uDpr;
+  vec2 p = vec2(css.x, css.y + uScroll * .35) / 340. * 6.2832;
+  float t = uT * .07;
+  // the pointer: a faint swell in the water, as if a finger touched the surface
+  vec2 dp = (css - uP) / 180.; float bump = uPa * exp(-dot(dp, dp));
+  p += .25 * bump * normalize(css - uP + 1e-3);
+  // three slightly different scales: blue is bent a little more than red
+  vec3 c = vec3(caus(p - vec2(.022, .012), t), caus(p, t), caus(p + vec2(.026, .014), t));
+  vec2 q = p / 6.2832;
+  vec3 tint = field(vn(q * .35 + vec2(t * .08, -t * .05)) * 1.4);
+  float pool = smoothstep(.25, .85, vn(q * .6 + vec2(-t * .12, t * .07)));   // light gathers in some places
+  float calm = mix(.5, 1., smoothstep(uCw - 60., uCw + 140., abs(css.x - vw * .5)));
+  c = pow(max(c - .06, 0.), vec3(1.7)) * 3.4 * tint * (.10 + .42 * pool) * calm * (1. + .8 * bump);
   return c;
 }
 float sdBox(vec2 p, vec2 b, float r){ vec2 q = abs(p) - b + r; return length(max(q, 0.)) + min(max(q.x, q.y), 0.) - r; }
@@ -1355,7 +1329,7 @@ void main(){
     c = mix(c, g, smoothstep(.75, -.75, sd));
   }
   float y = css.y * uDpr;
-  c *= smoothstep(uTop + 40. * uDpr, uTop + 380. * uDpr, y);              // the hero's light hands straight over to the first passage
+  c *= smoothstep(uTop + 40. * uDpr, uTop + 380. * uDpr, y);              // fades in below the hero
   c += (h21(gl_FragCoord.xy + fract(uT)) - .5) / 255.;
   gl_FragColor = vec4(c + vec3(.0196, .0196, .0275), 1.);
 }`;
@@ -1366,9 +1340,7 @@ void main(){
   gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
   const la = gl.getAttribLocation(pr, 'a'); gl.enableVertexAttribArray(la); gl.vertexAttribPointer(la, 2, gl.FLOAT, false, 0, 0);
-  const U = n => gl.getUniformLocation(pr, n), uRes = U('uRes'), uT = U('uT'), uTop = U('uTop'), uDpr = U('uDpr'), uP = U('uP'), uPa = U('uPa'), uB = U('uB'), uBR = U('uBR'), uBN = U('uBN'), uK = U('uK'), uKN = U('uKN'), uH0 = U('uH0'), uScroll = U('uScroll'), uCw = U('uCw');
-  // the passages: where one section hands over to the next (the first section flows straight out of the hero)
-  const passEls = [...document.querySelectorAll('section.block, section.close')].slice(1), K = new Float32Array(8);
+  const U = n => gl.getUniformLocation(pr, n), uRes = U('uRes'), uT = U('uT'), uTop = U('uTop'), uDpr = U('uDpr'), uP = U('uP'), uPa = U('uPa'), uB = U('uB'), uBR = U('uBR'), uBN = U('uBN'), uScroll = U('uScroll'), uCw = U('uCw');
   const wrapEl = document.querySelector('.below .wrap');
   const glassEls = [...document.querySelectorAll('.model, .glass')], B = new Float32Array(24), BR = new Float32Array(6);
   const radii = glassEls.map(el => parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0);
@@ -1388,9 +1360,7 @@ void main(){
       B.set([r.left, r.top, r.width, r.height], n * 4); BR[n] = radii[i]; n++;
     }
     gl.uniform4fv(uB, B); gl.uniform1fv(uBR, BR); gl.uniform1i(uBN, n);
-    const sy = scrollY; let k = 0;
-    for (const el of passEls) { if (k < 8) K[k++] = el.getBoundingClientRect().top + sy; }
-    gl.uniform1fv(uK, K); gl.uniform1i(uKN, k); gl.uniform1f(uScroll, sy); gl.uniform1f(uH0, hero.getBoundingClientRect().bottom + sy);
+    gl.uniform1f(uScroll, scrollY);
     const wr = wrapEl ? wrapEl.getBoundingClientRect() : null;
     gl.uniform1f(uCw, wr ? Math.min(wr.width * .5 - 16, innerWidth * .5 - 20) : 560);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
