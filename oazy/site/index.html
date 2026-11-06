@@ -899,7 +899,7 @@ vec3 wglow(vec2 p) {                                    // the glass's own light
   float kick = max(0.0, dot(nn, normalize(vec2(-0.6, 0.8))));           // a fainter one from below right
   float h = TEX(uWordH, p).a;
   float body = m * (0.03 + 0.05 * smoothstep(0.5, 1.0, h));
-  float l = body + rim * (0.45 + 1.9 * pow(key, 1.2) + 0.9 * pow(kick, 1.6));
+  float l = body + rim * (0.35 + 1.5 * pow(key, 1.2) + 0.6 * pow(kick, 1.6));
   return vec3(l);
 }
 float h21(vec2 p) { p = fract(p * vec2(233.34, 851.73)); p += dot(p, p + 23.45); return fract(p.x * p.y); }
@@ -944,7 +944,7 @@ void main() {
     wm = TEX(uWord, uv).a;
     vec2 wn = wslope(uv);
     // dispersion: grows away from the middle of the view (like a real lens) and along the bevel
-    vec2 disp = (uv - 0.5) * vec2(uRes.x / uRes.y, 1.0) * 0.002 + wn / (length(wn) + 0.08) * 1.3 * uPx / uRes + vec2(0.45, 0.2) * uPx / uRes;
+    vec2 disp = (uv - 0.5) * vec2(uRes.x / uRes.y, 1.0) * 0.001 + wn / (length(wn) + 0.08) * 0.75 * uPx / uRes + vec2(0.2, 0.1) * uPx / uRes;
     vec3 inside = vec3(0.0);
     if (wm > 0.002) {
       vec2 wo = -wn * 90.0 * uPx / uRes;                        // how far the light is bent (as uv)
@@ -955,7 +955,9 @@ void main() {
     }
     c = mix(c, inside, wm);
     // the glass itself: a pale body and a bright, lit rim, seen once per colour at shifted places
-    wg = vec3(wglow(uv - disp * 1.6).r, wglow(uv).g, wglow(uv + disp * 1.6).b);
+    vec3 split = vec3(wglow(uv - disp * 1.6).r, wglow(uv).g, wglow(uv + disp * 1.6).b);
+    float lum = dot(split, vec3(0.3333));
+    wg = mix(vec3(lum) * vec3(0.97, 0.96, 1.0), split, 0.6);   // mostly white light, colour only at the very edge
   }
   // a faint violet breath behind the waist
   float ax = abs(d.x) * 2.0;
