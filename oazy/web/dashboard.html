@@ -283,8 +283,8 @@ fetch("api/version").then((r) => r.json()).then((v) => {
   el.title = `commit ${v.commit}${v.date ? ", " + v.date : ""}`;
 }).catch(() => {});
 "use strict";
-const C = { memtrix: UI.css("--brand"), tide: UI.css("--teal"), fern: UI.css("--fern"), ember: UI.css("--ember"), fern2: UI.css("--fern2"), fern3: UI.css("--fern3"), bee: UI.css("--bee"), bee2: UI.css("--bee2"), bee3: UI.css("--bee3"), gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
-const NAMES = { memtrix: "Memtrix", tide: "Tide", fern: "Fern", ember: "Ember", fern2: "Fern2", fern3: "Fern3", bee: "Bee0.2B", bee2: "Bee_v2_0.2B", bee3: "Bee3", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };
+const C = { memtrix: UI.css("--brand"), tide: UI.css("--teal"), fern: UI.css("--fern"), ember: UI.css("--ember"), fern2: UI.css("--fern2"), fern3: UI.css("--fern3"), bee: UI.css("--bee"), bee2: UI.css("--bee2"), bee3: UI.css("--bee3"), frog: UI.css("--frog"), gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
+const NAMES = { memtrix: "Memtrix", tide: "Tide", fern: "Fern", ember: "Ember", fern2: "Fern2", fern3: "Fern3", bee: "Bee0.2B", bee2: "Bee_v2_0.2B", bee3: "Bee3", frog: "Frog", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };
 // Every model of the lab. role: "ours" (our architectures), "baseline" (the GPT-2 we train the same way), "reference" (OpenAI's).
 const MODELS = {
   memtrix: { name: "Memtrix", color: C.memtrix, role: "ours", blurb: "Learns while it reads: small memories fixed by their own surprise, word by word." },
@@ -296,6 +296,7 @@ const MODELS = {
   bee: { name: "Bee0.2B", color: C.bee, role: "ours", blurb: "Our main model (204M, next-word): a modern hybrid, 3 Memtrix memory layers to 1 attention layer, learns from GPT-2 large early on, Muon, a mix of FineWeb-Edu, DCLM and (at the end) conversations." },
   bee2: { name: "Bee_v2_0.2B", color: C.bee2, role: "ours", blurb: "Bee0.2B's body (203M, next-word) with a smarter, cheaper mentor: SmolLM2-360M instead of GPT-2 large, and so SmolLM2's tokenizer. Same text, re-cut. Its losses are shown per GPT-2 token, so they line up with the others." },
   bee3: { name: "Bee3", color: C.bee3, role: "ours", blurb: "Bee_v2_0.2B's body (203M, next-word), raised better: Tagus, our dataset (seven kinds of text), no bleed between documents, the mentor for the whole run, twice the learning rate, 2,048-word windows throughout. Losses per GPT-2 token, like Bee2." },
+  frog: { name: "Frog", color: C.frog, role: "ours", blurb: "Bee3 at twice the size (406M, next-word): 21 memory + 7 attention layers, 1,024 wide, 4,000M tokens of Tagus. The SmolLM2-360M mentor teaches a share of the sequences instead of a share of every word, so it reads only what it teaches. Losses per GPT-2 token." },
   gpt: { name: NAMES.gpt, color: C.gpt, role: "baseline", blurb: "GPT-2 small (124M), trained on the same text, in the same order, with the same schedule." },
   "openai-gpt2": { name: NAMES.openai, color: C.ref, role: "reference", blurb: "OpenAI's 2019 GPT-2 small, measured with the same tests: the line to beat." },
 };
@@ -534,7 +535,7 @@ function scoreboard() {
   const row = (n, v, w, fmt) => `<div class="row"><span>${nameOf(n)}</span><div class="track"><div style="width:${Math.max(2, w * 100).toFixed(1)}%;background-color:${colorOf(n)}"></div></div><b>${fmt(v)}</b></div>`;
   let verdictL = "", verdictH = "";
   const target = ref(val) != null ? ["OpenAI GPT-2", ref(val)] : val.gpt != null ? [NAMES.gpt, val.gpt] : null;
-  for (const me of ["bee3", "bee2", "bee", "memtrix", "tide", "fern", "ember", "fern2", "fern3"]) {
+  for (const me of ["frog", "bee3", "bee2", "bee", "memtrix", "tide", "fern", "ember", "fern2", "fern3"]) {
     const nm = nameOf(me), br = verdictL ? "<br>" : "";
     if (val[me] != null && target) {
       const d = val[me] - target[1];
@@ -907,7 +908,7 @@ async function refresh() {
   const pill = document.getElementById("updated");
   try {
     RUNS = await getJSON("api/runs");
-    const ORDER = ["bee3", "bee2", "bee", "fern3", "fern2", "ember", "fern", "tide", "memtrix", "gpt", "openai-gpt2"];
+    const ORDER = ["frog", "bee3", "bee2", "bee", "fern3", "fern2", "ember", "fern", "tide", "memtrix", "gpt", "openai-gpt2"];
     RUNS.sort((a, b) => ORDER.indexOf(a.name) - ORDER.indexOf(b.name));
     for (const r of RUNS) {
       const [metrics, samples] = await Promise.all([getJSON(`api/run/${r.name}/metrics`), getJSON(`api/run/${r.name}/samples`)]);

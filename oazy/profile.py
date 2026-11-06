@@ -4,6 +4,7 @@
     python3 -m oazy.profile --model bee3 --preset big --mentor none   # the student alone
     python3 -m oazy.profile --model bee3 --preset big --loss plain    # the old way of computing the loss, to compare
     python3 -m oazy.profile --model bee3 --preset big --compile 0
+    python3 -m oazy.profile --model frog --preset big --micro 32      # Frog: also prints a whole run's speed with its mentor share
 
 It prints, per micro-batch (one forward + backward pass; a step is several of these):
   - the whole pass, and the pass without the mentor;
@@ -212,6 +213,19 @@ def main():
     say(f"\n{tps / 1e3:.1f}k tokens/s with everything ({tps_alone / 1e3:.1f}k student alone); peak memory {peak_mem:.1f} GB")
     if pk:
         say(f"about {res['mfu'] * 100:.0f}% of the chip's arithmetic ({flops_tok / 1e9:.2f} GFLOP per token against {pk} TFLOP/s)")
+    # --- a whole run's speed: the optimizer once per step, and the mentor only where the recipe runs it
+    rec = T.RECIPE.get(a.model, {})
+    batch = p.get("batch_" + a.model) or ntok
+    if mentor is not None and rec.get("mentor_floor") is not None:
+        from ember.mentor import fade
+        ws = [fade((i + 0.5) / 1000, 0.6, 0.5, None, rec["mentor_floor"], rec.get("mentor_off", 0.0)) for i in range(1000)]
+        # mentor on a share of the passes (Frog): it reads that share; mixed into every word (Bee3): every pass while w > 0
+        read = sum(ws) / len(ws) if rec.get("mentor_share") else sum(w > 0 for w in ws) / len(ws)
+        run_ms = ms["pass, student alone"] + read * (ms["pass with mentor"] - ms["pass, student alone"]) \
+            + ms["optimizer step (once per step)"] * ntok / batch
+        res.update({"mentor_reads": read, "run_tokens_per_s": ntok / (run_ms / 1000)})
+        say(f"a whole run (the mentor reads {read:.0%} of the passes, one optimizer step per {batch:,} tokens): "
+            f"about {res['run_tokens_per_s'] / 1e3:.1f}k tokens/s")
     # --- the slowest kernels
     if device.type == "cuda" and a.kernels:
         from torch.profiler import profile, ProfilerActivity

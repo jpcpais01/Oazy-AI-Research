@@ -11,6 +11,7 @@
 #   bash runpod/train.sh bee --tokens 5e9           # Bee0.2B, the main model (needs: bash runpod/setup.sh bee)
 #   bash runpod/train.sh bee2 --preset big          # Bee_v2_0.2B, SmolLM2-360M mentor (needs: bash runpod/setup.sh bee2)
 #   bash runpod/train.sh bee3 --preset big --tokens 2.5e9   # Bee3 on Tagus, our dataset (needs: python3 -m oazy.tagus)
+#   bash runpod/train.sh frog --preset big --tokens 4e9     # Frog, Bee3 at 406M (needs: python3 -m oazy.tagus --run-tokens 4e9)
 #
 # Each model gets its own tmux window; the app (dashboard, port 8000) gets one too, and OpenAI's
 # GPT-2 is measured once as the reference line. Running it again for another model adds that model.
@@ -22,7 +23,7 @@ cd "$(dirname "$0")/.."
 REPO="$(pwd)"
 MODEL="${1:-}"
 [ "$MODEL" = engram ] && MODEL=memtrix          # Memtrix's old name
-case "$MODEL" in memtrix|tide|fern|ember|fern2|fern3|bee|bee2|bee3|gpt) shift ;; *) echo "usage: bash runpod/train.sh memtrix|tide|fern|ember|fern2|fern3|bee|bee2|bee3|gpt [--gpt] [trainer options]"; exit 1 ;; esac
+case "$MODEL" in memtrix|tide|fern|ember|fern2|fern3|bee|bee2|bee3|frog|gpt) shift ;; *) echo "usage: bash runpod/train.sh memtrix|tide|fern|ember|fern2|fern3|bee|bee2|bee3|frog|gpt [--gpt] [trainer options]"; exit 1 ;; esac
 WITH_GPT=0
 ARGS=()
 for a in "$@"; do if [ "$a" = "--gpt" ]; then WITH_GPT=1; else ARGS+=("$a"); fi; done
@@ -47,6 +48,10 @@ if [ "$MODEL" = bee2 ] && [ ! -f "$DATA/smol/train.bin" ]; then
 fi
 if [ "$MODEL" = bee3 ] && [ ! -f "$DATA/smol/cosmo/train.bin" ]; then
     echo "Bee3 reads Tagus, our dataset; prepare it first: python3 -m oazy.tagus --run-tokens 2.5e9"
+    exit 1
+fi
+if [ "$MODEL" = frog ] && [ ! -f "$DATA/smol/cosmo/train.bin" ]; then
+    echo "Frog reads Tagus, our dataset; prepare it first: python3 -m oazy.tagus --run-tokens 4e9"
     exit 1
 fi
 

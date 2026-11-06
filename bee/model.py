@@ -60,6 +60,9 @@ class BeeConfig:
     # per-word thinking
     mlp_hidden: int = 1792       # SwiGLU width (1792 makes the whole model 204M)
     softcap: float = 30.0        # final scores are kept within +-30 (0 = off)
+    flex_attn: int = 0           # 1 = with doc_mask, compiled training uses flex attention: the blocks of the score grid that
+                                 # cross documents are skipped and the fast kernel is kept (Frog); 0 = a full yes/no grid
+    fused_gates: int = 0         # 1 = the memory kernel scales q/k and squashes trust and fade itself (Frog; memtrix/memory.py)
     doc_mask: int = 0            # 1 = no bleed between documents in a window: attention looks back only inside
                                  # the current document and the memories start blank at each document (Bee3)
     tokenizer: str = "gpt2"      # which pieces it reads (oazy/tok.py); decides the <|endoftext|> id
@@ -140,6 +143,9 @@ class Attention(nn.Module):
         qh, kh, vh = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
         if P == 0 and mask is None:
             y = self._causal(qh, kh, vh)
+        elif P == 0 and not isinstance(mask, torch.Tensor):      # a flex-attention block mask (Bee.attn_mask)
+            from torch.nn.attention.flex_attention import flex_attention
+            y = flex_attention(qh, kh, vh, block_mask=mask, enable_gqa=self.H != self.KV)
         else:
             rep = self.H // self.KV
             kh, vh = kh.repeat_interleave(rep, dim=1), vh.repeat_interleave(rep, dim=1)
@@ -174,6 +180,50 @@ class Attention(nn.Module):
         kh = k.transpose(1, 2).repeat_interleave(rep, dim=1).float()         # (B, H, L, d)
         w = torch.softmax(qh @ kh.transpose(-1, -2) / math.sqrt(self.hd), -1)
         return w[:, :, 0].mean(1)                                            # (B, L)
+
+
+def doc_block_mask(resets):
+    """Flex attention's block mask for "earlier words of the same document": blocks of the grid that lie wholly
+    across documents are skipped, whole ones inside a document run without a per-element test."""
+    from torch.nn.attention.flex_attention import create_block_mask
+    B, T = resets.shape
+    doc = resets.cumsum(1)
+
+    def same_doc(b, h, q, kv):
+        return (doc[b, q] == doc[b, kv]) & (q >= kv)
+    return create_block_mask(same_doc, B, None, T, T, device=resets.device, _compile=resets.is_cuda)
+
+
+_FLEX_OK = None
+
+
+def flex_check(device, cfg) -> bool:
+    """Compiled flex attention against the yes/no-grid attention on a packed window, once per process."""
+    global _FLEX_OK
+    if _FLEX_OK is not None:
+        return _FLEX_OK
+    _FLEX_OK = False
+    try:
+        from torch.nn.attention.flex_attention import flex_attention
+        g = torch.Generator(device=device).manual_seed(0)
+        B, T, H, KV, hd = 2, 512, cfg.attn_heads, cfg.attn_kv_heads, cfg.attn_head_dim
+        q = torch.randn(B, H, T, hd, device=device, generator=g, dtype=torch.bfloat16)
+        k, v = (torch.randn(B, KV, T, hd, device=device, generator=g, dtype=torch.bfloat16) for _ in range(2))
+        resets = torch.rand(B, T, device=device, generator=g) < 0.01
+        resets[:, 0] = False
+        doc = resets.cumsum(1)
+        grid = (doc[:, None, :, None] == doc[:, None, None, :]) & torch.ones(T, T, dtype=torch.bool, device=device).tril()
+        rep = H // KV
+        ref = F.scaled_dot_product_attention(q.float(), k.float().repeat_interleave(rep, 1), v.float().repeat_interleave(rep, 1),
+                                             attn_mask=grid)
+        y = torch.compile(flex_attention)(q, k, v, block_mask=doc_block_mask(resets), enable_gqa=rep > 1)
+        err = (y.float() - ref).abs().max().item() / (ref.abs().max().item() + 1e-6)
+        _FLEX_OK = err < 0.03
+        print(f"[bee] flex attention for the document rule {'OK' if _FLEX_OK else 'DISAGREES, not used'} (rel. error {err:.4f})",
+              flush=True)
+    except Exception as e:
+        print(f"[bee] flex attention unavailable ({type(e).__name__}: {str(e)[:160]}); using the yes/no grid", flush=True)
+    return _FLEX_OK
 
 
 class Block(nn.Module):
@@ -246,6 +296,17 @@ class Bee(nn.Module):
 
     def enable_compile(self):
         self._compiled = torch.compile(self._trunk)
+        dev = self.embed.weight.device
+        self._flex = bool(self.cfg.flex_attn and self.cfg.doc_mask and dev.type == "cuda" and flex_check(dev, self.cfg))
+
+    _flex = False    # flex attention in use (checked once, when compiling)
+
+    def attn_mask(self, idx, resets, mask):
+        """The mask the attention layers get in training: the yes/no grid, or with flex attention its block form
+        (the same rule: earlier words of the same document), built once for all layers."""
+        if not self._flex or mask is None or self._compiled is None:
+            return mask
+        return doc_block_mask(resets)
 
     def head(self, h):
         """Scores against the word table, softly capped. h: the token vectors after the final norm."""
@@ -284,7 +345,7 @@ class Bee(nn.Module):
         """One lesson: the next-word loss, plus the mentor's (KL to its guesses) weighted kd_weight.
         Returns (loss to train on, {"ce": next-word loss, "kd": the mentor term}), the stats detached."""
         resets, mask, segs = self.doc_info(idx)
-        h = (self._compiled or self._trunk)(idx, resets, mask, segs)
+        h = (self._compiled or self._trunk)(idx, resets, self.attn_mask(idx, resets, mask), segs)
         th = tW = None
         if mentor is not None and kd_weight > 0:
             th, tW = mentor.hidden(idx, mask)
