@@ -135,8 +135,9 @@ def main():
     hh, hw = me.hidden(packed, mask)
     hb, _ = me.hidden(b, None)
     check("mentor: token vectors + word table", hh.shape[:2] == packed.shape and hw.shape[0] == 49152)
-    check("mentor reads each document on its own", me._mask_form != "none" and (hh[:, 31:81] - hb).abs().max().item() < 1e-2,
-          f"mask form {me._mask_form}")
+    rel = (hh[:, 31:81] - hb).abs().max().item() / (hb.abs().max().item() + 1e-6)
+    check("mentor reads each document on its own", me._mask_form != "none" and rel < (2e-2 if dev.type == "cuda" else 1e-3),
+          f"mask form {me._mask_form}, rel. error {rel:.4f}")    # bf16 on the GPU: ~0.5% rounding is normal
     loss, st = mm.losses(x, y, me, 0.5)
     Bee.fused_loss = False
     loss2, st2 = mm.losses(x, y, me, 0.5)
