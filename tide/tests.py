@@ -12,13 +12,14 @@ import torch
 from oazy.gpt import GPT, GPTConfig
 from memtrix.tests import check
 from .model import Tide, TideConfig
+from oazy import term
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", default="cpu")
     dev = torch.device(ap.parse_args().device)
-    print(f"Tide self-tests on {dev}")
+    term.tests_start("Tide", dev)
 
     big = Tide(TideConfig())
     gpt = GPT(GPTConfig())
@@ -79,7 +80,7 @@ def main():
     for n in ["refiner.where", "refiner.ahead.weight", "refiner.ctx.weight", "blank", "mix", "blocks.0.mem.A_log"]:
         p = dict(m.named_parameters())[n]
         check(f"training reaches '{n}'", p.grad is not None and float(p.grad.abs().sum()) > 0)
-    print("all Tide self-tests passed")
+    term.tests_passed("Tide")
 
 
 if __name__ == "__main__":

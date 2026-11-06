@@ -15,12 +15,11 @@ from .mentor import mentor_loss
 from memtrix.model import Memtrix, MemtrixConfig
 from oazy.muon import straighten
 from oazy.train import make_optimizer, carry_state
+from oazy import term
 
 
 def check(name, ok, detail=""):
-    print(f"  {'ok ' if ok else 'FAIL'}  {name}  {detail}")
-    if not ok:
-        raise SystemExit(f"self-test failed: {name}")
+    term.check(name, ok, detail)          # ✓ / ✗ in the lab's style (oazy/term.py)
 
 
 SMALL = dict(vocab_size=320, d_model=64, n_layer=6, n_head=2, head_k=16, head_v=16, mlp_hidden=96, max_len=64)
@@ -30,7 +29,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", default="cpu")
     dev = torch.device(ap.parse_args().device)
-    print(f"Ember self-tests on {dev}")
+    term.tests_start("Ember", dev)
     torch.manual_seed(0)
 
     # ---- growing
@@ -128,7 +127,7 @@ def main():
     kd.backward()
     check("a different guess: positive lesson, and it teaches (gradient)", float(kd) > 0.1 and s2.grad.abs().sum() > 0,
           f"KL {float(kd):.2f}")
-    print("all Ember self-tests passed")
+    term.tests_passed("Ember")
 
 
 if __name__ == "__main__":

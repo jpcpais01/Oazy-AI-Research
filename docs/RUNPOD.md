@@ -28,6 +28,8 @@ run every chat with `--port 8002`; it then opens on the pod's 8001 link.
 cd /workspace/oazy && git pull
 bash runpod/train.sh <model> [options]    # start or resume a model: coral, frog, bee, bee2, bee3, memtrix, tide, ember, fern, fern2, fern3, gpt
 python3 -m oazy.train --bench --model <model> --hours 2   # how many tokens fit in 2 hours
+python3 -m oazy.status                    # the lab at a glance: runs, GPU, tmux windows, text, disk
+watch -c -n 30 python3 -m oazy.status     # the same, refreshed every 30 s (Ctrl-C to leave)
 ```
 
 Add `--gpt` to train the GPT-2 baseline next to a model. Re-running `train.sh` after a stop or a pod

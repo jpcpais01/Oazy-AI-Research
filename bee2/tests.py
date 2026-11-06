@@ -20,12 +20,11 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from oazy import term
 
 
 def check(name, ok, detail=""):
-    print(f"  {'ok ' if ok else 'FAIL'}  {name}  {detail}")
-    if not ok:
-        raise SystemExit(f"self-test failed: {name}")
+    term.check(name, ok, detail)          # ✓ / ✗ in the lab's style (oazy/term.py)
 
 
 WORDS = ("the cat sat on a mat and then it ran to the old red barn where seven small birds sang "
@@ -72,13 +71,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", default="cpu")
     dev = torch.device(ap.parse_args().device)
-    print(f"Bee_v2_0.2B self-tests on {dev}")
+    term.tests_start("Bee_v2_0.2B", dev)
     torch.manual_seed(0)
     tmp_ctx = tempfile.TemporaryDirectory()
     tmp = Path(tmp_ctx.name)
     used = stand_ins(tmp)
     if used:
-        print(f"  info  no internet: stand-in {' and '.join(used)} tokenizer(s) (same kind, smaller)")
+        term.info(f"no internet: stand-in {' and '.join(used)} tokenizer(s) (same kind, smaller)")
 
     from bee2.model import Bee2, Bee2Config
     from bee.model import BeeConfig
@@ -212,7 +211,7 @@ def main():
         loss.backward()
         check("bf16 training step on the GPU", torch.isfinite(loss).item())
     tmp_ctx.cleanup()
-    print("all Bee_v2_0.2B self-tests passed")
+    term.tests_passed("Bee_v2_0.2B")
 
 
 if __name__ == "__main__":

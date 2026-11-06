@@ -13,13 +13,14 @@ import torch.nn.functional as F
 from memtrix.tests import check
 from oazy.gpt import GPT, GPTConfig
 from .model import Fern, FernConfig, level_of
+from oazy import term
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", default="cpu")
     dev = torch.device(ap.parse_args().device)
-    print(f"Fern self-tests on {dev}")
+    term.tests_start("Fern", dev)
 
     big = Fern(FernConfig())
     n, ng = big.num_params(), GPT(GPTConfig()).num_params()
@@ -120,7 +121,7 @@ def main():
         opt.step()
         first = first or float(loss)
     check("it learns (memorising a few texts)", float(loss) < 0.5 * first, f"({first:.2f} -> {float(loss):.2f})")
-    print("all self-tests passed")
+    term.tests_passed("Fern")
 
 
 if __name__ == "__main__":

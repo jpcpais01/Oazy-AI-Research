@@ -44,6 +44,7 @@ import numpy as np
 
 from .data import default_dir, write_tokens
 from .mix import TAGUS_MIX, SOURCES, parse_mix
+from . import term
 
 NEW = {   # name: (repo, config, text fields, about)
     "cosmo": ("HuggingFaceTB/smollm-corpus", "cosmopedia-v2", ("text",), "Cosmopedia v2"),
@@ -111,7 +112,7 @@ def streamed(name: str):
     files = mix._list_parquet(repo, ["sample/100BT/"])
     rng = np.random.default_rng(0)
     files = [files[i] for i in rng.permutation(len(files))]
-    print(f"{len(files)} parquet files in {repo} sample/100BT", flush=True)
+    term.out(term.c(f"  {len(files)} parquet files in {repo} sample/100BT", "dim"), flush=True)
     return mix._parquet_batches(repo, files, "text", drop=True)
 
 
@@ -141,7 +142,7 @@ def without(batches, keys):
         if keep:
             yield keep
     if skipped:
-        print(f"   left out {skipped} held-out documents met in the stream", flush=True)
+        term.out(term.c(f"  left out {skipped} held-out documents met in the stream", "dim"), flush=True)
 
 
 def prepare_streamed(base: Path, smol: Path, name: str, tokens: int, val_tokens: int, workers: int = 0):
@@ -154,8 +155,8 @@ def prepare_streamed(base: Path, smol: Path, name: str, tokens: int, val_tokens:
     old = folder(base / "smol", name)
     have_val = (old / "val.bin").exists()
     keys = held_out_keys(old / "val.bin") if have_val else set()
-    print(f"== {name}: {STREAMED[name]} -> {out} ({tokens / 1e6:,.0f}M tokens; held-out text "
-          f"{'copied from ' + str(old) if have_val else 'new'})", flush=True)
+    term.header(f"{name}", f"{STREAMED[name]} · {term.tokens(tokens)} tokens · held-out text "
+                f"{'copied from ' + str(old) if have_val else 'new'}", color="blue")
     nv, nt = write_tokens(without(streamed(name), keys), out, 0 if have_val else val_tokens, tokens, workers, tokenizer="smollm2")
     meta = {"dataset": STREAMED[name], "tokenizer": "smollm2", "train_tokens": nt, "exhausted": nt < tokens}
     if have_val:
@@ -169,7 +170,13 @@ def prepare_streamed(base: Path, smol: Path, name: str, tokens: int, val_tokens:
     else:
         meta["val_tokens"] = nv
     (out / "meta.json").write_text(json.dumps(meta, indent=1))
-    print(f"   done: {meta}", flush=True)
+    _done(name, meta, out)
+
+
+def _done(name, meta, out):
+    term.out(f"  {term.c('✓', 'green', 'bold')} {name}: {term.tokens(meta['train_tokens'])} training tokens + "
+             f"{term.tokens(meta['val_tokens'])} held out" + (term.c("  (the source ran out)", "yellow") if meta.get("exhausted") else "")
+             + term.c(f"  -> {out}", "dim"), flush=True)
 
 
 def prepare(smol: Path, name: str, tokens: int, val_tokens: int, workers: int = 0, repo=None):
@@ -178,12 +185,12 @@ def prepare(smol: Path, name: str, tokens: int, val_tokens: int, workers: int = 
     os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "0")
     from . import tok
     tok.get("smollm2")                                   # once, before the worker processes start
-    print(f"== {name}: {NEW[name][3]} -> {out} ({tokens / 1e6:,.0f}M tokens + {val_tokens / 1e6:.0f}M held out)", flush=True)
+    term.header(f"{name}", f"{NEW[name][3]} · {term.tokens(tokens)} tokens + {term.tokens(val_tokens)} held out", color="blue")
     nv, nt = write_tokens(stream(name, repo=repo), out, val_tokens, tokens, workers, tokenizer="smollm2")
     meta = {"dataset": repo or NEW[name][0], "config": NEW[name][1], "tokenizer": "smollm2",
             "val_tokens": nv, "train_tokens": nt, "exhausted": nt < tokens}
     (out / "meta.json").write_text(json.dumps(meta, indent=1))
-    print(f"   done: {meta}", flush=True)
+    _done(name, meta, out)
 
 
 def main():
@@ -202,15 +209,17 @@ def main():
     base = Path(a.data or default_dir("data"))
     smol = base / (a.into or "smol")
     want = needs(a.run_tokens, margin=a.margin)
-    print(f"Tagus: a {a.run_tokens / 1e9:g}B-token run reads (with {a.margin:.0%} margin):")
-    todo = []
+    term.header("Tagus", f"a {term.tokens(a.run_tokens)}-token run, + {a.margin:.0%} margin · {smol}")
+    todo, body = [], []
     for k, v in sorted(want.items(), key=lambda kv: -kv[1]):
         h = have(smol, k)
         can = k in NEW or (a.into and k in STREAMED)
-        state = "ok" if h >= v else ("to prepare" if can else f"too little: {OLD[k]} --max-tokens ...")
-        print(f"  {k:6s} {v / 1e6:8,.0f}M   there: {h / 1e6:8,.0f}M   {state}")
+        state = term.c("✓ ready", "green") if h >= v else (term.c("to prepare", "yellow") if can else
+                                                             term.c(f"too little: {OLD[k]} --max-tokens ...", "red"))
+        body.append([k, term.tokens(v), term.tokens(h), term.bar(h / max(v, 1), 12, "green" if h >= v else "blue"), state])
         if h < v and can and (k in a.sources.split(",") or k in STREAMED):
             todo.append(k)
+    term.table(["source", "needs", "there", "", ""], body, right=(1, 2))
     if a.plan:
         return
     for k in todo:
@@ -219,7 +228,8 @@ def main():
         else:
             prepare_streamed(base, smol, k, want[k], int(a.val_tokens), a.workers)
     short = [k for k in want if have(smol, k) < want[k] * 0.98]
-    print("Tagus is ready." if not short else f"still short: {short} (the run repeats a little of those; fine)")
+    term.out(term.c("━━ ✓ Tagus is ready", "green", "bold") if not short else
+             term.c(f"━━ still short: {', '.join(short)} (the run repeats a little of those; fine)", "yellow"))
 
 
 if __name__ == "__main__":

@@ -19,6 +19,7 @@ from fern.model import Fern, FernConfig
 from oazy.gpt import GPT, GPTConfig
 from oazy.train import make_optimizer, carry_state
 from .model import Fern2, Fern2Config
+from oazy import term
 
 SMALL = dict(vocab_size=300, d_model=64, n_layer=6, n_head=2, head_k=32, head_v=32, mlp_hidden=96, max_len=64,
              passage=8, unfold_layers=3, unfold_heads=2, unfold_hidden=96)
@@ -29,7 +30,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", default="cpu")
     dev = torch.device(ap.parse_args().device)
-    print(f"Fern2 self-tests on {dev}")
+    term.tests_start("Fern2", dev)
     torch.manual_seed(0)
 
     big = Fern2(Fern2Config())
@@ -174,7 +175,7 @@ def main():
         losses.append(float(st["ce"]))
     check("Muon + AdamW learn, and keep learning after growing", losses[-1] < 0.5 * losses[0] and losses[-1] < losses[39] + 0.3,
           f"Fern loss {losses[0]:.2f} -> {losses[39]:.2f} (grow) -> {losses[-1]:.2f}")
-    print("all Fern2 self-tests passed")
+    term.tests_passed("Fern2")
 
 
 if __name__ == "__main__":

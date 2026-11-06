@@ -19,6 +19,7 @@ import numpy as np
 import torch
 
 from bee3.tests import check
+from oazy import term
 
 SMALL = dict(d_model=64, enc_layers=1, dec_layers=1, attn_heads=2, attn_kv_heads=1, attn_head_dim=32, mlp_hidden=96,
              window=16, slow_d=96, slow_layers=2, slow_heads=3, slow_kv_heads=1, slow_head_dim=32, slow_mlp=128,
@@ -39,7 +40,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", default="cpu")
     dev = torch.device(ap.parse_args().device)
-    print(f"Code Black self-tests on {dev}")
+    term.tests_start("Code Black", dev)
     torch.manual_seed(0)
     from codeblack.model import Black, BlackConfig, BlackT, BlackTConfig, BLACKT_SIZES
     from oazy import tok
@@ -171,7 +172,7 @@ def main():
     tmp = Path(tmp_ctx.name)
     used_ = stand_ins(tmp)
     if used_:
-        print(f"  info  no internet: stand-in {' and '.join(used_)} tokenizer(s)")
+        term.info(f"no internet: stand-in {' and '.join(used_)} tokenizer(s)")
     enc = tok.get("smollm2")
     gpt = get_tokenizer()
     rng = random.Random(0)
@@ -247,9 +248,9 @@ def main():
         mf, used = fp8.convert(awake(Black(BlackConfig(**{**SMALL, "d_model": 256, "attn_heads": 4, "attn_head_dim": 64,
                                                           "mlp_hidden": 512, "slow_d": 512, "slow_heads": 8, "slow_head_dim": 64,
                                                           "slow_mlp": 1024}))).to(dev).train(), dev, print)
-        print(f"  info  FP8 on this GPU: {'yes' if used else 'no'}")
+        term.info(f"FP8 on this GPU: {'yes' if used else 'no'}")
     tmp_ctx.cleanup()
-    print("all Code Black self-tests passed")
+    term.tests_passed("Code Black")
 
 
 if __name__ == "__main__":

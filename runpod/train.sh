@@ -22,6 +22,7 @@
 #   OAZY_GPU=1 bash runpod/train.sh memtrix          # put the model on GPU 1
 # Watch:  tmux attach -t oazy     (Ctrl-b then a window number to switch, Ctrl-b then d to leave)
 set -euo pipefail
+export OAZY_COLOR="${OAZY_COLOR:-1}"            # coloured logs, even through tee
 cd "$(dirname "$0")/.."
 REPO="$(pwd)"
 MODEL="${1:-}"
