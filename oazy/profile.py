@@ -136,13 +136,13 @@ def main():
     # --- the pieces, alone
     if mentor is not None:
         with torch.no_grad():
-            resets, mask = model.doc_info(x) if hasattr(model, "doc_info") else (None, None)
+            resets, mask, _ = model.doc_info(x) if hasattr(model, "doc_info") else (None, None, None)
             ms["mentor reading"] = timed(lambda: mentor.hidden(x, mask), a.steps, device)
     if hasattr(model, "_trunk"):
-        resets, mask = model.doc_info(x)
+        resets, mask, segs = model.doc_info(x)
         f = model._compiled or model._trunk
         with amp:
-            h = f(x, resets, mask).detach().requires_grad_()
+            h = f(x, resets, mask, segs).detach().requires_grad_()
 
         def head():
             from oazy.lmloss import head_loss, plain_loss
@@ -166,7 +166,7 @@ def main():
             out.float().sum().backward()
         for k, bs in blocks.items():
             b = bs[0]
-            f = piece(lambda: b.mixer()(b.n1(d), None, resets if b.kind == "M" else mask)[0])
+            f = piece(lambda: b.mixer()(b.n1(d), None, resets, segs)[0] if b.kind == "M" else b.mixer()(b.n1(d), None, mask)[0])
             one = timed(lambda: fwd_bwd(f), a.steps, device)
             ms[f"{names[k]} x{len(bs)}"] = one * len(bs)
             if k == "M":                                  # the memory rule's kernel alone, on the layer's own q, k, v
@@ -177,7 +177,7 @@ def main():
 
                 def kern():
                     with amp:
-                        o, _ = memory.delta_rule(q, kk, v, lf, trust.to(q.dtype), resets=resets)
+                        o, _ = memory.delta_rule(q, kk, v, lf, trust.to(q.dtype), resets=resets, segs=segs)
                     o.float().sum().backward()
                 one = timed(kern, a.steps, device)
                 ms[f"  of which the memory kernel x{len(bs)}"] = one * len(bs)

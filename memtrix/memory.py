@@ -190,9 +190,16 @@ def with_resets(log_fade, resets):
     return log_fade.masked_fill(resets[:, :, None], RESET)
 
 
-def segments(resets):
+def packed_docs(device) -> bool:
+    """Will the kernel's packed-documents form be used on this device? (So a caller can precompute segments().)"""
+    return device.type == "cuda" and bool(fla_check(device)) and _FLA_SEG
+
+
+def segments(resets, hints=False):
     """Where the documents start, for the kernel's packed form: (cu_seqlens int32 of N+1 offsets into the
-    flattened B*T tokens, the index of each row's last segment)."""
+    flattened B*T tokens, the index of each row's last segment). One GPU stop; call it once per window.
+    hints=True adds a third item, kernel_hints(cu): what the kernel would otherwise work out again in every
+    layer (with a GPU stop each time)."""
     B, T = resets.shape
     starts = resets.clone()
     starts[:, 0] = True
@@ -200,28 +207,60 @@ def segments(resets):
     pos = flat.nonzero(as_tuple=True)[0].to(torch.int32)
     cu = torch.cat([pos, torch.tensor([B * T], dtype=torch.int32, device=resets.device)])
     last = starts.sum(1).cumsum(0) - 1                     # the segment that ends each row
-    return cu, last
+    return (cu, last, kernel_hints(cu)) if hints else (cu, last)
+
+
+_FLA_HINTS = None       # which of these the installed kernel accepts (checked once)
+
+
+def kernel_hints(cu):
+    """The offsets on the host and the kernel's chunk-index table (its own helper, chunk size 64), computed
+    once per window. Without them the kernel reads the offsets back from the GPU in every layer, forward and
+    backward: a stop of the whole pipeline each time. Empty if this kernel does not take them."""
+    global _FLA_HINTS
+    if _FLA_HINTS is None:
+        try:
+            import inspect
+            _FLA_HINTS = {n for n in ("cu_seqlens_cpu", "chunk_indices") if n in inspect.signature(_load_fla()).parameters}
+        except Exception:
+            _FLA_HINTS = set()
+    if not _FLA_HINTS or not cu.is_cuda:
+        return {}
+    h = {}
+    cu_cpu = cu.cpu()
+    if "cu_seqlens_cpu" in _FLA_HINTS:
+        h["cu_seqlens_cpu"] = cu_cpu
+    if "chunk_indices" in _FLA_HINTS:
+        try:
+            from fla.ops.utils.index import prepare_chunk_indices
+            h["chunk_indices"] = prepare_chunk_indices(cu, 64, cu_seqlens_cpu=cu_cpu)
+        except Exception:
+            pass
+    return h
 
 
 @torch.compiler.disable
-def _fla_segments(q, k, v, log_fade, trust, resets, scale):
+def _fla_segments(q, k, v, log_fade, trust, resets, scale, segs=None):
     """The kernel on documents packed one after another (its cu_seqlens form): the memory of each document
-    starts blank. Returns (answers, the final memory of each row's last document)."""
+    starts blank. Returns (answers, the final memory of each row's last document).
+    segs: segments(resets) computed once for the whole window (bee/model.py doc_info), so that the 18 layers
+    do not each stop the GPU to find the document starts again."""
     B, T, H, K = q.shape
-    cu, last = segments(resets)
+    cu, last, *rest = segs if segs is not None else segments(resets, hints=True)
     flat = lambda x: x.reshape(1, B * T, *x.shape[2:])    # noqa: E731
     o, S = _load_fla()(q=flat(q), k=flat(k), v=flat(v), g=flat(log_fade).float(), beta=flat(trust), scale=scale,
-                       output_final_state=True, cu_seqlens=cu)
+                       output_final_state=True, cu_seqlens=cu, **(rest[0] if rest else {}))
     return o.reshape(B, T, H, -1), S[last]
 
 
-def delta_rule(q, k, v, log_fade, trust, state=None, scale=None, resets=None):
+def delta_rule(q, k, v, log_fade, trust, state=None, scale=None, resets=None, segs=None):
     """Pick the fastest version that is correct on this machine. Returns (answers, final state).
-    resets: (B, T) bool, True where a new document starts: its memory starts blank (no bleed between texts)."""
+    resets: (B, T) bool, True where a new document starts: its memory starts blank (no bleed between texts).
+    segs: segments(resets), if the caller has them already (the packed form, GPU only)."""
     scale = q.shape[-1] ** -0.5 if scale is None else scale
     if q.is_cuda and fla_check(q.device):
         if resets is not None and state is None and _FLA_SEG:
-            return _fla_segments(q, k, v, log_fade, trust, resets, scale)
+            return _fla_segments(q, k, v, log_fade, trust, resets, scale, segs)
         if resets is not None:
             log_fade = with_resets(log_fade, resets)
         return _fla_call(q, k, v, log_fade, trust, state, scale)
