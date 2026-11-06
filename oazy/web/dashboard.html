@@ -355,6 +355,26 @@ function legend(id, items) {
 
 async function getJSON(u) { const r = await fetch(u, { cache: "no-store" }); if (!r.ok) throw new Error(u); return r.json(); }
 
+// how jumpy the training loss is lately: the spread of the last ~40 log lines (400 steps) around their own straight
+// trend, so a loss that is falling fast still counts as steady. "spike" = one of the last 3 lines sits far above that spread.
+function wobble(tr) {
+  const w = tr.slice(-40).filter((x) => x.loss != null);
+  const n = w.length;
+  if (n < 10) return null;
+  const xs = w.map((x) => x.tokens), ys = w.map((x) => x.loss);
+  const mx = xs.reduce((a, b) => a + b, 0) / n, my = ys.reduce((a, b) => a + b, 0) / n;
+  let sxx = 0, sxy = 0;
+  for (let i = 0; i < n; i++) { sxx += (xs[i] - mx) ** 2; sxy += (xs[i] - mx) * (ys[i] - my); }
+  const b = sxx ? sxy / sxx : 0;
+  const res = ys.map((y, i) => y - (my + b * (xs[i] - mx)));
+  const body = res.slice(0, -3), tail = res.slice(-3);
+  const sd = Math.sqrt(body.reduce((a, r) => a + r * r, 0) / Math.max(1, body.length - 2));
+  const spike = sd > 0 && Math.max(...tail) > 4 * sd && Math.max(...tail) > 0.03;
+  const word = spike ? "spike" : sd < 0.02 ? "steady" : sd < 0.05 ? "normal" : "jumpy";
+  const g = w.map((x) => x.grad_norm).filter((v) => v != null);
+  return { sd, word, gmax: g.length ? Math.max(...g) : null };
+}
+
 function runCard(r) {
   const st = r.status || {}, cf = r.config || {};
   const state = st.state || "starting";
@@ -363,7 +383,9 @@ function runCard(r) {
   const frac = cf.total_tokens ? Math.min(1, (st.tokens || 0) / cf.total_tokens) : 0;
   const latest = st.latest || {};
   const col = colorOf(r.name);
-  const lastT = (DATA[r.name]?.metrics || []).filter((x) => x.kind === "train").pop() || null;
+  const trainRecs = (DATA[r.name]?.metrics || []).filter((x) => x.kind === "train");
+  const lastT = trainRecs.length ? trainRecs[trainRecs.length - 1] : null;
+  const wob = isLive(r) ? wobble(trainRecs) : null;
   const MIXN = { fwe: "FineWeb-Edu", dclm: "DCLM", chat: "chats", cosmo: "Cosmopedia", wiki: "Wikipedia", math: "FineMath", code: "code" };
   const mixT = lastT && lastT.mix ? " · reading " + Object.entries(lastT.mix).map(([k, v]) => `${Math.round(v * 100)}% ${MIXN[k] || k}`).join(", ") + ` in windows of ${lastT.context.toLocaleString()} words` : "";
   const mem = cf.layout ? cf.layout + mixT : cf.memory_numbers ? `memory ${UI.fmtTokens(cf.memory_numbers)} numbers (fixed)` : cf.recall ? `recalls the ${cf.recall} best-matching old passages by gist` : `remembers by looking back at every word`;
@@ -385,7 +407,10 @@ function runCard(r) {
     cf.schedule ? [cf.schedule.toUpperCase() + " schedule"] : null].filter(Boolean);
   const tele = [["trained for", st.elapsed ? fmtTime(st.elapsed) : "–"], ["step", st.step != null ? st.step.toLocaleString() : "–"],
     lastT && lastT.lr != null ? ["learning rate", lastT.lr.toExponential(1)] : null, lastT && lastT.mentor_w != null ? ["mentor weight", lastT.mentor_w.toFixed(2)] : null,
-    lastT && lastT.depth ? ["depth", lastT.depth + " blocks"] : null, cf.gpu ? ["gpu", cf.gpu.replace(/^NVIDIA\s+/, "")] : null].filter(Boolean);
+    lastT && lastT.depth ? ["depth", lastT.depth + " blocks"] : null,
+    wob ? ["loss wobble", `±${wob.sd.toFixed(3)} · ${wob.word}`, "how much the training loss jumps around its own trend over the last 400 steps (one standard deviation). Under 0.02 steady, under 0.05 normal, above that jumpy; spike = one of the last 3 log lines far above the rest. Early in a run (small steps) it is naturally higher."] : null,
+    lastT && lastT.grad_norm != null ? ["gradient norm", lastT.grad_norm.toFixed(2) + (wob && wob.gmax != null && wob.gmax > 2 * lastT.grad_norm ? ` (peak ${wob.gmax.toFixed(2)})` : ""), "the size of the update before clipping (clipped at 1.0); steady around 0.1 is healthy, repeated spikes or a climb toward 1 mean the learning rate is too high"] : null,
+    cf.gpu ? ["gpu", cf.gpu.replace(/^NVIDIA\s+/, "")] : null].filter(Boolean);
   return `<div class="card run" style="--acc:${col}"><div class="head"><div class="name">${title}</div><span class="badge ${badge}">${badge}</span></div>
     <div class="chips">${chips.map(([t, a]) => `<span class="${a ? "acc" : ""}">${UI.escapeHtml(t)}</span>`).join("")}</div>
     <div class="meta">${mem}</div>
@@ -395,7 +420,7 @@ function runCard(r) {
     <div class="stats">${stat("val loss", latest.val_loss != null ? fmtL(latest.val_loss) : "–", FORE[r.name]?.val ? "heading for ≈" + fmtL(FORE[r.name].val.yEnd) + (FORE[r.name].val.range ? ` (${fmtL(FORE[r.name].val.range[0])}–${fmtL(FORE[r.name].val.range[1])})` : "") : latest.val_loss != null ? "like 1 of " + UI.fmtChoices(latest.val_loss) + " words" : "")}
       ${stat("HellaSwag", hs, hsH)}
       ${stat("speed", st.tok_s ? (st.tok_s / 1e3).toFixed(0) + "k" : "–", "tokens per second")}</div>
-    <div class="tele">${tele.map(([k, v]) => `<div><div class="k">${k}</div><div class="v">${UI.escapeHtml(v)}</div></div>`).join("")}</div>
+    <div class="tele">${tele.map(([k, v, t]) => `<div${t ? ` title="${UI.escapeHtml(t)}"` : ""}><div class="k">${k}</div><div class="v">${UI.escapeHtml(v)}</div></div>`).join("")}</div>
     ${controls(r.name, state)}</div>`;
 }
 
