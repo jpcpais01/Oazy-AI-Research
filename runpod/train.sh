@@ -52,10 +52,17 @@ fi
 
 tmux has-session -t oazy 2>/dev/null || tmux new-session -d -s oazy -n app -c "$REPO"
 win() { tmux list-windows -t oazy -F '#W' | grep -qx "$1"; }
+idle() {    # is the window's shell waiting at a prompt (its program stopped, e.g. with Ctrl-C)?
+    case "$(tmux display-message -p -t "oazy:$1" '#{pane_current_command}' 2>/dev/null)" in bash|zsh|sh|fish) return 0;; esac; return 1
+}
 start() {   # start <window> <gpu> <command>
-    if win "$1"; then echo "window '$1' already exists: not starting it twice"; return; fi
-    tmux new-window -t oazy: -n "$1" -c "$REPO"
-    tmux send-keys -t "oazy:$1" "CUDA_VISIBLE_DEVICES=$2 $3" C-m
+    if win "$1"; then
+        if idle "$1"; then echo "window '$1' exists but nothing runs in it: starting there"
+        else echo "window '$1' already exists and is busy: not starting it twice"; return; fi
+    else
+        tmux new-window -t oazy: -n "$1" -c "$REPO"
+    fi
+    tmux send-keys -t "oazy:$1" "cd $REPO && CUDA_VISIBLE_DEVICES=$2 $3" C-m
 }
 if ! (exec 3<>/dev/tcp/127.0.0.1/8000) 2>/dev/null; then
     win app || tmux new-window -t oazy: -n app -c "$REPO"
