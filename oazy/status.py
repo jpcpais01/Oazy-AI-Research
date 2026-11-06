@@ -140,7 +140,12 @@ def main():
     term.out("")
     term.rows([("disk", f"{term.bar(du.used / du.total, 16, 'yellow' if du.free < 50e9 else 'green')} "
                         f"{du.free / 1e9:,.0f} GB free of {du.total / 1e9:,.0f} GB")])
-    term.out(term.c("\n  watch a run: tmux attach -t oazy  (Ctrl-b then a window number; Ctrl-b then d to leave)", "dim"))
+    sessions = sh(["tmux", "ls", "-F", "#{session_name}"]).split()
+    hint = ("watch a run: tmux attach -t oazy  (Ctrl-b then a window number; Ctrl-b then d to leave)" if "oazy" in sessions
+            else "nothing is training (bash runpod/train.sh <model> starts a run and its tmux session, oazy)")
+    if "tagus" in sessions:
+        hint += "\n  watch the Tagus build: tmux attach -t tagus  (Ctrl-b then d to leave)"
+    term.out(term.c("\n  " + hint, "dim"))
 
 
 if __name__ == "__main__":
