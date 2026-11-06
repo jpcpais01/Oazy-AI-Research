@@ -129,7 +129,7 @@ def main():
     res = {"model": a.model, "gpu": gpu, "micro": B, "context": Tw, "tokens_per_pass": ntok, "mentor": mentor_name,
            "loss": a.loss, "compile": bool(a.compile), "fla": bool(memory._FLA_OK), "fla_packed_docs": bool(memory._FLA_SEG),
            "doc_mask": bool(getattr(cfg, "doc_mask", 0)), "params": model.num_params(), "fp8": fp8,
-           "memory_op": bool(memory._OP_OK), "fused_gates": bool(memory._FUSED_OK), "flex_attn": bool(getattr(model, "_flex", False))}
+           "memory_op": bool(memory._OP_OK), "fused_gates": bool(memory._FUSED_OK), "flex_attn": bool(getattr(model, "_flex", False) and getattr(model.cfg, "attn_docs", 1))}
     term.header(f"{T.NICE[a.model]} profile", gpu)
     has_mem = "M" in "".join(getattr(cfg, "kinds", lambda: [])())
     term.rows([("pass", f"{B} x {Tw} words = {ntok:,} tokens"), ("mentor", mentor_name),
