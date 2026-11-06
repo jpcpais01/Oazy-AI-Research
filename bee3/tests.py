@@ -60,7 +60,7 @@ def main():
         full = m._body(packed)
         eb = (full[:, 31:81] - m._body(b)).abs().max().item()
         ec = (full[:, 82:] - m._body(c)).abs().max().item()
-        resets, mask = m.doc_info(packed)
+        resets, mask, _ = m.doc_info(packed)
     check("documents in one window read exactly as if alone (memories, attention, convolution)", eb < 1e-3 and ec < 1e-3,
           f"max diff {max(eb, ec):.1e}")
     check("a document starts right after <|endoftext|>", resets[0].nonzero()[:, 0].tolist() == [31, 82] and mask.shape == (1, 1, 102, 102)
@@ -131,7 +131,7 @@ def main():
     from ember.mentor import Mentor, fade
     me = Mentor("smol-random", dev, compile=False)
     mm = Bee3(Bee3Config(**SMALL)).to(dev).train()
-    _, mask = mm.doc_info(packed)
+    _, mask, _ = mm.doc_info(packed)
     hh, hw = me.hidden(packed, mask)
     hb, _ = me.hidden(b, None)
     check("mentor: token vectors + word table", hh.shape[:2] == packed.shape and hw.shape[0] == 49152)

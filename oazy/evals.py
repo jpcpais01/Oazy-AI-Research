@@ -33,46 +33,68 @@ SETS = {
 
 
 def _rows(repo, config, split):
-    """The rows of one split, from the dataset's parquet files (no loading scripts, no cache)."""
+    """The rows of one split, from the dataset's parquet files (no loading scripts, no cache). A dataset that
+    only has a loading script (PIQA) is read from the Hub's own parquet conversion of it (refs/convert/parquet)."""
     from huggingface_hub import HfApi, hf_hub_download
     import pyarrow.parquet as pq
-    files = HfApi().list_repo_files(repo, repo_type="dataset")
-    want = [f for f in files if f.endswith(".parquet") and split in Path(f).name and (not config or f.startswith(config + "/"))]
-    if not want:
-        want = [f for f in files if f.endswith(".parquet") and split in f]
-    if not want:
-        raise SystemExit(f"no parquet files for {repo} {config or ''} {split}: {files[:10]}")
-    for f in sorted(want):
-        yield from pq.read_table(hf_hub_download(repo, f, repo_type="dataset")).to_pylist()
+    api = HfApi()
+    for rev in (None, "refs/convert/parquet"):
+        try:
+            files = api.list_repo_files(repo, repo_type="dataset", revision=rev)
+        except Exception as e:
+            print(f"  ({repo} {rev or 'main'}: {type(e).__name__})")
+            continue
+        want = [f for f in files if f.endswith(".parquet") and split in Path(f).name and (not config or f.startswith(config + "/"))]
+        if not want:
+            want = [f for f in files if f.endswith(".parquet") and split in f]
+        if want:
+            for f in sorted(want):
+                yield from pq.read_table(hf_hub_download(repo, f, repo_type="dataset", revision=rev)).to_pylist()
+            return
+    raise RuntimeError(f"no parquet files for {repo} {config or ''} {split} (main or refs/convert/parquet)")
 
 
 def prepare(out: Path):
+    """Each set on its own: one that cannot be fetched is reported and skipped (the run scores what is there)."""
     out.mkdir(parents=True, exist_ok=True)
+    for name, fn in (("arc_easy", _prep_arc), ("piqa", _prep_piqa), ("lambada", _prep_lambada)):
+        if (out / f"{name}.jsonl").exists():
+            continue
+        try:
+            fn(out)
+        except Exception as e:
+            print(f"{name}: not prepared ({type(e).__name__}: {str(e)[:200]}); run this again later, the run scores what is there")
+
+
+def _prep_arc(out: Path):
     # ARC-Easy and PIQA in HellaSwag's shape: {"ctx", "endings", "label"}
-    if not (out / "arc_easy.jsonl").exists():
-        rows = []
-        for r in _rows(*SETS["arc_easy"]):
-            labels = list(r["choices"]["label"])
-            if r["answerKey"] not in labels:
-                continue
-            rows.append({"ctx": f"Question: {r['question'].strip()}\nAnswer:", "endings": [t.strip() for t in r["choices"]["text"]],
-                         "label": labels.index(r["answerKey"])})
-        (out / "arc_easy.jsonl").write_text("".join(json.dumps(x) + "\n" for x in rows))
-        print(f"arc_easy: {len(rows)} questions")
-    if not (out / "piqa.jsonl").exists():
-        rows = [{"ctx": f"Question: {r['goal'].strip()}\nAnswer:", "endings": [r["sol1"].strip(), r["sol2"].strip()], "label": int(r["label"])}
-                for r in _rows(*SETS["piqa"]) if r.get("label") in (0, 1)]
-        (out / "piqa.jsonl").write_text("".join(json.dumps(x) + "\n" for x in rows))
-        print(f"piqa: {len(rows)} questions")
-    if not (out / "lambada.jsonl").exists():
-        rows = []
-        for r in _rows(*SETS["lambada"]):
-            text = r["text"].rstrip()
-            ctx, _, last = text.rpartition(" ")
-            if ctx and last:
-                rows.append({"ctx": ctx, "target": " " + last})
-        (out / "lambada.jsonl").write_text("".join(json.dumps(x) + "\n" for x in rows))
-        print(f"lambada: {len(rows)} passages")
+    rows = []
+    for r in _rows(*SETS["arc_easy"]):
+        labels = list(r["choices"]["label"])
+        if r["answerKey"] not in labels:
+            continue
+        rows.append({"ctx": f"Question: {r['question'].strip()}\nAnswer:", "endings": [t.strip() for t in r["choices"]["text"]],
+                     "label": labels.index(r["answerKey"])})
+    (out / "arc_easy.jsonl").write_text("".join(json.dumps(x) + "\n" for x in rows))
+    print(f"arc_easy: {len(rows)} questions")
+
+
+def _prep_piqa(out: Path):
+    rows = [{"ctx": f"Question: {r['goal'].strip()}\nAnswer:", "endings": [r["sol1"].strip(), r["sol2"].strip()], "label": int(r["label"])}
+            for r in _rows(*SETS["piqa"]) if r.get("label") in (0, 1)]
+    (out / "piqa.jsonl").write_text("".join(json.dumps(x) + "\n" for x in rows))
+    print(f"piqa: {len(rows)} questions")
+
+
+def _prep_lambada(out: Path):
+    rows = []
+    for r in _rows(*SETS["lambada"]):
+        text = r["text"].rstrip()
+        ctx, _, last = text.rpartition(" ")
+        if ctx and last:
+            rows.append({"ctx": ctx, "target": " " + last})
+    (out / "lambada.jsonl").write_text("".join(json.dumps(x) + "\n" for x in rows))
+    print(f"lambada: {len(rows)} passages")
 
 
 @torch.no_grad()

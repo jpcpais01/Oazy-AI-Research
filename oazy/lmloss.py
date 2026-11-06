@@ -27,6 +27,8 @@ The arithmetic is the same as F.cross_entropy + F.kl_div on the full scores (oaz
 """
 from __future__ import annotations
 
+import os
+
 import torch
 import torch.nn.functional as F
 
@@ -36,6 +38,61 @@ def _autocast_on(device_type):
         return torch.is_autocast_enabled(device_type)
     except TypeError:                                  # older torch: cuda only
         return device_type == "cuda" and torch.is_autocast_enabled()
+
+
+def _slice(hc, Wc, tc, vc, thc, tWc, softcap: float, kd_w, n_valid, n_all: float, Vt: int):
+    """One slice of tokens: scores, loss terms, and the gradient pushed straight back onto the token vectors
+    and the word table. Pure tensor work, so torch.compile fuses the fp32 elementwise chain into a few kernels."""
+    dt = hc.dtype
+    z = (hc @ Wc.t()).float()                                       # (n, V) scores
+    if softcap:
+        t = torch.tanh(z / softcap)
+        z = softcap * t
+    lp = torch.log_softmax(z, dim=-1)
+    # --- next-word loss and its gradient: probabilities minus the right answer
+    tgt = tc.clamp_min(0)
+    vcf = vc.to(torch.float32)
+    ce = (-(lp.gather(1, tgt[:, None])[:, 0]) * vcf).sum()
+    g = lp.exp()                                                    # p
+    g.scatter_add_(1, tgt[:, None], -vcf[:, None])
+    g *= (vcf * ((1.0 - kd_w) / n_valid))[:, None]
+    # --- the mentor's lesson: the student's probabilities minus the mentor's
+    if thc is not None:
+        tz = (thc @ tWc.t()).float()                                # (n, Vt) mentor scores
+        tlp = torch.log_softmax(tz, dim=-1)
+        pt = tlp.exp()
+        V = z.shape[1]
+        if Vt == V:
+            kd = (pt * (tlp - lp)).sum()
+            g += (lp.exp() - pt) * (kd_w / n_all)
+        else:                                   # a GPT-2 mentor (50,257) and a padded student table (50,304)
+            lps = torch.log_softmax(z[:, :Vt], dim=-1)
+            kd = (pt * (tlp - lps)).sum()
+            g[:, :Vt] += (lps.exp() - pt) * (kd_w / n_all)
+    else:
+        kd = torch.zeros((), dtype=torch.float32, device=hc.device)
+    if softcap:
+        g *= 1.0 - t * t                                            # through the soft cap
+    gb = g.to(dt)
+    return ce, kd, gb @ Wc, (gb.t() @ hc).float()                   # d loss / d h (slice), d loss / d W (whole table)
+
+
+_compiled_slice = None
+
+
+def _no_compile():
+    global _compiled_slice
+    _compiled_slice = _slice
+
+
+def slice_fn(device):
+    """The slice, compiled on the GPU (OAZY_LOSS_COMPILE=0 turns that off), plain elsewhere."""
+    global _compiled_slice
+    if device.type != "cuda" or os.environ.get("OAZY_LOSS_COMPILE", "1") == "0":
+        return _slice
+    if _compiled_slice is None:
+        _compiled_slice = torch.compile(_slice, dynamic=False)
+    return _compiled_slice
 
 
 class _HeadLoss(torch.autograd.Function):
@@ -52,47 +109,29 @@ class _HeadLoss(torch.autograd.Function):
             n_valid = valid.sum().clamp_min(1).to(torch.float32)
             n_all = float(N)
             kd = th is not None and kd_w > 0
-            if kd:
-                tWc = tW.to(dt)
-                Vt = tW.shape[0]
+            tWc, Vt = (tW.to(dt), int(tW.shape[0])) if kd else (None, V)
+            f = slice_fn(h.device)
+            kw = torch.tensor(float(kd_w), dtype=torch.float32, device=h.device)   # a tensor: the mentor's share changes every step
             gh = torch.empty_like(h)
             gW = torch.zeros(V, D, dtype=torch.float32, device=h.device)
             ce_sum = torch.zeros((), dtype=torch.float32, device=h.device)
             kd_sum = torch.zeros((), dtype=torch.float32, device=h.device)
             for i in range(0, N, chunk):
-                hc = h[i:i + chunk].to(dt)
-                tc = targets[i:i + chunk]
-                vc = valid[i:i + chunk]
-                z = (hc @ Wc.t()).float()                                   # (n, V) scores
-                if softcap:
-                    t = torch.tanh(z / softcap)
-                    z = softcap * t
-                lp = torch.log_softmax(z, dim=-1)
-                # --- next-word loss and its gradient: probabilities minus the right answer
-                tgt = tc.clamp_min(0)
-                ce_sum += (-(lp.gather(1, tgt[:, None])[:, 0]) * vc).sum()
-                g = lp.exp()                                                # p
-                g.scatter_add_(1, tgt[:, None], -vc.to(torch.float32)[:, None])
-                g *= (vc.to(torch.float32) * ((1.0 - kd_w) / n_valid))[:, None]
-                # --- the mentor's lesson: the student's probabilities minus the mentor's
-                if kd:
-                    tz = (th[i:i + chunk].to(dt) @ tWc.t()).float()         # (n, Vt) mentor scores
-                    tlp = torch.log_softmax(tz, dim=-1)
-                    pt = tlp.exp()
-                    if Vt == V:
-                        kd_sum += (pt * (tlp - lp)).sum()
-                        g += (lp.exp() - pt) * (kd_w / n_all)
-                    else:                               # a GPT-2 mentor (50,257) and a padded student table (50,304)
-                        lps = torch.log_softmax(z[:, :Vt], dim=-1)
-                        kd_sum += (pt * (tlp - lps)).sum()
-                        g[:, :Vt] += (lps.exp() - pt) * (kd_w / n_all)
-                    del tz, tlp, pt
-                if softcap:
-                    g *= 1.0 - t * t                                        # through the soft cap
-                gb = g.to(dt)
-                gh[i:i + chunk] = (gb @ Wc).to(h.dtype)                     # d loss / d h
-                gW += (gb.t() @ hc).float()                                 # d loss / d W
-                del z, lp, g, gb
+                args = (h[i:i + chunk].to(dt), Wc, targets[i:i + chunk], valid[i:i + chunk],
+                        th[i:i + chunk].to(dt) if kd else None, tWc, float(softcap), kw, n_valid, n_all, Vt)
+                try:
+                    ce, kdv, ghc, gWc = f(*args)
+                except Exception as e:
+                    if f is _slice:
+                        raise
+                    print(f"[lmloss] torch.compile failed ({type(e).__name__}: {str(e)[:160]}); the loss runs uncompiled", flush=True)
+                    f = _slice
+                    _no_compile()
+                    ce, kdv, ghc, gWc = f(*args)
+                ce_sum += ce
+                kd_sum += kdv
+                gh[i:i + chunk] = ghc.to(h.dtype)
+                gW += gWc
         loss = (1.0 - kd_w) * ce_sum / n_valid + kd_w * kd_sum / n_all
         ctx.save_for_backward(gh, gW)
         ctx.w_dtype = W.dtype

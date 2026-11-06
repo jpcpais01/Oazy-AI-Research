@@ -191,11 +191,12 @@ class Block(nn.Module):
     def mixer(self):
         return self.mem if self.kind == "M" else self.attn
 
-    def forward(self, x, state=None, resets=None, mask=None):
+    def forward(self, x, state=None, resets=None, mask=None, segs=None):
         """resets (B, T) bool: new documents start here (memory layers start blank); mask (B, 1, T, T) bool:
-        which earlier words each word may see (attention layers). Both None when reading one text."""
+        which earlier words each word may see (attention layers). Both None when reading one text.
+        segs: the document offsets for the memory kernel's packed form, computed once (doc_info), or None."""
         if self.kind == "M":
-            y, state = self.mem(self.n1(x), state, resets)
+            y, state = self.mem(self.n1(x), state, resets, segs)
         else:
             y, state = self.attn(self.n1(x), state, mask)
         x = x + y
@@ -253,23 +254,26 @@ class Bee(nn.Module):
         return c * torch.tanh(logits / c) if c else logits
 
     def doc_info(self, idx):
-        """With doc_mask: where new documents start (B, T) and which earlier words each word may see (B, 1, T, T).
-        A document starts right after an <|endoftext|>. Without doc_mask: (None, None), a window is one text."""
+        """With doc_mask: where new documents start (B, T), which earlier words each word may see (B, 1, T, T),
+        and the document offsets for the memory kernel's packed form (or None). A document starts right after
+        an <|endoftext|>. Without doc_mask: (None, None, None), a window is one text."""
         if not self.cfg.doc_mask:
-            return None, None
+            return None, None, None
         from oazy.tok import eot_id
+        from memtrix import memory
         B, T = idx.shape
         resets = torch.zeros(B, T, dtype=torch.bool, device=idx.device)
         resets[:, 1:] = idx[:, :-1] == eot_id(self.cfg.tokenizer)
         doc = resets.cumsum(1)
         mask = (doc[:, None, :, None] == doc[:, None, None, :]) & torch.ones(T, T, dtype=torch.bool, device=idx.device).tril()
-        return resets, mask
+        segs = memory.segments(resets, hints=True) if memory.packed_docs(idx.device) else None    # once, not once per layer
+        return resets, mask, segs
 
-    def _trunk(self, idx, resets=None, mask=None):
+    def _trunk(self, idx, resets=None, mask=None, segs=None):
         """Everything but the word table: (B, T, D) token vectors after the final norm."""
         x = self.embed(idx)
         for b in self.blocks:
-            x, _ = b(x, None, resets, mask)
+            x, _ = b(x, None, resets, mask, segs)
         return self.norm(x)
 
     def _body(self, idx):
@@ -279,8 +283,8 @@ class Bee(nn.Module):
     def losses(self, idx, targets, mentor=None, kd_weight=0.0):
         """One lesson: the next-word loss, plus the mentor's (KL to its guesses) weighted kd_weight.
         Returns (loss to train on, {"ce": next-word loss, "kd": the mentor term}), the stats detached."""
-        resets, mask = self.doc_info(idx)
-        h = (self._compiled or self._trunk)(idx, resets, mask)
+        resets, mask, segs = self.doc_info(idx)
+        h = (self._compiled or self._trunk)(idx, resets, mask, segs)
         th = tW = None
         if mentor is not None and kd_weight > 0:
             th, tW = mentor.hidden(idx, mask)

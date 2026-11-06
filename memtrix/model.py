@@ -128,13 +128,14 @@ class Memory(nn.Module):
         o = self.onorm(o) * F.silu(self.gate(x).view(B, T, self.H, self.V))
         return self.out(o.reshape(B, T, -1))
 
-    def forward(self, x, state=None, resets=None):
+    def forward(self, x, state=None, resets=None, segs=None):
         """state: None (blank memory) or (conv_state, S). resets: (B, T) bool, True where a new document
-        starts inside the window (its memory starts blank). Returns (output, new state)."""
+        starts inside the window (its memory starts blank); segs: memory.segments(resets), computed once for
+        all layers, or None. Returns (output, new state)."""
         conv_state, S = state if state is not None else (None, None)
         q, k, v, trust, log_fade, new_conv = self.project(x, conv_state, resets)
         if state is None:
-            o, S = memory.delta_rule(q, k, v, log_fade, trust.to(q.dtype), resets=resets)
+            o, S = memory.delta_rule(q, k, v, log_fade, trust.to(q.dtype), resets=resets, segs=segs)
         elif x.shape[1] == 1:
             o, S = memory.recurrent(q, k, v, log_fade, trust, S)
         else:
