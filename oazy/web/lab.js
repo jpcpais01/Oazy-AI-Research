@@ -1,5 +1,5 @@
 // The training lab's look, the landing page's (oazy/site): the hero's light streaks seen through liquid glass behind
-// the page head, faint light caustics under the rest of the page with every panel made of clear glass that bends
+// the page head, a faint photon field under the rest of the page with every panel made of clear glass that bends
 // them (so a panel's edge is drawn by refracted light, not by a border), the launcher-style bar with sliding tabs,
 // and the slim white liquid-glass scrollbar. Decoration only: without WebGL a plain CSS look stays, and nothing here
 // touches the data.
@@ -432,9 +432,9 @@ void main() {
     go();
   }
 
-  /* ------------------------------------------------------------------ below the head: caustics under clear glass */
-  // Very faint, very slow light caustics (the web of brightness sunlight draws on the floor of a pool), as if the
-  // page lay deep under glass, and every panel (.card) a pane of clear glass over them: flat and calm in the middle
+  /* ------------------------------------------------------------------ below the head: a photon field under clear glass */
+  // A faint photon field (the page as a detector catching the hero's light: tiny points that flash as photons land,
+  // more where the light pools), and every panel (.card) a pane of clear glass over them: flat and calm in the middle
   // for reading, a thick rounded rim that bends the light behind it (blue more than red, so its edge splits into
   // colour) and catches the light from the top left. The same shader as the landing page.
   function land() {
@@ -452,42 +452,41 @@ float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
   return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
 float fbm(vec2 p){ float s = 0., a = .55; for (int i = 0; i < 3; i++) { s += a * vn(p); p = p * 1.9 + vec2(1.7, 9.2); a *= .42; } return s; }
 float ln(float v, float w){ float d = abs(fract(v + .5) - .5); return 1. - smoothstep(.45 * w, 1.45 * w, d); }
-// below the hero: light caustics, the slow web of brightness that sunlight draws on the floor
-// of a pool, very faint and very slow, as if the page were deep under glass. It drifts a little
-// with scroll (a sense of depth), splits slightly into colour like the hero's lens, gathers into
-// soft pools here and there, and stays calmer behind the reading column. (CSS pixels in, colour out.)
+// below the hero: a photon field. The page is a detector slowly catching the hero's light: a fine,
+// slightly irregular grid of tiny points, each one flashing now and then as a single photon lands
+// and fading after, more often where the light is stronger (soft pools of the hero's colours that
+// drift slowly, brighter towards the margins and under the pointer). Each point splits faintly into
+// colour like the hero's lens, and where many land the detector keeps a soft glow, like an exposure.
 vec3 field(float h){
   h = fract(h) * 4.;
   vec3 a = vec3(.80, .76, 1.), b = vec3(.58, .46, 1.), c = vec3(.45, .82, 1.), d = vec3(1., .58, .84);
   float t = smoothstep(0., 1., fract(h));
   if (h < 1.) return mix(a, b, t); if (h < 2.) return mix(b, c, t); if (h < 3.) return mix(c, d, t); return mix(d, a, t);
 }
-float caus(vec2 p, float t){
-  vec2 i = p; float c = 1.;
-  for (int n = 0; n < 4; n++) {
-    float tt = t * (1. - 3.5 / float(n + 1));
-    i = p + vec2(cos(tt - i.x) + sin(tt + i.y), sin(tt - i.y) + cos(tt + i.x));
-    c += 1. / length(vec2(1.25 / (sin(i.x + tt) + 1e-4), 1.25 / (cos(i.y + tt) + 1e-4)));
-  }
-  c /= 4.;
-  c = 1.17 - pow(c, 1.4);
-  return pow(abs(c), 8.);
-}
+vec2 h22(vec2 p){ return fract(sin(vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)))) * 43758.5453); }
 vec3 land(vec2 css, float wIn, out float wOut){
   wOut = 1.;
-  float vw = uRes.x / uDpr;
-  vec2 p = vec2(css.x, css.y + uScroll * .35) / 340. * 6.2832;
-  float t = uT * .07;
-  // the pointer: a faint swell in the water, as if a finger touched the surface
-  vec2 dp = (css - uP) / 180.; float bump = uPa * exp(-dot(dp, dp));
-  p += .25 * bump * normalize(css - uP + 1e-3);
-  // three slightly different scales: blue is bent a little more than red
-  vec3 c = vec3(caus(p - vec2(.022, .012), t), caus(p, t), caus(p + vec2(.026, .014), t));
-  vec2 q = p / 6.2832;
-  vec3 tint = field(vn(q * .35 + vec2(t * .08, -t * .05)) * 1.4);
-  float pool = smoothstep(.25, .85, vn(q * .6 + vec2(-t * .12, t * .07)));   // light gathers in some places
-  float calm = mix(.5, 1., smoothstep(uCw - 60., uCw + 140., abs(css.x - vw * .5)));
-  c = pow(max(c - .06, 0.), vec3(1.7)) * 3.4 * tint * (.10 + .42 * pool) * calm * (1. + .8 * bump);
+  float vw = uRes.x / uDpr, t = uT;
+  vec2 pc = vec2(css.x, css.y + uScroll * .5);                    // a little depth when scrolling
+  vec2 q = pc / 620.;
+  // how much light falls here
+  float L = smoothstep(.2, .9, vn(q + vec2(t * .01, -t * .008))) * .8 + .2 * vn(q * 3. + 5.);
+  float calm = mix(.35, 1., smoothstep(uCw - 80., uCw + 160., abs(css.x - vw * .5)));
+  vec2 dp = (css - uP) / 150.; L += .7 * uPa * exp(-dot(dp, dp));
+  L *= calm;
+  vec3 tint = field(vn(q * .8 + vec2(-t * .006, t * .004)) * 1.4);
+  // the detector's points
+  const float G = 9.;
+  vec2 cell = floor(pc / G), f = pc - (cell + .5) * G;
+  vec2 hh = h22(cell);
+  float rate = .05 + .25 * hh.y;
+  float ph = fract(t * rate + hh.x * 7.);
+  // a photon lands: a quick flash, then a slow fade
+  float on = step(hh.x, .25 + .75 * L) * smoothstep(0., .04, ph) * exp(-ph * 6.);
+  vec2 d = f - (h22(cell + 9.) - .5) * 4.;
+  vec3 dot3 = exp(-vec3(dot(d + vec2(.55, 0.), d + vec2(.55, 0.)), dot(d, d), dot(d - vec2(.55, 0.), d - vec2(.55, 0.))) / .5);
+  vec3 c = dot3 * on * mix(tint, vec3(1.), .35 * on) * (.45 + 1.4 * L);
+  c += tint * L * L * .022;                                          // the exposure
   return c;
 }
 float sdBox(vec2 p, vec2 b, float r){ vec2 q = abs(p) - b + r; return length(max(q, 0.)) + min(max(q.x, q.y), 0.) - r; }
