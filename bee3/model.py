@@ -14,7 +14,7 @@ The body is Bee_v2_0.2B's, unchanged (18 Memtrix memory layers + 6 gated attenti
 
 The rest of the recipe lives in oazy/train.py (RECIPE["bee3"]) and bee3/README.md: the mentor stays the
 whole run, twice Bee2's learning rates, weight decay on the Muon grids, a batch ramp, a square-root
-cool-down, the loss computed in slices (oazy/lmloss.py), and the Tagus text bundle (oazy/bundle.py).
+cool-down, the loss computed in slices (oazy/lmloss.py), and Tagus, our dataset (oazy/tagus.py).
 """
 from __future__ import annotations
 

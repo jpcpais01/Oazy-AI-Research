@@ -155,9 +155,9 @@ def main():
     root = Path(a.data) / ("smol" if tk == "smollm2" else "")
     chat = root / "chat"
     if not (chat / "train.bin").exists():
-        raise SystemExit(f"no conversations in {chat}: prepare them first (oazy.bundle / oazy.retok)")
+        raise SystemExit(f"no conversations in {chat}: prepare them first (oazy.tagus / oazy.retok)")
     T = a.ctx or model.cfg.max_len
-    micro = a.micro or max(1, 32 * 1024 // T)
+    micro = a.micro or max(1, min(32 * 1024, a.batch) // T)
     accum = max(1, a.batch // (micro * T))
     lr = a.lr or (info.get("lr") or 1.2e-3) / 10
     muon_lr = (info.get("muon_lr") or 0.02) * lr / (info.get("lr") or 1.2e-3)

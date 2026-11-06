@@ -292,7 +292,7 @@ const MODELS = {
   fern3: { name: "Fern3", color: C.fern3, role: "ours", blurb: "Fern that remembers like you do: every old passage folded into a gist, and the 3 whose gists match best read again in full. No fixed-size memory. Not a next-word model." },
   bee: { name: "Bee0.2B", color: C.bee, role: "ours", blurb: "Our main model (204M, next-word): a modern hybrid, 3 Memtrix memory layers to 1 attention layer, learns from GPT-2 large early on, Muon, a mix of FineWeb-Edu, DCLM and (at the end) conversations." },
   bee2: { name: "Bee_v2_0.2B", color: C.bee2, role: "ours", blurb: "Bee0.2B's body (203M, next-word) with a smarter, cheaper mentor: SmolLM2-360M instead of GPT-2 large, and so SmolLM2's tokenizer. Same text, re-cut. Its losses are shown per GPT-2 token, so they line up with the others." },
-  bee3: { name: "Bee3", color: C.bee3, role: "ours", blurb: "Bee_v2_0.2B's body (203M, next-word), raised better: the Tagus text bundle (seven kinds of text), no bleed between documents, the mentor for the whole run, twice the learning rate, 2,048-word windows throughout. Losses per GPT-2 token, like Bee2." },
+  bee3: { name: "Bee3", color: C.bee3, role: "ours", blurb: "Bee_v2_0.2B's body (203M, next-word), raised better: Tagus, our dataset (seven kinds of text), no bleed between documents, the mentor for the whole run, twice the learning rate, 2,048-word windows throughout. Losses per GPT-2 token, like Bee2." },
   gpt: { name: NAMES.gpt, color: C.gpt, role: "baseline", blurb: "GPT-2 small (124M), trained on the same text, in the same order, with the same schedule." },
   "openai-gpt2": { name: NAMES.openai, color: C.ref, role: "reference", blurb: "OpenAI's 2019 GPT-2 small, measured with the same tests: the line to beat." },
 };
@@ -526,7 +526,7 @@ function scoreboard() {
   const evCard = evRuns.length ? `<div class="card score"><div class="t">More tests (higher is better)</div>
       ${EV.map(([k, t, h]) => { const rows = evRuns.map((n) => [n, lastOf(n, "evals")[k]]).filter((r) => r[1] != null); if (!rows.length) return "";
         return `<div class="sub">${t}</div>${rows.map(([n, v]) => row(n, v, v, pct)).join("")}<div class="note">${h}</div>`; }).join("")}</div>` : "";
-  // held-out loss per kind of text (the bundle's per-source slices)
+  // held-out loss per kind of text (Tagus per-source held-out slices)
   const SRC = { dclm: "DCLM (web)", chat: "conversations", cosmo: "Cosmopedia (textbooks)", wiki: "Wikipedia", math: "FineMath", code: "Python code" };
   const srcRuns = names.map((n) => [n, lastOf(n, "eval")]).filter(([, e]) => e && Object.keys(e).some((k) => k.startsWith("val_loss_")));
   const srcCard = srcRuns.length ? `<div class="card score"><div class="t">Held-out loss by kind of text</div>

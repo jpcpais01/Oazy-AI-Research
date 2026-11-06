@@ -10,7 +10,7 @@
 #   bash runpod/train.sh fern3 --tokens 2e9         # Fern3 (Fern + remembers old passages by their gist)
 #   bash runpod/train.sh bee --tokens 5e9           # Bee0.2B, the main model (needs: bash runpod/setup.sh bee)
 #   bash runpod/train.sh bee2 --preset big          # Bee_v2_0.2B, SmolLM2-360M mentor (needs: bash runpod/setup.sh bee2)
-#   bash runpod/train.sh bee3 --preset big --tokens 2.5e9   # Bee3 on the Tagus bundle (needs: python3 -m oazy.bundle)
+#   bash runpod/train.sh bee3 --preset big --tokens 2.5e9   # Bee3 on Tagus, our dataset (needs: python3 -m oazy.tagus)
 #
 # Each model gets its own tmux window; the app (dashboard, port 8000) gets one too, and OpenAI's
 # GPT-2 is measured once as the reference line. Running it again for another model adds that model.
@@ -46,7 +46,7 @@ if [ "$MODEL" = bee2 ] && [ ! -f "$DATA/smol/train.bin" ]; then
     exit 1
 fi
 if [ "$MODEL" = bee3 ] && [ ! -f "$DATA/smol/cosmo/train.bin" ]; then
-    echo "Bee3 reads the Tagus bundle; prepare it first: python3 -m oazy.bundle --run-tokens 2.5e9"
+    echo "Bee3 reads Tagus, our dataset; prepare it first: python3 -m oazy.tagus --run-tokens 2.5e9"
     exit 1
 fi
 
