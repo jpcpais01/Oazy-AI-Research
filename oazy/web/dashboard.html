@@ -305,7 +305,9 @@ const kindOf = (r) => (r.config && r.config.model) || r.name;
 const modelOf = (n) => MODELS[n] || MODELS[kindOf(RUNS.find((r) => r.name === n) || { name: n })] || { name: n, color: C.ref, role: "ours", blurb: "" };
 const colorOf = (n) => modelOf(n).color;
 const nameOf = (n) => MODELS[n] ? MODELS[n].name : (modelOf(n).name + (n !== kindOf(RUNS.find((r) => r.name === n) || {}) ? ` (${n})` : ""));
-const isLive = (r) => !!r.status && (["running", "paused", "finishing"].includes(r.status.state) || (r.status.state === "starting" && Date.now() / 1000 - (r.status.updated || 0) < 1800));
+// a run that says it is training but has written nothing for an hour was cut off (the pod stopped under it): not live
+const isLive = (r) => !!r.status && Date.now() / 1000 - (r.status.updated || 0) < (r.status.state === "starting" ? 1800 : 3600)
+  && ["running", "paused", "finishing", "starting"].includes(r.status.state);
 // Which runs the page shows: the models training now (and the baselines, for comparison).
 // With nothing training, the most recently active of our models. "show" in the library overrides.
 let OVERRIDE = {};
