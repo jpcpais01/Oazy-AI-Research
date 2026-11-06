@@ -151,6 +151,21 @@ with `--lr 1.2e-3 --muon-lr 0.02`. `--set pattern=MMMA` is the Memtrix hybrid (p
 `--mentor none` drops the mentor, `--data-sub smol` reads the usual Tagus (a quick test before tagus20 is ready).
 `--fp8 0` trains in bf16; `--set grow=28:0` starts at full depth (only on a fresh run).
 
+## The phone app (our models on an Android phone, offline)
+
+Any finished or running model with SmolLM2's tokenizer (Coral, Bee_v2_0.2B, Bee3, Frog, and their -chat runs) can
+go to the phone. The export runs on the CPU from the last saved checkpoint, so it is safe while a training runs.
+Details in `phone/README.md`.
+
+```bash
+cd /workspace/oazy && git pull
+nice -n 10 python3 -m phone.export --run coral-chat         # or --run coral / bee2 / bee3 / frog; --quant q4 = smaller
+python3 -m phone.serve                                     # port 8002 -> open the pod's 8001 link on the phone
+```
+
+On the phone: **Install the app**, then **Open in Oazy** next to a model. Stop `phone.serve` (Ctrl-C) before
+starting a chat app on 8002 again.
+
 ## Code Black (the flagship research line: two clocks vs a strong transformer, on the clock)
 
 Races, not one long run: every run trains for the same 30 B200 minutes, Code Black against Black-T (a modern

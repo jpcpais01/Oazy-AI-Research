@@ -2,3 +2,6 @@ work/
 __pycache__/
 *.pyc
 .DS_Store
+phone/build/
+phone/app/oazy.keystore
+phone/dist/*.idsig

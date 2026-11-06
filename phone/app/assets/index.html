@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="color-scheme" content="dark">
+<title>Oazy</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<canvas id="land" aria-hidden="true"></canvas>
+
+<header class="bar">
+  <div class="mark">
+    <img src="logo.png" alt="">
+    <div class="word">OAZY<small>ON THIS PHONE</small></div>
+  </div>
+  <button class="pill" id="modelPill" aria-label="Models">
+    <i class="dot"></i><span id="pillName">No model</span>
+    <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+  <button class="round" id="settingsBtn" aria-label="Settings">
+    <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="4" cy="10" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="16" cy="10" r="1.6"/></svg>
+  </button>
+</header>
+
+<main id="scroll">
+  <section id="welcome">
+    <p class="eyebrow">OAZY AI RESEARCH · OFFLINE</p>
+    <h1>Our models, thinking <em>on your phone</em></h1>
+    <p class="lead">Everything runs on this phone's own processor. What you write never leaves it.</p>
+
+    <article class="card glass" id="modelCard" hidden>
+      <div class="cardtop"><span class="tag" id="mcKind">NEXT-WORD MODEL</span><span class="state" id="mcState"></span></div>
+      <h2 id="mcName">Coral_1B</h2>
+      <p class="sub" id="mcLine"></p>
+      <div class="stats">
+        <div><b id="mcParams">—</b><span>parameters</span></div>
+        <div><b id="mcTokens">—</b><span>tokens of training</span></div>
+        <div><b id="mcSpeed">—</b><span>tokens / s here</span></div>
+      </div>
+    </article>
+
+    <article class="card glass" id="emptyCard" hidden>
+      <div class="cardtop"><span class="tag">GET A MODEL</span></div>
+      <h2>Bring a model onto the phone</h2>
+      <ol class="steps">
+        <li><span>1</span><div>On the pod: <code>python3 -m phone.export --run coral</code> writes a phone copy (8-bit, about 1.2 GB; Bee_v2_0.2B is 0.25 GB).</div></li>
+        <li><span>2</span><div><code>python3 -m phone.serve</code>, then open the pod's 8001 link on this phone and tap <i>Open in Oazy</i>.</div></li>
+        <li><span>3</span><div>Or copy the <code>.oazy</code> file to the phone any way you like and add it here.</div></li>
+      </ol>
+      <div class="row">
+        <button class="btn primary" data-act="pick">Add a model file</button>
+        <button class="btn" data-act="models">Download from a link</button>
+      </div>
+    </article>
+
+    <div class="chips" id="chips"></div>
+  </section>
+
+  <section id="thread" aria-live="polite"></section>
+  <div id="tail"></div>
+</main>
+
+<footer class="composer">
+  <div class="modes" role="tablist">
+    <i class="slide"></i>
+    <button role="tab" data-mode="chat" class="on">Chat</button>
+    <button role="tab" data-mode="write">Write</button>
+  </div>
+  <div class="inputrow glass">
+    <textarea id="input" rows="1" placeholder="Ask anything" enterkeyhint="send" autocapitalize="sentences"></textarea>
+    <button class="send" id="send" aria-label="Send">
+      <svg class="go" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 15.5V4.5M5 9.5l5-5 5 5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <svg class="halt" viewBox="0 0 20 20" aria-hidden="true"><rect x="6" y="6" width="8" height="8" rx="1.8"/></svg>
+    </button>
+  </div>
+</footer>
+
+<!-- sheets -->
+<div class="veil" id="veil" hidden></div>
+
+<section class="sheet glass" id="models" hidden>
+  <div class="grip"></div>
+  <div class="sheethead"><h3>Models</h3><span class="mono" id="freeSpace"></span></div>
+  <div id="modelList" class="list"></div>
+  <div class="transfer" id="transfer" hidden>
+    <div class="tline"><span id="tName">Downloading</span><span id="tPct" class="mono"></span></div>
+    <div class="track"><i id="tBar"></i><b id="tDot"></b></div>
+    <button class="link" id="tCancel">Cancel</button>
+  </div>
+  <div class="add">
+    <label class="mono" for="url">DOWNLOAD FROM A LINK</label>
+    <div class="urlrow"><input id="url" type="url" inputmode="url" placeholder="https://…-8001.proxy.runpod.net/Coral_1B-q8.oazy" autocomplete="off" spellcheck="false"><button class="btn small" id="dl">Download</button></div>
+    <button class="btn wide" data-act="pick">Add a model file from this phone</button>
+    <p class="hint">Make one on the pod with <code>python3 -m phone.export --run coral</code> (or <code>bee2</code>, <code>bee3</code>, <code>frog</code>), add <code>--quant q4</code> for a smaller, faster copy. Then <code>python3 -m phone.serve</code> shares it.</p>
+  </div>
+</section>
+
+<section class="sheet glass" id="settings" hidden>
+  <div class="grip"></div>
+  <div class="sheethead"><h3>Settings</h3><button class="link" id="newChat">New conversation</button></div>
+  <div class="sliders" id="sliders"></div>
+  <div class="check">
+    <div class="tline"><span class="mono">CHECK THE MODEL</span><button class="btn small" id="checkBtn">Run check</button></div>
+    <p class="hint" id="checkOut">Reads a short prompt and compares the scores with the ones PyTorch wrote into the file, and cuts some texts into tokens exactly like SmolLM2's tokenizer.</p>
+  </div>
+  <dl class="facts" id="facts"></dl>
+</section>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="land.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
