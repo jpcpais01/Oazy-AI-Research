@@ -62,8 +62,8 @@ class Mentor:
             if form == "none":
                 mask = None
             elif form == "float":
-                mask = torch.zeros(mask.shape, dtype=torch.bfloat16 if x.is_cuda else torch.float32,
-                                   device=x.device).masked_fill(~mask, torch.finfo(torch.float32).min)
+                fdt = torch.bfloat16 if x.is_cuda else torch.float32
+                mask = torch.zeros(mask.shape, dtype=fdt, device=x.device).masked_fill(~mask, torch.finfo(fdt).min)
         L = self.net.cfg.max_len
         f = self._hidden_compiled if self._hidden_compiled is not None else self.net.hidden
         try:
@@ -97,8 +97,8 @@ class Mentor:
         T = both.shape[1]
         doc = torch.cat([torch.zeros(12), torch.ones(12)]).to(device)
         m = (doc[None, None, :, None] == doc[None, None, None, :]) & torch.ones(T, T, dtype=torch.bool, device=device).tril()
-        forms = {"bool": m, "float": torch.zeros(m.shape, dtype=apart.dtype if device.type != "cuda" else torch.bfloat16,
-                                                 device=device).masked_fill(~m, torch.finfo(torch.float32).min)}
+        fdt = torch.bfloat16 if device.type == "cuda" else apart.dtype
+        forms = {"bool": m, "float": torch.zeros(m.shape, dtype=fdt, device=device).masked_fill(~m, torch.finfo(fdt).min)}
         for name, mk in forms.items():
             try:
                 h = self.net.hidden(both, mk).float()[:, 12:]
