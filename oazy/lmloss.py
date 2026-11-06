@@ -31,14 +31,21 @@ import torch
 import torch.nn.functional as F
 
 
+def _autocast_on(device_type):
+    try:
+        return torch.is_autocast_enabled(device_type)
+    except TypeError:                                  # older torch: cuda only
+        return device_type == "cuda" and torch.is_autocast_enabled()
+
+
 class _HeadLoss(torch.autograd.Function):
     @staticmethod
     def forward(ctx, h, W, targets, softcap, th, tW, kd_w, chunk):
         N, D = h.shape
         V = W.shape[0]
         dt = h.dtype
-        if h.is_cuda and dt == torch.float32:      # the GPU does these matmuls in bf16, like the rest of the model
-            dt = torch.bfloat16
+        if dt == torch.float32 and _autocast_on(h.device.type):   # training: these matmuls in bf16, like the rest of the model
+            dt = torch.get_autocast_dtype(h.device.type) if hasattr(torch, "get_autocast_dtype") else torch.bfloat16
         with torch.autocast(device_type=h.device.type, enabled=False):
             Wc = W.to(dt)
             valid = targets >= 0

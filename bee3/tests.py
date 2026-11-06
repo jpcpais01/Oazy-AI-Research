@@ -105,7 +105,17 @@ def main():
             g2 = torch.autograd.grad(l2, (h, W))
             worst = max(worst, abs(l1.item() - l2.item()), abs(c1.item() - c2.item()), abs(k1.item() - k2.item()),
                         *[(x - y).abs().max().item() for x, y in zip(g1, g2)])
-    check("loss in slices = loss on the full scores, gradients too (with/without soft cap and mentor)", worst < 1e-3, f"max diff {worst:.1e}")
+    tol = 1e-2 if dev.type == "cuda" else 1e-3                # the GPU's fp32 matmuls round more (TF32)
+    check("loss in slices = loss on the full scores, gradients too (with/without soft cap and mentor)", worst < tol, f"max diff {worst:.1e}")
+    if dev.type == "cuda":                                    # as in training: bf16 under autocast, the mentor in bf16
+        th16, tW16 = th.to(torch.bfloat16), tW.to(torch.bfloat16)
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            l1, _, _ = head_loss(h, W, tg, 5.0, th16, tW16, 0.6, chunk=8)
+            l2, _, _ = plain_loss(h, W, tg, 5.0, th16, tW16, 0.6)
+        g1 = torch.autograd.grad(l1, (h, W))
+        g2 = torch.autograd.grad(l2, (h, W))
+        w16 = max(abs(l1.item() - l2.item()), *[(x - y).abs().max().item() for x, y in zip(g1, g2)])
+        check("the same under bf16 autocast with a bf16 mentor (the training path)", w16 < 5e-2, f"max diff {w16:.1e}")
     m.train()
     x, y = packed, torch.roll(packed, -1, 1)
     _, l1, _ = m(x, y)
