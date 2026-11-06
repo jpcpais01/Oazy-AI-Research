@@ -91,14 +91,27 @@ def ctx_at(cfg: BeeConfig, progress: float) -> int:
     return [t for w, t in ctx_plan(cfg) if progress >= w][-1]
 
 
-def rope(x, pos, base):
-    """Rotary positions. x: (B, T, H, d), pos: (T,) word positions."""
+def rope_table(n, d, base, device=None):
+    """cos and sin of every position's angles: two (n, d/2) fp32 grids."""
+    inv = 1.0 / (base ** (torch.arange(0, d, 2, device=device, dtype=torch.float32) / d))
+    ang = torch.arange(n, device=device, dtype=torch.float32)[:, None] * inv[None]
+    return ang.cos(), ang.sin()
+
+
+def rope(x, pos, base, table=None):
+    """Rotary positions. x: (B, T, H, d), pos: (T,) word positions. table: (cos, sin) grids already sliced to
+    these positions (read from a buffer, so a compiled pass does not recompute cos and sin for every element)."""
     d = x.shape[-1]
-    inv = 1.0 / (base ** (torch.arange(0, d, 2, device=x.device, dtype=torch.float32) / d))
-    ang = pos.float()[:, None] * inv[None]                     # (T, d/2)
-    cos, sin = ang.cos()[None, :, None, :], ang.sin()[None, :, None, :]
+    if table is None:
+        inv = 1.0 / (base ** (torch.arange(0, d, 2, device=x.device, dtype=torch.float32) / d))
+        ang = pos.float()[:, None] * inv[None]                     # (T, d/2)
+        table = ang.cos(), ang.sin()
+    cos, sin = table[0][None, :, None, :], table[1][None, :, None, :]
     x1, x2 = x.float().chunk(2, dim=-1)
     return torch.cat([x1 * cos - x2 * sin, x1 * sin + x2 * cos], dim=-1).to(x.dtype)
+
+
+ROPE_TABLE = 8192       # positions in the stored cos / sin grids (longer reads work them out on the fly)
 
 
 class Attention(nn.Module):
@@ -115,6 +128,10 @@ class Attention(nn.Module):
         self.gate = nn.Linear(D, H * hd, bias=False)          # Qwen3-Next's gated attention
         self.qn, self.kn = RMSNorm(hd), RMSNorm(hd)
         self.out = nn.Linear(H * hd, D, bias=False)
+        if cfg.rope:                                         # the positions' cos / sin, worked out once
+            cos, sin = rope_table(ROPE_TABLE, hd, cfg.rope_base)
+            self.register_buffer("rope_cos", cos, persistent=False)
+            self.register_buffer("rope_sin", sin, persistent=False)
 
     def project(self, x, start: int):
         B, T, _ = x.shape
@@ -123,7 +140,10 @@ class Attention(nn.Module):
         v = self.v(x).view(B, T, self.KV, self.hd)
         if self.cfg.rope:
             pos = torch.arange(start, start + T, device=x.device)
-            q, k = rope(q, pos, self.cfg.rope_base), rope(k, pos, self.cfg.rope_base)
+            tab = None
+            if start + T <= self.rope_cos.shape[0]:
+                tab = self.rope_cos[start:start + T].float(), self.rope_sin[start:start + T].float()
+            q, k = rope(q, pos, self.cfg.rope_base, tab), rope(k, pos, self.cfg.rope_base, tab)
         return q, k, v
 
     def finish(self, x, y):
