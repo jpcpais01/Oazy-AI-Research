@@ -402,6 +402,20 @@ section.block::before { background: linear-gradient(90deg, transparent, rgba(255
 .bar.solid { background: linear-gradient(180deg, rgba(255, 255, 255, .03), rgba(255, 255, 255, 0)), rgba(5, 5, 7, .62); border-bottom-color: rgba(255, 255, 255, .1); box-shadow: 0 0.5px 0 rgba(79, 216, 255, .12); }
 footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .35), transparent); }
 
+
+/* clear glass: barely frosted, a light dark tint for reading, and a crisp edge drawn as liquid
+   (an SVG outline per box that bends towards the pointer; see the script) */
+.model, .glass { overflow: visible; border-color: transparent; backdrop-filter: blur(2.5px) saturate(125%); -webkit-backdrop-filter: blur(2.5px) saturate(125%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .10), 0 24px 60px -36px rgba(0, 0, 0, .9); }
+.model { background: radial-gradient(80% 50% at 100% 0%, color-mix(in srgb, var(--acc) 7%, transparent), transparent 60%); }
+.glass { background: transparent; }
+/* the tinted body of each box is drawn in the same liquid path as its edge, so it bends too */
+.model::before, .glass::before { display: none; }
+.model:hover { border-color: transparent; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), 0 30px 70px -40px rgba(0, 0, 0, .9); }
+.liquid-edge { position: absolute; left: -16px; top: -16px; width: calc(100% + 32px); height: calc(100% + 32px); pointer-events: none; overflow: visible; z-index: -1; }
+.liquid-edge path { vector-effect: non-scaling-stroke; }
+.tabs, .btn-ghost, .btn-quiet { backdrop-filter: blur(6px) saturate(140%); -webkit-backdrop-filter: blur(6px) saturate(140%); }
+
 /* reveal: content is visible at rest; this only adds a gentle rise when it scrolls in */
 .rv { transition: transform .9s cubic-bezier(.2,.8,.2,1), opacity .9s; }
 .js .rv.pre { transform: translateY(18px); opacity: .35; }
@@ -1288,6 +1302,104 @@ void main(){
   document.addEventListener('pointerleave', () => { ta = 0; });
   check();
   window.__oazyLand = { render: t => draw(t) };
+})();
+
+// liquid edges: each glass box gets its outline drawn as a path. Near the pointer the outline
+// swells towards it like the skin of a drop of water, then springs back when the pointer leaves.
+// It is three strokes, white plus faint pink and cyan offsets, for the same lens split as the hero.
+(() => {
+  const boxes = [...document.querySelectorAll('.model, .glass')];
+  if (!boxes.length) return;
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const NS = 'http://www.w3.org/2000/svg', PAD = 16, N = 220, REACH = 120, SIGMA = 64, PULL = 13;
+  let uid = 0;
+  const items = boxes.map(el => {
+    const svg = document.createElementNS(NS, 'svg'); svg.setAttribute('class', 'liquid-edge'); svg.setAttribute('aria-hidden', 'true');
+    const id = 'lq' + (uid++);
+    svg.innerHTML = `<defs><linearGradient id="${id}" x1="0" y1="0" x2="0.35" y2="1">
+        <stop offset="0" stop-color="#fff" stop-opacity=".85"/><stop offset=".25" stop-color="#fff" stop-opacity=".32"/>
+        <stop offset=".7" stop-color="#fff" stop-opacity=".12"/><stop offset="1" stop-color="#fff" stop-opacity=".4"/></linearGradient>
+        <linearGradient id="${id}f" x1="0" y1="0" x2="0.5" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".06"/><stop offset=".4" stop-color="#fff" stop-opacity=".012"/>
+        <stop offset=".7" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#fff" stop-opacity=".025"/></linearGradient></defs>
+      <path class="fill" fill="rgba(6,6,10,.52)"/><path class="fill" fill="url(#${id}f)"/>
+      <path fill="none" stroke="rgba(255,95,174,.38)" stroke-width="1" transform="translate(-0.7 0)"/>
+      <path fill="none" stroke="rgba(79,216,255,.42)" stroke-width="1" transform="translate(0.7 0)"/>
+      <path fill="none" stroke="url(#${id})" stroke-width="1"/>`;
+    el.appendChild(svg);
+    const it = { el, svg, paths: [...svg.querySelectorAll('path')], w: 0, h: 0, r: 0, pts: [], amp: 0, target: 0, mx: 0, my: 0, live: false };
+    measure(it); draw(it, 0);
+    return it;
+  });
+  function measure(it) {
+    it.w = it.el.offsetWidth; it.h = it.el.offsetHeight;
+    it.r = Math.min(parseFloat(getComputedStyle(it.el).borderTopLeftRadius) || 0, it.w / 2, it.h / 2);
+    // sample the rounded rectangle evenly: position and outward normal at each point
+    const { w, h, r } = it, straightW = w - 2 * r, straightH = h - 2 * r, arc = Math.PI * r / 2;
+    const L = 2 * straightW + 2 * straightH + 4 * arc, pts = [];
+    const segs = [
+      [straightW, s => [r + s, 0, 0, -1]],
+      [arc, s => { const a = -Math.PI / 2 + s / r; return [w - r + r * Math.cos(a), r + r * Math.sin(a), Math.cos(a), Math.sin(a)]; }],
+      [straightH, s => [w, r + s, 1, 0]],
+      [arc, s => { const a = s / r; return [w - r + r * Math.cos(a), h - r + r * Math.sin(a), Math.cos(a), Math.sin(a)]; }],
+      [straightW, s => [w - r - s, h, 0, 1]],
+      [arc, s => { const a = Math.PI / 2 + s / r; return [r + r * Math.cos(a), h - r + r * Math.sin(a), Math.cos(a), Math.sin(a)]; }],
+      [straightH, s => [0, h - r - s, -1, 0]],
+      [arc, s => { const a = Math.PI + s / r; return [r + r * Math.cos(a), r + r * Math.sin(a), Math.cos(a), Math.sin(a)]; }],
+    ];
+    for (let i = 0; i < N; i++) {
+      let d = i / N * L;
+      for (let k = 0; k < segs.length; k++) { const [len, f] = segs[k]; if (d <= len || k === segs.length - 1) { pts.push(f(Math.min(d, len))); break; } d -= len; }
+    }
+    it.pts = pts;
+  }
+  function draw(it, t) {
+    const { pts, amp, mx, my } = it;
+    let d = '';
+    for (let i = 0; i < pts.length; i++) {
+      const [x, y, nx, ny] = pts[i];
+      let ox = x, oy = y;
+      if (amp > 0.001) {
+        const dx = mx - x, dy = my - y, dist2 = dx * dx + dy * dy;
+        const bump = Math.exp(-dist2 / (2 * SIGMA * SIGMA));
+        const along = Math.max(-1, Math.min(1, (dx * nx + dy * ny) / 12));          // towards the pointer, either side of the edge
+        const ripple = 1 + 0.12 * Math.sin(t * 5 - Math.sqrt(dist2) * 0.07);
+        const k = amp * PULL * bump * along * ripple;
+        ox += nx * k; oy += ny * k;
+      }
+      d += (i ? 'L' : 'M') + (ox + PAD).toFixed(2) + ' ' + (oy + PAD).toFixed(2);
+    }
+    d += 'Z';
+    it.paths.forEach(p => p.setAttribute('d', d));
+  }
+  let raf = 0;
+  function tick(now) {
+    raf = 0; let busy = false; const t = now / 1000;
+    for (const it of items) {
+      if (!it.live && it.amp < 0.001) continue;
+      it.amp += (it.target - it.amp) * (it.target > it.amp ? 0.16 : 0.08);
+      draw(it, t);
+      if (it.target > 0 || it.amp > 0.001) busy = true; else { it.amp = 0; it.live = false; draw(it, t); }
+    }
+    if (busy) raf = requestAnimationFrame(tick);
+  }
+  const kick = () => { if (!raf) raf = requestAnimationFrame(tick); };
+  if (!still) addEventListener('pointermove', e => {
+    if (e.pointerType !== 'mouse') return;
+    for (const it of items) {
+      const b = it.el.getBoundingClientRect();
+      const lx = e.clientX - b.left, ly = e.clientY - b.top;
+      // distance from the pointer to the outline (inside or outside)
+      const ix = Math.max(0, Math.min(lx, b.width)), iy = Math.max(0, Math.min(ly, b.height));
+      const inside = lx >= 0 && ly >= 0 && lx <= b.width && ly <= b.height;
+      const edge = inside ? Math.min(lx, ly, b.width - lx, b.height - ly) : Math.hypot(lx - ix, ly - iy);
+      const tgt = edge < REACH ? 1 - edge / REACH : 0;
+      if (tgt > 0 || it.target > 0) { it.mx = lx; it.my = ly; it.target = tgt * tgt; it.live = true; kick(); }
+    }
+  }, { passive: true });
+  document.addEventListener('pointerleave', () => { items.forEach(it => it.target = 0); kick(); });
+  const ro = new ResizeObserver(es => es.forEach(e => { const it = items.find(i => i.el === e.target); if (it) { measure(it); draw(it, performance.now() / 1000); } }));
+  items.forEach(it => ro.observe(it.el));
+  window.__oazyLiquid = { poke(i, x, y, a) { const it = items[i]; it.mx = x; it.my = y; it.amp = a; it.target = 0; draw(it, 1); } };
 })();
 </script>
 </body>
