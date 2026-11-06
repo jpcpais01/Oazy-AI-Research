@@ -20,10 +20,13 @@ import torch
 import torch.nn as nn
 
 
+STACKS = ("blocks.", "enc.", "slow.", "dec.")     # the layer stacks (Code Black has three: fast encoder, slow, fast decoder)
+
+
 def keep(mod: nn.Module, fqn: str) -> bool:
     """Which layers go to FP8: the large Linear layers of the stack (projections and MLPs). FP8's matrix
     products want sizes divisible by 16; a small layer (trust, fade: 1,024 -> 8) gains nothing."""
-    return (isinstance(mod, nn.Linear) and fqn.startswith("blocks.") and mod.in_features % 16 == 0
+    return (isinstance(mod, nn.Linear) and fqn.startswith(STACKS) and mod.in_features % 16 == 0
             and mod.out_features % 16 == 0 and min(mod.in_features, mod.out_features) >= 256)
 
 

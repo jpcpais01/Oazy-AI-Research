@@ -59,7 +59,7 @@ echo "== self-test of the shared memory kernel (Memtrix)"
 python3 -m memtrix.tests --device cuda
 if [ "${OAZY_TEST_ALL:-0}" = 1 ]; then
     echo "== self-tests of every model"
-    for m in tide ember fern2 fern3 bee bee2 bee3 frog coral; do python3 -m $m.tests --device cuda; done
+    for m in tide ember fern2 fern3 bee bee2 bee3 frog coral codeblack; do python3 -m $m.tests --device cuda; done
 fi
 
 if [ "${1:-}" = bee ] || [ "${1:-}" = bee2 ]; then

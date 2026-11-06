@@ -33,12 +33,15 @@ from memtrix.model import Memtrix, MemtrixConfig
 from memtrix import memory
 from . import hellaswag, probes
 
-KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "gpt"]
+KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "black", "blackt", "gpt"]
 NICE = {"memtrix": "Memtrix", "tide": "Tide", "fern": "Fern", "ember": "Ember", "fern2": "Fern2", "fern3": "Fern3",
-        "bee": "Bee0.2B", "bee2": "Bee_v2_0.2B", "bee3": "Bee3", "frog": "Frog", "coral": "Coral", "gpt": "GPT"}
-FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral")    # raised the fast way: Muon and a mentor by default
-MENTOR = {"bee": "gpt2-large", "bee2": "smollm2-360m", "bee3": "smollm2-360m", "frog": "smollm2-360m", "coral": "smollm2-360m"}   # default mentor (the others: gpt2-medium)
-BEES = ("bee", "bee2", "bee3", "frog", "coral")                 # the text mix, WSD, growing windows
+        "bee": "Bee0.2B", "bee2": "Bee_v2_0.2B", "bee3": "Bee3", "frog": "Frog", "coral": "Coral", "black": "Code Black",
+        "blackt": "Black-T", "gpt": "GPT"}
+FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "black", "blackt")    # raised the fast way: Muon (and a mentor, where MENTOR names one)
+# default mentor (the others: gpt2-medium). Code Black and Black-T race without one, so the architectures are compared alone.
+MENTOR = {"bee": "gpt2-large", "bee2": "smollm2-360m", "bee3": "smollm2-360m", "frog": "smollm2-360m", "coral": "smollm2-360m",
+          "black": "none", "blackt": "none"}
+BEES = ("bee", "bee2", "bee3", "frog", "coral", "black", "blackt")    # the text mix (Tagus), WSD, growing windows
 # Bee3's recipe (bee3/README.md): the mentor stays the whole run, weight decay on the Muon grids, a batch ramp,
 # a 1-minus-square-root cool-down, twice Bee2's learning rates (the presets' lr_bee3 / muon_lr_bee3)
 RECIPE = {"bee3": dict(mentor_floor=0.25, mentor_off=0.1, muon_wd=0.1, batch_ramp="65536:0.1", decay_shape="sqrt")}
@@ -52,6 +55,11 @@ RECIPE["frog"] = dict(RECIPE["bee3"], mentor_share=1, fp8=1)      # and FP8 matr
 # folder (<data>/tagus20, python3 -m oazy.tagus --run-tokens 20e9 --into tagus20), so Bee3's and Frog's Tagus stays as is.
 RECIPE["coral"] = dict(RECIPE["frog"], mentor_weight=0.25, mentor_until=0.3, mentor_floor=0.0, mentor_off=0.0,
                        batch_ramp="262144:0.05", data_sub="tagus20")
+# Code Black (codeblack/README.md) and Black-T, the transformer it races: the same recipe for both, so a race measures
+# the architecture. Bee3's polish (Muon weight decay, a batch ramp, the square-root cool-down) and FP8, no mentor. Races
+# run on the clock: --preset race --minutes 30 (every schedule follows the training time instead of the token count).
+RECIPE["black"] = dict(muon_wd=0.1, batch_ramp="65536:0.1", decay_shape="sqrt", fp8=1)
+RECIPE["blackt"] = dict(RECIPE["black"])
 VAL_T = 1024                                   # held-out windows are always this long: every model, every run, same text
 
 
@@ -108,6 +116,16 @@ def _coral():
     return Coral, CoralConfig
 
 
+def _black():
+    from codeblack.model import Black, BlackConfig   # codeblack/ = two clocks: a fast token stream, a slow stream once per 4 tokens
+    return Black, BlackConfig
+
+
+def _blackt():
+    from codeblack.model import BlackT, BlackTConfig  # codeblack/ = Black-T, the modern transformer Code Black races
+    return BlackT, BlackTConfig
+
+
 def _bee3():
     from bee3.model import Bee3, Bee3Config          # bee3/ = Bee2's body, no bleed between documents, the Bee3 recipe
     return Bee3, Bee3Config
@@ -127,6 +145,9 @@ PRESETS = {
         bee=dict(d_model=128, n_layer=4, n_head=2, head_k=64, head_v=64, attn_heads=4, attn_kv_heads=2, attn_head_dim=32,
                  mlp_hidden=256, max_len=512, ctx="256:0,512:0.5"),
         coral=dict(n_expert=4, top_k=2, expert_hidden=64, mlp_hidden=64),
+        black=dict(d_model=128, enc_layers=1, dec_layers=1, attn_heads=4, attn_kv_heads=2, attn_head_dim=32, mlp_hidden=256,
+                   window=64, slow_d=256, slow_layers=2, slow_heads=4, slow_kv_heads=2, slow_head_dim=64, slow_mlp=512,
+                   phrase_rows=8192, phrase_dim=32, max_len=512, ctx="512:0"),
         micro=16, accum=1, lr=3e-3, warmup=50, tokens=3_000_000,
         eval_every=250_000, probe_every=1_000_000, hs_every=1_000_000, sample_every=1_000_000,
         val_windows=64, hs_quick=200, sample_len=40,
@@ -144,6 +165,9 @@ PRESETS = {
         bee=dict(d_model=64, n_layer=4, n_head=1, head_k=32, head_v=32, attn_heads=2, attn_kv_heads=1, attn_head_dim=32,
                  mlp_hidden=128, max_len=128, ctx="64:0,128:0.5"),
         coral=dict(n_expert=4, top_k=2, expert_hidden=32, mlp_hidden=32),
+        black=dict(d_model=64, enc_layers=1, dec_layers=1, attn_heads=2, attn_kv_heads=1, attn_head_dim=32, mlp_hidden=128,
+                   window=32, slow_d=128, slow_layers=2, slow_heads=2, slow_kv_heads=1, slow_head_dim=64, slow_mlp=256,
+                   phrase_rows=1024, phrase_dim=16, max_len=128, ctx="128:0"),
         micro=8, accum=2, lr=3e-3, warmup=10, tokens=60_000,
         eval_every=20_000, probe_every=30_000, hs_every=30_000, sample_every=30_000,
         val_windows=16, hs_quick=20, sample_len=10,
@@ -163,6 +187,15 @@ PRESETS = {
         lr_coral=1.8e-3, muon_lr_coral=0.03, warmup=600, tokens=5_000_000_000,
         eval_every=100_000_000, probe_every=200_000_000, hs_every=200_000_000, sample_every=200_000_000,
         val_windows=128, hs_quick=1000, sample_len=120,
+    ),
+    # Code Black's races (codeblack/README.md): every run gets the same training time (--minutes 30), and the held-out
+    # loss is taken often, so loss-against-minutes curves can be compared at any point. 262k-token steps.
+    "race": dict(
+        memtrix=dict(), gpt=dict(), batch_black=262144, batch_blackt=262144,
+        micro=32, accum=8, lr=1.2e-3, lr_black=2.4e-3, muon_lr_black=0.04, lr_blackt=2.4e-3, muon_lr_blackt=0.04,
+        warmup=250, tokens=2_000_000_000,
+        eval_every=25_000_000, probe_every=500_000_000, hs_every=500_000_000, sample_every=500_000_000,
+        val_windows=128, hs_quick=1000, sample_len=80,
     ),
 }
 
@@ -225,6 +258,15 @@ def build(kind, preset, overrides=None):
         cfg = FrogConfig(**{**small, **({"ctx": f"{small['max_len']}:0"} if "max_len" in small else {}),
                             **p.get("frog", {}), **(overrides or {})})
         return Frog(cfg), cfg
+    if kind in ("black", "blackt"):
+        cls, Cfg = _black() if kind == "black" else _blackt()
+        small = {k: v for k, v in p.get("bee", {}).items() if k != "ctx"}    # the test presets' small body
+        if kind == "black":            # its own small body (fast and slow streams)
+            small = dict(p.get("black", {}))
+        elif small:                    # Black-T on a test preset: Bee's small body, set by hand
+            small = {**small, "size": "", "ctx": f"{small['max_len']}:0"}
+        cfg = Cfg(**{**small, **(overrides or {})})
+        return cls(cfg), cfg
     if kind == "coral":
         Coral, CoralConfig = _coral()
         small = {k: v for k, v in p.get("bee", {}).items() if k != "ctx"}    # the test presets' small body, as Bee3
@@ -272,6 +314,9 @@ def load_model(ckpt: Path, device):
     elif kind == "coral":
         Coral, CoralConfig = _coral()
         model = Coral(CoralConfig.from_dict(st["config"]))
+    elif kind in ("black", "blackt"):
+        cls, Cfg = _black() if kind == "black" else _blackt()
+        model = cls(Cfg.from_dict(st["config"]))
     else:
         model = GPT(GPTConfig.from_dict(st["config"]))
     model.load_state_dict(st["model"])
@@ -322,7 +367,8 @@ def batch_at(progress, batch_tokens, ramp):
 
 MUON_GRIDS = ("mem.qkv.weight", "mem.gate.weight", "mem.out.weight", "mlp.up.weight", "mlp.down.weight",
               "glance.qkv.weight", "glance.out.weight", ".up.weight", ".down.weight",    # (these four: Fern's unfolder)
-              "attn.q.weight", "attn.k.weight", "attn.v.weight", "attn.gate.weight", "attn.out.weight")   # Bee's attention
+              "attn.q.weight", "attn.k.weight", "attn.v.weight", "attn.gate.weight", "attn.out.weight",   # Bee's attention
+              "pack.weight")                                       # Code Black's pack and unpack (between the clocks)
 
 
 MUON_STACKS = ("moe.w_up", "moe.w_down")      # Coral's experts: a stack of grids (E, out, in), each straightened alone
@@ -510,6 +556,10 @@ def main():
     ap.add_argument("--runs", default=None)
     ap.add_argument("--name", default=None, help="run folder name (default: the model name)")
     ap.add_argument("--tokens", type=float, default=None, help="training tokens, e.g. 2e9")
+    ap.add_argument("--minutes", type=float, default=None, help="a race (Code Black): train for this many minutes of training "
+                    "time, then stop. Every schedule (learning rate, cool-down, text mix, batch ramp) follows the clock instead "
+                    "of the token count, so a faster model simply reads more. Evaluations, checkpoints and the first 3 steps of "
+                    "each start (compiling) are not counted. --tokens then only caps the tokens")
     ap.add_argument("--micro", type=int, default=None, help="sequences per forward pass at the run's first window length (lower it if out of memory; Bee3 at 2,048 words: 16 by default)")
     ap.add_argument("--batch-tokens", type=int, default=None, help="tokens per optimizer step")
     ap.add_argument("--lr", type=float, default=None)
@@ -606,7 +656,10 @@ def main():
         # every other model's: (nats per text) is the same thing whoever cuts the text
         val_scale = ratio(data, "val")
     total = int(args.tokens or p["tokens"] * (val_scale if args.tokens is None else 1))
-    if tk != "gpt2" and args.tokens is None:
+    budget = args.minutes * 60 if args.minutes else None     # a race: the run ends on the clock
+    if budget and args.tokens is None:
+        total = 10 ** 13
+    if tk != "gpt2" and args.tokens is None and not budget:
         say(f"{p['tokens'] / 1e9:.2f}B GPT-2 tokens of text = {total / 1e9:.2f}B {tk} tokens (the same text as the GPT-2 models)")
     T = cfg.max_len
     micro0 = args.micro or p.get("micro_" + args.model, p["micro"])
@@ -667,6 +720,13 @@ def main():
 
     step, tokens, elapsed = 0, 0, 0.0
     nxt = {"eval": 0, "probe": 0, "hs": 0, "sample": 0}
+
+    def prog():
+        """How far into training we are: by the token count, or in a race (--minutes) by the training time."""
+        return min(1.0, elapsed / budget) if budget else tokens / total
+
+    def done():
+        return (elapsed >= budget or tokens >= total) if budget else tokens >= total
     old_total, anchor = None, None
     ck = run.dir / "ckpt.pt"
     if ck.exists() and not args.fresh:
@@ -681,7 +741,7 @@ def main():
         train.set_state(state["data"])
         if growing_ctx:
             T = train.T
-            micro, accum = shape(T, tokens / total)
+            micro, accum = shape(T, prog())
             B = micro * accum
             train.set_batch(micro)
         torch.set_rng_state(state["torch_rng"].cpu())
@@ -720,6 +780,7 @@ def main():
         "layout": model.layout() if hasattr(model, "layout") else None,
         **({"params_active": model.active_params()} if hasattr(model, "active_params") else {}),
         "mix": args.mix or (DEFAULT_MIX if args.model in BEES else None), "total_tokens": total, "device": str(device),
+        **({"minutes": args.minutes} if budget else {}),
         "tokenizer": tk, "loss_scale": val_scale,
         "gpu": torch.cuda.get_device_name() if device.type == "cuda" else "cpu",
         "memory_numbers": model.memory_numbers() if hasattr(model, "memory_numbers") else None,
@@ -730,7 +791,7 @@ def main():
     }
     (run.dir / "config.json").write_text(json.dumps(info, indent=1))
     say(json.dumps(info, indent=1))
-    if tokens >= total:
+    if done():
         say("this run is already finished. Use --tokens to train longer or --fresh to start over.")
         return
 
@@ -746,7 +807,7 @@ def main():
         model.enable_compile()
     mentor = None
     from ember.mentor import fade
-    share_now = fade(tokens / total, args.mentor_weight, args.mentor_until, None, mentor_floor, mentor_off)
+    share_now = fade(prog(), args.mentor_weight, args.mentor_until, None, mentor_floor, mentor_off)
     if mentor_name != "none" and share_now > 0:
         from ember.mentor import Mentor
         say(f"loading the mentor {mentor_name} ...", flush=True)
@@ -880,7 +941,8 @@ def main():
     t_log, tok_log, acc_loss, acc_n = time.time(), tokens, 0.0, 0
     log_every = 10
     share_credit, kd_log, kd_log_n = 0.0, 0.0, 0      # Frog's mentor share: the running tally; its KL since the last log
-    while tokens < total and not stop["flag"]:
+    run_steps = 0                                     # steps taken by this process (a race does not count its first 3)
+    while not done() and not stop["flag"]:
         act = control()
         if act == "pause":
             save_ckpt(run, model, opt, ckpt_meta())
@@ -906,35 +968,35 @@ def main():
         evaluations()
         t_eval = time.time() - t0
 
-        if hasattr(model, "grow_to") and model.grow_to(tokens / total):     # Ember, Fern2: time to grow
+        if hasattr(model, "grow_to") and model.grow_to(prog()):     # Ember, Fern2: time to grow
             old, opt = opt, new_opt()
             carry_state(old, opt)
             deep = model.depth_text() if hasattr(model, "depth_text") else f"{model.depth} blocks deep"
             say(f"[grow] {tokens / 1e6:.0f}M tokens: {NICE[args.model]} is now {deep}", flush=True)
             run.log("metrics.jsonl", {"kind": "grow", "step": step, "tokens": tokens, "elapsed": elapsed,
                                       "depth": model.depth})
-        mw = mentor.weight_at(tokens / total) if mentor is not None else 0.0
+        mw = mentor.weight_at(prog()) if mentor is not None else 0.0
         if mentor is not None and mw <= 0:
             say(f"[mentor] {tokens / 1e6:.0f}M tokens: the mentor steps back; {NICE[args.model]} learns alone now", flush=True)
             mentor = None
             if device.type == "cuda":
                 torch.cuda.empty_cache()
 
-        if growing_ctx and model.ctx_at(tokens / total) != T:          # Bee: time for longer windows
-            T = model.ctx_at(tokens / total)
-            micro, accum = shape(T, tokens / total)
+        if growing_ctx and model.ctx_at(prog()) != T:          # Bee: time for longer windows
+            T = model.ctx_at(prog())
+            micro, accum = shape(T, prog())
             B = micro * accum
             train.set_block(T)
             train.set_batch(micro)
             say(f"[context] {tokens / 1e6:.0f}M tokens: {NICE[args.model]} now reads windows of {T} words "
                 f"({micro} x {accum} per step)", flush=True)
             run.log("metrics.jsonl", {"kind": "context", "step": step, "tokens": tokens, "elapsed": elapsed, "context": T})
-        if batch_ramp and accum != shape(T, tokens / total)[1]:         # the batch ramp: more passes per step
-            micro, accum = shape(T, tokens / total)
+        if batch_ramp and accum != shape(T, prog())[1]:         # the batch ramp: more passes per step
+            micro, accum = shape(T, prog())
             B = micro * accum
         if hasattr(train, "progress"):
-            train.progress = tokens / total
-        cur_lr = lr_fn(tokens / total, step, lr, p["warmup"])
+            train.progress = prog()
+        cur_lr = lr_fn(prog(), step, lr, p["warmup"])
         for g in opt.param_groups:
             g["lr"] = cur_lr * g.get("lr_scale", 1.0)
         loss_sum, kd_sum, rd_sum, hs_sum, n_kd = 0.0, 0.0, 0.0, 0.0, 0
@@ -994,15 +1056,17 @@ def main():
         tokens += B * T
         acc_loss += loss_sum / accum
         acc_n += 1
-        elapsed += time.time() - t0 - t_eval        # training time only
+        run_steps += 1
+        if not (budget and run_steps <= 3):         # a race: the first steps of a start compile, they are not counted
+            elapsed += time.time() - t0 - t_eval    # training time only
 
-        if step % log_every == 0 or tokens >= total:
+        if step % log_every == 0 or done():
             now = time.time()
             tps = (tokens - tok_log) / max(1e-6, now - t_log)
             t_log, tok_log = now, tokens
             own_loss = float(acc_loss) / acc_n
             rec = {"kind": "train", "step": step, "tokens": tokens, "elapsed": elapsed,
-                   "loss": own_loss * loss_scale_at(tokens / total), "lr": cur_lr, "tok_s": tps, "grad_norm": float(gnorm)}
+                   "loss": own_loss * loss_scale_at(prog()), "lr": cur_lr, "tok_s": tps, "grad_norm": float(gnorm)}
             if tk != "gpt2":
                 rec["loss_own"] = own_loss
             if hasattr(model, "grow_to"):
@@ -1010,7 +1074,7 @@ def main():
             if hasattr(model, "moe_report"):         # Coral: how evenly the experts worked, how much overflowed
                 rec.update(model.moe_report())
             if hasattr(train, "weights"):
-                rec["context"], rec["mix"] = T, {k: round(v, 3) for k, v in train.weights(tokens / total).items()}
+                rec["context"], rec["mix"] = T, {k: round(v, 3) for k, v in train.weights(prog()).items()}
                 rec["batch"] = B * T
             if mw > 0:
                 rec["mentor_w"] = mw
@@ -1026,6 +1090,11 @@ def main():
             acc_loss, acc_n = 0.0, 0
             run.log("metrics.jsonl", rec)
             eta = (total - tokens) / max(tps, 1)
+            if budget:                              # a race: the clock decides; the token total is the pace so far
+                eta = max(0.0, budget - elapsed)
+                if prog() > 0.02:
+                    info["total_tokens"] = int(tokens / prog())
+                    (run.dir / "config.json").write_text(json.dumps(info, indent=1))
             run.status({**info, "state": "running", "step": step, "tokens": tokens, "elapsed": elapsed,
                         "tok_s": tps, "eta_s": eta, "loss": rec["loss"], "latest": latest, "updated": time.time()})
             say(f"step {step:6d} | {tokens / 1e6:8.1f}M tok | loss {rec['loss']:.4f} | lr {cur_lr:.2e} | "
@@ -1038,7 +1107,7 @@ def main():
             last_ckpt = time.time()
 
     save_ckpt(run, model, opt, ckpt_meta())
-    if tokens >= total or end_early:
+    if done() or end_early:
         if end_early:
             say(f"ended early from the app at {tokens / 1e6:.0f}M tokens (checkpoint saved).", flush=True)
         status("finishing")
