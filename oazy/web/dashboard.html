@@ -180,7 +180,7 @@
       <div class="cardhead"><div class="titles"><h2>What memory buys</h2><div class="sub">Loss when a model may only use the last few words, versus all of them.</div></div></div>
       <details class="why"><summary>How to read this</summary><div class="body">
         <p>We cut the same texts into pieces of <b>4, 32, 256</b> words and let each model read every piece on its own, so it can only use what is inside the piece. At the right edge it reads the whole text.</p>
-        <p>A model that ignores its memory gives a <b>flat line</b>. The steeper the drop, the more it is using what it read earlier. For Memtrix, everything beyond the last 3 words has to come through the 64×64 memories, so a drop here is the memory at work.</p>
+        <p>A model that ignores what it read earlier gives a <b>flat line</b>. The steeper the drop, the more it is using the words further back.<span class="mx-only"> For the models with Memtrix memory layers, everything those layers know beyond the last 3 words has to come through their 64×64 memories, so a drop here is partly the memory at work.</span><span class="attn-only"> An attention model can look back at every word in its window, so for it this shows how much use it makes of a long context.</span></p>
       </div></details>
       <div class="legend" id="ctxLegend" style="margin-bottom:10px"></div>
       <div class="chart"><canvas id="ctx" style="height:260px"></canvas><div class="tip" id="ctxTip"></div></div>
@@ -189,16 +189,17 @@
       <div class="cardhead"><div class="titles"><h2>Later words get easier</h2><div class="sub">Loss of words by where they sit in a text.</div></div></div>
       <details class="why"><summary>How to read this</summary><div class="body">
         <p>The first words of a text are hard to guess: nothing has been said yet. As the text goes on, a model that remembers what it read can guess better. This shows the average loss for words 1–4, 4–16, … up to 256–1,024.</p>
-        <p>The honest weak spot of a fixed-size memory would show as the Memtrix line <b>flattening or rising</b> at the far right while the GPT keeps going down.</p>
+        <p class="mx-only">The honest weak spot of a fixed-size memory would show as a Memtrix-based line <b>flattening or rising</b> at the far right while the GPT keeps going down.</p>
+        <p class="attn-only">An attention model keeps every word of its window, so its line should keep going down to the far right. A line that flattens early means the model has not yet learned to use what lies far back.</p>
       </div></details>
       <div class="legend" id="posLegend" style="margin-bottom:10px"></div>
       <div class="chart"><canvas id="pos" style="height:260px"></canvas><div class="tip" id="posTip"></div></div>
     </div>
     <div class="card span12">
-      <div class="cardhead"><div class="titles"><h2>Exact recall</h2><div class="sub">A passage of 128 tokens, then the very same passage again: how much of the repeat does each model get exactly right? It applies to every model: Tide reads with the same kind of memories as Memtrix.</div></div></div>
+      <div class="cardhead"><div class="titles"><h2>Exact recall</h2><div class="sub">A passage of 128 tokens, then the very same passage again: how much of the repeat does each model get exactly right?</div></div></div>
       <details class="why"><summary>Why this test?</summary><div class="body">
-        <p>This is the hardest test for a memory of fixed size. A transformer keeps every past word and can look back and copy. Memtrix has to have <b>stored</b> the passage in its memories as it read. The first time through, the passage is new to both models; the second time, a perfect memory gets almost every word.</p>
-        <p><b>Tide</b> is built on Memtrix: underneath its belt of drafts it has the very same 12 blocks of 64×64 memories, written word by word by surprise. So this test measures Tide's memory just as it does Memtrix's. Its drafts could even help here: once Tide recognises the repeat, its drafts of the next few words can already be right.</p>
+        <p>The first time through, the passage is new; the second time, a model that really uses what it read gets almost every word. An attention model keeps every past word and can look back and copy, so for it this tests whether it has learned to copy (the "induction" trick transformers pick up early in training).<span class="mx-only"> It is the hardest test for a memory of fixed size: a Memtrix memory layer has to have <b>stored</b> the passage as it read.</span></p>
+        <p class="tide-only"><b>Tide</b> is built on Memtrix: underneath its belt of drafts it has the very same 12 blocks of 64×64 memories, written word by word by surprise. So this test measures Tide's memory just as it does Memtrix's. Its drafts could even help here: once Tide recognises the repeat, its drafts of the next few words can already be right.</p>
       </div></details>
       <div class="legend" id="recLegend" style="margin-bottom:10px"></div>
       <div class="chart"><canvas id="rec" style="height:220px"></canvas><div class="tip" id="recTip"></div></div>
@@ -297,7 +298,7 @@ const MODELS = {
   bee2: { name: "Bee_v2_0.2B", color: C.bee2, role: "ours", blurb: "Bee0.2B's body (203M, next-word) with a smarter, cheaper mentor: SmolLM2-360M instead of GPT-2 large, and so SmolLM2's tokenizer. Same text, re-cut. Its losses are shown per GPT-2 token, so they line up with the others." },
   bee3: { name: "Bee3", color: C.bee3, role: "ours", blurb: "Bee_v2_0.2B's body (203M, next-word), raised better: Tagus, our dataset (seven kinds of text), no bleed between documents, the mentor for the whole run, twice the learning rate, 2,048-word windows throughout. Losses per GPT-2 token, like Bee2." },
   frog: { name: "Frog", color: C.frog, role: "ours", blurb: "Bee3 at twice the size (406M, next-word): 21 memory + 7 attention layers, 1,024 wide, 4,000M tokens of Tagus. The SmolLM2-360M mentor teaches a share of the sequences instead of a share of every word, so it reads only what it teaches. Losses per GPT-2 token." },
-  coral: { name: "Coral", color: C.coral, role: "ours", blurb: "Our first mixture of experts (1,037M parameters, about 160M at work per word, next-word): 20 attention layers, each with 32 small experts (a router picks 2 per word) plus a shared MLP, 1,024 wide, 20,000M tokens of Tagus, built to train at about 1M tokens/s. Losses per GPT-2 token." },
+  coral: { name: "Coral", color: C.coral, role: "ours", blurb: "Our first mixture of experts (1,037M parameters, about 160M at work per word, next-word): 20 attention layers, each with 32 small experts (a router picks 2 per word) plus a shared MLP, 1,024 wide, trained on Tagus, built to train at about 1M tokens/s. Losses per GPT-2 token." },
   gpt: { name: NAMES.gpt, color: C.gpt, role: "baseline", blurb: "GPT-2 small (124M), trained on the same text, in the same order, with the same schedule." },
   "openai-gpt2": { name: NAMES.openai, color: C.ref, role: "reference", blurb: "OpenAI's 2019 GPT-2 small, measured with the same tests: the line to beat." },
 };
@@ -329,6 +330,8 @@ function mode(n) {
 const shown = (n) => mode(n) !== "off";
 const full = (n) => mode(n) === "all";
 const VIS = () => RUNS.filter((r) => shown(r.name));
+// a run with Memtrix memory layers (Memtrix, Tide, Ember, the Bees, Frog, a hybrid Coral), as opposed to all attention
+const hasMemtrix = (r) => { const cf = r.config || {}; return cf.layout ? /[1-9]\d* memory/.test(cf.layout) : !!cf.memory_numbers; };
 const showsKind = (k) => RUNS.some((r) => kindOf(r) === k && full(r.name));    // its own cards (drafts, rounds, inside…)
 const HS_GPT2 = 0.2955;
 // HellaSwag points worth drawing: full scores, and quick checks on the evenly spread sample.
@@ -566,6 +569,13 @@ function scoreboard() {
         const mx = Math.max(...rows.map((r) => r[1])) + 0.05, mn = Math.min(...rows.map((r) => r[1])) - 0.3;
         return `<div class="sub">${SRC[k]}</div>${rows.map(([n, v]) => row(n, v, (mx - v) / (mx - mn), fmtL)).join("")}`; }).join("")}
       <div class="note">2M held-out tokens of each kind, never trained on. Lower is better; kinds are not comparable with each other.</div></div>` : "";
+  // sizes: bars against the biggest model on the page; a mixture of experts also says how much of it works per word
+  const sized = VIS().filter((r) => r.config?.params), pmax = Math.max(130e6, ...sized.map((r) => r.config.params));
+  const mxRun = VIS().find((r) => hasMemtrix(r) && r.config?.memory_numbers && !r.config?.layout);
+  const sizeNote = [sized.some((r) => r.config.params_active && r.config.params_active < r.config.params)
+      ? "A mixture of experts holds many small expert networks and lets a router pick a few for each word, so only part of it works at a time." : "",
+    mxRun ? `${nameOf(mxRun.name)}'s memory of the text is a fixed ${UI.fmtTokens(mxRun.config.memory_numbers)} numbers, however long the text. A GPT's grows with every word (18.9M numbers at 1,024 words).` : "",
+  ].filter(Boolean).join(" ") || "Parameters: the numbers a model learns.";
   box.innerHTML = evCard + srcCard + `
     <div class="card score"><div class="t">Validation loss (lower is better)</div><div class="big">${verdictL || "&nbsp;"}</div>
       ${lossRows.map(([n, v]) => row(n, v, (hi - v) / (hi - lo), fmtL)).join("")}
@@ -573,9 +583,9 @@ function scoreboard() {
     <div class="card score"><div class="t">HellaSwag (higher is better)</div><div class="big">${verdictH || "&nbsp;"}</div>
       ${hsRows.map(([n, v]) => row(n, v, (v - 0.2) / 0.2, pct)).join("")}
       <div class="note">Random guessing is 25%. OpenAI GPT-2's 29.6% is the published-style score (nanoGPT scoring).</div></div>
-    <div class="card score"><div class="t">Size</div><div class="big">${VIS().filter((r) => r.config?.params).map((r) => `${nameOf(r.name)} ${(r.config.params / 1e6).toFixed(0)}M`).join(" · ")}</div>
-      ${VIS().filter((r) => r.config?.params).map((r) => row(r.name, r.config.params, r.config.params / 130e6, (v) => (v / 1e6).toFixed(0) + "M")).join("")}
-      <div class="note">Memtrix's memory of the text is a fixed ${RUNS.find((r) => r.name === "memtrix")?.config?.memory_numbers ? UI.fmtTokens(RUNS.find((r) => r.name === "memtrix").config.memory_numbers) : "590k"} numbers, however long the text. A GPT's grows with every word (18.9M numbers at 1,024 words).</div></div>`;
+    <div class="card score"><div class="t">Size</div><div class="big">${sized.map((r) => `${nameOf(r.name)} ${(r.config.params / 1e6).toFixed(0)}M` + (r.config.params_active && r.config.params_active < r.config.params ? ` <small>(${(r.config.params_active / 1e6).toFixed(0)}M at work per word)</small>` : "")).join(" · ")}</div>
+      ${sized.map((r) => row(r.name, r.config.params, r.config.params / pmax, (v) => (v / 1e6).toFixed(0) + "M")).join("")}
+      <div class="note">${sizeNote}</div></div>`;
 }
 
 // ---- forecasts: fit a learning curve (y = a + b * tokens^-c) to the points so far and extend it to the planned end
@@ -700,6 +710,11 @@ function drawLearning() {
 }
 
 function drawMemoryUse() {
+  // the explanations follow the models on the page: Memtrix notes only when one with memory layers is shown
+  const vis = VIS().filter((r) => modelOf(r.name).role === "ours" || r.name === "gpt");
+  const mx = vis.some(hasMemtrix), at = vis.some((r) => !hasMemtrix(r)), td = vis.some((r) => kindOf(r) === "tide");
+  for (const [cls, on] of [["mx-only", mx], ["attn-only", at], ["tide-only", td]])
+    document.querySelectorAll("." + cls).forEach((el) => { el.style.display = on ? "" : "none"; });
   const ctxS = [], posS = [], recS = [], leg = [];
   for (const r of VIS()) {
     const m = lastOf(r.name, "memory"); if (!m) continue;
