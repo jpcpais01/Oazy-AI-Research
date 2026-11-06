@@ -141,7 +141,7 @@
         <p>At every word, a model gives each possible next word a chance. <b>Loss</b> measures how surprised it was by the word that really came next. Lower means it saw it coming.</p>
         <p>A loss of <b>L</b> is as hard as picking the right word out of about <b>e<sup>L</sup></b> equally likely ones: 3.3 is like choosing among 27 words.</p>
         <p>The <b>lines</b> are the loss on the training batches as they go by. Hover to also see the loss on <b>held-out</b> text the models never train on (the "finish line" scores above use those). The dashed line is OpenAI's own GPT-2 (124M) measured on the same text, if you ran <span class="kbd">oazy.compare</span>.</p>
-        <p>The faint <b>dashed</b> line is a forecast: while a model trains, a learning curve (loss = a + b × words<sup>−c</sup>, the shape loss curves usually follow) is fitted to its points so far and drawn out to the planned number of words, with the predicted end value at its tip. The forecast is also replayed from earlier moments of the run: the small dots stacked at the end are those earlier forecasts (older ones fainter), and the shaded cone is how much the forecast has swung lately, so a wide cone means "don't trust the number yet". Hover past the end of a line to read how it has moved. It is a rough guess, and appears once there are enough points. The run card's "heading for" is the same forecast for the held-out loss.</p>
+        <p>The faint <b>dashed</b> line is a forecast: while a model trains, a learning curve (loss = a + b × words<sup>−c</sup>, the shape loss curves usually follow) is fitted to its most recent points (the newest 30% of them, so the early rush does not pull it) and drawn out to the planned number of words, with the predicted end value at its tip. The forecast is also replayed from earlier moments of the run: the small dots stacked at the end are those earlier forecasts (older ones fainter), and the shaded cone is how much the forecast has swung lately, so a wide cone means "don't trust the number yet". Hover past the end of a line to read how it has moved. It is a rough guess, and appears once there are enough points. The run card's "heading for" is the same forecast for the held-out loss.</p>
       </div></details>
       <div class="legend" id="lossLegend" style="margin-bottom:10px"></div>
       <div class="chart"><canvas id="loss" style="height:300px"></canvas><div class="tip" id="lossTip"></div></div>
@@ -589,7 +589,7 @@ function scoreboard() {
 }
 
 // ---- forecasts: fit a learning curve (y = a + b * tokens^-c) to the points so far and extend it to the planned end
-// Only for runs still training, once there are enough points. The early rush is left out of the fit, and the
+// Only for runs still training, once there are enough points. Only the newest 30% of the points are fitted, and the
 // noisy training loss is first smoothed into ~40 bins (medians). The curve is anchored to where the line is now.
 function forecast(r, pts, opt = {}) {
   const end = r.config?.total_tokens;
@@ -627,9 +627,9 @@ function computeForecasts() {
     const ev = m.filter((x) => x.kind === "eval").map((x) => [x.tokens, x.val_loss]);
     const hs = m.filter((x) => hsOK(x) && !x.full).map((x) => [x.tokens, x.acc_norm]);
     FORE[r.name] = {
-      loss: forecast(r, tr, { minPts: 10, skip: 0.1, lo: 0 }),
-      val: forecast(r, ev, { minPts: 5, skip: 0.15, lo: 0 }),
-      hs: forecast(r, hs, { minPts: 5, skip: 0.15, dir: 1, lo: 0.25, hi: 1 }),
+      loss: forecast(r, tr, { minPts: 10, recent: 0.3, lo: 0 }),
+      val: forecast(r, ev, { minPts: 5, recent: 0.3, lo: 0 }),
+      hs: forecast(r, hs, { minPts: 5, recent: 0.3, dir: 1, lo: 0.25, hi: 1 }),
     };
   }
 }
