@@ -85,13 +85,17 @@ class Mentor:
 
     @torch.no_grad()
     def _mask_check(self, device):
-        """Does this mentor honour a per-document mask? Two short texts packed in one window must read exactly
-        as they do apart. Tried as a bool mask, then as 0/-inf; if neither works the mentor reads unmasked."""
+        """Does this mentor honour a per-document mask? A short text packed after another must read as it does
+        apart. Tried as a bool mask, then as 0/-inf. A big model in bf16 never reads the same text twice to
+        the last digit (depth and rounding; SmolLM2-360M differs by a few % on its own), so the bar is relative:
+        the masked reading must be far closer to the text read apart than the unmasked reading is. The first
+        text is one word twelve times, so that bleeding into the second text is large and unmistakable."""
         if self._mask_form is not None:
             return self._mask_form
         g = torch.Generator(device="cpu").manual_seed(0)
         V = int(self.head_weight().shape[0])
-        a, b = (torch.randint(1, min(V, 1000), (1, 12), generator=g).to(device) for _ in range(2))
+        b = torch.randint(1, min(V, 1000), (1, 12), generator=g).to(device)
+        a = torch.full_like(b, int(b[0, 0]))
         apart = self.net.hidden(b, None).float()
         both = torch.cat([a, b], 1)
         T = both.shape[1]
@@ -99,19 +103,27 @@ class Mentor:
         m = (doc[None, None, :, None] == doc[None, None, None, :]) & torch.ones(T, T, dtype=torch.bool, device=device).tril()
         fdt = torch.bfloat16 if device.type == "cuda" else apart.dtype
         forms = {"bool": m, "float": torch.zeros(m.shape, dtype=fdt, device=device).masked_fill(~m, torch.finfo(fdt).min)}
+
+        def rel(h):
+            return (h.float()[:, 12:] - apart).abs().max().item() / (apart.abs().max().item() + 1e-6)
+
+        bleed = rel(self.net.hidden(both, None))
+        tried = {}
         for name, mk in forms.items():
             try:
-                h = self.net.hidden(both, mk).float()[:, 12:]
-            except Exception:
+                err = rel(self.net.hidden(both, mk))
+            except Exception as e:
+                tried[name] = f"refused ({type(e).__name__})"
                 continue
-            err = (h - apart).abs().max().item() / (apart.abs().max().item() + 1e-6)
-            if err < 2e-2:
+            tried[name] = f"{err:.4f}"
+            if err < 2e-2 or err < 0.25 * bleed:
                 self._mask_form = name
-                print(f"[mentor] {self.name} reads each document on its own (mask form: {name}, rel. error {err:.4f})", flush=True)
+                print(f"[mentor] {self.name} reads each document on its own (mask form: {name}, rel. error {err:.4f}; "
+                      f"unmasked it would bleed {bleed:.4f})", flush=True)
                 return name
         self._mask_form = "none"
         print(f"[mentor] {self.name} does not take a per-document mask here: it reads whole windows "
-              f"(a little bleed from the previous document into its first guesses)", flush=True)
+              f"(a little bleed from the previous document into its first guesses; tried {tried}, unmasked bleed {bleed:.4f})", flush=True)
         return "none"
 
     @torch.no_grad()
