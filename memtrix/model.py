@@ -93,8 +93,9 @@ class Memory(nn.Module):
             self.conv_w[:, 0, -1] = 1.0
             self.conv_w[:, 0, :-1].normal_(0, 0.02)
 
-    def project(self, x, conv_state=None):
-        """Word vectors -> question, key, value, trust, log-fade. conv_state: the previous few words' channels."""
+    def project(self, x, conv_state=None, resets=None):
+        """Word vectors -> question, key, value, trust, log-fade. conv_state: the previous few words' channels.
+        resets (B, T) bool: the "hint of the last few words" does not reach back into the previous document."""
         B, T, _ = x.shape
         H, K, V = self.H, self.K, self.V
         z = self.qkv(x).transpose(1, 2)                                 # (B, ch, T)
@@ -103,7 +104,17 @@ class Memory(nn.Module):
             conv_state = z.new_zeros(B, z.shape[1], w - 1)
         zc = torch.cat([conv_state.to(z.dtype), z], dim=2)
         new_conv = zc[:, :, zc.shape[2] - (w - 1):] if w > 1 else zc[:, :, :0]
-        z = F.silu(F.conv1d(zc, self.conv_w.to(z.dtype), groups=z.shape[1])).transpose(1, 2)
+        cw = self.conv_w.to(z.dtype)
+        if resets is None or w == 1:
+            z = F.conv1d(zc, cw, groups=z.shape[1])
+        else:                                   # the same convolution, written as shifted copies, each one masked
+            seg = resets.cumsum(1)                                      # (B, T) which document each word is in
+            z = zc[:, :, w - 1:] * cw[:, 0, w - 1][None, :, None]
+            for s in range(1, w):
+                same = (seg[:, s:] == seg[:, :-s]).to(z.dtype)          # word t and word t-s in the same document
+                same = F.pad(same, (s, 0))                              # (B, T): the first s words look into conv_state
+                z = z + zc[:, :, w - 1 - s:zc.shape[2] - s] * cw[:, 0, w - 1 - s][None, :, None] * same[:, None, :]
+        z = F.silu(z).transpose(1, 2)
         q, k, v = z.split([H * K, H * K, H * V], dim=-1)
         q = F.normalize(q.view(B, T, H, K).float(), dim=-1).to(z.dtype)
         k = F.normalize(k.view(B, T, H, K).float(), dim=-1).to(z.dtype)
@@ -117,12 +128,13 @@ class Memory(nn.Module):
         o = self.onorm(o) * F.silu(self.gate(x).view(B, T, self.H, self.V))
         return self.out(o.reshape(B, T, -1))
 
-    def forward(self, x, state=None):
-        """state: None (blank memory) or (conv_state, S). Returns (output, new state)."""
+    def forward(self, x, state=None, resets=None):
+        """state: None (blank memory) or (conv_state, S). resets: (B, T) bool, True where a new document
+        starts inside the window (its memory starts blank). Returns (output, new state)."""
         conv_state, S = state if state is not None else (None, None)
-        q, k, v, trust, log_fade, new_conv = self.project(x, conv_state)
+        q, k, v, trust, log_fade, new_conv = self.project(x, conv_state, resets)
         if state is None:
-            o, S = memory.delta_rule(q, k, v, log_fade, trust.to(q.dtype))
+            o, S = memory.delta_rule(q, k, v, log_fade, trust.to(q.dtype), resets=resets)
         elif x.shape[1] == 1:
             o, S = memory.recurrent(q, k, v, log_fade, trust, S)
         else:

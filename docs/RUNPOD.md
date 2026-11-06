@@ -26,7 +26,7 @@ run every chat with `--port 8002`; it then opens on the pod's 8001 link.
 
 ```bash
 cd /workspace/oazy && git pull
-bash runpod/train.sh <model> [options]    # start or resume a model: bee, bee2, memtrix, tide, ember, fern, fern2, fern3, gpt
+bash runpod/train.sh <model> [options]    # start or resume a model: bee, bee2, bee3, memtrix, tide, ember, fern, fern2, fern3, gpt
 python3 -m oazy.train --bench --model <model> --hours 2   # how many tokens fit in 2 hours
 ```
 
@@ -84,6 +84,25 @@ python3 -m oazy.tagus --plan --run-tokens 2.5e9          # what a 2.5B run reads
 nice -n 10 python3 -m oazy.tagus --run-tokens 2.5e9      # download + cut Cosmopedia, Wikipedia, FineMath, code
 tmux kill-window -t oazy:bee2 2>/dev/null; bash runpod/train.sh bee2 --preset big --tokens 2.5e9 --name bee2-tagus
 ```
+
+### Bee3 (203M, Bee_v2_0.2B's body on Tagus with the new recipe)
+
+Needs Tagus (`python3 -m oazy.tagus --run-tokens 2.5e9`, see above) and the extra tests once. Recipe and
+reasons in `bee3/README.md`.
+
+```bash
+cd /workspace/oazy && git pull
+python3 -m oazy.evals --prepare                          # once: ARC-Easy, PIQA, LAMBADA (tiny downloads)
+python3 -m bee3.tests --device cuda                      # self-tests: the kernels, the document rule, the loss in slices
+python3 -m oazy.profile --model bee3 --preset big        # where a step's time goes, tokens/s, MFU (paste it in the thread)
+python3 -m oazy.profile --model bee3 --preset big --mentor none    # the student alone
+bash runpod/train.sh bee3 --preset big --tokens 2.5e9    # the run; resumes if stopped
+python3 -m oazy.sft --run bee3                           # afterwards: the chat fine-tune -> runs/bee3-chat
+python3 -m bee3.chat --run bee3-chat --port 8002         # chat (the pre-trained one: --run bee3)
+```
+
+To turn the learning rate down on resume: `bash runpod/train.sh bee3 --preset big --tokens 2.5e9 --lr 1.8e-3 --muon-lr 0.03`.
+`--loss plain` is the old way of computing the loss, for comparison; `--mentor-floor 0 --mentor-off 0` is Bee2's mentor schedule.
 
 ## Experiments
 

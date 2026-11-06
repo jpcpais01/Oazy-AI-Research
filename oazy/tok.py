@@ -94,6 +94,17 @@ def get(name: str = "gpt2"):
     raise ValueError(f"unknown tokenizer {name!r}; known: {NAMES}")
 
 
+EOT_ID = {"gpt2": 50256, "smollm2": 0}          # <|endoftext|>, without loading the tokenizer
+
+
+def eot_id(name: str) -> int:
+    """The id of <|endoftext|>, the piece that ends every document in the data files."""
+    try:
+        return EOT_ID[name]
+    except KeyError:
+        raise ValueError(f"unknown tokenizer {name!r}; known: {NAMES}")
+
+
 def name_of(model) -> str:
     """Which tokenizer a model reads (from its config; every model before Bee_v2_0.2B reads GPT-2's)."""
     return getattr(getattr(model, "cfg", None), "tokenizer", "gpt2")
