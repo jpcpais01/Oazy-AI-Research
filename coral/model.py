@@ -69,6 +69,9 @@ class CoralConfig(FrogConfig):
     capacity: float = 1.25       # training: an expert takes at most this x its fair share of a pass (0 = no limit, slow)
     balance_rate: float = 1e-3   # how fast the balancing biases move per step (DeepSeek-V3's gamma)
     aux_weight: float = 1e-4     # the small balance loss
+    attn_docs: int = 0           # 1 = attention also keeps to each word's own document (flex attention: on a B200 it took
+                                 # ~40% of a pass, 81 TFLOP/s); 0 = plain causal attention on the fast fused kernel (the
+                                 # documents in a window can see earlier ones; the mentor still reads each on its own)
     grow: str = CORAL_GROW
 
     def __post_init__(self):
@@ -245,6 +248,12 @@ class Coral(Frog):
         mask = (doc[:, None, :, None] == doc[:, None, None, :]) & torch.ones(T, T, dtype=torch.bool, device=idx.device).tril()
         return resets, mask, None
 
+    def _attn_mask(self, idx, resets, mask):
+        """What the attention layers get: nothing (plain causal, the fused kernel) unless attn_docs, or memory layers."""
+        if not self.cfg.attn_docs and "M" not in self.cfg.pattern:
+            return None
+        return self.attn_mask(idx, resets, mask) if self.training else mask
+
     def _train_trunk(self, idx, resets=None, mask=None, segs=None):
         """Training: (token vectors after the final norm, the layers' balance loss summed)."""
         x = self.embed(idx)
@@ -257,10 +266,11 @@ class Coral(Frog):
     def losses(self, idx, targets, mentor=None, kd_weight=0.0):
         """Bee's lesson (next word + the mentor's, in slices), plus the experts' small balance loss in training."""
         resets, mask, segs = self.doc_info(idx)
+        am = self._attn_mask(idx, resets, mask)
         if self.training:
-            h, aux = (self._compiled or self._train_trunk)(idx, resets, self.attn_mask(idx, resets, mask), segs)
+            h, aux = (self._compiled or self._train_trunk)(idx, resets, am, segs)
         else:                                       # evaluation: nothing dropped, not compiled
-            h, aux = self._trunk(idx, resets, mask, segs), None
+            h, aux = self._trunk(idx, resets, am, segs), None
         th = tW = None
         if mentor is not None and kd_weight > 0:
             th, tW = mentor.hidden(idx, mask)

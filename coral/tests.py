@@ -40,9 +40,13 @@ def main():
     check("about 160M at work per word (2 of 32 experts + the shared MLP + attention + the word table)",
           190e6 < act < 225e6 and act - big.embed.weight.numel() < 175e6,
           f"{act / 1e6:.0f}M at work, {(act - big.embed.weight.numel()) / 1e6:.0f}M without the word table")
-    check("all attention, with RoPE (nothing else tells it the order); 2,048 windows, no bleed, SmolLM2",
+    check("all attention, with RoPE (nothing else tells it the order); 2,048 windows, SmolLM2",
           big.cfg.kinds() == ["A"] * 20 and big.cfg.rope == 1 and big.ctx_at(0) == 2048 and big.cfg.doc_mask == 1
           and big.cfg.tokenizer == "smollm2" and tok.eot_id("smollm2") == 0)
+    _x = torch.tensor([[5, 6, 0, 7, 8, 9]])
+    _r, _m, _ = big.doc_info(_x)
+    check("attention runs plain causal on the fused kernel (attn_docs=0); the mentor still reads each document alone",
+          big.cfg.attn_docs == 0 and big._attn_mask(_x, _r, _m) is None and _m is not None and not bool(_m[0, 0, 3, 1]))
     check("it starts 8 layers deep and grows to 12 at 10%, 20 at 25%", big.depth == 8 and big.depth_at(0.099) == 8
           and big.depth_at(0.1) == 12 and big.depth_at(0.25) == 20)
     from oazy import fp8

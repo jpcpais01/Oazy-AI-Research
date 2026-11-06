@@ -43,9 +43,10 @@ expert). With even work this is around 1% of word-expert pairs. Evaluation and c
 ## Everything we learned, kept
 
 - Frog's speed work: **FP8** for the big matrix products (attention and the shared MLP; the experts stay bf16),
-  **flex attention** for the document rule, **growing depth** (8 layers for the first 10%, 12 until 25%, then 20;
+  **growing depth** (8 layers for the first 10%, 12 until 25%, then 20;
   each growth copies the top layers, experts and balancing biases included), the **loss in slices**.
-- Bee3's recipe: no bleed between documents, 2,048-word windows, Muon with weight decay 0.1, a batch ramp, the WSD
+- Bee3's recipe, except that attention is plain causal (the documents packed in a window can see the earlier ones;
+  keeping them apart with flex attention cost ~40% of a pass on a B200; `--set attn_docs=1` brings it back), 2,048-word windows, Muon with weight decay 0.1, a batch ramp, the WSD
   schedule with the square-root cool-down, the Tagus mix with its chat-heavy cool-down.
 - Frog's **mentor on a share of the sequences**, here only early, where it helps most: 1 pass in 4 at the start,
   fading to 0 by 30%, so it reads about 4% of the run (about 3-4% of the speed). `--mentor none` turns it off.
