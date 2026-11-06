@@ -5,6 +5,7 @@
     python3 -m oazy.profile --model bee3 --preset big --loss plain    # the old way of computing the loss, to compare
     python3 -m oazy.profile --model bee3 --preset big --compile 0
     python3 -m oazy.profile --model frog --preset big --micro 32      # Frog: also prints a whole run's speed with its mentor share
+    python3 -m oazy.profile --model coral --preset big --micro 32     # Coral: the experts timed too; MFU counts the parameters at work
 
 It prints, per micro-batch (one forward + backward pass; a step is several of these):
   - the whole pass, and the pass without the mentor;
@@ -153,7 +154,8 @@ def main():
         resets, mask, segs = model.doc_info(x)
         f = model._compiled or model._trunk
         with amp:
-            h = f(x, resets, mask, segs).detach().requires_grad_()
+            h = f(x, resets, model.attn_mask(x, resets, mask) if hasattr(model, "attn_mask") else mask, segs)
+            h = (h[0] if isinstance(h, tuple) else h).detach().requires_grad_()     # Coral's training trunk: (h, balance loss)
 
         def head():
             from oazy.lmloss import head_loss, plain_loss
@@ -199,7 +201,11 @@ def main():
                 ms[f"  after it (gated norm, out) x{len(bs)}"] = timed(lambda: fwd_bwd(ff), a.steps, device) * len(bs)
         f = piece(lambda: model.blocks[0].mlp(model.blocks[0].n2(d)))
         one = timed(lambda: fwd_bwd(f), a.steps, device)
-        ms[f"MLPs x{len(model.blocks)}"] = one * len(model.blocks)
+        ms[f"{'shared MLPs' if hasattr(model.blocks[0], 'moe') else 'MLPs'} x{len(model.blocks)}"] = one * len(model.blocks)
+        if hasattr(model.blocks[0], "moe"):           # Coral: the router and the experts (fixed capacity, as in training)
+            f = piece(lambda: model.blocks[0].moe(model.blocks[0].n2(d)))
+            one = timed(lambda: fwd_bwd(f), a.steps, device)
+            ms[f"router + experts x{len(model.blocks)}"] = one * len(model.blocks)
         model.zero_grad(set_to_none=True)
     # --- the optimizer step (once per several passes in training)
     pass_(False)
@@ -214,7 +220,8 @@ def main():
     tps = ntok / (whole / 1000)
     tps_alone = ntok / (ms["pass, student alone"] / 1000)
     n_attn = sum(1 for k in getattr(cfg, "kinds", lambda: [])() if k == "A")
-    flops_tok = 6 * model.num_params() + 12 * n_attn * cfg.d_model * Tw       # weights, plus attention's T x d work
+    n_work = model.active_params() if hasattr(model, "active_params") else model.num_params()   # Coral: only the experts at work
+    flops_tok = 6 * n_work + 12 * n_attn * cfg.d_model * Tw       # weights, plus attention's T x d work
     pk = peak_tflops(gpu)
     res.update({"ms": ms, "tokens_per_s": tps, "tokens_per_s_student_alone": tps_alone, "peak_mem_gb": peak_mem,
                 "flops_per_token": flops_tok, "mfu": (tps * flops_tok / 1e12 / pk) if pk else None})
@@ -226,7 +233,8 @@ def main():
     batch = p.get("batch_" + a.model) or ntok
     if mentor is not None and rec.get("mentor_floor") is not None:
         from ember.mentor import fade
-        ws = [fade((i + 0.5) / 1000, 0.6, 0.5, None, rec["mentor_floor"], rec.get("mentor_off", 0.0)) for i in range(1000)]
+        ws = [fade((i + 0.5) / 1000, rec.get("mentor_weight", 0.6), rec.get("mentor_until", 0.5), None, rec["mentor_floor"],
+                   rec.get("mentor_off", 0.0)) for i in range(1000)]
         # mentor on a share of the passes (Frog): it reads that share; mixed into every word (Bee3): every pass while w > 0
         read = sum(ws) / len(ws) if rec.get("mentor_share") else sum(w > 0 for w in ws) / len(ws)
         run_ms = ms["pass, student alone"] + read * (ms["pass with mentor"] - ms["pass, student alone"]) \

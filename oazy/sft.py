@@ -192,6 +192,8 @@ def main():
         gn = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         opt.step()
         opt.zero_grad(set_to_none=True)
+        if hasattr(model, "after_step"):            # Coral: keep the experts' work even
+            model.after_step()
         if (step + 1) % 10 == 0 or step + 1 == steps:
             el = time.time() - t0
             say(f"step {step + 1:5d}/{steps} | loss {tot:.4f} | lr {cur:.2e} | gnorm {float(gn):.2f} | "
