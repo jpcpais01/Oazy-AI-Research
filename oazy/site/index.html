@@ -34,6 +34,7 @@
   --bee: #ffb347;         /* model accents, as in the lab dashboard */
   --fern: #a6e86a;
   --coral: #ff8a78;
+  --frog: #4cf2c4;
   --display: "Outfit", "Avenir Next", "Segoe UI", system-ui, sans-serif;
   --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -139,10 +140,23 @@ section.block { padding-block: clamp(48px, 6vw, 85px); scroll-margin-top: 70px; 
 }
 .model:hover { border-color: color-mix(in srgb, var(--acc) 45%, transparent); transform: translateY(-3px); box-shadow: 0 30px 80px -40px color-mix(in srgb, var(--acc) 60%, transparent); }
 .model.fern { --acc: var(--fern); }
-/* Coral: the next model, not trained yet. A wide card under the two finished ones */
-.model.coral { --acc: var(--coral); grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 18px 40px; align-items: start; }
-.model.coral > .demo { grid-column: 2; grid-row: 1 / span 4; align-self: stretch; }
-@media (max-width: 960px) { .model.coral { grid-template-columns: 1fr; } .model.coral > .demo { grid-column: auto; grid-row: auto; } }
+/* Frog and Coral: the models still to come. Wide cards under the two that have run */
+.model.coral { --acc: var(--coral); }
+.model.frog { --acc: var(--frog); }
+.model.wide { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 18px 40px; align-items: start; }
+.model.wide > .demo { grid-column: 2; grid-row: 1 / span 4; align-self: stretch; }
+@media (max-width: 960px) { .model.wide { grid-template-columns: 1fr; } .model.wide > .demo { grid-column: auto; grid-row: auto; } }
+.chip.live { color: var(--acc); border-color: color-mix(in srgb, var(--acc) 40%, transparent); background: transparent; }
+.chip.live::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 7px; border-radius: 50%; background: var(--acc); vertical-align: 1px; animation: blink 1.6s ease-in-out infinite; }
+.model .note { font-size: 13.5px; color: var(--ink-2); padding-left: 12px; border-left: 2px dashed rgba(255, 215, 138, 0.45); }
+.frog .demo { grid-template-rows: auto 1fr; }
+.seqs { display: grid; gap: 7px; align-content: center; }
+.seqs > div { display: grid; grid-template-columns: 74px 1fr 92px; gap: 12px; align-items: center; font: 400 11px/1 var(--mono); letter-spacing: .06em; color: var(--faint); transition: color .5s; }
+.seqs > div i { height: 10px; border-radius: 3px; border: 1px solid var(--line); background: rgba(255, 255, 255, .03); transition: background .5s, border-color .5s, box-shadow .5s; }
+.seqs > div b { font-weight: 400; text-align: right; }
+.seqs > div.on { color: var(--ink); }
+.seqs > div.on i { background: color-mix(in srgb, var(--acc) 45%, transparent); border-color: color-mix(in srgb, var(--acc) 80%, transparent); box-shadow: 0 0 12px -2px color-mix(in srgb, var(--acc) 70%, transparent); }
+.seqs > div.on b { color: var(--acc); }
 .chip.soon { color: var(--ink-2); border-color: var(--line); background: transparent; }
 .experts { display: grid; grid-template-columns: repeat(16, minmax(0, 1fr)); gap: 5px; }
 .experts i { aspect-ratio: 1; border-radius: 3px; border: 1px solid var(--line); transition: background .5s, border-color .5s, box-shadow .5s; }
@@ -203,6 +217,7 @@ section.block { padding-block: clamp(48px, 6vw, 85px); scroll-margin-top: 70px; 
 .track .fill { position: absolute; inset: 0 auto 0 0; border-radius: 6px; transform-origin: left; }
 .row .pct { font: 500 15px/1 var(--mono); text-align: right; font-variant-numeric: tabular-nums; }
 .fill.bee { background: linear-gradient(90deg, color-mix(in srgb, var(--bee) 30%, transparent), var(--bee)); }
+.fill.bee.old { opacity: .55; }
 .fill.fern { background: linear-gradient(90deg, color-mix(in srgb, var(--fern) 30%, transparent), var(--fern)); }
 .fill.ref { background: linear-gradient(90deg, rgba(236,235,243,.08), rgba(236,235,243,.45)); }
 .fill.rand { background: rgba(236,235,243,.12); }
@@ -508,7 +523,7 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
           <span class="label">// models</span>
           <h2 id="models-h">Two ways to <em>write a sentence</em></h2>
         </div>
-        <p>Bee writes one token after another. Fern drafts a whole passage and lets it come into focus. Coral, next, is much larger but uses only a small part of itself for each word.</p>
+        <p>Bee writes one token after another. Fern drafts a whole passage and lets it come into focus. Next come Frog, a Bee twice the size, and Coral, much larger, which uses only a small part of itself for each word.</p>
       </div>
 
       <div class="models">
@@ -516,15 +531,17 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
           <div class="chips">
             <span class="chip acc">Next-token</span>
             <span class="chip real">Measured</span>
+            <span class="chip ph">Partial run</span>
           </div>
-          <h3 id="bee-h">Bee<span>_v2_0.2B</span></h3>
-          <p class="what">A 200M-parameter hybrid of fast-weight memory and gated attention, distilled from SmolLM2-360M. Trained in 5.9 hours on one B200.</p>
+          <h3 id="bee-h">Bee<span>3_0.2B</span></h3>
+          <p class="what">A 203M-parameter hybrid of Memtrix fast-weight memory layers and gated attention, with SmolLM2's tokenizer and SmolLM2-360M as its teacher. Bee_v2's body with a new recipe: trained only on Tagus, no bleed between documents, and the teacher kept for the whole run.</p>
           <div class="stats">
             <div class="stat"><span class="v">203<small>M</small></span><span class="k">Parameters</span></div>
-            <div class="stat"><span class="v">2.5<small>B</small></span><span class="k">Tokens seen</span></div>
-            <div class="stat"><span class="v">3.005</span><span class="k">Held-out loss</span></div>
-            <div class="stat"><span class="v">32.9<small>%</small></span><span class="k">HellaSwag</span></div>
+            <div class="stat"><span class="v">1.1<small>B</small></span><span class="k">Tokens seen</span></div>
+            <div class="stat"><span class="v">3.199</span><span class="k">Held-out loss</span></div>
+            <div class="stat"><span class="v">29.6<small>%</small></span><span class="k">Quick HellaSwag</span></div>
           </div>
+          <p class="note">Unfinished. The run was cut off at 45% (1,135M of 2,500M tokens) when the pod stopped, before its learning-rate cool-down. These are its last numbers, and it can resume from its checkpoint.</p>
           <div class="demo" aria-label="Animation: Bee writes one token at a time">
             <div class="demo-top">
               <span class="label">How it writes <b>· one token per step</b></span>
@@ -556,18 +573,40 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
           </div>
         </article>
 
-        <article class="model coral rv" aria-labelledby="coral-h">
+        <article class="model frog wide rv" aria-labelledby="frog-h">
           <div class="chips">
             <span class="chip acc">Next-token</span>
             <span class="chip soon">Not trained yet</span>
           </div>
+          <h3 id="frog-h">Frog<span>_0.4B</span></h3>
+          <p class="what">Bee3 at twice the size: 21 Memtrix memory layers and 7 attention layers, 1,024 wide. Its SmolLM2-360M teacher works on a share of the sequences instead of a share of every word, so it only reads what it teaches. It trains after our next architecture experiment. Results will appear here once it has run.</p>
+          <div class="stats">
+            <div class="stat"><span class="v">406<small>M</small></span><span class="k">Parameters</span></div>
+            <div class="stat"><span class="v">28</span><span class="k">Layers</span></div>
+            <div class="stat"><span class="v">4<small>B</small></span><span class="k">Tokens planned</span></div>
+            <div class="stat"><span class="v">1 <small>in 4</small></span><span class="k">Sequences taught, at most</span></div>
+          </div>
+          <div class="demo" aria-label="Illustration: the teacher works on a few sequences of each batch, the rest learn from the text alone">
+            <div class="demo-top">
+              <span class="label">How it learns <b>· a teacher for some sequences</b></span>
+              <span class="label">illustration</span>
+            </div>
+            <div class="seqs" id="frog-seqs"></div>
+          </div>
+        </article>
+
+        <article class="model coral wide rv" aria-labelledby="coral-h">
+          <div class="chips">
+            <span class="chip acc">Next-token</span>
+            <span class="chip live">Training now</span>
+          </div>
           <h3 id="coral-h">Coral<span>_1B</span></h3>
-          <p class="what">Our first mixture-of-experts model. It holds 1B parameters, but each word only passes through a few of its experts, about 161M parameters. The aim is to train it at a million tokens per second on one B200, over 20B tokens. Results will appear here once it has run.</p>
+          <p class="what">Our first mixture-of-experts model. It holds 1B parameters, but each word only passes through a few of its experts, about 161M parameters. It is training now on one B200, over 10B tokens of Tagus. We aimed for a million tokens per second; it runs at about 250k. Results will appear here once it has run.</p>
           <div class="stats">
             <div class="stat"><span class="v">1<small>B</small></span><span class="k">Parameters</span></div>
             <div class="stat"><span class="v">161<small>M</small></span><span class="k">Active per word</span></div>
-            <div class="stat"><span class="v">20<small>B</small></span><span class="k">Tokens planned</span></div>
-            <div class="stat"><span class="v">1<small>M/s</small></span><span class="k">Target speed</span></div>
+            <div class="stat"><span class="v">10<small>B</small></span><span class="k">Tokens planned</span></div>
+            <div class="stat"><span class="v">250<small>k/s</small></span><span class="k">Training speed</span></div>
           </div>
           <div class="demo" aria-label="Illustration: each word is sent to a few of many experts">
             <div class="demo-top">
@@ -590,14 +629,14 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
           <span class="label">// results</span>
           <h2 id="results-h">How they <em>measure up</em></h2>
         </div>
-        <p>HellaSwag asks a model to pick the sensible ending to a scene out of four. Guessing gets 25%. Fern is still training, so its numbers are placeholders.</p>
+        <p>HellaSwag asks a model to pick the sensible ending to a scene out of four. Guessing gets 25%. Bee3's run stopped at 45%, so its numbers are early ones. Fern is still training, so its numbers are placeholders.</p>
       </div>
       <div class="results">
         <div class="panel glass rv">
           <span class="label">HellaSwag accuracy · 10,042 questions</span>
           <h3>Picking the right ending</h3>
-          <p class="cap">Higher is better. Striped bars are placeholders.</p>
-          <div class="chart" id="chart" role="img" aria-label="HellaSwag accuracy: Bee_v2_0.2B 32.9%, Fern_0.2B 31.2% (placeholder), GPT-2 small 29.6%, random guessing 25%."></div>
+          <p class="cap">Higher is better. Striped bars are placeholders. Bee3's is a quick check on 1,000 of the questions.</p>
+          <div class="chart" id="chart" role="img" aria-label="HellaSwag accuracy: Bee3_0.2B 29.6% (partial run, 1,000 questions), Bee_v2_0.2B 32.9%, Fern_0.2B 31.2% (placeholder), GPT-2 small 29.6%, random guessing 25%."></div>
         </div>
         <div class="panel glass rv">
           <span class="label">Side by side</span>
@@ -607,7 +646,8 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
             <table>
               <thead><tr><th>Model</th><th>Writes</th><th class="num">Params</th><th class="num">Loss</th><th class="num">Recall</th></tr></thead>
               <tbody>
-                <tr><td><span class="dot" style="background:var(--bee)"></span>Bee_v2_0.2B</td><td>next token</td><td class="num">203M</td><td class="num">3.005</td><td class="num">93%</td></tr>
+                <tr><td><span class="dot" style="background:var(--bee)"></span>Bee3_0.2B <span class="chip ph" style="padding:3px 6px;font-size:9.5px">45% run</span></td><td>next token</td><td class="num">203M</td><td class="num">3.199</td><td class="num">–</td></tr>
+                <tr><td><span class="dot" style="background:var(--bee);opacity:.55"></span>Bee_v2_0.2B</td><td>next token</td><td class="num">203M</td><td class="num">3.005</td><td class="num">93%</td></tr>
                 <tr><td><span class="dot" style="background:var(--fern)"></span>Fern_0.2B <span class="chip ph" style="padding:3px 6px;font-size:9.5px">placeholder</span></td><td>unfolds</td><td class="num">198M</td><td class="num">3.05</td><td class="num">n/a</td></tr>
                 <tr><td><span class="dot" style="background:var(--ink-2)"></span>GPT-2 small</td><td>next token</td><td class="num">124M</td><td class="num">3.313</td><td class="num">96%</td></tr>
               </tbody>
@@ -617,7 +657,7 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
         </div>
       </div>
 
-      <p class="foot-note rv">Loss is measured on the same held-out text, per GPT-2 token. Each number is a single run, and Bee learned from a larger teacher (SmolLM2-360M), which GPT-2 small did not.</p>
+      <p class="foot-note rv">Loss is measured on the same held-out text, per GPT-2 token. Each number is a single run, and both Bees learned from a larger teacher (SmolLM2-360M), which GPT-2 small did not. Bee3 stopped at 1.1B tokens, before its cool-down; Bee_v2 finished all 2.5B, so the two are not yet a fair match. Bee3's recall score is not in yet.</p>
     </div>
   </section>
 
@@ -629,7 +669,7 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
           <span class="label">// data</span>
           <h2 id="data-h"><em>Tagus</em>, our training text</h2>
         </div>
-        <p>About 2.5B tokens of open text, read once each, in two phases. Documents never bleed into each other, and every source keeps a held-out slice. Bee_v3 will be the first model trained on it.</p>
+        <p>About 2.5B tokens of open text, read once each, in two phases. Documents never bleed into each other, and every source keeps a held-out slice. Bee3 was the first model trained on it, and Coral reads a larger build of it.</p>
       </div>
 
       <div class="tagus rv">
@@ -660,6 +700,10 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
         <p>Including the ones that did not work. Each taught the next.</p>
       </div>
       <div class="log">
+        <div class="day rv"><time class="label" datetime="2026-11-06">Nov 6</time></div>
+        <ol class="ideas">
+          <li class="idea rv"><span class="no">05</span><h3>Bee3</h3><p>Bee_v2 on Tagus, with a new recipe. Cut off at 45% when the pod stopped: loss 3.199 and 29.6% on a quick HellaSwag check at 1.1B tokens.</p><span class="kind nt">next-token</span></li>
+        </ol>
         <div class="day rv"><time class="label" datetime="2026-11-05">Nov 5</time></div>
         <ol class="ideas">
           <li class="idea rv"><span class="no">04</span><h3>Bee_v2</h3><p>Everything that worked, in one model. 32.9% on HellaSwag, ahead of GPT-2 small.</p><span class="kind nt">next-token</span></li>
@@ -680,8 +724,8 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
     <div class="horizon" aria-hidden="true"><div class="planet"></div></div>
     <div class="wrap close-in rv">
       <span class="label">// next</span>
-      <h2 id="close-h">Bee_v3, trained on <em>Tagus</em></h2>
-      <p>Same model, better text. The result goes in the notebook either way.</p>
+      <h2 id="close-h">Coral_1B, trained on <em>Tagus</em></h2>
+      <p>Five times Bee's size, but only a small part of it works on each word. The result goes in the notebook either way.</p>
       <div class="ctas">
         <a class="btn btn-quiet" href="https://github.com/jpcpais01/Oazy-AI-Research" target="_blank" rel="noopener">Source on GitHub</a>
       </div>
@@ -1209,7 +1253,8 @@ void main() {
   const LO = 20, HI = 40;
   const pos = v => ((v - LO) / (HI - LO)) * 100;
   const rows = [
-    { n: 'Bee_v2_0.2B', s: 'measured', v: 32.9, cls: 'bee' },
+    { n: 'Bee3_0.2B', s: '45% run · 1,000 qs', v: 29.6, cls: 'bee' },
+    { n: 'Bee_v2_0.2B', s: 'measured', v: 32.9, cls: 'bee old' },
     { n: 'Fern_0.2B', s: 'placeholder', v: 31.2, cls: 'fern ph' },
     { n: 'GPT-2 small', s: 'OpenAI · 124M', v: 29.6, cls: 'ref' },
     { n: 'Random guess', s: '1 in 4', v: 25.0, cls: 'rand' },
@@ -1305,6 +1350,22 @@ void main() {
     if (es[0].isIntersecting && !t) t = setInterval(() => { k = (k + 1) % WORDS.length; show(k); }, 900);
     else if (!es[0].isIntersecting && t) { clearInterval(t); t = null; }
   }).observe(xEl);
+})();
+
+// Frog: an illustration of the teacher's share. Each round it works on 2 of 8 sequences (not real data)
+(() => {
+  const el = document.getElementById('frog-seqs'); if (!el) return;
+  const N = 8;
+  el.innerHTML = Array.from({ length: N }, (_, i) => `<div><span>seq ${String(i + 1).padStart(2, '0')}</span><i></i><b>text alone</b></div>`).join('');
+  const rows = [...el.children];
+  const show = k => rows.forEach((r, i) => { const on = i === k % N || i === (k + 5) % N; r.classList.toggle('on', on); r.querySelector('b').textContent = on ? 'teacher' : 'text alone'; });
+  show(0);
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  let k = 0, t = null;
+  new IntersectionObserver(es => {
+    if (es[0].isIntersecting && !t) t = setInterval(() => show(k = (k + 3) % N), 1300);
+    else if (!es[0].isIntersecting && t) { clearInterval(t); t = null; }
+  }).observe(el);
 })();
 
 // glass cards: a soft light follows the pointer
