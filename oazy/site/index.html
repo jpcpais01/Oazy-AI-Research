@@ -33,6 +33,7 @@
   --teal: #4cf2c4;
   --bee: #ffb347;         /* model accents, as in the lab dashboard */
   --fern: #a6e86a;
+  --coral: #ff8a78;
   --display: "Outfit", "Avenir Next", "Segoe UI", system-ui, sans-serif;
   --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -138,6 +139,17 @@ section.block { padding-block: clamp(48px, 6vw, 85px); scroll-margin-top: 70px; 
 }
 .model:hover { border-color: color-mix(in srgb, var(--acc) 45%, transparent); transform: translateY(-3px); box-shadow: 0 30px 80px -40px color-mix(in srgb, var(--acc) 60%, transparent); }
 .model.fern { --acc: var(--fern); }
+/* Coral: the next model, not trained yet. A wide card under the two finished ones */
+.model.coral { --acc: var(--coral); grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 18px 40px; align-items: start; }
+.model.coral > .demo { grid-column: 2; grid-row: 1 / span 4; align-self: stretch; }
+@media (max-width: 960px) { .model.coral { grid-template-columns: 1fr; } .model.coral > .demo { grid-column: auto; grid-row: auto; } }
+.chip.soon { color: var(--ink-2); border-color: var(--line); background: transparent; }
+.experts { display: grid; grid-template-columns: repeat(16, minmax(0, 1fr)); gap: 5px; }
+.experts i { aspect-ratio: 1; border-radius: 3px; border: 1px solid var(--line); transition: background .5s, border-color .5s, box-shadow .5s; }
+.experts i.on { background: color-mix(in srgb, var(--acc) 55%, transparent); border-color: color-mix(in srgb, var(--acc) 80%, transparent); box-shadow: 0 0 12px -2px color-mix(in srgb, var(--acc) 70%, transparent); }
+.coral .words { display: flex; flex-wrap: wrap; gap: 6px 4px; font: 400 15px/1 var(--mono); }
+.coral .words span { padding: 6px; border-radius: 6px; border: 1px solid transparent; color: var(--faint); transition: color .4s, border-color .4s, background .4s; }
+.coral .words span.now { color: #fff; border-color: color-mix(in srgb, var(--acc) 60%, transparent); background: color-mix(in srgb, var(--acc) 14%, transparent); }
 .model::before { content: ""; position: absolute; inset: 0 0 auto; height: 1px; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--acc) 80%, transparent), transparent); }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip { font: 500 11px/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; padding: 7px 10px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--ink-2); background: rgba(255, 255, 255, 0.03); }
@@ -496,7 +508,7 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
           <span class="label">// models</span>
           <h2 id="models-h">Two ways to <em>write a sentence</em></h2>
         </div>
-        <p>Bee writes one token after another. Fern drafts a whole passage and lets it come into focus.</p>
+        <p>Bee writes one token after another. Fern drafts a whole passage and lets it come into focus. Coral, next, is much larger but uses only a small part of itself for each word.</p>
       </div>
 
       <div class="models">
@@ -541,6 +553,29 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
               <span class="label" style="display:flex;gap:10px;align-items:center"><span id="fern-step">round 0 / 5</span><span class="rounds" id="fern-rounds"><i></i><i></i><i></i><i></i><i></i></span></span>
             </div>
             <div class="toks" id="fern-toks"></div>
+          </div>
+        </article>
+
+        <article class="model coral rv" aria-labelledby="coral-h">
+          <div class="chips">
+            <span class="chip acc">Next-token</span>
+            <span class="chip soon">Not trained yet</span>
+          </div>
+          <h3 id="coral-h">Coral<span>_1B</span></h3>
+          <p class="what">Our first mixture-of-experts model. It holds 1B parameters, but each word only passes through a few of its experts, about 161M parameters. The aim is to train it at a million tokens per second on one B200, over 20B tokens. Results will appear here once it has run.</p>
+          <div class="stats">
+            <div class="stat"><span class="v">1<small>B</small></span><span class="k">Parameters</span></div>
+            <div class="stat"><span class="v">161<small>M</small></span><span class="k">Active per word</span></div>
+            <div class="stat"><span class="v">20<small>B</small></span><span class="k">Tokens planned</span></div>
+            <div class="stat"><span class="v">1<small>M/s</small></span><span class="k">Target speed</span></div>
+          </div>
+          <div class="demo" aria-label="Illustration: each word is sent to a few of many experts">
+            <div class="demo-top">
+              <span class="label">How it thinks <b>· a few experts per word</b></span>
+              <span class="label">illustration</span>
+            </div>
+            <div class="words" id="coral-words"></div>
+            <div class="experts" id="coral-experts"></div>
           </div>
         </article>
       </div>
@@ -1251,6 +1286,25 @@ void main() {
     if (es[0].isIntersecting && !timer) { tick = 0; run(); timer = setInterval(run, STEP); }
     else if (!es[0].isIntersecting && timer) { clearInterval(timer); timer = null; }
   }).observe(demos);
+})();
+
+// Coral: an illustration of routing. Each word lights the few experts it is sent to (not real routing data)
+(() => {
+  const wEl = document.getElementById('coral-words'), xEl = document.getElementById('coral-experts');
+  if (!wEl || !xEl) return;
+  const WORDS = ['The', ' tide', ' pulled', ' the', ' boat', ' out', ' past', ' the', ' reef'];
+  wEl.innerHTML = WORDS.map(w => `<span>${w.trim()}</span>`).join('');
+  xEl.innerHTML = '<i></i>'.repeat(64);
+  const ws = [...wEl.children], xs = [...xEl.children];
+  const pick = w => { let h = 7; for (const ch of w) h = (h * 31 + ch.charCodeAt(0)) >>> 0; const o = new Set(); while (o.size < 4) { h = (h * 1103515245 + 12345) >>> 0; o.add((h >>> 8) % 64); } return o; };
+  const show = k => { const on = pick(WORDS[k].trim().toLowerCase()); ws.forEach((e, i) => e.classList.toggle('now', i === k)); xs.forEach((e, i) => e.classList.toggle('on', on.has(i))); };
+  show(1);
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  let k = 1, t = null;
+  new IntersectionObserver(es => {
+    if (es[0].isIntersecting && !t) t = setInterval(() => { k = (k + 1) % WORDS.length; show(k); }, 900);
+    else if (!es[0].isIntersecting && t) { clearInterval(t); t = null; }
+  }).observe(xEl);
 })();
 
 // glass cards: a soft light follows the pointer
