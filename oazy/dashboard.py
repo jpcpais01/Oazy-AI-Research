@@ -86,6 +86,8 @@ def make_handler(runs: Path, web: Path = WEB):
                 return self.send(200, (web / parts[0]).read_bytes(), ctype + "; charset=utf-8")
             if parts == ["api", "version"]:
                 return self.js(version())
+            if parts == ["api", "teachers"]:             # what the finished teachers write (python3 -m oazy.teachers)
+                return self.js(read_jsonl(runs / "teacher_samples.jsonl"))
             if parts == ["api", "runs"]:
                 out = []
                 if runs.exists():

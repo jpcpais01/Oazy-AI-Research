@@ -74,6 +74,7 @@
   .sample::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--c); }
   .sample .who { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
   .sample .who b { color: var(--text-2); }
+  .sample.teacher { border-style: dashed; background: rgba(4, 12, 28, 0.25); }
   .sample .prompt { color: var(--text); font-weight: 600; }
   .sample .gen { color: var(--text-2); white-space: pre-wrap; }
   .prompt-block { margin-bottom: 18px; } .prompt-block:last-child { margin-bottom: 0; }
@@ -887,14 +888,17 @@ async function loadSnap(i) {
   drawSnapshot();
 }
 
+let TEACH = [];      // the teachers' samples (oazy/teachers.py)
 function drawSamples() {
   const box = document.getElementById("samples");
   const by = {};
   for (const r of VIS()) for (const s of DATA[r.name]?.samples || []) (by[s.prompt] ||= {})[r.name] = s;
   const prompts = Object.keys(by);
   if (!prompts.length) { box.innerHTML = `<div class="empty">Waiting for the first samples</div>`; return; }
+  // the finished teachers on the same prompts (python3 -m oazy.teachers), after our models: how far a run still is
+  const teach = (p) => TEACH.filter((t) => t.prompt === p).map((t) => `<div class="sample teacher" style="--c:#9a96b8"><div class="who"><b>${UI.escapeHtml(t.name)}</b> · teacher, finished · read ${UI.escapeHtml(t.read)} tokens</div><span class="prompt">${UI.escapeHtml(p)}</span><span class="gen">${UI.escapeHtml(t.text)}</span></div>`).join("");
   box.innerHTML = prompts.map((p) => `<div class="prompt-block"><div class="ph">Prompt: <b>${UI.escapeHtml(p)}</b></div><div class="samples">${
-    Object.entries(by[p]).map(([n, s]) => `<div class="sample" style="--c:${colorOf(n)}"><div class="who"><b>${nameOf(n)}</b> · after ${fmtM(s.tokens)} tokens</div><span class="prompt">${UI.escapeHtml(p)}</span><span class="gen">${UI.escapeHtml(s.text)}</span></div>`).join("")}</div></div>`).join("");
+    Object.entries(by[p]).map(([n, s]) => `<div class="sample" style="--c:${colorOf(n)}"><div class="who"><b>${nameOf(n)}</b> · after ${fmtM(s.tokens)} tokens</div><span class="prompt">${UI.escapeHtml(p)}</span><span class="gen">${UI.escapeHtml(s.text)}</span></div>`).join("") + teach(p)}</div></div>`).join("");
 }
 
 // the head: the pod at a glance (how many train, combined speed, the next to finish, the best held-out loss so far)
@@ -926,6 +930,7 @@ async function refresh() {
   const pill = document.getElementById("updated");
   try {
     RUNS = await getJSON("api/runs");
+    try { TEACH = await getJSON("api/teachers"); } catch (e) { TEACH = []; }
     const ORDER = ["coral", "frog", "bee3", "bee2", "bee", "fern3", "fern2", "ember", "fern", "tide", "memtrix", "gpt", "openai-gpt2"];
     RUNS.sort((a, b) => ORDER.indexOf(a.name) - ORDER.indexOf(b.name));
     for (const r of RUNS) {
