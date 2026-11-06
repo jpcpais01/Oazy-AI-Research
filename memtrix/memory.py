@@ -267,3 +267,86 @@ def delta_rule(q, k, v, log_fade, trust, state=None, scale=None, resets=None, se
     if resets is not None:
         log_fade = with_resets(log_fade, resets)
     return chunked(q, k, v, log_fade, trust, state, scale)
+
+
+# ---- fused gates (Frog): the kernel scales q and k to length 1, squashes trust (sigmoid) and the fade
+# (-exp(A_log) * softplus(f + dt_bias)) itself, so those steps' full-size fp32 copies and their gradients are never
+# made outside it. The same maths as Memory.project() + delta_rule(); used only where it is checked to agree.
+_FUSED_OK = None
+
+
+def _gates(q, k, fade_raw, trust_raw, A_log, dt_bias):
+    """The steps the fused kernel does inside, written out (the reference and the fallback)."""
+    qn = F.normalize(q.float(), dim=-1).to(q.dtype)
+    kn = F.normalize(k.float(), dim=-1).to(k.dtype)
+    lf = -A_log.float().exp() * F.softplus(fade_raw.float() + dt_bias)
+    return qn, kn, lf, torch.sigmoid(trust_raw.float())
+
+
+@torch.compiler.disable
+def _fla_fused(q, k, v, fade_raw, trust_raw, A_log, dt_bias, scale, resets=None, segs=None):
+    B, T, H, K = q.shape
+    kw = dict(scale=scale, output_final_state=True, use_qk_l2norm_in_kernel=True, use_gate_in_kernel=True,
+              A_log=A_log, dt_bias=dt_bias, use_beta_sigmoid_in_kernel=True)
+    if resets is not None:            # documents packed one after another, each starting blank (as _fla_segments)
+        cu, last, *rest = segs if segs is not None else segments(resets, hints=True)
+        flat = lambda x: x.reshape(1, B * T, *x.shape[2:])    # noqa: E731
+        o, S = _load_fla()(q=flat(q), k=flat(k), v=flat(v), g=flat(fade_raw), beta=flat(trust_raw), cu_seqlens=cu,
+                           **kw, **(rest[0] if rest else {}))
+        return o.reshape(B, T, H, -1), S[last]
+    return _load_fla()(q=q, k=k, v=v, g=fade_raw, beta=trust_raw, **kw)
+
+
+@torch.compiler.disable
+def fused_gates_ok(device) -> bool:
+    """Does the installed kernel do the gates itself, and agree with the written-out maths, answers AND gradients
+    (to q, k, v, trust, fade, A_log, dt_bias), with and without packed documents? Checked once per process."""
+    global _FUSED_OK
+    if _FUSED_OK is not None:
+        return _FUSED_OK
+    _FUSED_OK = False
+    if device.type != "cuda" or not fla_check(device):
+        return False
+    try:
+        g = torch.Generator(device=device).manual_seed(1)
+        B, T, H, K = 2, 300, 2, 64
+        rnd = lambda *s: torch.randn(*s, device=device, generator=g)    # noqa: E731
+        q0, k0, v0 = rnd(B, T, H, K), rnd(B, T, H, K), rnd(B, T, H, K)
+        f0, t0 = rnd(B, T, H), rnd(B, T, H)
+        A0 = torch.empty(H, device=device).uniform_(1, 16, generator=g).log()
+        d0 = rnd(H) * 0.5 - 3
+        resets = torch.rand(B, T, device=device, generator=g) < 0.02
+        resets[:, 0] = False
+        do = rnd(B, T, H, K)
+        worst = 0.0
+        for rs in ((None, resets) if _FLA_SEG else (None,)):
+            leaves = [x.clone().requires_grad_() for x in (q0, k0, v0, f0, t0, A0, d0)]
+            q, k, v, f, t, A, d = leaves
+            qn, kn, lf, tr = _gates(q, k, f, t, A, d)
+            ref, _ = chunked(qn, kn, v, lf if rs is None else with_resets(lf, rs), tr)
+            gref = torch.autograd.grad((ref * do).sum(), leaves)
+            leaves2 = [x.clone().bfloat16().requires_grad_() if i < 5 else x.clone().requires_grad_()
+                       for i, x in enumerate((q0, k0, v0, f0, t0, A0, d0))]
+            o, _ = _fla_fused(*leaves2, K ** -0.5, rs, None)
+            g2 = torch.autograd.grad((o.float() * do).sum(), leaves2)
+            rel = lambda a, b: (a.float() - b).abs().max().item() / (b.abs().max().item() + 1e-6)    # noqa: E731
+            worst = max(worst, rel(o, ref), *[rel(a, b) for a, b in zip(g2, gref)])
+        _FUSED_OK = worst < 0.05
+        print(f"[memtrix] fused gates in the kernel {'OK' if _FUSED_OK else 'DISAGREE, not used'} "
+              f"(worst rel. error {worst:.4f}, answers and gradients)", flush=True)
+    except Exception as e:
+        print(f"[memtrix] fused gates unavailable ({type(e).__name__}: {str(e)[:160]}); the gates are computed outside "
+              "the kernel (same maths, a little slower)", flush=True)
+        _FUSED_OK = False
+    return _FUSED_OK
+
+
+def delta_rule_raw(q, k, v, fade_raw, trust_raw, A_log, dt_bias, scale=None, resets=None, segs=None):
+    """delta_rule() from the un-squashed inputs (Memory.project(raw=True)). The fused kernel where it agrees
+    (fused_gates_ok; with documents only in the kernel's packed form), else the gates written out and delta_rule().
+    Returns (answers, final state)."""
+    scale = q.shape[-1] ** -0.5 if scale is None else scale
+    if q.is_cuda and fused_gates_ok(q.device) and (resets is None or _FLA_SEG):
+        return _fla_fused(q, k, v, fade_raw, trust_raw, A_log, dt_bias, scale, resets, segs)
+    qn, kn, lf, tr = _gates(q, k, fade_raw, trust_raw, A_log, dt_bias)
+    return delta_rule(qn, kn, v, lf, tr.to(qn.dtype), scale=scale, resets=resets, segs=segs)

@@ -80,6 +80,7 @@ class Memory(nn.Module):
         self.gate = nn.Linear(D, H * V, bias=False)       # volume knob on what is recalled
         self.onorm = RMSNorm(V)
         self.out = nn.Linear(H * V, D, bias=False)
+        self.fused_gates = bool(getattr(cfg, "fused_gates", 0))    # Frog: see forward()
         self.reset_memory_params()
 
     def reset_memory_params(self):
@@ -93,9 +94,11 @@ class Memory(nn.Module):
             self.conv_w[:, 0, -1] = 1.0
             self.conv_w[:, 0, :-1].normal_(0, 0.02)
 
-    def project(self, x, conv_state=None, resets=None):
+    def project(self, x, conv_state=None, resets=None, raw=False):
         """Word vectors -> question, key, value, trust, log-fade. conv_state: the previous few words' channels.
-        resets (B, T) bool: the "hint of the last few words" does not reach back into the previous document."""
+        resets (B, T) bool: the "hint of the last few words" does not reach back into the previous document.
+        raw=True: question and key not yet scaled to length 1, trust and fade before their squashing (the
+        fused-gates kernel does those steps inside, memory.delta_rule_raw)."""
         B, T, _ = x.shape
         H, K, V = self.H, self.K, self.V
         z = self.qkv(x)                                                 # (B, T, ch)
@@ -118,6 +121,9 @@ class Memory(nn.Module):
                 z = z + zc[:, w - 1 - s:zc.shape[1] - s] * cw[:, w - 1 - s] * same[:, :, None]
         z = F.silu(z)
         q, k, v = z.split([H * K, H * K, H * V], dim=-1)
+        if raw:   # for the kernel that does the rest itself (memory.delta_rule_raw): no fp32 copies made here
+            return (q.reshape(B, T, H, K).contiguous(), k.reshape(B, T, H, K).contiguous(), v.reshape(B, T, H, V).contiguous(),
+                    self.trust(x), self.fade(x), new_conv)
         q = F.normalize(q.view(B, T, H, K).float(), dim=-1).to(z.dtype)
         k = F.normalize(k.view(B, T, H, K).float(), dim=-1).to(z.dtype)
         v = v.reshape(B, T, H, V)
@@ -135,6 +141,12 @@ class Memory(nn.Module):
         starts inside the window (its memory starts blank); segs: memory.segments(resets), computed once for
         all layers, or None. Returns (output, new state)."""
         conv_state, S = state if state is not None else (None, None)
+        if state is None and self.fused_gates and memory.fused_gates_ok(x.device):
+            # Frog: the kernel scales question and key, squashes trust and fade and runs the memory in one go,
+            # so the full-size fp32 copies of those steps (and their gradients) are never made
+            q, k, v, tl, fr, new_conv = self.project(x, None, resets, raw=True)
+            o, S = memory.delta_rule_raw(q, k, v, fr, tl, self.A_log, self.dt_bias, resets=resets, segs=segs)
+            return self.finish(x, o), (new_conv, S)
         q, k, v, trust, log_fade, new_conv = self.project(x, conv_state, resets)
         if state is None:
             o, S = memory.delta_rule(q, k, v, log_fade, trust.to(q.dtype), resets=resets, segs=segs)

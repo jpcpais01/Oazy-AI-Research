@@ -33,15 +33,19 @@ from memtrix.model import Memtrix, MemtrixConfig
 from memtrix import memory
 from . import hellaswag, probes
 
-KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "gpt"]
+KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "gpt"]
 NICE = {"memtrix": "Memtrix", "tide": "Tide", "fern": "Fern", "ember": "Ember", "fern2": "Fern2", "fern3": "Fern3",
-        "bee": "Bee0.2B", "bee2": "Bee_v2_0.2B", "bee3": "Bee3", "gpt": "GPT"}
-FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3")    # raised the fast way: Muon and a mentor by default
-MENTOR = {"bee": "gpt2-large", "bee2": "smollm2-360m", "bee3": "smollm2-360m"}   # default mentor (the others: gpt2-medium)
-BEES = ("bee", "bee2", "bee3")                 # the text mix, WSD, growing windows
+        "bee": "Bee0.2B", "bee2": "Bee_v2_0.2B", "bee3": "Bee3", "frog": "Frog", "gpt": "GPT"}
+FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog")    # raised the fast way: Muon and a mentor by default
+MENTOR = {"bee": "gpt2-large", "bee2": "smollm2-360m", "bee3": "smollm2-360m", "frog": "smollm2-360m"}   # default mentor (the others: gpt2-medium)
+BEES = ("bee", "bee2", "bee3", "frog")                 # the text mix, WSD, growing windows
 # Bee3's recipe (bee3/README.md): the mentor stays the whole run, weight decay on the Muon grids, a batch ramp,
 # a 1-minus-square-root cool-down, twice Bee2's learning rates (the presets' lr_bee3 / muon_lr_bee3)
 RECIPE = {"bee3": dict(mentor_floor=0.25, mentor_off=0.1, muon_wd=0.1, batch_ramp="65536:0.1", decay_shape="sqrt")}
+# Frog (frog/README.md): Bee3's recipe at 406M, with the mentor on a share of the SEQUENCES instead of a share of every
+# word (mentor_share: a share w of the passes learn only the mentor's guesses, the rest only the real next word, so the
+# mentor reads only what it teaches), and 524k-token steps after the ramp (the presets' batch_frog)
+RECIPE["frog"] = dict(RECIPE["bee3"], mentor_share=1)
 VAL_T = 1024                                   # held-out windows are always this long: every model, every run, same text
 
 
@@ -88,6 +92,11 @@ def _bee2():
     return Bee2, Bee2Config
 
 
+def _frog():
+    from frog.model import Frog, FrogConfig          # frog/ = Bee3 at 406M (wider and a little deeper)
+    return Frog, FrogConfig
+
+
 def _bee3():
     from bee3.model import Bee3, Bee3Config          # bee3/ = Bee2's body, no bleed between documents, the Bee3 recipe
     return Bee3, Bee3Config
@@ -128,15 +137,15 @@ PRESETS = {
     ),
     # GPT-2 small size (Memtrix 117M vs GPT-2 124M), ~2 h for both models on one B200 (check with --bench)
     "full": dict(
-        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144,
-        micro=32, accum=8, lr=1.2e-3, lr_bee3=2.4e-3, muon_lr_bee3=0.04, warmup=400, tokens=2_000_000_000,
+        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288,
+        micro=32, accum=8, lr=1.2e-3, lr_bee3=2.4e-3, muon_lr_bee3=0.04, lr_frog=1.8e-3, muon_lr_frog=0.03, warmup=400, tokens=2_000_000_000,
         eval_every=50_000_000, probe_every=250_000_000, hs_every=250_000_000, sample_every=250_000_000,
         val_windows=128, hs_quick=1000, sample_len=120,
     ),
     # the same models, 2.5x the text (e.g. a 2 x B200 pod for ~2.5 h, one model per GPU)
     "big": dict(
-        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144,
-        micro=32, accum=8, lr=1.2e-3, lr_bee3=2.4e-3, muon_lr_bee3=0.04, warmup=600, tokens=5_000_000_000,
+        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288,
+        micro=32, accum=8, lr=1.2e-3, lr_bee3=2.4e-3, muon_lr_bee3=0.04, lr_frog=1.8e-3, muon_lr_frog=0.03, warmup=600, tokens=5_000_000_000,
         eval_every=100_000_000, probe_every=200_000_000, hs_every=200_000_000, sample_every=200_000_000,
         val_windows=128, hs_quick=1000, sample_len=120,
     ),
@@ -195,6 +204,12 @@ def build(kind, preset, overrides=None):
         cfg = Bee3Config(**{**small, **({"ctx": f"{small['max_len']}:0"} if "max_len" in small else {}),
                             **p.get("bee3", {}), **(overrides or {})})
         return Bee3(cfg), cfg
+    if kind == "frog":
+        Frog, FrogConfig = _frog()
+        small = {k: v for k, v in p.get("bee", {}).items() if k != "ctx"}    # the test presets' small body, as Bee3
+        cfg = FrogConfig(**{**small, **({"ctx": f"{small['max_len']}:0"} if "max_len" in small else {}),
+                            **p.get("frog", {}), **(overrides or {})})
+        return Frog(cfg), cfg
     cfg = GPTConfig(**{**p["gpt"], **(overrides or {})})
     return GPT(cfg), cfg
 
@@ -230,10 +245,23 @@ def load_model(ckpt: Path, device):
     elif kind == "bee3":
         Bee3, Bee3Config = _bee3()
         model = Bee3(Bee3Config.from_dict(st["config"]))
+    elif kind == "frog":
+        Frog, FrogConfig = _frog()
+        model = Frog(FrogConfig.from_dict(st["config"]))
     else:
         model = GPT(GPTConfig.from_dict(st["config"]))
     model.load_state_dict(st["model"])
     return model.to(device).eval(), st
+
+
+def mentor_pass(credit, w):
+    """Frog's mentor share: does this pass go to the mentor? A running tally (credit) gains w per pass and
+    hands out a whole pass each time it reaches 1, so over any stretch the mentor gets a share w of the
+    passes, evenly spread (at w = 0.25: every fourth). Returns (the pass's mentor weight 1 or 0, new credit)."""
+    credit += w
+    if credit >= 1.0 - 1e-9:
+        return 1.0, credit - 1.0
+    return 0.0, credit
 
 
 def lr_at(progress, step, base, warmup):
@@ -477,6 +505,9 @@ def main():
     ap.add_argument("--mentor-until", type=float, default=0.5, help="fraction of training by which the mentor's share has fallen to --mentor-floor")
     ap.add_argument("--mentor-floor", type=float, default=None, help="the share it keeps from then on (0 = it leaves; Bee3 0.25)")
     ap.add_argument("--mentor-off", type=float, default=None, help="over this last fraction of the run the share falls to 0 (Bee3 0.1)")
+    ap.add_argument("--mentor-share", type=int, choices=[0, 1], default=None,
+                    help="1 = the mentor teaches a share w of the passes (mentor's lesson only), the others learn the real next "
+                         "word only, so the mentor reads only what it teaches (Frog); 0 = every word mixes both (Bee3)")
     ap.add_argument("--schedule", choices=["cos", "wsd"], default=None,
                     help="learning-rate shape: cos (cosine) or wsd (flat, then a straight fall over the last 20%%); default wsd for bee")
     ap.add_argument("--mix", default=None, help="Bee's text mix over training (default in oazy/mix.py), "
@@ -505,6 +536,7 @@ def main():
     decay_shape = args.decay_shape or recipe.get("decay_shape", "linear")
     mentor_floor = recipe.get("mentor_floor", 0.0) if args.mentor_floor is None else args.mentor_floor
     mentor_off = recipe.get("mentor_off", 0.0) if args.mentor_off is None else args.mentor_off
+    mentor_share = bool(recipe.get("mentor_share", 0) if args.mentor_share is None else args.mentor_share)
     run = Run(run_dir(args.runs, args.name or args.model))
     root = Path(args.data)
 
@@ -633,7 +665,7 @@ def main():
         **({"muon_lr": muon_lr, "muon_wd": muon_wd} if opt_kind == "muon" else {}),
         **({"decay_shape": decay_shape} if schedule == "wsd" else {}), **({"batch_ramp": batch_ramp} if batch_ramp else {}),
         **({"mentor_weight": args.mentor_weight, "mentor_until": args.mentor_until, "mentor_floor": mentor_floor,
-            "mentor_off": mentor_off} if mentor_name != "none" else {}),
+            "mentor_off": mentor_off, "mentor_share": mentor_share} if mentor_name != "none" else {}),
         **({"loss": args.loss, "doc_mask": bool(getattr(cfg, "doc_mask", 0)), "val_context": Tv} if args.model in BEES else {}),
         "layout": model.layout() if hasattr(model, "layout") else None,
         "mix": args.mix or (DEFAULT_MIX if args.model in BEES else None), "total_tokens": total, "device": str(device),
@@ -796,6 +828,7 @@ def main():
     last_ckpt = time.time()
     t_log, tok_log, acc_loss, acc_n = time.time(), tokens, 0.0, 0
     log_every = 10
+    share_credit, kd_log, kd_log_n = 0.0, 0.0, 0      # Frog's mentor share: the running tally; its KL since the last log
     while tokens < total and not stop["flag"]:
         act = control()
         if act == "pause":
@@ -853,9 +886,9 @@ def main():
         cur_lr = lr_fn(tokens / total, step, lr, p["warmup"])
         for g in opt.param_groups:
             g["lr"] = cur_lr * g.get("lr_scale", 1.0)
-        loss_sum, kd_sum, rd_sum, hs_sum = 0.0, 0.0, 0.0, 0.0
+        loss_sum, kd_sum, rd_sum, hs_sum, n_kd = 0.0, 0.0, 0.0, 0.0, 0
 
-        def lesson(x, y):
+        def lesson(x, y, mw):
             with amp(device):
                 if hasattr(model, "losses"):        # Bee: the loss and the mentor's lesson in slices (oazy/lmloss.py)
                     loss, st = model.losses(x, y, mentor if mw > 0 else None, mw)
@@ -877,21 +910,30 @@ def main():
 
         for _ in range(accum):
             x, y = train.get(device)
+            pw = mw
+            if mentor_share and mw > 0:
+                # Frog: a running tally hands whole passes to the mentor so that their share tracks w exactly (at
+                # w = 0.25, one pass in four); those learn only its guesses (weight 1), the others only the real next
+                # word (weight 0). On average the lesson is Bee3's; the mentor reads a share w of the text, not all of it.
+                pw, share_credit = mentor_pass(share_credit, mw)
             try:
-                loss, st = lesson(x, y)
+                loss, st = lesson(x, y, pw)
             except Exception as e:
                 if model._compiled is None:
                     raise
                 say(f"torch.compile failed ({type(e).__name__}: {e}); continuing without compile", flush=True)
                 model._compiled = None
-                loss, st = lesson(x, y)
+                loss, st = lesson(x, y, pw)
             loss_sum += st.get("ce", loss).detach()       # the next-word loss (Tide also trains its far drafts)
             if "kd" in st:
                 kd_sum += st["kd"].detach()
+                n_kd += 1
             if "reader_ce" in st:
                 rd_sum += st["reader_ce"]
             if "recall_hindsight" in st:
                 hs_sum += st["recall_hindsight"]
+        if mentor_share and n_kd:
+            kd_log, kd_log_n = kd_log + float(kd_sum), kd_log_n + n_kd
         gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         opt.step()
         opt.zero_grad(set_to_none=True)
@@ -916,7 +958,12 @@ def main():
                 rec["context"], rec["mix"] = T, {k: round(v, 3) for k, v in train.weights(tokens / total).items()}
                 rec["batch"] = B * T
             if mw > 0:
-                rec["mentor_w"], rec["mentor_kl"] = mw, float(kd_sum) / accum
+                rec["mentor_w"] = mw
+                if not mentor_share:
+                    rec["mentor_kl"] = float(kd_sum) / accum
+            if mentor_share and kd_log_n:           # the mentor's passes since the last log line only
+                rec["mentor_kl"], rec["mentor_passes"] = kd_log / kd_log_n, kd_log_n
+                kd_log, kd_log_n = 0.0, 0
             if rd_sum:
                 rec["reader_loss"] = float(rd_sum) / accum
             if hs_sum:

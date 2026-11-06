@@ -104,6 +104,23 @@ python3 -m bee3.chat --run bee3-chat --port 8002         # chat (the pre-trained
 To turn the learning rate down on resume: `bash runpod/train.sh bee3 --preset big --tokens 2.5e9 --lr 1.8e-3 --muon-lr 0.03`.
 `--loss plain` is the old way of computing the loss, for comparison; `--mentor-floor 0 --mentor-off 0` is Bee2's mentor schedule.
 
+### Frog (406M, Bee3 at twice the size, 4,000M tokens)
+
+Start it only after Bee3 has finished: growing Tagus uses many CPU threads, and starved CPU threads slowed Bee3
+before. Recipe and reasons in `frog/README.md`.
+
+```bash
+cd /workspace/oazy && git pull
+nice -n 10 python3 -m oazy.tagus --run-tokens 4e9        # once: Tagus grown to what a 4,000M-token run reads
+python3 -m frog.tests --device cuda                      # self-tests; prints whether the two speed switches are in use
+python3 -m oazy.profile --model frog --preset big --micro 32   # tokens/s, memory, and a whole run's speed (paste it in the thread)
+bash runpod/train.sh frog --preset big --tokens 4e9 --micro 32 # the run (~7.5-9 h on a B200, to be confirmed by the profile)
+python3 -m oazy.sft --run frog                           # afterwards: the chat fine-tune -> runs/frog-chat
+python3 -m frog.chat --run frog-chat --port 8002         # chat
+```
+
+If the loss turns noisy, resume with `--lr 1.2e-3 --muon-lr 0.02`; `--mentor-share 0` is Bee3's way of mixing the mentor in.
+
 ## Experiments
 
 ### Memtrix, Tide and Ember (~120M experiments, next-word)
