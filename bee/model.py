@@ -62,7 +62,8 @@ class BeeConfig:
     softcap: float = 30.0        # final scores are kept within +-30 (0 = off)
     flex_attn: int = 0           # 1 = with doc_mask, compiled training uses flex attention: the blocks of the score grid that
                                  # cross documents are skipped and the fast kernel is kept (Frog); 0 = a full yes/no grid
-    fused_gates: int = 0         # 1 = the memory kernel scales q/k and squashes trust and fade itself (Frog; memtrix/memory.py)
+    fused_gates: int = 0         # 1 = the memory kernel scales q/k and squashes trust and fade itself (memtrix/memory.py)
+    memory_op: int = 0           # 1 = the memory kernel as a compiled operator: no compiler stop at each memory layer (Frog)
     doc_mask: int = 0            # 1 = no bleed between documents in a window: attention looks back only inside
                                  # the current document and the memories start blank at each document (Bee3)
     tokenizer: str = "gpt2"      # which pieces it reads (oazy/tok.py); decides the <|endoftext|> id
@@ -294,9 +295,19 @@ class Bee(nn.Module):
     fused_loss = True            # the loss in slices (oazy/lmloss.py); False = full 32-bit scores (tests, --loss plain)
     loss_chunk = 1024            # tokens per slice
 
+    def prepare_kernels(self, device):
+        """Check the optional fast paths once, before compiling (the checks themselves are not compiler-friendly)."""
+        from memtrix import memory
+        memory.fla_check(device)
+        if self.cfg.memory_op:
+            memory.op_ok(device)
+        if self.cfg.fused_gates:
+            memory.fused_gates_ok(device)
+
     def enable_compile(self):
-        self._compiled = torch.compile(self._trunk)
         dev = self.embed.weight.device
+        self.prepare_kernels(dev)
+        self._compiled = torch.compile(self._trunk)
         self._flex = bool(self.cfg.flex_attn and self.cfg.doc_mask and dev.type == "cuda" and flex_check(dev, self.cfg))
 
     _flex = False    # flex attention in use (checked once, when compiling)
@@ -327,7 +338,8 @@ class Bee(nn.Module):
         resets[:, 1:] = idx[:, :-1] == eot_id(self.cfg.tokenizer)
         doc = resets.cumsum(1)
         mask = (doc[:, None, :, None] == doc[:, None, None, :]) & torch.ones(T, T, dtype=torch.bool, device=idx.device).tril()
-        segs = memory.segments(resets, hints=True) if memory.packed_docs(idx.device) else None    # once, not once per layer
+        # the documents' offsets once, not once per layer (also on the CPU when the memory operator runs: self-tests)
+        segs = memory.segments(resets, hints=True) if (memory.packed_docs(idx.device) or (memory._OP_OK and not idx.is_cuda)) else None
         return resets, mask, segs
 
     def _trunk(self, idx, resets=None, mask=None, segs=None):

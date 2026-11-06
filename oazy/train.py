@@ -45,7 +45,7 @@ RECIPE = {"bee3": dict(mentor_floor=0.25, mentor_off=0.1, muon_wd=0.1, batch_ram
 # Frog (frog/README.md): Bee3's recipe at 406M, with the mentor on a share of the SEQUENCES instead of a share of every
 # word (mentor_share: a share w of the passes learn only the mentor's guesses, the rest only the real next word, so the
 # mentor reads only what it teaches), and 524k-token steps after the ramp (the presets' batch_frog)
-RECIPE["frog"] = dict(RECIPE["bee3"], mentor_share=1)
+RECIPE["frog"] = dict(RECIPE["bee3"], mentor_share=1, fp8=1)      # and FP8 matrix products where the GPU has them
 VAL_T = 1024                                   # held-out windows are always this long: every model, every run, same text
 
 
@@ -505,6 +505,8 @@ def main():
     ap.add_argument("--mentor-until", type=float, default=0.5, help="fraction of training by which the mentor's share has fallen to --mentor-floor")
     ap.add_argument("--mentor-floor", type=float, default=None, help="the share it keeps from then on (0 = it leaves; Bee3 0.25)")
     ap.add_argument("--mentor-off", type=float, default=None, help="over this last fraction of the run the share falls to 0 (Bee3 0.1)")
+    ap.add_argument("--fp8", type=int, choices=[0, 1], default=None,
+                    help="1 = the big matrix products in FP8 where the GPU has them (Frog's default; oazy/fp8.py), 0 = bf16")
     ap.add_argument("--mentor-share", type=int, choices=[0, 1], default=None,
                     help="1 = the mentor teaches a share w of the passes (mentor's lesson only), the others learn the real next "
                          "word only, so the mentor reads only what it teaches (Frog); 0 = every word mixes both (Bee3)")
@@ -537,12 +539,17 @@ def main():
     mentor_floor = recipe.get("mentor_floor", 0.0) if args.mentor_floor is None else args.mentor_floor
     mentor_off = recipe.get("mentor_off", 0.0) if args.mentor_off is None else args.mentor_off
     mentor_share = bool(recipe.get("mentor_share", 0) if args.mentor_share is None else args.mentor_share)
+    want_fp8 = bool(recipe.get("fp8", 0) if args.fp8 is None else args.fp8)
     run = Run(run_dir(args.runs, args.name or args.model))
     root = Path(args.data)
 
     torch.manual_seed(args.seed)
     model, cfg = build(args.model, args.preset, parse_overrides(args.set))
     model.to(device)
+    fp8 = False
+    if want_fp8:                                       # Frog: the big matrix products in FP8 (oazy/fp8.py; checked first)
+        from . import fp8 as fp8_mod
+        model, fp8 = fp8_mod.convert(model, device, say)
     tk = tok.name_of(model)
     enc = tok.get(tk)
     # a model that reads another tokenizer than GPT-2's reads the same text, re-cut (oazy/retok.py)
@@ -666,6 +673,7 @@ def main():
         **({"decay_shape": decay_shape} if schedule == "wsd" else {}), **({"batch_ramp": batch_ramp} if batch_ramp else {}),
         **({"mentor_weight": args.mentor_weight, "mentor_until": args.mentor_until, "mentor_floor": mentor_floor,
             "mentor_off": mentor_off, "mentor_share": mentor_share} if mentor_name != "none" else {}),
+        **({"fp8": fp8} if want_fp8 else {}), **({"grow": cfg.grow} if hasattr(model, "grow_to") and hasattr(cfg, "grow") else {}),
         **({"loss": args.loss, "doc_mask": bool(getattr(cfg, "doc_mask", 0)), "val_context": Tv} if args.model in BEES else {}),
         "layout": model.layout() if hasattr(model, "layout") else None,
         "mix": args.mix or (DEFAULT_MIX if args.model in BEES else None), "total_tokens": total, "device": str(device),

@@ -81,6 +81,7 @@ class Memory(nn.Module):
         self.onorm = RMSNorm(V)
         self.out = nn.Linear(H * V, D, bias=False)
         self.fused_gates = bool(getattr(cfg, "fused_gates", 0))    # Frog: see forward()
+        self.memory_op = bool(getattr(cfg, "memory_op", 0))
         self.reset_memory_params()
 
     def reset_memory_params(self):
@@ -141,7 +142,16 @@ class Memory(nn.Module):
         starts inside the window (its memory starts blank); segs: memory.segments(resets), computed once for
         all layers, or None. Returns (output, new state)."""
         conv_state, S = state if state is not None else (None, None)
-        if state is None and self.fused_gates and memory.fused_gates_ok(x.device):
+        if state is None and self.memory_op and memory._OP_OK:
+            # Frog: the memory kernel as a compiled operator, so the whole stack is one graph (memory.op_ok checks it)
+            q, k, v, trust, log_fade, new_conv = self.project(x, None, resets)
+            packed = resets is not None and (memory._FLA_SEG or not x.is_cuda)
+            if resets is not None and not packed:
+                log_fade = memory.with_resets(log_fade, resets)
+            o = memory.memory_op(q, k, v, log_fade, trust.to(q.dtype), self.K ** -0.5,
+                                 resets if packed else None, segs if packed else None)
+            return self.finish(x, o), (new_conv, None)
+        if state is None and self.fused_gates and memory._FUSED_OK:
             # Frog: the kernel scales question and key, squashes trust and fade and runs the memory in one go,
             # so the full-size fp32 copies of those steps (and their gradients) are never made
             q, k, v, tl, fr, new_conv = self.project(x, None, resets, raw=True)

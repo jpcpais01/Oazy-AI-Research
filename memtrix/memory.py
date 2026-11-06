@@ -350,3 +350,170 @@ def delta_rule_raw(q, k, v, fade_raw, trust_raw, A_log, dt_bias, scale=None, res
         return _fla_fused(q, k, v, fade_raw, trust_raw, A_log, dt_bias, scale, resets, segs)
     qn, kn, lf, tr = _gates(q, k, fade_raw, trust_raw, A_log, dt_bias)
     return delta_rule(qn, kn, v, lf, tr.to(qn.dtype), scale=scale, resets=resets, segs=segs)
+
+
+# ---- the memory kernel as a PyTorch operator (Frog). Above, the kernel is called through torch.compiler.disable:
+# the compiler stops before every memory layer and starts again after it, 21 times forward and 21 backward, so
+# nothing around the kernel can be fused across that line and the hand-offs (copies, casts, gradient sums) run
+# one small step at a time. Registered as an operator with its own backward, the kernel sits INSIDE one compiled
+# graph of the whole stack: the steps before and after it fuse with their neighbours. Only the kernel's own
+# forward and backward pieces are called (fla.ops.gated_delta_rule.chunk, written against flash-linear-attention
+# 0.6); op_ok() checks them against the reference (answers and every gradient) and the op is used only if they agree.
+_OP_OK = None
+_OP_IMPL = {}
+
+
+def _op_fwd_impl(q, k, v, g, beta, cu, ci, scale):
+    f = _OP_IMPL["fwd"]
+    g_cum, o, A, *_ = f(q=q, k=k, v=v, g=g, beta=beta, scale=scale, initial_state=None, output_final_state=False,
+                        cu_seqlens=cu, chunk_indices=ci)
+    return o.to(q.dtype).contiguous(), g_cum.float().contiguous(), A.contiguous()     # the layouts register_fake promises
+
+
+def _op_bwd_impl(q, k, v, g_cum, beta, A, do, cu, ci, scale):
+    f = _OP_IMPL["bwd"]
+    dq, dk, dv, db, dg, *_ = f(q=q, k=k, v=v, g=g_cum, beta=beta, A=A, scale=scale, initial_state=None, do=do, dht=None,
+                               cu_seqlens=cu, chunk_indices=ci)
+    return (dq.to(q.dtype).contiguous(), dk.to(k.dtype).contiguous(), dv.to(v.dtype).contiguous(),
+            db.to(beta.dtype).contiguous(), dg.float().contiguous())
+
+
+@torch.library.custom_op("oazy::memory_fwd", mutates_args=())
+def _memory_fwd(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, g: torch.Tensor, beta: torch.Tensor,
+                cu: torch.Tensor | None, ci: torch.Tensor | None, scale: float) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    return _op_fwd_impl(q, k, v, g, beta, cu, ci, scale)
+
+
+@_memory_fwd.register_fake
+def _(q, k, v, g, beta, cu, ci, scale):
+    B, T, H, _ = q.shape
+    return q.new_empty(B, T, H, v.shape[-1]), g.new_empty(g.shape, dtype=torch.float32), k.new_empty(B, T, H, 64)
+
+
+@torch.library.custom_op("oazy::memory_bwd", mutates_args=())
+def _memory_bwd(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, g_cum: torch.Tensor, beta: torch.Tensor, A: torch.Tensor,
+                do: torch.Tensor, cu: torch.Tensor | None, ci: torch.Tensor | None, scale: float
+                ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    return _op_bwd_impl(q, k, v, g_cum, beta, A, do, cu, ci, scale)
+
+
+@_memory_bwd.register_fake
+def _(q, k, v, g_cum, beta, A, do, cu, ci, scale):
+    return (torch.empty_like(q), torch.empty_like(k), torch.empty_like(v), torch.empty_like(beta),
+            g_cum.new_empty(g_cum.shape, dtype=torch.float32))
+
+
+def _memory_setup(ctx, inputs, output):
+    q, k, v, g, beta, cu, ci, scale = inputs
+    _, g_cum, A = output
+    ctx.save_for_backward(q, k, v, g_cum, beta, A, cu, ci)
+    ctx.scale = scale
+
+
+def _memory_backward(ctx, do, _dg_cum, _dA):
+    q, k, v, g_cum, beta, A, cu, ci = ctx.saved_tensors
+    dq, dk, dv, db, dg = _memory_bwd(q, k, v, g_cum, beta, A, do.contiguous(), cu, ci, ctx.scale)
+    return dq, dk, dv, dg, db, None, None, None
+
+
+_memory_fwd.register_autograd(_memory_backward, setup_context=_memory_setup)
+
+
+def _reference_impls():
+    """The op's pieces written in plain PyTorch (CPU self-tests: the op's plumbing, autograd and compiling the
+    whole stack without a break are checked with these; the real pieces are checked on the GPU by op_ok)."""
+    def fwd(q, k, v, g, beta, scale, initial_state, output_final_state, cu_seqlens, chunk_indices):
+        resets = _resets_of(cu_seqlens, q.shape[0] * q.shape[1], q.device)
+        lf = g if resets is None else with_resets(g.reshape(1, -1, g.shape[-1]), resets).reshape(g.shape)
+        o, _ = chunked(q.float(), k.float(), v.float(), lf.float(), beta.float(), scale=scale)
+        return g.float().clone(), o, torch.zeros(*q.shape[:3], 64, dtype=k.dtype, device=k.device), None, None, None
+
+    def bwd(q, k, v, g, beta, A, scale, initial_state, do, dht, cu_seqlens, chunk_indices):
+        resets = _resets_of(cu_seqlens, q.shape[0] * q.shape[1], q.device)
+
+        def f(q_, k_, v_, b_, g_):
+            gg = g_ if resets is None else with_resets(g_.reshape(1, -1, g.shape[-1]), resets).reshape(g.shape)
+            return chunked(q_, k_, v_, gg, b_, scale=scale)[0]
+        _, vjp = torch.func.vjp(f, *(t.float() for t in (q, k, v, beta, g)))   # (the op runs below autograd: no .grad here)
+        dq, dk, dv, db, dg = vjp(do.float())
+        return dq, dk, dv, db, dg, None
+    return fwd, bwd
+
+
+def _resets_of(cu, n, device):
+    if cu is None:
+        return None
+    r = torch.zeros(1, n, dtype=torch.bool, device=device)
+    r[0, cu[1:-1].long()] = True
+    return r
+
+
+def use_reference_op():
+    """Self-tests on the CPU: the op runs with the plain-PyTorch pieces."""
+    global _OP_OK
+    _OP_IMPL["fwd"], _OP_IMPL["bwd"] = _reference_impls()
+    _OP_OK = True
+
+
+def op_ok(device) -> bool:
+    """Bind the kernel's forward/backward pieces and check the op against the reference, with and without
+    packed documents, answers and every gradient. Call it BEFORE compiling (it is not compiler-friendly)."""
+    global _OP_OK
+    if _OP_OK is not None:
+        return _OP_OK
+    _OP_OK = False
+    if device.type != "cuda" or not fla_check(device):
+        return False
+    try:
+        import inspect
+        from fla.ops.gated_delta_rule.chunk import chunk_gated_delta_rule_fwd, chunk_gated_delta_rule_bwd
+        need_f = {"q", "k", "v", "g", "beta", "scale", "initial_state", "output_final_state", "cu_seqlens", "chunk_indices"}
+        need_b = {"q", "k", "v", "g", "beta", "A", "scale", "initial_state", "do", "dht", "cu_seqlens", "chunk_indices"}
+        if not (need_f <= set(inspect.signature(chunk_gated_delta_rule_fwd).parameters)
+                and need_b <= set(inspect.signature(chunk_gated_delta_rule_bwd).parameters)):
+            raise RuntimeError("this flash-linear-attention's kernel pieces have another shape (written for 0.6)")
+        _OP_IMPL["fwd"], _OP_IMPL["bwd"] = chunk_gated_delta_rule_fwd, chunk_gated_delta_rule_bwd
+        g = torch.Generator(device=device).manual_seed(2)
+        B, T, H, K = 2, 300, 2, 64
+        rnd = lambda *s: torch.randn(*s, device=device, generator=g)    # noqa: E731
+        q0 = F.normalize(rnd(B, T, H, K), dim=-1)
+        k0 = F.normalize(rnd(B, T, H, K), dim=-1)
+        v0, g0, b0 = rnd(B, T, H, K), -torch.rand(B, T, H, device=device, generator=g) * 0.3, torch.rand(B, T, H, device=device, generator=g)
+        resets = torch.rand(B, T, device=device, generator=g) < 0.02
+        resets[:, 0] = False
+        do = rnd(B, T, H, K)
+        worst = 0.0
+        for rs in ((None, resets) if _FLA_SEG else (None,)):
+            leaves = [x.clone().requires_grad_() for x in (q0, k0, v0, g0, b0)]
+            ref, _ = chunked(leaves[0], leaves[1], leaves[2], leaves[3] if rs is None else with_resets(leaves[3], rs), leaves[4])
+            gref = torch.autograd.grad((ref * do).sum(), leaves)
+            leaves2 = [x.clone().bfloat16().requires_grad_() if i in (0, 1, 2, 4) else x.clone().requires_grad_()
+                       for i, x in enumerate((q0, k0, v0, g0, b0))]
+            segs = segments(rs, hints=True) if rs is not None else None
+            o = memory_op(*leaves2, K ** -0.5, rs, segs)
+            g2 = torch.autograd.grad((o.float() * do).sum(), leaves2)
+            rel = lambda a, b: (a.float() - b).abs().max().item() / (b.abs().max().item() + 1e-6)    # noqa: E731
+            worst = max(worst, rel(o, ref), *[rel(a, b) for a, b in zip(g2, gref)])
+        _OP_OK = worst < 0.05
+        print(f"[memtrix] the memory kernel as one compiled operator {'OK' if _OP_OK else 'DISAGREES, not used'} "
+              f"(worst rel. error {worst:.4f}, answers and gradients)", flush=True)
+    except Exception as e:
+        print(f"[memtrix] the memory kernel as an operator is unavailable ({type(e).__name__}: {str(e)[:160]}); "
+              "it is called the usual way (same maths, more stops)", flush=True)
+        _OP_OK = False
+    return _OP_OK
+
+
+def memory_op(q, k, v, log_fade, trust, scale, resets=None, segs=None):
+    """The memory through the operator: (B, T, H, V) answers. With resets: documents packed one after another
+    (the kernel's cu_seqlens form), each starting blank; segs = segments(resets, hints=True), computed once."""
+    B, T, H, K = q.shape
+    cu = ci = None
+    if resets is not None:
+        cu, _, *rest = segs if segs is not None else segments(resets, hints=True)
+        ci = (rest[0] if rest else {}).get("chunk_indices")
+        flat = lambda x: x.reshape(1, B * T, *x.shape[2:])    # noqa: E731
+        q, k, v, log_fade, trust = (flat(x) for x in (q, k, v, log_fade, trust))
+    o, _, _ = _memory_fwd(q.contiguous(), k.contiguous(), v.contiguous(), log_fade.float().contiguous(),
+                          trust.contiguous(), cu, ci, float(scale))
+    return o.reshape(B, T, H, -1)

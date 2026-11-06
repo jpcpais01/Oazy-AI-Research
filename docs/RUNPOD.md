@@ -111,8 +111,11 @@ before. Recipe and reasons in `frog/README.md`.
 
 ```bash
 cd /workspace/oazy && git pull
+TV=$(python3 -c "import torch; print(torch.__version__)")
+python3 -m pip install -q torchao --constraint <(echo "torch==${TV}")   # once: FP8 training (keeps your torch)
+python3 -m pip install -q -U flash-linear-attention --constraint <(echo "torch==${TV}")   # 0.6 or newer: the memory operator
 nice -n 10 python3 -m oazy.tagus --run-tokens 4e9        # once: Tagus grown to what a 4,000M-token run reads
-python3 -m frog.tests --device cuda                      # self-tests; prints whether the two speed switches are in use
+python3 -m frog.tests --device cuda                      # self-tests; prints which speed paths are in use (operator, flex, FP8)
 python3 -m oazy.profile --model frog --preset big --micro 32   # tokens/s, memory, and a whole run's speed (paste it in the thread)
 bash runpod/train.sh frog --preset big --tokens 4e9 --micro 32 # the run (~7.5-9 h on a B200, to be confirmed by the profile)
 python3 -m oazy.sft --run frog                           # afterwards: the chat fine-tune -> runs/frog-chat
@@ -120,6 +123,7 @@ python3 -m frog.chat --run frog-chat --port 8002         # chat
 ```
 
 If the loss turns noisy, resume with `--lr 1.2e-3 --muon-lr 0.02`; `--mentor-share 0` is Bee3's way of mixing the mentor in.
+`--fp8 0` trains in bf16; `--set grow=28:0` starts at full depth (only on a fresh run).
 
 ## Experiments
 

@@ -33,12 +33,22 @@ def main():
 
     # ---- the body: Bee3's, wider and a little deeper
     big = Frog(FrogConfig())
-    n = big.num_params()
-    check("full size is about 0.4B", 395e6 < n < 415e6, f"{n / 1e6:.1f}M parameters, {big.layout()}")
+    n = big.full_params()
+    check("full size is about 0.4B", 395e6 < n < 415e6, f"{n / 1e6:.1f}M parameters once grown, {big.layout()}")
     check("21 memory layers + 7 attention layers (Bee3's 3:1)", big.layout() == "21 memory + 7 attention layers")
     diff = {k for k, v in Bee3Config().to_dict().items() if getattr(big.cfg, k) != v}
-    check("same body as Bee3; only the sizes and two speed switches differ",
-          diff == {"d_model", "n_layer", "n_head", "attn_heads", "mlp_hidden", "flex_attn", "fused_gates"}, str(diff))
+    check("same body as Bee3; only the sizes, the growing and the speed switches differ",
+          diff == {"d_model", "n_layer", "n_head", "attn_heads", "mlp_hidden", "flex_attn", "fused_gates", "memory_op"}, str(diff))
+    check("it starts 8 layers deep and grows to 28 (16 at 15%, 28 at 35%), pattern intact",
+          big.depth == 8 and big.depth_at(0.149) == 8 and big.depth_at(0.15) == 16 and big.depth_at(0.35) == 28
+          and abs(big.full_params() - n) < 1e5 and n - big.num_params() > 200e6, f"{big.num_params() / 1e6:.0f}M at the start")
+    big.grow_to(1.0)
+    check("fully grown: 28 layers, 3 memory : 1 attention all the way", "".join(b.kind for b in big.blocks) == "MMMA" * 7
+          and abs(big.num_params() - n) < 1e5)
+    from oazy import fp8
+    picked = [f for f, mod in big.named_modules() if fp8.keep(mod, f)]
+    check("FP8 goes to the big products only (projections, MLPs), not the word table or the small gates",
+          len(picked) == 21 * 5 + 7 * 7 and not any(f.endswith((".trust", ".fade")) for f in picked), f"{len(picked)} layers")
     check("memories and heads fill the width", big.cfg.n_head * big.cfg.head_v == big.cfg.d_model
           and big.cfg.attn_heads * big.cfg.attn_head_dim == big.cfg.d_model)
     check("2,048-word windows, no bleed between documents, SmolLM2's pieces",
@@ -48,8 +58,9 @@ def main():
     # ---- the recipe: Bee3's, plus the mentor share and bigger steps
     from oazy.train import RECIPE, PRESETS, MENTOR, BEES, FAST, mentor_pass
     from ember.mentor import fade
-    check("Bee3's recipe, plus the mentor on a share of the sequences",
-          {k: v for k, v in RECIPE["frog"].items() if k != "mentor_share"} == RECIPE["bee3"] and RECIPE["frog"]["mentor_share"] == 1
+    check("Bee3's recipe, plus the mentor on a share of the sequences and FP8",
+          {k: v for k, v in RECIPE["frog"].items() if k not in ("mentor_share", "fp8")} == RECIPE["bee3"]
+          and RECIPE["frog"]["mentor_share"] == 1 and RECIPE["frog"]["fp8"] == 1
           and "mentor_share" not in RECIPE["bee3"])
     pb = PRESETS["big"]
     check("big preset: 524k-token steps, learning rates 1.8e-3 / Muon 0.03 (Bee3: 262k, 2.4e-3 / 0.04)",
@@ -113,8 +124,49 @@ def main():
     check("flex attention with the document block mask = the yes/no grid", e < (3e-2 if dev.type == "cuda" else 1e-4), f"max diff {e:.1e}")
     if dev.type == "cuda":
         from bee.model import flex_check
-        print(f"  info  fused gates in the memory kernel: {'yes' if memory.fused_gates_ok(dev) else 'no'}; "
-              f"compiled flex attention: {'yes' if flex_check(dev, FrogConfig()) else 'no'}")
+        print(f"  info  memory kernel as a compiled operator: {'yes' if memory.op_ok(dev) else 'no'}; fused gates: "
+              f"{'yes' if memory.fused_gates_ok(dev) else 'no'}; compiled flex attention: {'yes' if flex_check(dev, FrogConfig()) else 'no'}; "
+              f"FP8: {'yes' if fp8.available(dev) else 'no'}")
+    else:
+        memory.use_reference_op()          # the operator's plumbing with plain-PyTorch pieces (the GPU checks the real ones)
+    if memory._OP_OK:
+        m2 = Frog(FrogConfig(**SMALL, vocab_size=320))
+        xs = torch.randint(1, 320, (2, 96), device=dev)
+        xs[:, 30] = 0
+        xs[1, 70] = 0
+        m2.to(dev)
+        ys = torch.roll(xs, -1, 1)
+        keep_op = memory._OP_OK
+        memory._OP_OK = False
+        l1, _ = m2.losses(xs, ys)
+        g1 = torch.autograd.grad(l1, list(m2.parameters()))
+        memory._OP_OK = keep_op
+        l2, _ = m2.losses(xs, ys)
+        g2 = torch.autograd.grad(l2, list(m2.parameters()))
+        e = max(abs(l1.item() - l2.item()), *[(a - b).abs().max().item() for a, b in zip(g1, g2)])
+        check("memory kernel as an operator = the usual call (loss and every gradient, documents packed)",
+              e < (5e-2 if dev.type == "cuda" else 1e-5), f"max diff {e:.1e}")
+        r_, mk, sg = m2.doc_info(xs)
+        f = torch.compile(m2._trunk, fullgraph=True, backend="aot_eager" if dev.type == "cpu" else "inductor")
+        hc = f(xs, r_, m2.attn_mask(xs, r_, mk), sg)
+        hc.float().sum().backward()
+        check("the whole stack compiles as ONE graph with the memory operator (no stop at any memory layer)", torch.isfinite(hc).all().item())
+
+    # ---- growing: copies of the top groups on top, starting as working layers; checkpoints from any depth
+    mg = Frog(FrogConfig(**{**SMALL, "grow": "4:0,8:0.5"}, vocab_size=320)).to(dev)
+    grew = mg.grow_to(0.5)
+    same = all((a - b).abs().max().item() == 0 for a, b in zip(mg.blocks[4].parameters(), mg.blocks[0].parameters()))
+    check("at 50% it grows 4 -> 8 layers by copying the top group on top (the copies start as that group)",
+          grew and mg.depth == 8 and same and "".join(b.kind for b in mg.blocks) == "MMMAMMMA" and not mg.grow_to(0.9))
+    fresh = Frog(FrogConfig(**{**SMALL, "grow": "4:0,8:0.5"}, vocab_size=320)).to(dev)
+    fresh.load_state_dict(mg.state_dict())
+    check("a checkpoint from any depth loads (it grows to match first)", fresh.depth == 8)
+    try:
+        Frog(FrogConfig(**{**SMALL, "grow": "3:0,8:0.5"}))
+        bad = False
+    except ValueError:
+        bad = True
+    check("a plan must grow in whole groups of 3 memory + 1 attention", bad)
 
     # ---- one whole tiny run on stand-in text: Frog's recipe end to end
     from bee2.tests import stand_ins, fake_docs
@@ -143,7 +195,7 @@ def main():
     runs = tmp / "runs"
     sys.argv = ["train", "--model", "frog", "--preset", "smoke", "--data", str(data), "--runs", str(runs), "--mentor", "smol-random",
                 "--device", str(dev), "--compile", "0", "--tokens", "60000", "--batch-ramp", "512:0.5", "--mix", "fwe:0.9,chat:0.1@0",
-                "--micro", "2"]
+                "--micro", "2", "--set", "n_layer=8", "grow=4:0,8:0.4"]
     train.main()
     rd = runs / "frog"
     cfg = json.loads((rd / "config.json").read_text())
@@ -160,6 +212,11 @@ def main():
     check("the run finished", st["state"] == "done", f"val loss {st['latest']['val_loss']:.3f}")
     mdl, ck = train.load_model(rd / "ckpt.pt", dev)
     check("its checkpoint loads as Frog", ck["kind"] == "frog" and type(mdl).__name__ == "Frog")
+    deps = [r.get("depth") for r in tr]
+    check("it grew inside the run (4 -> 8 layers at 40%) and finished fully grown", deps[0] == 4 and deps[-1] == 8 and mdl.depth == 8
+          and any(r["kind"] == "grow" for r in recs), f"{deps[0]} -> {deps[-1]} layers")
+    check("FP8 asked for by the recipe (used only where the GPU has it and the check passes)",
+          "fp8" in cfg and (cfg["fp8"] is False or fp8.available(dev)), f"fp8 {cfg['fp8']}")
     out, _ = mdl.generate(enc.encode_ordinary("The cat"), max_new_tokens=5)
     check("it writes", len(out) <= 5, repr(enc.decode(out)))
 
