@@ -11,7 +11,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@1&family=Outfit:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
 <style>
 /* Layout: one black stage. A full-bleed light tunnel opens the page, then quiet hairline-ruled
    sections on a 1200px grid, with each model carrying its own accent (as games do in the Oazy launcher). */
@@ -104,8 +104,8 @@ p { margin: 0; }
 .hero-in { min-height: clamp(560px, 86vh, 880px); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 22px; padding-block: 72px 120px; }
 .eyebrow { font: 500 12px/1.4 var(--mono); letter-spacing: 0.22em; text-transform: uppercase; color: var(--ink-2); text-shadow: 0 2px 24px rgba(0, 0, 0, .9); }
 .hero h1 { font-size: clamp(34px, 4.6vw, 68px); line-height: 1.06; font-weight: 400; letter-spacing: -0.025em; max-width: 16ch; text-shadow: 0 4px 60px rgba(0, 0, 0, .7); }
-.glassword .hero h1 em { background: none; -webkit-text-fill-color: transparent; color: transparent; text-shadow: none; }
-.hero h1 em { font-style: normal; font-weight: 700; background: linear-gradient(100deg, #fff 10%, #d9d2ff 45%, #a6f0ff 90%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+/* the one word set apart: a fine italic serif, like a journal title */
+.hero h1 em { font-family: "Instrument Serif", Georgia, serif; font-style: italic; font-weight: 400; font-size: 1.08em; letter-spacing: -0.01em; padding-right: .06em; background: linear-gradient(180deg, #fff 30%, #cfc8ff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .hero .sub { max-width: 520px; text-wrap: balance; font-size: clamp(15px, 1.1vw, 16.5px); color: var(--ink-2); text-shadow: 0 2px 20px rgba(0, 0, 0, .9); }
 .ctas { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; margin-top: 8px; }
 @media (max-width: 480px) { .ctas .btn:not(.btn-quiet) { flex: 1 1 100%; } .ctas:has(.btn-ghost, .btn-light) { width: 100%; } }
@@ -883,25 +883,9 @@ void main() {
   /* ---------- 3. final: fringing, glow, tone, vignette, grain ---------- */
   const FINAL = HEAD_F + `
 VARY vec2 vUv;
-uniform sampler2D uScene, uB1, uB2, uWord, uWordH;
+uniform sampler2D uScene, uB1, uB2;
 uniform vec2  uRes;
-uniform float uTime, uIntro, uFade, uCenter, uScale, uPx, uHasWord;
-vec2 wslope(vec2 p) {                                   // slope of the glass word's surface
-  vec2 tx = 1.5 * uPx / uRes;
-  return vec2(TEX(uWordH, p + vec2(tx.x, 0.0)).a - TEX(uWordH, p - vec2(tx.x, 0.0)).a,
-              TEX(uWordH, p + vec2(0.0, tx.y)).a - TEX(uWordH, p - vec2(0.0, tx.y)).a);
-}
-vec3 wglow(vec2 p) {                                    // the glass's own light at p: body, rim, highlight
-  float m = TEX(uWord, p).a;
-  vec2 n = wslope(p); float sl = length(n); vec2 nn = n / (sl + 1e-4);
-  float rim = smoothstep(0.16, 0.42, sl) * m;
-  float key = max(0.0, dot(nn, normalize(vec2(0.55, -0.85))));          // light from the top left
-  float kick = max(0.0, dot(nn, normalize(vec2(-0.6, 0.8))));           // a fainter one from below right
-  float h = TEX(uWordH, p).a;
-  float body = m * (0.03 + 0.05 * smoothstep(0.5, 1.0, h));
-  float l = body + rim * (0.35 + 1.5 * pow(key, 1.2) + 0.6 * pow(kick, 1.6));
-  return vec3(l);
-}
+uniform float uTime, uIntro, uFade, uCenter, uScale;
 float h21(vec2 p) { p = fract(p * vec2(233.34, 851.73)); p += dot(p, p + 23.45); return fract(p.x * p.y); }
 // one travelling ripple on the glass: height, slope (x, y) and curvature
 vec4 rip(vec2 q, vec2 k, float w, float ph, float a) {
@@ -934,31 +918,6 @@ void main() {
   float caustic = clamp(1.0 - s.w * 10.0, 0.5, 2.0);
   vec3 c = (sc * caustic + b1 * 0.42 + b2 * 0.6) / uScale;
 
-  // the word "differently" is a piece of liquid glass. uWord is the word's shape, uWordH a softened
-  // copy that serves as the glass's thickness: flat and thick in the middle of each stroke, rounding
-  // off to nothing at its edge. Light behind it is bent by the slope of that surface (most at the
-  // rounded rim), and each colour is bent by a different amount, so red, green and blue each see the
-  // streaks, and the glass's own bright rim, in a slightly different place.
-  vec3 wg = vec3(0.0); float wm = 0.0;
-  if (uHasWord > 0.5) {
-    wm = TEX(uWord, uv).a;
-    vec2 wn = wslope(uv);
-    // dispersion: grows away from the middle of the view (like a real lens) and along the bevel
-    vec2 disp = (uv - 0.5) * vec2(uRes.x / uRes.y, 1.0) * 0.001 + wn / (length(wn) + 0.08) * 0.75 * uPx / uRes + vec2(0.2, 0.1) * uPx / uRes;
-    vec3 inside = vec3(0.0);
-    if (wm > 0.002) {
-      vec2 wo = -wn * 90.0 * uPx / uRes;                        // how far the light is bent (as uv)
-      vec3 gs = vec3(TEX(uScene, uv + wo * 0.85 - disp * 2.0).r, TEX(uScene, uv + wo).g, TEX(uScene, uv + wo * 1.15 + disp * 2.0).b);
-      vec3 g1 = vec3(TEX(uB1, uv + wo * 1.1 - disp * 3.0).r, TEX(uB1, uv + wo * 1.3).g, TEX(uB1, uv + wo * 1.5 + disp * 3.0).b);
-      vec3 g2 = vec3(TEX(uB2, uv + wo * 1.4 - disp * 4.0).r, TEX(uB2, uv + wo * 1.6).g, TEX(uB2, uv + wo * 1.8 + disp * 4.0).b);
-      inside = (gs * 1.5 + g1 * 1.1 + g2 * 1.3) / uScale;      // glass gathers light: brighter than around it
-    }
-    c = mix(c, inside, wm);
-    // the glass itself: a pale body and a bright, lit rim, seen once per colour at shifted places
-    vec3 split = vec3(wglow(uv - disp * 1.6).r, wglow(uv).g, wglow(uv + disp * 1.6).b);
-    float lum = dot(split, vec3(0.3333));
-    wg = mix(vec3(lum) * vec3(0.97, 0.96, 1.0), split, 0.6);   // mostly white light, colour only at the very edge
-  }
   // a faint violet breath behind the waist
   float ax = abs(d.x) * 2.0;
   c += vec3(0.20, 0.16, 0.55) * 0.05 * exp(-pow(d.y / (0.10 + 0.25 * ax * ax), 2.0));
@@ -967,7 +926,6 @@ void main() {
   c = vec3(1.0) - exp(-c * 2.1);                       // soft shoulder, no hard clipping
   float vig = smoothstep(1.25, 0.25, length(d * vec2(1.0, 1.6)));
   c *= mix(0.55, 1.0, vig);
-  c += wg * uIntro;                                    // the glass word, added after the tone curve so it stays crisp
   c += vec3(0.0196, 0.0196, 0.0275);                   // the page black (#050507)
   float g = h21(gl_FragCoord.xy + fract(uTime * 7.0) * 113.0) - 0.5;
   c += g * 0.018 * (0.3 + c);                          // film grain
@@ -995,7 +953,7 @@ void main() {
   }
   const P1 = program(FIELD, ['uRes', 'uTime', 'uMouse', 'uCenter', 'uPx', 'uScale']);
   const PB = program(BLUR, ['uTex', 'uDir']);
-  const PF = program(FINAL, ['uScene', 'uB1', 'uB2', 'uRes', 'uTime', 'uIntro', 'uFade', 'uCenter', 'uScale', 'uWord', 'uWordH', 'uPx', 'uHasWord']);
+  const PF = program(FINAL, ['uScene', 'uB1', 'uB2', 'uRes', 'uTime', 'uIntro', 'uFade', 'uCenter', 'uScale']);
   if (!P1 || !PB || !PF) { canvas.remove(); return; }
 
   const buf = gl.createBuffer();
@@ -1043,41 +1001,6 @@ void main() {
     };
     if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) { hdr = false; }
   }
-  function relayout() { resize(); buildWord(); }
-
-  // the glass word: its exact shape (from the page's own font and layout) drawn to two textures
-  const word = title.querySelector('em');
-  const wordTex = [gl.createTexture(), gl.createTexture()], wc = [document.createElement('canvas'), document.createElement('canvas')];
-  let hasWord = false;
-  function buildWord() {
-    if (!word || !W) return;
-    const cr = canvas.getBoundingClientRect(), r = word.getBoundingClientRect(), cs = getComputedStyle(word);
-    const size = parseFloat(cs.fontSize);
-    wc.forEach((cv, i) => {
-      cv.width = W; cv.height = H;
-      const x = cv.getContext('2d');
-      x.clearRect(0, 0, W, H);
-      x.font = `${cs.fontStyle} ${cs.fontWeight} ${size * px}px ${cs.fontFamily}`;
-      if ('letterSpacing' in x) x.letterSpacing = (parseFloat(cs.letterSpacing) || 0) * px + 'px';
-      const m = x.measureText(word.textContent);
-      const asc = m.fontBoundingBoxAscent !== undefined ? m.fontBoundingBoxAscent : size * px * 0.8;
-      const desc = m.fontBoundingBoxDescent !== undefined ? m.fontBoundingBoxDescent : size * px * 0.2;
-      const top = (r.top - cr.top) * px + (r.height * px - (asc + desc)) / 2;
-      if (i === 1) x.filter = `blur(${Math.max(1.2, size * px * 0.03)}px)`;
-      x.fillStyle = '#fff';
-      x.fillText(word.textContent, (r.left - cr.left) * px, top + asc);
-      gl.bindTexture(gl.TEXTURE_2D, wordTex[i]);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cv);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    });
-    hasWord = true;
-    document.documentElement.classList.add('glassword');
-  }
 
   function pass(prog, out, w, h) {
     gl.useProgram(prog.pr);
@@ -1124,9 +1047,6 @@ void main() {
     gl.uniform1f(PF.u.uFade, fade);
     gl.uniform1f(PF.u.uCenter, center);
     gl.uniform1f(PF.u.uScale, SCALE);
-    bind(3, wordTex[0], PF.u.uWord); bind(4, wordTex[1], PF.u.uWordH);
-    gl.uniform1f(PF.u.uPx, px);
-    gl.uniform1f(PF.u.uHasWord, hasWord ? 1 : 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
@@ -1149,8 +1069,8 @@ void main() {
       frames++; acc += dt;
       if (frames === 45) {
         const avg = acc / frames;
-        if (avg > 0.030 && quality > 0.7) { quality = Math.max(0.7, quality * 0.85); relayout(); }
-        else if (avg < 0.013 && quality < 1) { quality = Math.min(1, quality * 1.12); relayout(); }
+        if (avg > 0.030 && quality > 0.7) { quality = Math.max(0.7, quality * 0.85); resize(); }
+        else if (avg < 0.013 && quality < 1) { quality = Math.min(1, quality * 1.12); resize(); }
         frames = 0; acc = 0;
       }
     }
@@ -1158,11 +1078,10 @@ void main() {
   }
   function go() { if (!running && visible && !document.hidden) { running = true; last = 0; requestAnimationFrame(frame); } }
 
-  relayout();
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { relayout(); if (reduce) draw(); });
-  if (reduce) { intro = 1; draw(); addEventListener('resize', () => { relayout(); draw(); }); return; }
-  addEventListener('resize', relayout);
-  new ResizeObserver(relayout).observe(hero);
+  resize();
+  if (reduce) { intro = 1; draw(); addEventListener('resize', () => { resize(); draw(); }); return; }
+  addEventListener('resize', resize);
+  new ResizeObserver(resize).observe(hero);
   new IntersectionObserver(es => { visible = es[0].isIntersecting; go(); }).observe(hero);
   document.addEventListener('visibilitychange', go);
   canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); running = false; });
