@@ -117,6 +117,7 @@
     $("#emptyCard").hidden = models.length > 0;
     $("#modelCard").hidden = !m;
     $("#welcome").hidden = started;
+    $("#newChat").hidden = !started;
     if (m) {
       const d = describe(m);
       $("#mcName").textContent = m.label || m.name;
@@ -357,7 +358,7 @@
     started = false;
     closeSheets();
     paint();
-    toast("New conversation");
+    $("#scroll").scrollTop = 0;
   };
   $("#checkBtn").onclick = () => {
     if (!info) { toast("Open a model first"); return; }
