@@ -19,8 +19,8 @@ long-text advantage does not show at that length. All attention runs on the GPU'
 
 Coral's recipe (oazy/train.py RECIPE["bee4"], bee4/README.md):
   growing depth          6 layers for the first 10%, 9 until 25%, then 12 (Coral's timing); each growth copies the top layers
-  the mentor             stronger than Coral's, and kept on: SmolLM2-1.7B (the same pieces) on 1 pass in 4 at the
-                         start, 1 in 10 from 30%, fading to none over the last 10% of the run
+  the mentor             kept on, unlike Coral's: SmolLM2-360M on 1 pass in 4 at the start, 1 in 10 from 30%,
+                         fading to none over the last 10% of the run
   plain causal attention the documents in a window may see earlier ones (keeping them apart cost ~40% of a pass);
                          the mentor still reads each document on its own. --set attn_docs=1 brings the rule back.
   the rest               FP8 matrix products, the stored RoPE table, the loss in slices, Muon with weight decay,
