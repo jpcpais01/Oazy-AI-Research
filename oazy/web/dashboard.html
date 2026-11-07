@@ -161,7 +161,7 @@
       <details class="why"><summary>What is loss?</summary><div class="body">
         <p>At every word, a model gives each possible next word a chance. <b>Loss</b> measures how surprised it was by the word that really came next. Lower means it saw it coming.</p>
         <p>A loss of <b>L</b> is as hard as picking the right word out of about <b>e<sup>L</sup></b> equally likely ones: 3.3 is like choosing among 27 words.</p>
-        <p>Each model has two lines in two colors. The <b>training</b> line is the loss on the batches it is learning from, as they go by. The <b>held-out</b> line is the loss on text it never trains on (the "finish line" scores above use those). If the held-out line stays close to the training one, the model is learning things that carry over to new text; if it starts climbing away above it, the model is memorising its training text. The dashed line is OpenAI's own GPT-2 (124M) measured on the same text, if you ran <span class="kbd">oazy.compare</span>.</p>
+        <p>Each model has two lines in two colors. The <b>training</b> line is the loss on the batches it is learning from, as they go by. The <b>held-out</b> line is the loss on text it never trains on (the "finish line" scores above use those). If the held-out line stays close to the training one, the model is learning things that carry over to new text; if it starts climbing away above it, the model is memorising its training text. Published models (OpenAI GPT-2, SmolLM2) are left out of this chart: they trained on other text, or maybe on these very pages, so their loss can't be compared fairly. Compare them on the tests in "The finish line".</p>
         <p>The <b>dashed</b> lines are forecasts of where each line will be at the planned end, with the likely range shaded around them (about 8 times in 10 the end lands inside it). See "How the forecasts work" below.</p>
       </div></details>
       <details class="why" id="foreWhy"><summary>How the forecasts work, and how good they are</summary><div class="body">
@@ -614,10 +614,9 @@ function scoreboard() {
       arc_easy: ev?.arc_easy, piqa: ev?.piqa, lambada: ev?.lambada, evQ: ev && ev.full === false };
   };
   const rows = names.map(rowOf).filter((r) => r.val != null || r.hs != null);
-  const refs = refNames.map(rowOf).filter((r) => r.val != null || r.hs != null).map((r) => ({ ...r, ref: true }));
+  const refs = refNames.map(rowOf).filter((r) => r.hs != null).map((r) => ({ ...r, ref: true, val: null }));
   if (!rows.length) { box.innerHTML = `<div class="card"><div class="empty">The scores fill in after the first evaluation.</div></div>`; return; }
-  const gv = lastOf("openai-gpt2", "eval")?.val_loss;
-  const ref = { n: "openai-gpt2", ref: true, size: 124e6, val: gv, hs: gpt2HS() };
+  const ref = { n: "openai-gpt2", ref: true, size: 124e6, val: null, hs: gpt2HS() };
   const COLS = [
     ["val", "Held-out loss", "lower is better", -1, fmtL],
     ["hs", "HellaSwag", "guessing 25%", 1, pct],
@@ -660,7 +659,7 @@ function scoreboard() {
         <tr><th></th><th>Size</th>${COLS.map(([, t, h]) => `<th>${t}<span>${h}</span></th>`).join("")}</tr>
         ${rows.map(tr).join("")}${refs.concat(ref).sort((a, b) => (b.hs ?? 0) - (a.hs ?? 0)).map(tr).join("")}
       </table></div>
-      <p class="note">Held-out loss: next-word surprise on the same FineWeb-Edu text for every model. The tests: higher is better, green is our best in each column. Rows in italics are published models measured here with the same tests (toggle them in the model library). HellaSwag is scored per letter, like published small-model results.${anyQ ? " <sup>*</sup> A quick check on part of the questions, run during training; the whole test runs at the end." : ""}</p>
+      <p class="note">Held-out loss: next-word surprise on FineWeb-Edu text our models never trained on; shown for our models only (published models read other text, or maybe these very pages, so their loss isn't comparable). The tests: higher is better, green is our best in each column. Rows in italics are published models measured here with the same tests (toggle them in the model library). HellaSwag is scored per letter, like published small-model results.${anyQ ? " <sup>*</sup> A quick check on part of the questions, run during training; the whole test runs at the end." : ""}</p>
       ${srcHtml}
     </div>`;
 }
@@ -806,11 +805,7 @@ function drawLearning() {
   let anyFore = false, anyHsFore = false, foreFrom = Infinity;
   for (const r of VIS()) {
     const m = DATA[r.name]?.metrics || [], col = colorOf(r.name), hcol = heldColorOf(r.name);
-    if (isRef(r.name)) {
-      const e = lastOf(r.name, "eval");
-      if (e) { series.push({ name: nameOf(r.name), color: col, dash: [6, 5], width: 1.5, points: [], hline: e.val_loss, keep: true }); leg.push([nameOf(r.name), col, true]); }
-      continue;
-    }
+    if (isRef(r.name)) continue;      // published models: their loss isn't comparable (other training text; SmolLM2 likely read these pages)
     const tr = m.filter((x) => x.kind === "train"), ev = m.filter((x) => x.kind === "eval"), hs = m.filter(hsOK);
     const step = Math.max(1, Math.floor(tr.length / 400));
     const trS = { name: nameOf(r.name) + " · training", color: col, width: 2, endLabel: true, points: tr.filter((_, i) => i % step === 0).map((x) => [xOf(x), x.loss]) };
@@ -859,7 +854,13 @@ function drawLearning() {
     hsS.push({ name: "OpenAI GPT-2", color: C.ref, dash: [6, 5], width: 1.5, points: [[h0, hsRef], [h1, hsRef]] });
     hsS.push({ name: "guessing", color: C.muted, dash: [2, 4], width: 1, points: [[h0, 0.25], [h1, 0.25]] });
   }
-  hleg.push([`OpenAI GPT-2 (${pct(hsRef)})`, C.ref, true], ["guessing (25%)", C.muted, true]);
+  hleg.push([`OpenAI GPT-2 (${pct(hsRef)})`, C.ref, true]);
+  for (const r of VIS().filter((x) => isRef(x.name) && x.name !== "openai-gpt2")) {     // SmolLM2: the published lines to beat
+    const h = (DATA[r.name]?.metrics || []).filter((x) => x.kind === "hellaswag" && x.full).pop(); if (!h) continue;
+    if (hx.length) hsS.push({ name: nameOf(r.name), color: colorOf(r.name), dash: [6, 5], width: 1.5, points: [[h0, h.acc_norm], [h1, h.acc_norm]] });
+    hleg.push([`${nameOf(r.name)} (${pct(h.acc_norm)})`, colorOf(r.name), true]);
+  }
+  hleg.push(["guessing (25%)", C.muted, true]);
   const hzName = HORIZON ? "if planned for " + fmtHz(HORIZON) : null;
   if (anyFore) leg.push([hzName || "forecast to the planned end", C.muted, true]);
   if (anyHsFore) hleg.push([hzName || "forecast", C.muted, true]);
@@ -1081,7 +1082,7 @@ function podSummary() {
     cell("training now", live.length ? `${live.length}<small>${live.length === 1 ? "run" : "runs"}</small>` : "0", live.length ? esc(live.map((r) => nameOf(r.name)).join(" · ")) : "nothing on the GPU")
     + cell("combined speed", tps ? `${(tps / 1e3).toFixed(0)}k<small>tok/s</small>` : "–", gpus.length ? esc(gpus.join(", ")) : "")
     + cell("next to finish", next ? `${fmtTime(next.status.eta_s)}` : "–", next ? esc(nameOf(next.name)) + " · " + fmtM(next.config?.total_tokens || 0) + " tokens" : "")
-    + cell("best held-out loss", best ? fmtL(best.status.latest.val_loss) : "–", best ? esc(nameOf(best.name)) + (RUNS.find((r) => r.name === "openai-gpt2")?.status?.latest?.val_loss ? " · OpenAI GPT-2 " + fmtL(RUNS.find((r) => r.name === "openai-gpt2").status.latest.val_loss) : "") : "");
+    + cell("best held-out loss", best ? fmtL(best.status.latest.val_loss) : "–", best ? esc(nameOf(best.name)) : "");
   if (typeof LAB !== "undefined") LAB.setPace(running.length ? 1 : 0.15);      // the light drifts while models train
 }
 
