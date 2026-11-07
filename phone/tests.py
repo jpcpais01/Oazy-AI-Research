@@ -30,8 +30,9 @@ HERE = Path(__file__).resolve().parent
 TMP = Path(tempfile.mkdtemp(prefix="oazy-phone-"))
 
 
-def standin_tokenizer() -> Path:
-    """A small byte-level BPE with SmolLM2's pre-tokenizer and special pieces."""
+def standin_tokenizer(numbers: bool = False) -> Path:
+    """A small byte-level BPE with SmolLM2's pre-tokenizer and special pieces. numbers=True also learns pieces like
+    " Â" (a space then the first byte of ½), so cutting " ½" as one word instead of " " + "½" would show."""
     from tokenizers import Tokenizer, models, trainers, pre_tokenizers, decoders
     t = Tokenizer(models.BPE())
     t.pre_tokenizer = pre_tokenizers.Sequence([pre_tokenizers.Digits(individual_digits=True),
@@ -46,8 +47,10 @@ def standin_tokenizer() -> Path:
         "def main():\n    print('hello world')\n    return 0\n", "In 2024 there were 365 days; 12 months, 52 weeks.",
         "Olá João, tudo bem? Ça va très bien. Straße. Привет мир. 你好世界", "We'll see; they're here; it's fine; I've been.",
     ] * 50
+    if numbers:
+        corpus += ["Symbols: © ® ½ ² ³ ٣٤ ① and x² + y³; 3½ cups © 2024 ® ½ ¼ ¾ ४२"] * 50
     t.train_from_iterator(corpus, tr)
-    p = TMP / "tokenizer.json"
+    p = TMP / ("tokenizer-numbers.json" if numbers else "tokenizer.json")
     t.save(str(p))
     return p
 
@@ -157,14 +160,18 @@ def main():
                 print(f"  {name:13s} self-check: {rep}  {'OK' if good else 'FAIL'}")
                 ok &= good
 
-    # the tokenizer against Hugging Face's, on many texts
-    path = TMP / "coral-q8.oazy"
+    # the tokenizer against Hugging Face's, on many texts (with a second stand-in that has learned number pieces)
+    os.environ["OAZY_SMOL_TOKENIZER"] = str(standin_tokenizer(numbers=True))
+    enc = tok.SmolTokenizer()
+    path = TMP / "numbers-q8.oazy"
+    export(models(enc.n_vocab)["bee4"], {"kind": "bee4", "tokens": 1, "step": 1}, enc, path, "q8", say=lambda *a: None)
     alphabet = list("abcdefghijklmnopqrstuvwxyzABCXYZ0123456789 .,;:!?'\"()-_\n\t/\\@#") + list("éãçßøПривет你好😀ٴ٣½")
     texts = []
     for i in range(200):
         n = rng.randrange(1, 40)
         texts.append("".join(rng.choice(alphabet) for _ in range(n)))
-    texts += ["  leading", "trailing  ", "\n\n\nx", "x\n\n\n", " ' s", "'ll'", "a  \n b", "1 2  3   4", "<|endoftext|><|endoftext|>"]
+    texts += ["  leading", "trailing  ", "\n\n\nx", "x\n\n\n", " ' s", "'ll'", "a  \n b", "1 2  3   4", "<|endoftext|><|endoftext|>",
+              "½ ² ³ ٣٤ ①", "x² 3½ ©½", " ½", "¼ and ¾", " ४२ "]
     bad = 0
     for t in texts:
         want = enc.tk.encode(t, add_special_tokens=False).ids

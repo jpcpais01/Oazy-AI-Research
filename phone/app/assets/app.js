@@ -368,6 +368,7 @@
     $("#veil").hidden = false;
     $("#" + id).hidden = false;
     if (id === "models") refreshModels();
+    if (id === "settings") placeSlide();
     Land.kick();
   }
   function closeSheets(quiet) {
@@ -431,13 +432,18 @@
   inp.addEventListener("input", grow);
   inp.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && mode === "chat") { e.preventDefault(); send(); } });
   $("#send").onclick = send;
+  function placeSlide() {        // the toggle lives in the Settings sheet: it can only be measured while that is open
+    const on = document.querySelector(".modes button.on"), slide = document.querySelector(".modes .slide");
+    if (!on.offsetWidth) return;
+    if (!slide.style.width) { slide.style.transition = "none"; requestAnimationFrame(() => (slide.style.transition = "")); }
+    slide.style.width = on.offsetWidth + "px";
+    slide.style.transform = `translateX(${on.offsetLeft - 3}px)`;
+  }
   function setMode(m) {
     mode = m;
     store.set("mode", m);
     document.querySelectorAll(".modes button").forEach((b) => b.classList.toggle("on", b.dataset.mode === m));
-    const on = document.querySelector(".modes button.on"), slide = document.querySelector(".modes .slide");
-    slide.style.width = on.offsetWidth + "px";
-    slide.style.transform = `translateX(${on.offsetLeft - 3}px)`;
+    placeSlide();
     inp.placeholder = m === "chat" ? "Ask anything" : "Start a text and the model carries on";
     inp.setAttribute("enterkeyhint", m === "chat" ? "send" : "enter");
     chips();
