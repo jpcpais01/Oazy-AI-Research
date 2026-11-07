@@ -17,6 +17,9 @@ On the pod (CPU only; it never touches a running training):
     python3 -m phone.export --run bee2           # -> Bee_v2_0.2B-q8.oazy (about 0.23 GB)
     python3 -m phone.serve                       # shares the app and the models on port 8002
 
+Or all in one: `python3 -m phone.serve --run coral-chat` converts that run first (if not done yet), then shares, and
+prints the exact link to open on the phone.
+
 Then on the phone open the pod's **8001** link (RunPod: Connect -> HTTP 8001; the template's nginx forwards it to
 8002, see docs/RUNPOD.md):
 
