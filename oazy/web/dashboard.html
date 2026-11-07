@@ -613,7 +613,7 @@ function scoreboard() {
     ["hs", "HellaSwag", "guessing 25%", 1, pct],
     ["arc_easy", "ARC-Easy", "guessing 25%", 1, pct],
     ["piqa", "PIQA", "guessing 50%", 1, pct],
-    ["lambada", "LAMBADA", "last word", 1, pct],
+    ["lambada", "LAMBADA", "exact last word · guessing ~0%", 1, pct],
   ].filter(([k]) => rows.some((r) => r[k] != null));
   const best = {};
   for (const [k, , , dir] of COLS) {
