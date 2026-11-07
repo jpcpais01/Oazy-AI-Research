@@ -29,7 +29,8 @@ with 12 layers instead of 20: wide and shallow keeps the matrix products big, wh
   own. `--set attn_docs=1` brings the rule back.
 - **FP8** for every attention and MLP matrix product (the word table stays bf16), the stored RoPE table, the loss in
   slices, Muon with weight decay 0.1, the batch ramp, the WSD schedule with the square-root cool-down, and Tagus20's
-  mix with its chat-heavy cool-down.
+  mix with its chat-heavy cool-down. One change: the cool-down (the learning rate's fall and the cool-down text) is
+  the **last 30%** of the run, from 70% (Coral's is the last 20%); studies of WSD find 20-30% about best.
 
 ## The mentor: kept on
 

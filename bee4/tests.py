@@ -89,11 +89,17 @@ def main():
     from ember.mentor import fade
     rc = RECIPE["bee4"]
     ws = [fade(q, rc["mentor_weight"], rc["mentor_until"], None, rc["mentor_floor"], rc["mentor_off"]) for q in (0, 0.3, 0.8, 0.95, 1.0)]
-    same = {k: v for k, v in rc.items() if not k.startswith("mentor_")} == {k: v for k, v in RECIPE["coral"].items() if not k.startswith("mentor_")}
+    same = {k: v for k, v in rc.items() if not k.startswith("mentor_") and k != "decay"} == {k: v for k, v in RECIPE["coral"].items() if not k.startswith("mentor_")}
     check("Coral's recipe (FP8, the ramp, Muon decay, sqrt cool-down, Tagus20); the mentor 1 in 4 -> 1 in 10 by 30%, kept, off over the last 10%",
           same and rc["mentor_share"] == 1 and rc["fp8"] == 1 and abs(ws[0] - 0.25) < 1e-9 and abs(ws[1] - 0.1) < 1e-9
           and abs(ws[2] - 0.1) < 1e-9 and 0 < ws[3] < 0.1 and ws[4] < 1e-9
           and rc["data_sub"] == "tagus20" and rc["decay_shape"] == "sqrt", " ".join(f"{w:.2f}" for w in ws))
+    from oazy.mix import with_cooldown, TAGUS_MIX, parse_mix
+    from oazy.train import lr_wsd
+    stages = parse_mix(with_cooldown(TAGUS_MIX, 1 - rc["decay"]))
+    check("the cool-down is the last 30%: the learning rate starts to fall at 70%, and the cool-down text starts with it",
+          rc["decay"] == 0.3 and lr_wsd(0.69, 10_000, 1.0, 600, 0.3, "sqrt") == 1.0 and lr_wsd(0.85, 10_000, 1.0, 600, 0.3, "sqrt") < 0.5
+          and [w for w, _ in stages] == [0.0, 0.7] and stages[1][1]["chat"] == 0.30, f"text stages at {[w for w, _ in stages]}")
     pb = PRESETS["big"]
     check("big preset: 524k-token steps, learning rates 1.8e-3 / Muon 0.03", pb["batch_bee4"] == 524288
           and pb["lr_bee4"] == 1.8e-3 and pb["muon_lr_bee4"] == 0.03)
@@ -148,6 +154,10 @@ def main():
     cfg_run = json.loads((rd / "config.json").read_text())
     check("the run used Bee4's recipe", cfg_run["mentor_share"] is True and cfg_run["mentor_weight"] == 0.25
           and cfg_run.get("mentor_floor") == 0.1 and cfg_run.get("mentor_off") == 0.1, cfg_run["layout"])
+    lrs = [(r["tokens"] / 60000, r["lr"]) for r in tr if "lr" in r]
+    peak = max(l for _, l in lrs)
+    check("in the run the learning rate stayed flat until 70%, then fell", cfg_run.get("decay") == 0.3
+          and all(abs(l - peak) < 1e-9 for q, l in lrs if 0.2 < q < 0.68) and lrs[-1][1] < 0.5 * peak, f"peak {peak:.1e}, last {lrs[-1][1]:.1e}")
     mws = [r.get("mentor_w", 0) for r in tr]
     mid = [w for r, w in zip(tr, mws) if 0.35 < r.get("progress", r["tokens"] / 60000) < 0.85]
     check("the mentor taught all run: 1 in 4 early, 1 in 10 in the middle", 0.15 < mws[0] <= 0.25

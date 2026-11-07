@@ -34,7 +34,8 @@
 const Forecast = (() => {
   const Z = 1.28;                  // the range is ±1.28 typical misses: about 8 in 10 outcomes inside it, if the misses are normal
   const LAG_STEPS = 300;           // how many steps a lower learning rate takes to pay off fully (the law's momentum)
-  const DECAY = 0.2;               // the WSD cool-down is the last 20% (oazy/train.py lr_wsd)
+  const DECAY = 0.2;               // the WSD cool-down is the last 20% (oazy/train.py lr_wsd), unless the run says (Bee4: 0.3)
+  const decayOf = (cfg) => (cfg && cfg.decay > 0 && cfg.decay < 1 ? cfg.decay : DECAY);
   const DEFAULT_PRIOR = {          // used only when no run on the pod has finished a cool-down yet (rough, from the literature)
     val: { g: 0.035, sd: 0.02, n: 0 }, loss: { g: 0.035, sd: 0.02, n: 0 }, jump: { g: -0.03, sd: 0.03, n: 0 },
   };
@@ -44,7 +45,7 @@ const Forecast = (() => {
   // the learning rate the trainer uses at a share p of the run, relative to its peak (after the warmup)
   function etaPlanned(cfg, p) {
     if (cfg.schedule === "wsd") {
-      const left = Math.min(1, Math.max(0, (1 - p) / DECAY));
+      const left = Math.min(1, Math.max(0, (1 - p) / decayOf(cfg)));
       return cfg.decay_shape === "sqrt" && left < 1 ? 1 - Math.sqrt(1 - left) : left;
     }
     return 0.05 + 0.95 * 0.5 * (1 + Math.cos(Math.PI * Math.min(1, p)));     // cosine (lr_at)
@@ -140,7 +141,7 @@ const Forecast = (() => {
       const x = Math.max(0, Math.min(N, t / dt)), i = Math.min(N - 1, Math.floor(x)), u = x - i;
       return A[i] + (A[i + 1] - A[i]) * u;
     };
-    const decayAt = cfg.schedule === "wsd" ? end * (1 - DECAY) : 0;
+    const decayAt = cfg.schedule === "wsd" ? end * (1 - decayOf(cfg)) : 0;
     return { lag: lagSteps, eff, end, S1: at(S1), S2: at(S2), eta: at(eta), S2end: S2[N], decayAt, switches: mixSwitches(cfg).map((p) => p * end), warmEnd };
   }
 

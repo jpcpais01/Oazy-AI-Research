@@ -168,7 +168,7 @@ python3 -m bee4.chat --run bee4-chat --port 8002          # chat
 ```
 
 If the profile runs out of memory, use `--micro 16`. To make the
-run longer (e.g. `--tokens 15e9`), decide before 80% of it (the cool-down starts there). If the loss turns noisy,
+run longer (e.g. `--tokens 15e9`), decide before 70% of it (Bee4's cool-down is the last 30%). If the loss turns noisy,
 resume with `--lr 1.2e-3 --muon-lr 0.02`.
 
 ## The phone app (our models on an Android phone, offline)
