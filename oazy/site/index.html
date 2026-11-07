@@ -203,9 +203,7 @@ section.block { padding-block: clamp(48px, 6vw, 85px); scroll-margin-top: 70px; 
 .ph-note { display: flex; gap: 12px; align-items: flex-start; margin-top: 24px; padding: 14px 18px; border-radius: 14px; border: 1px dashed rgba(255, 215, 138, 0.35); color: var(--ink-2); font-size: 14.5px; }
 .ph-note .chip { flex: none; }
 
-/* ---------- results chart ---------- */
-.results { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 24px; }
-@media (max-width: 960px) { .results { grid-template-columns: 1fr; } }
+/* ---------- HellaSwag chart ---------- */
 .panel { border: 1px solid var(--line); border-radius: 22px; background: var(--bg-2); padding: 28px; min-width: 0; }
 .panel h3 { font-size: 22px; margin-top: 10px; }
 .panel .cap { color: var(--muted); font-size: 14px; margin-top: 6px; }
@@ -461,59 +459,94 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
 .bar-cta::after { content: "\2197"; font-size: 12px; opacity: .6; transition: transform .3s; }
 .bar-cta:hover::after { transform: translate(2px, -2px); }
 
-/* ---------- near-0 compute: how little a model needs to run. A field of Coral's 640 experts (20 layers x 32),
-   two waking per layer for each word, a shared hairline that every word reads, and the measured numbers ---------- */
+/* ---------- near-0 compute: the lab's aim. Good models that run on what people already own (a phone, a laptop CPU),
+   shown as a ladder of the power behind a model on a log scale, four working rules, and today's measured numbers ---------- */
 .serif { font-family: "Instrument Serif", Georgia, serif; font-style: italic; font-weight: 400; font-size: 1.12em; letter-spacing: -0.01em; padding-right: .05em;
   background: linear-gradient(100deg, #fff 0%, #e4dcff 45%, #b9f2ff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.n0 { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 24px 56px; align-items: start; }
-@media (max-width: 960px) { .n0 { grid-template-columns: 1fr; } }
-.n0-panel { --acc: var(--coral); border-radius: 22px; padding: 26px 28px 24px; display: grid; gap: 20px; min-width: 0; }
-.n0-top { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.n0-top .label b { color: var(--acc); }
-.n0-line { min-height: 32px; font: 400 15px/2 var(--mono); color: var(--faint); }
-.n0-line span { padding: 4px 4px; margin: 0 -4px; border-radius: 6px; border: 1px solid transparent; color: var(--faint); white-space: pre; transition: color .6s, border-color .6s, background .6s; }
-.n0-line span.read { color: var(--ink-2); }
-.n0-line span.now { color: #fff; border-color: color-mix(in srgb, var(--acc) 55%, transparent); background: color-mix(in srgb, var(--acc) 12%, transparent); }
-.n0-field { display: grid; gap: 7px; }
-.n0-row { display: grid; grid-template-columns: 22px 30px minmax(0, 1fr); gap: 10px; align-items: center; }
-.n0-row .ln { font: 400 9.5px/1 var(--mono); color: var(--faint); text-align: right; font-variant-numeric: tabular-nums; }
-.n0-row .sh { height: 1px; border-radius: 1px; background: rgba(236, 235, 243, .55); box-shadow: 0 0 6px rgba(255, 255, 255, .25); }
-.n0-row .ex { display: grid; grid-template-columns: repeat(32, minmax(0, 1fr)); gap: 3px; }
-.n0-row .ex i { aspect-ratio: 1; border-radius: 50%; background: rgba(236, 235, 243, .075); transition: background 1.1s ease, box-shadow 1.1s ease, transform 1.1s ease; }
-.n0-row .ex i.on { background: var(--acc); box-shadow: 0 0 9px color-mix(in srgb, var(--acc) 60%, transparent); transform: scale(1.1); transition-duration: .4s; }
-.n0-row .ex i.was { background: color-mix(in srgb, var(--acc) 16%, transparent); }
-.n0-key { display: flex; flex-wrap: wrap; gap: 8px 22px; font: 400 11px/1.3 var(--mono); letter-spacing: .06em; color: var(--muted); }
-.n0-key span { display: inline-flex; align-items: center; gap: 8px; }
-.n0-key .k-sh::before { content: ""; width: 18px; height: 1px; background: rgba(236, 235, 243, .6); }
-.n0-key .k-ex::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--coral); box-shadow: 0 0 8px var(--coral); }
-.n0-key .k-off::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: rgba(236, 235, 243, .14); }
-.n0-meter { display: grid; gap: 10px; padding-top: 16px; border-top: 1px solid var(--line); }
-.n0-meter .lbl { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
-.n0-meter .lbl b { font: 500 22px/1 var(--display); letter-spacing: -0.02em; color: var(--ink); font-variant-numeric: tabular-nums; }
-.n0-meter .lbl b small { font-size: 14px; color: var(--muted); font-weight: 500; }
-.n0-meter .tr { position: relative; height: 2px; border-radius: 2px; background: rgba(236, 235, 243, .08); }
-.n0-meter .tr i { position: absolute; inset: 0 auto 0 0; width: 20.3%; border-radius: 2px; background: linear-gradient(90deg, rgba(236, 235, 243, .7), var(--coral)); box-shadow: 0 0 12px color-mix(in srgb, var(--coral) 60%, transparent); }
-.n0-meter .tr i::after { content: ""; position: absolute; right: -3px; top: -2px; width: 6px; height: 6px; border-radius: 50%; background: var(--coral); box-shadow: 0 0 10px 1px var(--coral); }
-.n0-notes { list-style: none; margin: 0; padding: 0; display: grid; border-top: 1px solid var(--line); counter-reset: n0; }
-.n0-notes li { counter-increment: n0; display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 8px 10px; padding: 24px 0; border-bottom: 1px solid var(--line); }
-.n0-notes li::before { content: counter(n0, decimal-leading-zero); font: 500 12px/1.9 var(--mono); color: var(--faint); grid-row: 1 / span 3; }
-.n0-notes h3 { font-size: 19px; font-weight: 500; line-height: 1.3; }
-.n0-notes p { color: var(--ink-2); font-size: 15px; max-width: 58ch; }
-.n0-eq { justify-self: start; margin-top: 6px; padding: 10px 14px; border-radius: 10px; font: 400 13px/1.4 var(--mono); color: var(--ink); letter-spacing: .02em;
+.zl { --us: var(--cyan); border-radius: 22px; padding: 26px 30px 24px; display: grid; gap: 18px; }
+.zl-top { display: flex; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
+.zl-rows { list-style: none; margin: 0; padding: 0; display: grid; }
+.zl-row { display: grid; grid-template-columns: minmax(0, 250px) minmax(0, 1fr) 96px; gap: 0 24px; align-items: stretch; }
+.zl-who { padding: 13px 0; display: grid; gap: 3px; align-content: center; }
+.zl-who b { font: 500 15px/1.3 var(--sans); color: var(--ink); }
+.zl-who span { font-size: 13px; line-height: 1.35; color: var(--muted); }
+.zl-tr { position: relative; display: flex; align-items: center;
+  background: linear-gradient(90deg, rgba(236, 235, 243, .07) 1px, transparent 1px) 0 0 / 12.5% 100% repeat-x; }
+.zl-tr::after { content: ""; position: absolute; right: 0; top: 0; bottom: 0; width: 1px; background: rgba(236, 235, 243, .07); }
+.zl-tr i { position: relative; display: block; height: 3px; width: var(--w); border-radius: 3px; transition: width 1.5s cubic-bezier(.2, .8, .2, 1) var(--d, 0s);
+  background: linear-gradient(90deg, rgba(236, 235, 243, .05), rgba(236, 235, 243, .38)); }
+.zl-tr i::after { content: ""; position: absolute; right: -3px; top: -2.5px; width: 8px; height: 8px; border-radius: 50%; background: rgba(236, 235, 243, .55); }
+.js .zl.pre .zl-tr i { width: 0; }
+.zl-w { align-self: center; justify-self: end; font: 400 13px/1.3 var(--mono); color: var(--muted); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.zl-row.us .zl-who b { color: #fff; }
+.zl-row.us .zl-w { color: var(--ink); }
+.zl-row.us .zl-tr i { background: linear-gradient(90deg, color-mix(in srgb, var(--us) 10%, transparent), var(--us)); box-shadow: 0 0 14px color-mix(in srgb, var(--us) 55%, transparent); }
+.zl-row.us .zl-tr i::after { background: #fff; box-shadow: 0 0 0 3px color-mix(in srgb, var(--us) 30%, transparent), 0 0 16px 2px var(--us); animation: zl-beat 2.8s ease-in-out infinite; }
+.zl-row.train .zl-tr i { background: linear-gradient(90deg, rgba(143, 123, 255, .08), var(--violet-2)); box-shadow: 0 0 12px rgba(143, 123, 255, .45); }
+.zl-row.train .zl-tr i::after { background: var(--violet-2); box-shadow: 0 0 12px 1px var(--violet-2); }
+.zl-row.train .zl-who b { color: var(--ink); }
+.zl-tag { display: inline-block; margin-left: 8px; padding: 2px 7px; border-radius: 999px; font: 500 9.5px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; vertical-align: 2px;
+  color: var(--us); border: 1px solid color-mix(in srgb, var(--us) 40%, transparent); background: color-mix(in srgb, var(--us) 8%, transparent); }
+.zl-row.train .zl-tag { color: var(--violet-2); border-color: rgba(143, 123, 255, .4); background: rgba(143, 123, 255, .08); }
+@keyframes zl-beat { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+.zl-axis .zl-tr { height: 22px; background: none; }
+.zl-axis .zl-tr::after { display: none; }
+.zl-axis .zl-tr span { position: absolute; top: 4px; transform: translateX(-50%); font: 400 10.5px/1 var(--mono); color: var(--faint); white-space: nowrap; }
+.zl-axis .zl-tr span:first-child { transform: none; }
+.zl-axis .zl-tr span:last-child { transform: translateX(-100%); }
+.zl-foot { display: flex; justify-content: space-between; align-items: end; gap: 14px 32px; flex-wrap: wrap; padding-top: 18px; border-top: 1px solid var(--line); }
+.zl-foot p { color: var(--ink-2); font-size: 14.5px; max-width: 60ch; }
+.zl-gap { display: flex; align-items: baseline; gap: 12px; }
+.zl-gap b { font: 400 clamp(34px, 3.6vw, 46px)/1 var(--display); letter-spacing: -0.03em;
+  background: linear-gradient(100deg, #fff 0%, #d9d2ff 45%, #a6f0ff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.zl-gap b sup { font-size: .5em; vertical-align: .85em; margin-left: 1px; }
+.zl-gap span { font: 500 11px/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); max-width: 17ch; }
+
+.zt { list-style: none; margin: 56px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 56px; }
+.zt li { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px 18px; padding: 30px 0 32px; border-top: 1px solid var(--line); align-content: start; }
+.zt svg { width: 40px; height: 40px; grid-row: 1 / span 3; color: var(--cyan); overflow: visible; }
+.zt svg .dim { opacity: .28; }
+.zt li > :not(svg) { grid-column: 2; }
+.zt .no { font: 500 11px/1.3 var(--mono); letter-spacing: .1em; color: var(--faint); }
+.zt h3 { font-size: 21px; font-weight: 500; line-height: 1.25; margin-top: -4px; }
+.zt p { color: var(--ink-2); font-size: 15px; max-width: 54ch; }
+.zt-eq { justify-self: start; margin-top: 6px; padding: 9px 13px; border-radius: 10px; font: 400 12.5px/1.45 var(--mono); color: var(--ink); letter-spacing: .02em;
   background: linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, .015)); border: 1px solid rgba(255, 255, 255, .1); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1); }
-.n0-eq .nw { white-space: nowrap; }
-.n0-eq .div { color: var(--muted); padding: 0 6px; }
-.n0-stats { margin-top: 56px; }
-.n0-stats .hd { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
-.n0-stats .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.n0-stats .stat { padding: 22px 0 20px; gap: 9px; }
-.n0-stats .stat + .stat { padding-left: 24px; }
-.n0-stats .stat .v { font-size: clamp(28px, 3vw, 38px); font-weight: 400; }
-.n0-stats .stat .v small { font-size: .5em; }
-.n0-stats .stat .d { color: var(--muted); font-size: 13px; line-height: 1.45; }
-.n0-stats .stat.wait .v { color: var(--faint); }
-@media (max-width: 720px) { .n0-stats .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .n0-stats .stat:nth-child(3) { padding-left: 0; border-left: 0; } .n0-stats .stat:nth-child(n+3) { border-top: 1px solid var(--line); } }
-@media (max-width: 520px) { .n0-panel { padding: 22px 18px 20px; } .n0-row { grid-template-columns: 18px 18px minmax(0, 1fr); gap: 7px; } .n0-row .ex { gap: 2px; } .n0-field { gap: 5px; } }
+.zt-eq .nw { white-space: nowrap; }
+.zt-eq .div { color: var(--muted); padding: 0 6px; }
+
+.zn { margin-top: 40px; }
+.zn .hd { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+.zn .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.zn .stat { padding: 22px 0 20px; gap: 9px; }
+.zn .stat + .stat { padding-left: 24px; }
+.zn .stat .v { font-size: clamp(28px, 3vw, 38px); font-weight: 400; }
+.zn .stat .v small { font-size: .5em; }
+.zn .stat .d { color: var(--muted); font-size: 13px; line-height: 1.45; }
+.zn .stat.wait .v { color: var(--faint); }
+
+.zc { margin: clamp(64px, 8vw, 104px) auto 0; max-width: 30ch; text-align: center; font: 400 clamp(28px, 3.4vw, 46px)/1.15 "Instrument Serif", Georgia, serif; font-style: italic; letter-spacing: -0.01em; color: var(--ink); text-wrap: balance; }
+.zc em { font-style: italic; background: linear-gradient(100deg, #fff 0%, #e4dcff 45%, #b9f2ff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; padding-right: .06em; }
+.zc + .label { display: block; margin-top: 18px; text-align: center; color: var(--faint); }
+
+@media (max-width: 860px) {
+  .zt { grid-template-columns: 1fr; }
+  .zl-row { grid-template-columns: minmax(0, 1fr) 76px; gap: 0 14px; }
+  .zl-who { grid-column: 1 / -1; padding: 14px 0 6px; }
+  .zl-tr { height: 18px; }
+  .zl-axis .zl-who { display: none; }
+  .zl-axis .zl-tr span.mid { display: none; }
+}
+@media (max-width: 720px) { .zn .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .zn .stat:nth-child(3) { padding-left: 0; border-left: 0; } .zn .stat:nth-child(n+3) { border-top: 1px solid var(--line); } }
+@media (max-width: 520px) { .zl { padding: 22px 18px 20px; } .zt li { grid-template-columns: 34px minmax(0, 1fr); gap: 8px 14px; } .zt svg { width: 32px; height: 32px; } }
+@media (prefers-reduced-motion: reduce) { .zl-row.us .zl-tr i::after { animation: none; } .zl-tr i { transition: none; } }
+
+/* HellaSwag, at the end of the models: one wide glass panel */
+.hs { margin-top: 24px; scroll-margin-top: 90px; }
+.hs-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 48px; align-items: end; }
+.hs-top .cap { margin-top: 0; max-width: 60ch; justify-self: end; }
+@media (max-width: 820px) { .hs-top { grid-template-columns: 1fr; } .hs-top .cap { justify-self: start; } }
+@media (max-width: 520px) { .hs { padding: 22px 18px; } }
 
 /* reveal: content is visible at rest; this only adds a gentle rise when it scrolls in */
 .rv { transition: transform .9s cubic-bezier(.2,.8,.2,1), opacity .9s; }
@@ -540,7 +573,6 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
     <nav class="tabs" id="tabs" aria-label="Sections">
       <span class="pill" id="pill"></span>
       <a href="#models" data-sec="models">Models</a>
-      <a href="#results" data-sec="results">Results</a>
       <a href="#near0" data-sec="near0">Near-0</a>
       <a href="#data" data-sec="data">Data</a>
       <a href="#log" data-sec="log">Notebook</a>
@@ -673,46 +705,17 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
           </div>
         </article>
       </div>
-    </div>
-  </section>
 
-  <!-- ===================== RESULTS ===================== -->
-  <section class="block" id="results" aria-labelledby="results-h">
-    <div class="wrap">
-      <div class="head rv">
-        <div>
-          <span class="label">// results</span>
-          <h2 id="results-h">How they <em>measure up</em></h2>
-        </div>
-        <p>HellaSwag asks a model to pick the sensible ending to a scene out of four. Guessing gets 25%. Bee3's run stopped at 45%, so its numbers are early ones. Fern is still training, so its numbers are placeholders.</p>
-      </div>
-      <div class="results">
-        <div class="panel glass rv">
-          <span class="label">HellaSwag accuracy · 10,042 questions</span>
-          <h3>Picking the right ending</h3>
-          <p class="cap">Higher is better. Striped bars are placeholders. Bee3's is a quick check on 1,000 of the questions.</p>
-          <div class="chart" id="chart" role="img" aria-label="HellaSwag accuracy: Bee3_0.2B 29.6% (partial run, 1,000 questions), Bee_v2_0.2B 32.9%, Fern_0.2B 31.2% (placeholder), GPT-2 small 29.6%, random guessing 25%."></div>
-        </div>
-        <div class="panel glass rv">
-          <span class="label">Side by side</span>
-          <h3>At a glance</h3>
-          <p class="cap">Loss: lower is better. Recall: copying a repeated passage.</p>
-          <div class="tbl-wrap">
-            <table>
-              <thead><tr><th>Model</th><th>Writes</th><th class="num">Params</th><th class="num">Loss</th><th class="num">Recall</th></tr></thead>
-              <tbody>
-                <tr><td><span class="dot" style="background:var(--bee)"></span>Bee3_0.2B <span class="chip ph" style="padding:3px 6px;font-size:9.5px">45% run</span></td><td>next token</td><td class="num">203M</td><td class="num">3.199</td><td class="num">–</td></tr>
-                <tr><td><span class="dot" style="background:var(--bee);opacity:.55"></span>Bee_v2_0.2B</td><td>next token</td><td class="num">203M</td><td class="num">3.005</td><td class="num">93%</td></tr>
-                <tr><td><span class="dot" style="background:var(--fern)"></span>Fern_0.2B <span class="chip ph" style="padding:3px 6px;font-size:9.5px">placeholder</span></td><td>unfolds</td><td class="num">198M</td><td class="num">3.05</td><td class="num">n/a</td></tr>
-                <tr><td><span class="dot" style="background:var(--ink-2)"></span>GPT-2 small</td><td>next token</td><td class="num">124M</td><td class="num">3.313</td><td class="num">96%</td></tr>
-              </tbody>
-            </table>
+      <div class="panel glass hs rv" id="results">
+        <div class="hs-top">
+          <div>
+            <span class="label">HellaSwag · 10,042 questions</span>
+            <h3>Picking the sensible ending</h3>
           </div>
-          
+          <p class="cap">Each question is a scene with four possible endings; guessing gets 25%. Higher is better. Striped bars are placeholders, and Bee3's is a quick check on 1,000 of the questions from a run cut off at 45%.</p>
         </div>
+        <div class="chart" id="chart" role="img" aria-label="HellaSwag accuracy: Bee3_0.2B 29.6% (partial run, 1,000 questions), Bee_v2_0.2B 32.9%, Fern_0.2B 31.2% (placeholder), GPT-2 small 29.6%, random guessing 25%."></div>
       </div>
-
-      <p class="foot-note rv">Loss is measured on the same held-out text, per GPT-2 token. Each number is a single run, and both Bees learned from a larger teacher (SmolLM2-360M), which GPT-2 small did not. Bee3 stopped at 1.1B tokens, before its cool-down; Bee_v2 finished all 2.5B, so the two are not yet a fair match. Bee3's recall score is not in yet.</p>
     </div>
   </section>
 
@@ -722,43 +725,71 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
       <div class="head rv">
         <div>
           <span class="label">// near-0 compute</span>
-          <h2 id="near0-h"><span class="serif">Near-0</span> compute</h2>
+          <h2 id="near0-h">Good models on <span class="serif">near-zero</span> compute</h2>
         </div>
-        <p>How little does a good model need to run? Coral holds 1B parameters but reads about a fifth of them for each word. That is light enough to write on a plain CPU, and in our Android app, on a phone, with no GPU and no internet.</p>
+        <p>This is what the lab is for. Not bigger models on bigger clusters, but small ones that write well and run on what people already own: a phone, a laptop, a plain CPU. No GPU, no data centre, no connection.</p>
       </div>
 
-      <div class="n0">
-        <div class="n0-panel glass rv" aria-label="Illustration: for each word, Coral wakes 2 of 32 experts in each of its 20 layers, plus a shared part every word uses">
-          <div class="n0-top">
-            <span class="label">Coral_1B <b>· one word at a time</b></span>
-            <span class="label">illustration</span>
-          </div>
-          <div class="n0-line" id="n0-line" aria-hidden="true"></div>
-          <div class="n0-field" id="n0-field" aria-hidden="true"></div>
-          <div class="n0-key"><span class="k-sh">shared, every word</span><span class="k-ex">2 experts awake</span><span class="k-off">30 asleep</span></div>
-          <div class="n0-meter">
-            <div class="lbl"><span class="label">Read for each word</span><b>211<small>M</small> <small>of 1,037M</small></b></div>
-            <div class="tr"><i></i></div>
-          </div>
-        </div>
-
-        <ol class="n0-notes">
-          <li class="rv"><h3>A fifth of the model per word</h3><p>Each of Coral's 20 layers sends a word to 2 of its 32 experts; the other 30 stay asleep. A word reads 161M parameters, 211M counting the word table, out of 1,037M.</p></li>
-          <li class="rv"><h3>Memory sets the speed, not arithmetic</h3><p>Writing a word reads every working weight once, so a phone waits on memory long before it runs out of maths. The GPU shares that same memory, so it would not be faster. The only lever is to read fewer bytes.</p><span class="n0-eq"><span class="nw">words / s ≈</span> <span class="nw">memory bandwidth</span> <span class="nw"><span class="div">÷</span> bytes read per word</span></span></li>
-          <li class="rv"><h3>Eight bits, one file, no libraries</h3><p>Weights are kept in 8 bits, groups of 32 with one scale each, and multiplied as integers with ARM's dot-product instructions. The engine is a single C++ file. In full precision it matches PyTorch to within 2e-6.</p></li>
+      <figure class="zl glass rv" style="margin:0" aria-labelledby="zl-cap">
+        <figcaption class="zl-top" id="zl-cap">
+          <span class="label">The power behind a language model <b>· rough orders of magnitude</b></span>
+          <span class="label">log scale · each line ×10</span>
+        </figcaption>
+        <ol class="zl-rows">
+          <li class="zl-row"><div class="zl-who"><b>Training a frontier model</b><span>a cluster of many thousands of GPUs</span></div><div class="zl-tr"><i style="--w:93.5%"></i></div><span class="zl-w">10s of MW</span></li>
+          <li class="zl-row"><div class="zl-who"><b>Serving a large model</b><span>a server of 8 GPUs, per copy</span></div><div class="zl-tr"><i style="--w:50%;--d:.12s"></i></div><span class="zl-w">~10 kW</span></li>
+          <li class="zl-row train"><div class="zl-who"><b>Training ours<span class="zl-tag">us</span></b><span>one GPU, every model so far</span></div><div class="zl-tr"><i style="--w:37.5%;--d:.24s"></i></div><span class="zl-w">~1 kW</span></li>
+          <li class="zl-row us"><div class="zl-who"><b>Running ours<span class="zl-tag">us</span></b><span>a laptop or desktop CPU</span></div><div class="zl-tr"><i style="--w:17.5%;--d:.36s"></i></div><span class="zl-w">~15–45 W</span></li>
+          <li class="zl-row us"><div class="zl-who"><b>Running ours<span class="zl-tag">us</span></b><span>a phone, offline</span></div><div class="zl-tr"><i style="--w:7.5%;--d:.48s"></i></div><span class="zl-w">a few W</span></li>
+          <li class="zl-row zl-axis" aria-hidden="true"><div class="zl-who"></div><div class="zl-tr"><span style="left:0">1 W</span><span class="mid" style="left:12.5%">10 W</span><span class="mid" style="left:25%">100 W</span><span style="left:37.5%">1 kW</span><span class="mid" style="left:50%">10 kW</span><span class="mid" style="left:62.5%">100 kW</span><span style="left:75%">1 MW</span><span class="mid" style="left:87.5%">10 MW</span><span style="left:100%">100 MW</span></div><span class="zl-w"></span></li>
         </ol>
-      </div>
+        <div class="zl-foot">
+          <p>Most of the field climbs this ladder. We work down it: each model is trained on a single GPU and built to run on the bottom two lines, where the limit is how fast memory can be read, not how much maths a chip can do.</p>
+          <div class="zl-gap"><b>×10<sup>6</sup>+</b><span>less power, top line to bottom</span></div>
+        </div>
+      </figure>
 
-      <div class="n0-stats rv">
-        <div class="hd"><span class="label">Coral_1B, 8-bit <b>· measured on a 4-core PC CPU</b></span><span class="chip real">Measured</span></div>
+      <ol class="zt">
+        <li class="rv">
+          <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><circle class="dim" cx="20" cy="20" r="17"/><circle class="dim" cx="20" cy="20" r="11"/><circle cx="20" cy="20" r="4.5" fill="currentColor" stroke="none"/></svg>
+          <span class="no">01</span>
+          <h3>Small on purpose</h3>
+          <p>We stay at or under about a billion parameters and ask what each one buys. Bee_v2 has 0.2B and already beats GPT-2 small on HellaSwag. Coral holds 1B but uses about 161M of them for each word.</p>
+        </li>
+        <li class="rv">
+          <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-linecap="round" aria-hidden="true"><path class="dim" stroke-width="1.2" d="M5 8h30M5 14h30M5 26h30M5 32h30"/><path stroke-width="2.4" d="M5 20h17"/><circle cx="22" cy="20" r="2.2" fill="currentColor" stroke="none"/></svg>
+          <span class="no">02</span>
+          <h3>Read fewer bytes</h3>
+          <p>On a phone or a laptop, writing a word means reading every working weight once, so memory sets the speed, not arithmetic. We design for that: experts that stay asleep unless a word needs them, and Memtrix memory that stays the same size however long the text gets.</p>
+          <span class="zt-eq"><span class="nw">words / s ≈</span> <span class="nw">memory bandwidth</span> <span class="nw"><span class="div">÷</span> bytes read per word</span></span>
+        </li>
+        <li class="rv">
+          <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" aria-hidden="true"><path d="M9 3.5h15l7.5 7.5v25.5H9z"/><path d="M24 3.5V11h7.5"/><path class="dim" stroke-linecap="round" d="M14 18h12M14 23h12M14 28h8"/></svg>
+          <span class="no">03</span>
+          <h3>One file, no libraries</h3>
+          <p>Our engine is a single C++ file. Weights are kept in 8 bits and multiplied as integers on the device's own CPU cores, and in full precision it matches PyTorch to within 2e-6. No GPU drivers, nothing to install but the app.</p>
+        </li>
+        <li class="rv">
+          <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><rect x="11" y="3" width="18" height="34" rx="4"/><path class="dim" stroke-linecap="round" d="M17.5 6.5h5"/><circle class="dim" cx="20" cy="20" r="6.5"/><circle cx="20" cy="20" r="2.6" fill="currentColor" stroke="none"/></svg>
+          <span class="no">04</span>
+          <h3>Offline, on the device</h3>
+          <p>Our Android app runs the models entirely on the phone. Nothing you write is sent anywhere, there is no account and no server bill, and it keeps working when the signal drops.</p>
+        </li>
+      </ol>
+
+      <div class="zn rv">
+        <div class="hd"><span class="label">Where it stands today <b>· no GPU in any of these</b></span><span class="chip real">Measured</span></div>
         <div class="stats">
-          <div class="stat"><span class="v">40<small> tok/s</small></span><span class="k">Writing</span><span class="d">about, one word after another</span></div>
-          <div class="stat"><span class="v">125<small> tok/s</small></span><span class="k">Reading a prompt</span><span class="d">about, in chunks</span></div>
-          <div class="stat"><span class="v">1.2<small> GB</small></span><span class="k">The whole model</span><span class="d">0.7 GB with 4-bit experts</span></div>
+          <div class="stat"><span class="v">40<small> tok/s</small></span><span class="k">Coral_1B, writing</span><span class="d">8-bit, on a 4-core PC CPU</span></div>
+          <div class="stat"><span class="v">211<small>M</small></span><span class="k">Read per word</span><span class="d">of Coral's 1,037M; the rest sleeps</span></div>
+          <div class="stat"><span class="v">0.23<small> GB</small></span><span class="k">Bee_v2_0.2B, whole</span><span class="d">8-bit. Coral is 1.2 GB, 0.7 GB in 4-bit</span></div>
           <div class="stat wait"><span class="v">–</span><span class="k">On a phone</span><span class="d">not timed yet</span></div>
         </div>
-        <p class="foot-note">No GPU in any of these. The engine runs the same way on a phone's CPU, but no phone has been timed yet, so that number stays empty until one is. Coral is still training; these speeds do not depend on how well it has learned.</p>
+        <p class="foot-note">The app runs the same engine on a phone's CPU, but no phone has been timed yet, so that box stays empty until one is. Speed does not depend on how well a model has learned; how well they write is in the HellaSwag chart under Models. The power ladder above is a sketch in orders of magnitude, not a measurement.</p>
       </div>
+
+      <p class="zc rv">A model worth talking to, on <em>the power of a phone.</em></p>
+      <span class="label">the aim of the lab</span>
     </div>
   </section>
 
@@ -841,7 +872,7 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
       <span class="word">OAZY<small>AI RESEARCH</small></span>
     </a>
     <nav aria-label="Footer">
-      <a href="#models">Models</a><a href="#results">Results</a><a href="#near0">Near-0</a><a href="#data">Data</a><a href="#log">Notebook</a>
+      <a href="#models">Models</a><a href="#near0">Near-0</a><a href="#data">Data</a><a href="#log">Notebook</a>
       <a href="https://github.com/jpcpais01/Oazy-AI-Research" target="_blank" rel="noopener">Source</a>
     </nav>
     <span class="label">Oazy AI Research · 2026</span>
@@ -1467,39 +1498,6 @@ void main() {
     if (es[0].isIntersecting && !t) t = setInterval(() => show(k = (k + 3) % N), 1300);
     else if (!es[0].isIntersecting && t) { clearInterval(t); t = null; }
   }).observe(el);
-})();
-
-// near-0 compute: Coral writes a line; for each word, 2 of 32 experts wake in each of its 20 layers (illustration:
-// the picks are a fixed pseudo-random stand-in, not Coral's real router)
-(() => {
-  const line = document.getElementById('n0-line'), field = document.getElementById('n0-field');
-  if (!line || !field) return;
-  const words = ['Once', ' upon', ' a', ' time', ',', ' in', ' a', ' small', ' village', ' by', ' the', ' sea', ','];
-  const L = 20, E = 32;
-  line.innerHTML = words.map(w => (w[0] === ' ' ? ' ' : '') + `<span>${w.trim()}</span>`).join('');
-  let rows = '';
-  for (let l = 0; l < L; l++) rows += `<div class="n0-row"><span class="ln">${String(l + 1).padStart(2, '0')}</span><span class="sh"></span><div class="ex">${'<i></i>'.repeat(E)}</div></div>`;
-  field.innerHTML = rows;
-  const dots = [...field.querySelectorAll('.ex')].map(r => [...r.children]);
-  const ws = [...line.children];
-  let seed = 7;
-  const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
-  const picks = words.map(() => dots.map(() => { const a = Math.floor(rnd() * E); let b = Math.floor(rnd() * (E - 1)); if (b >= a) b++; return [a, b]; }));
-  function show(k) {
-    ws.forEach((w, i) => { w.classList.toggle('now', i === k); w.classList.toggle('read', i < k); });
-    dots.forEach((row, l) => row.forEach((d, e) => {
-      const on = picks[k][l].includes(e), was = k > 0 && picks[k - 1][l].includes(e);
-      d.classList.toggle('on', on); d.classList.toggle('was', !on && was);
-    }));
-  }
-  show(0);
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  let k = 0, t = null;
-  const step = () => { k = (k + 1) % (words.length + 2); if (k < words.length) show(k); else { ws.forEach(w => w.classList.remove('now')); dots.flat().forEach(d => d.classList.remove('on', 'was')); } };
-  new IntersectionObserver(es => {
-    if (es[0].isIntersecting && !t) t = setInterval(step, 900);
-    else if (!es[0].isIntersecting && t) { clearInterval(t); t = null; }
-  }).observe(line.closest('.n0-panel'));
 })();
 
 // glass cards: a soft light follows the pointer
