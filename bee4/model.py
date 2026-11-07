@@ -34,6 +34,7 @@ import torch
 
 from frog.model import Frog, FrogConfig
 
+BEE4_CTX = "512:0,1024:0.15,2048:0.3"   # a sequence-length warmup (Li et al. 2022; GrowLength 2023)
 BEE4_GROW = "6:0,9:0.1,12:0.25"      # Coral's timing (Coral: 8 -> 12 -> 20)
 
 
@@ -53,6 +54,10 @@ class Bee4Config(FrogConfig):
     fused_gates: int = 0         # memory-layer switches: no memory layers here
     memory_op: int = 0
     grow: str = BEE4_GROW
+    # speed (each can be switched off with --set; python3 -m oazy.speedcheck --model bee4 times them on the GPU)
+    ctx: str = BEE4_CTX          # short windows first: 512 words until 15%, 1,024 until 30%, then 2,048
+    attn_backend: str = "auto"   # "cudnn" = cuDNN's attention kernel first (Blackwell); "auto" = PyTorch's choice (flash)
+    compile_mode: str = "default"  # torch.compile mode: "default", "max-autotune-no-cudagraphs", "reduce-overhead" (CUDA graphs)
 
     def __post_init__(self):
         if self.grow == BEE4_GROW and self.n_layer != 12:      # another depth (a test's small body): no growing unless asked
@@ -63,6 +68,13 @@ class Bee4Config(FrogConfig):
 
 class Bee4(Frog):
     """198M, all attention, dense. Grows on Coral's timing (6 -> 9 -> 12 layers)."""
+    micro_at_full = True     # --micro N = N sequences per pass at the longest window (2,048); shorter windows get more
+
+    def enable_compile(self):
+        super().enable_compile()                    # the checks, and the trunk compiled the usual way ...
+        mode = self.cfg.compile_mode
+        if mode and mode != "default":              # ... or with autotuned kernels / CUDA graphs
+            self._compiled = torch.compile(self._trunk, mode=mode)
 
     def layout(self):
         c = self.cfg

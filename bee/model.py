@@ -114,6 +114,19 @@ def rope(x, pos, base, table=None):
 ROPE_TABLE = 8192       # positions in the stored cos / sin grids (longer reads work them out on the fly)
 
 
+def _sdpa_prio():
+    """Can this PyTorch order the attention kernels (sdpa_kernel(..., set_priority=True))? Older ones cannot."""
+    try:
+        import inspect
+        from torch.nn.attention import sdpa_kernel
+        return "set_priority" in inspect.signature(sdpa_kernel).parameters
+    except Exception:
+        return False
+
+
+_SDPA_PRIO = _sdpa_prio()
+
+
 class Attention(nn.Module):
     """Look back at every earlier word, exactly. Grouped key/value heads, QK-norm, output gate."""
 
@@ -178,6 +191,8 @@ class Attention(nn.Module):
     def _causal(self, qh, kh, vh):
         """Plain causal attention with grouped key/value heads: the fused kernel shares them itself where it can."""
         rep = self.H // self.KV
+        if getattr(self.cfg, "attn_backend", "auto") == "cudnn" and qh.is_cuda:
+            return self._cudnn(qh, kh, vh, rep)
         if Attention._gqa is not False and rep > 1:
             try:
                 y = F.scaled_dot_product_attention(qh, kh, vh, is_causal=True, enable_gqa=True)
@@ -188,6 +203,16 @@ class Attention(nn.Module):
         if rep > 1:
             kh, vh = kh.repeat_interleave(rep, dim=1), vh.repeat_interleave(rep, dim=1)
         return F.scaled_dot_product_attention(qh, kh, vh, is_causal=True)
+
+    def _cudnn(self, qh, kh, vh, rep):
+        """cuDNN's attention kernel first (on a B200 often faster than the flash kernel PyTorch picks by default),
+        the others as fallbacks. The key/value heads are copied out to all query heads, which every kernel takes."""
+        from torch.nn.attention import sdpa_kernel, SDPBackend
+        if rep > 1:
+            kh, vh = kh.repeat_interleave(rep, dim=1), vh.repeat_interleave(rep, dim=1)
+        order = [SDPBackend.CUDNN_ATTENTION, SDPBackend.FLASH_ATTENTION, SDPBackend.EFFICIENT_ATTENTION, SDPBackend.MATH]
+        with (sdpa_kernel(order, set_priority=True) if _SDPA_PRIO else sdpa_kernel([SDPBackend.CUDNN_ATTENTION])):
+            return F.scaled_dot_product_attention(qh, kh, vh, is_causal=True)
 
     @torch.no_grad()
     def looks(self, x, state):

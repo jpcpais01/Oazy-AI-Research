@@ -36,8 +36,9 @@ def main():
     n = big.full_params()
     check("about 200M parameters once grown, all at work", 190e6 < n < 205e6,
           f"{n / 1e6:.1f}M ({(n - big.embed.weight.numel()) / 1e6:.0f}M without the word table), {big.layout()}")
-    check("12 layers, all attention, with RoPE (base 50,000); 2,048 windows, SmolLM2's pieces",
-          big.cfg.kinds() == ["A"] * 12 and big.cfg.rope == 1 and big.cfg.rope_base == 50000 and big.ctx_at(0) == 2048
+    check("12 layers, all attention, with RoPE (base 50,000); windows 512 -> 1,024 at 15% -> 2,048 at 30%; SmolLM2's pieces",
+          big.cfg.kinds() == ["A"] * 12 and big.cfg.rope == 1 and big.cfg.rope_base == 50000 and big.ctx_at(0) == 512 and big.ctx_at(0.15) == 1024
+          and big.ctx_at(0.3) == 2048 and big.cfg.max_len == 2048
           and big.cfg.doc_mask == 1 and big.cfg.tokenizer == "smollm2" and tok.eot_id("smollm2") == 0)
     check("no Memtrix and no experts: one MLP of 2,816 per layer", not any(hasattr(b, "mem") or hasattr(b, "moe")
           for b in big.blocks) and big.blocks[0].mlp is not None)
@@ -83,6 +84,36 @@ def main():
     g2 = Bee4(Bee4Config(**{**SMALL, "n_layer": 8, "grow": "4:0,8:0.5"}))
     g2.load_state_dict(sd)
     check("a grown checkpoint loads into a fresh (shallow) Bee4", g2.depth == 8)
+
+    # ---- the speed switches
+    from oazy.muon import Muon
+    ps = [torch.nn.Parameter(torch.randn(64, 32)) for _ in range(3)] + [torch.nn.Parameter(torch.randn(96, 32))]
+    ps[-1].muon_split = [32, 64]
+    qs = [torch.nn.Parameter(q.detach().clone()) for q in ps]
+    qs[-1].muon_split = [32, 64]
+    for p1, p2 in zip(ps, qs):
+        p1.grad = torch.randn_like(p1)
+        p2.grad = p1.grad.clone()
+    o1, o2 = Muon(ps, lr=0.02, weight_decay=0.1), Muon(qs, lr=0.02, weight_decay=0.1)
+    o2.batched = False
+    for _ in range(3):
+        o1.step()
+        o2.step()
+    e = max((p1 - p2).abs().max().item() for p1, p2 in zip(ps, qs))
+    check("Muon straightens same-shape grids together, with the same result as one by one", e < 1e-6, f"max diff {e:.1e}")
+    mc = Bee4(Bee4Config(**SMALL, attn_backend="cudnn", compile_mode="max-autotune-no-cudagraphs")).to(dev)
+    mc.load_state_dict(m.state_dict())
+    mc.eval()
+    with torch.no_grad():
+        e = (mc(x)[0] - m(x)[0]).abs().max().item()
+    check("the speed switches (cuDNN attention, compile mode) leave the maths alone", e < (2e-2 if dev.type == "cuda" else 1e-5),
+          f"max diff {e:.1e}")
+    from oazy import speedcheck
+    sys.argv = ["speedcheck", "--model", "bee4", "--preset", "smoke", "--device", str(dev), "--passes", "1",
+                "--runs", str(Path(tempfile.mkdtemp()))]
+    sc = speedcheck.main()
+    check("the speed check runs and prints a train line", sc["line"].startswith("bash runpod/train.sh bee4") and sc["tok_s"] > 0,
+          sc["line"])
 
     # ---- the recipe
     from oazy.train import RECIPE, PRESETS, MENTOR, BEES, FAST
@@ -138,7 +169,7 @@ def main():
     runs = tmp / "runs"
     argv = ["train", "--model", "bee4", "--preset", "smoke", "--data", str(data), "--runs", str(runs), "--mentor", "smol-random",
             "--device", str(dev), "--compile", "0", "--tokens", "60000", "--batch-ramp", "512:0.5", "--mix", "fwe:0.9,chat:0.1@0",
-            "--micro", "2", "--set", "n_layer=8", "grow=4:0,8:0.4"]
+            "--micro", "2", "--set", "n_layer=8", "grow=4:0,8:0.4", "ctx=64:0,128:0.3"]
     sys.argv = argv
     try:
         train.main()
@@ -166,6 +197,11 @@ def main():
     check("ARC-Easy, PIQA and LAMBADA are checked during the run (quick) and in full at the end",
           len(evs) >= 3 and not evs[0]["full"] and evs[0]["arc_easy_n"] == 10 and evs[-1]["full"] and evs[-1]["arc_easy_n"] == 30
           and all(k in evs[-1] for k in ("arc_easy", "piqa", "lambada")), f"{len(evs) - 1} quick checks + the full one")
+    ctxs = [r.get("context") for r in tr]
+    vals = [r for r in recs if r["kind"] == "eval"]
+    check("the windows grew inside the run (64 -> 128 words at 30%), the held-out loss read full windows throughout",
+          ctxs[0] == 64 and ctxs[-1] == 128 and any(r["kind"] == "context" for r in recs) and cfg_run.get("val_context") == 128,
+          f"{ctxs[0]} ... {ctxs[-1]}, held-out at {cfg_run.get('val_context')}")
     deps = [r.get("depth") for r in tr]
     check("it grew inside the run (4 -> 8 layers at 40%)", deps[0] == 4 and deps[-1] == 8)
     st = json.loads((rd / "status.json").read_text())

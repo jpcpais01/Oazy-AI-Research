@@ -46,8 +46,11 @@ class Muon(torch.optim.Optimizer):
         super().__init__(params, dict(lr=lr, momentum=momentum, nesterov=nesterov,
                                       weight_decay=weight_decay, ns_steps=ns_steps))
 
+    batched = True      # straighten all grids of the same shape together (one batched product, far fewer GPU steps)
+
     @torch.no_grad()
     def step(self, closure=None):
+        todo = []                                   # (group, param, its parts)
         for g in self.param_groups:
             for p in g["params"]:
                 if p.grad is None:
@@ -59,12 +62,27 @@ class Muon(torch.optim.Optimizer):
                 buf.lerp_(p.grad, 1 - g["momentum"])
                 u = p.grad.lerp(buf, g["momentum"]) if g["nesterov"] else buf
                 # a stack of grids (E, out, in: Coral's experts) is straightened grid by grid, in one batch
-                parts = u.split(p.muon_split, dim=-2) if getattr(p, "muon_split", None) else [u]
-                u = torch.cat([straighten(x, g["ns_steps"]) * max(1.0, x.size(-2) / x.size(-1)) ** 0.5
-                               for x in parts], dim=-2)
-                if g["weight_decay"]:       # on AdamW's scale: the group's lr_scale is Muon's rate over the AdamW rate
-                    p.mul_(1 - g["lr"] / g.get("lr_scale", 1.0) * g["weight_decay"])
-                p.add_(u, alpha=-g["lr"])
+                parts = list(u.split(p.muon_split, dim=-2)) if getattr(p, "muon_split", None) else [u]
+                todo.append((g, p, parts))
+        # straighten: every part of the same shape at once (the same maths as one by one; Newton-Schulz works on the
+        # last two dimensions and scales each grid by its own size)
+        same = {}
+        for i, (g, _, parts) in enumerate(todo):
+            for j, x in enumerate(parts):
+                key = (tuple(x.shape), x.dtype, x.device, g["ns_steps"]) if self.batched else (i, j)
+                same.setdefault(key, []).append((i, j))
+        for key, where in same.items():
+            xs = [todo[i][2][j] for i, j in where]
+            steps = todo[where[0][0]][0]["ns_steps"]
+            X = torch.stack(xs) if len(xs) > 1 else xs[0].unsqueeze(0)
+            Y = straighten(X, steps) * max(1.0, X.size(-2) / X.size(-1)) ** 0.5
+            for (i, j), y in zip(where, Y.unbind(0)):
+                todo[i][2][j] = y
+        for g, p, parts in todo:
+            u = torch.cat(parts, dim=-2) if len(parts) > 1 else parts[0]
+            if g["weight_decay"]:       # on AdamW's scale: the group's lr_scale is Muon's rate over the AdamW rate
+                p.mul_(1 - g["lr"] / g.get("lr_scale", 1.0) * g["weight_decay"])
+            p.add_(u, alpha=-g["lr"])
 
 
 class Combined:
