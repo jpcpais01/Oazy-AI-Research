@@ -8,9 +8,12 @@ Uses only the Python standard library.
 from __future__ import annotations
 
 import argparse
+import io
 import json
+import re
 import subprocess
 import time
+import zipfile
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlparse, unquote
@@ -60,6 +63,26 @@ def version():
     return _VER["v"]
 
 
+REPORT_FILES = ("config.json", "status.json", "metrics.jsonl", "samples.jsonl", "sft.json", "sft.jsonl")
+
+
+def downloads(runs: Path, name: str):
+    """What the model library offers to download for a run (and its chat version, <name>-chat):
+    a small report bundle (status, config, every logged number, samples), the checkpoint, the phone files."""
+    out = []
+    for rn, label in ((name, ""), (name + "-chat", "chat ")):
+        d = run_dir(runs, rn)
+        if not d.is_dir():
+            continue
+        if any((d / f).exists() for f in REPORT_FILES):
+            out.append({"run": rn, "file": "report.zip", "label": label + "report", "bytes": None})
+        if (d / "ckpt.pt").is_file():
+            out.append({"run": rn, "file": "ckpt.pt", "label": label + "checkpoint", "bytes": (d / "ckpt.pt").stat().st_size})
+        for f in sorted((d / "phone").glob("*.oazy")) if (d / "phone").is_dir() else []:
+            out.append({"run": rn, "file": f.name, "label": label + "phone file", "bytes": f.stat().st_size})
+    return out
+
+
 def make_handler(runs: Path, web: Path = WEB):
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a):
@@ -76,6 +99,55 @@ def make_handler(runs: Path, web: Path = WEB):
         def js(self, obj):
             self.send(200, json.dumps(obj).encode())
 
+        def download(self, rn: str, fname: str):
+            """GET /download/<run>/<file>: report.zip (made on the fly), ckpt.pt, or a phone/*.oazy; resumable."""
+            if ".." in rn or "/" in rn or not re.fullmatch(r"[\w.-]+", fname):
+                return self.send(404, b"{}")
+            d = run_dir(runs, rn)
+            if fname == "report.zip":
+                buf = io.BytesIO()
+                with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+                    for f in REPORT_FILES:
+                        if (d / f).is_file():
+                            z.write(d / f, f"{rn}/{f}")
+                body = buf.getvalue()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/zip")
+                self.send_header("Content-Disposition", f'attachment; filename="{rn}-report.zip"')
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                return self.wfile.write(body)
+            f = d / fname if fname == "ckpt.pt" else d / "phone" / fname if fname.endswith(".oazy") else None
+            if f is None or not f.is_file():
+                return self.send(404, b"{}")
+            size, start, end = f.stat().st_size, 0, None
+            m = re.fullmatch(r"bytes=(\d+)-(\d*)", self.headers.get("Range") or "")
+            if m:
+                start, end = int(m.group(1)), int(m.group(2)) if m.group(2) else None
+            end = size - 1 if end is None or end >= size else end
+            if start > end:
+                self.send_response(416); self.send_header("Content-Range", f"bytes */{size}"); self.end_headers(); return
+            self.send_response(206 if m else 200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Disposition", f'attachment; filename="{rn}-{fname}"')
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Length", str(end - start + 1))
+            if m:
+                self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+            self.end_headers()
+            with open(f, "rb") as fh:
+                fh.seek(start)
+                left = end - start + 1
+                while left > 0:
+                    chunk = fh.read(min(1 << 20, left))
+                    if not chunk:
+                        break
+                    try:
+                        self.wfile.write(chunk)
+                    except (BrokenPipeError, ConnectionResetError):
+                        return
+                    left -= len(chunk)
+
         def do_GET(self):
             path = unquote(urlparse(self.path).path)
             parts = [p for p in path.split("/") if p]
@@ -84,6 +156,8 @@ def make_handler(runs: Path, web: Path = WEB):
             if len(parts) == 1 and parts[0].endswith((".js", ".css", ".svg")) and (web / parts[0]).is_file():
                 ctype = "text/javascript" if parts[0].endswith(".js") else "image/svg+xml" if parts[0].endswith(".svg") else "text/css"
                 return self.send(200, (web / parts[0]).read_bytes(), ctype + "; charset=utf-8")
+            if len(parts) == 3 and parts[0] == "download":
+                return self.download(parts[1], parts[2])
             if parts == ["api", "version"]:
                 return self.js(version())
             if parts == ["api", "runs"]:
@@ -104,6 +178,8 @@ def make_handler(runs: Path, web: Path = WEB):
                 if ".." in parts[2] or not d.is_dir():
                     return self.send(404, b"{}")
                 what = parts[3]
+                if what == "downloads":
+                    return self.js(downloads(runs, parts[2]))
                 if what == "metrics":
                     return self.js(read_jsonl(d / "metrics.jsonl"))
                 if what == "samples":
