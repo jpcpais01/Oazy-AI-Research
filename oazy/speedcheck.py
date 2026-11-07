@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from pathlib import Path
 
 import torch
 import torch.nn.functional as F
@@ -246,7 +247,7 @@ def main():
     res.update({"best": best, "tok_s": cur["tok_s"], "run_tok_s": run_tps, "mfu": mfu, "mentor_ms": mentor_ms,
                 "early": {f"{d}x{t}": v for (d, t), v in early.items()}, "line": line,
                 "opt_ms": {"batched": ob, "one_by_one": oo}})
-    out = (default_dir("runs") if a.runs is None else __import__("pathlib").Path(a.runs)) / f"speedcheck-{a.model}.json"
+    out = Path(default_dir("runs") if a.runs is None else a.runs) / f"speedcheck-{a.model}.json"
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(res, indent=1, default=str))
