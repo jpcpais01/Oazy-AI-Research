@@ -61,7 +61,8 @@ RECIPE["coral"] = dict(RECIPE["frog"], mentor_weight=0.25, mentor_until=0.3, men
 # on, fading to none over the last 10% (about 12% of the passes over the run). Planned for 10,000M tokens.
 # 524k-token steps after the ramp (the presets' batch_bee4): at 200M and 10,000M tokens, about 19,000 steps.
 RECIPE["bee4"] = dict(RECIPE["coral"], mentor_weight=0.25, mentor_until=0.3, mentor_floor=0.1, mentor_off=0.1,
-                      decay=0.3)   # João, Nov 7: the cool-down (learning-rate fall + cool-down text) over the last 30%, from 70%
+                      decay=0.3,   # João, Nov 7: the cool-down (learning-rate fall + cool-down text) over the last 30%, from 70%
+                      fp8=0)       # B200 speedcheck, Nov 7: FP8 was slower (445k vs 475k tok/s) and moved the gradients
 # Code Black (codeblack/README.md) and Black-T, the transformer it races: the same recipe for both, so a race measures
 # the architecture. Bee3's polish (Muon weight decay, a batch ramp, the square-root cool-down) and FP8, no mentor. Races
 # run on the clock: --preset race --minutes 30 (every schedule follows the training time instead of the token count).

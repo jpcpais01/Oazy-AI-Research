@@ -120,9 +120,9 @@ def main():
     from ember.mentor import fade
     rc = RECIPE["bee4"]
     ws = [fade(q, rc["mentor_weight"], rc["mentor_until"], None, rc["mentor_floor"], rc["mentor_off"]) for q in (0, 0.3, 0.8, 0.95, 1.0)]
-    same = {k: v for k, v in rc.items() if not k.startswith("mentor_") and k != "decay"} == {k: v for k, v in RECIPE["coral"].items() if not k.startswith("mentor_")}
-    check("Coral's recipe (FP8, the ramp, Muon decay, sqrt cool-down, Tagus20); the mentor 1 in 4 -> 1 in 10 by 30%, kept, off over the last 10%",
-          same and rc["mentor_share"] == 1 and rc["fp8"] == 1 and abs(ws[0] - 0.25) < 1e-9 and abs(ws[1] - 0.1) < 1e-9
+    same = {k: v for k, v in rc.items() if not k.startswith("mentor_") and k not in ("decay", "fp8")} == {k: v for k, v in RECIPE["coral"].items() if not k.startswith("mentor_") and k != "fp8"}
+    check("Coral's recipe (bf16, not FP8; the ramp, Muon decay, sqrt cool-down, Tagus20); the mentor 1 in 4 -> 1 in 10 by 30%, kept, off over the last 10%",
+          same and rc["mentor_share"] == 1 and rc["fp8"] == 0 and abs(ws[0] - 0.25) < 1e-9 and abs(ws[1] - 0.1) < 1e-9
           and abs(ws[2] - 0.1) < 1e-9 and 0 < ws[3] < 0.1 and ws[4] < 1e-9
           and rc["data_sub"] == "tagus20" and rc["decay_shape"] == "sqrt", " ".join(f"{w:.2f}" for w in ws))
     from oazy.mix import with_cooldown, TAGUS_MIX, parse_mix
