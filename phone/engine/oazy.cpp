@@ -959,12 +959,17 @@ struct Tokenizer {
             if (s.empty()) return;
             string t = prefix_space && (s[0] != ' ') ? " " + s : s;
             if (!digits) { split_words(t, out); return; }
+            // each number character on its own, like Hugging Face's Digits(individual_digits): that is Rust's
+            // char::is_numeric, so not only 0-9 but also ½ ² ³ ① and other scripts' digits (٣ ४ ...)
+            vector<int> st;
+            vector<uint32_t> cp = utf8_decode(t, st);
             size_t a = 0;
-            for (size_t b = 0; b <= t.size(); b++) {     // each ASCII digit on its own
-                if (b == t.size() || (t[b] >= '0' && t[b] <= '9')) {
+            for (size_t k = 0; k <= cp.size(); k++) {
+                if (k == cp.size() || is_N(cp[k])) {
+                    size_t b = st[k];
                     if (b > a) split_words(t.substr(a, b - a), out);
-                    if (b < t.size()) split_words(t.substr(b, 1), out);
-                    a = b + 1;
+                    if (k < cp.size()) split_words(t.substr(b, st[k + 1] - b), out);
+                    a = k < cp.size() ? st[k + 1] : b;
                 }
             }
         };
