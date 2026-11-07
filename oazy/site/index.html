@@ -459,87 +459,33 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
 .bar-cta::after { content: "\2197"; font-size: 12px; opacity: .6; transition: transform .3s; }
 .bar-cta:hover::after { transform: translate(2px, -2px); }
 
-/* ---------- near-0 compute: the lab's aim. Good models that run on what people already own (a phone, a laptop CPU),
-   shown as a ladder of the power behind a model on a log scale, four working rules, and today's measured numbers ---------- */
-.serif { font-family: "Instrument Serif", Georgia, serif; font-style: italic; font-weight: 400; font-size: 1.12em; letter-spacing: -0.01em; padding-right: .05em;
+/* ---------- near-0 compute: a scroll-driven showpiece. A hall of GPUs (the usual way to run a model) condenses,
+   as you scroll, into one glowing drop inside a phone. Almost no text: a headline, two captions, three numbers ---------- */
+.serif { font-family: "Instrument Serif", Georgia, serif; font-style: italic; font-weight: 400; letter-spacing: -0.01em; padding-right: .06em;
   background: linear-gradient(100deg, #fff 0%, #e4dcff 45%, #b9f2ff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.zl { --us: var(--cyan); border-radius: 22px; padding: 26px 30px 24px; display: grid; gap: 18px; }
-.zl-top { display: flex; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
-.zl-rows { list-style: none; margin: 0; padding: 0; display: grid; }
-.zl-row { display: grid; grid-template-columns: minmax(0, 250px) minmax(0, 1fr) 96px; gap: 0 24px; align-items: stretch; }
-.zl-who { padding: 13px 0; display: grid; gap: 3px; align-content: center; }
-.zl-who b { font: 500 15px/1.3 var(--sans); color: var(--ink); }
-.zl-who span { font-size: 13px; line-height: 1.35; color: var(--muted); }
-.zl-tr { position: relative; display: flex; align-items: center;
-  background: linear-gradient(90deg, rgba(236, 235, 243, .07) 1px, transparent 1px) 0 0 / 12.5% 100% repeat-x; }
-.zl-tr::after { content: ""; position: absolute; right: 0; top: 0; bottom: 0; width: 1px; background: rgba(236, 235, 243, .07); }
-.zl-tr i { position: relative; display: block; height: 3px; width: var(--w); border-radius: 3px; transition: width 1.5s cubic-bezier(.2, .8, .2, 1) var(--d, 0s);
-  background: linear-gradient(90deg, rgba(236, 235, 243, .05), rgba(236, 235, 243, .38)); }
-.zl-tr i::after { content: ""; position: absolute; right: -3px; top: -2.5px; width: 8px; height: 8px; border-radius: 50%; background: rgba(236, 235, 243, .55); }
-.js .zl.pre .zl-tr i { width: 0; }
-.zl-w { align-self: center; justify-self: end; font: 400 13px/1.3 var(--mono); color: var(--muted); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.zl-row.us .zl-who b { color: #fff; }
-.zl-row.us .zl-w { color: var(--ink); }
-.zl-row.us .zl-tr i { background: linear-gradient(90deg, color-mix(in srgb, var(--us) 10%, transparent), var(--us)); box-shadow: 0 0 14px color-mix(in srgb, var(--us) 55%, transparent); }
-.zl-row.us .zl-tr i::after { background: #fff; box-shadow: 0 0 0 3px color-mix(in srgb, var(--us) 30%, transparent), 0 0 16px 2px var(--us); animation: zl-beat 2.8s ease-in-out infinite; }
-.zl-row.train .zl-tr i { background: linear-gradient(90deg, rgba(143, 123, 255, .08), var(--violet-2)); box-shadow: 0 0 12px rgba(143, 123, 255, .45); }
-.zl-row.train .zl-tr i::after { background: var(--violet-2); box-shadow: 0 0 12px 1px var(--violet-2); }
-.zl-row.train .zl-who b { color: var(--ink); }
-.zl-tag { display: inline-block; margin-left: 8px; padding: 2px 7px; border-radius: 999px; font: 500 9.5px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; vertical-align: 2px;
-  color: var(--us); border: 1px solid color-mix(in srgb, var(--us) 40%, transparent); background: color-mix(in srgb, var(--us) 8%, transparent); }
-.zl-row.train .zl-tag { color: var(--violet-2); border-color: rgba(143, 123, 255, .4); background: rgba(143, 123, 255, .08); }
-@keyframes zl-beat { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
-.zl-axis .zl-tr { height: 22px; background: none; }
-.zl-axis .zl-tr::after { display: none; }
-.zl-axis .zl-tr span { position: absolute; top: 4px; transform: translateX(-50%); font: 400 10.5px/1 var(--mono); color: var(--faint); white-space: nowrap; }
-.zl-axis .zl-tr span:first-child { transform: none; }
-.zl-axis .zl-tr span:last-child { transform: translateX(-100%); }
-.zl-foot { display: flex; justify-content: space-between; align-items: end; gap: 14px 32px; flex-wrap: wrap; padding-top: 18px; border-top: 1px solid var(--line); }
-.zl-foot p { color: var(--ink-2); font-size: 14.5px; max-width: 60ch; }
-.zl-gap { display: flex; align-items: baseline; gap: 12px; }
-.zl-gap b { font: 400 clamp(34px, 3.6vw, 46px)/1 var(--display); letter-spacing: -0.03em;
-  background: linear-gradient(100deg, #fff 0%, #d9d2ff 45%, #a6f0ff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.zl-gap b sup { font-size: .5em; vertical-align: .85em; margin-left: 1px; }
-.zl-gap span { font: 500 11px/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); max-width: 17ch; }
-
-.zt { list-style: none; margin: 56px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 56px; }
-.zt li { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px 18px; padding: 30px 0 32px; border-top: 1px solid var(--line); align-content: start; }
-.zt svg { width: 40px; height: 40px; grid-row: 1 / span 3; color: var(--cyan); overflow: visible; }
-.zt svg .dim { opacity: .28; }
-.zt li > :not(svg) { grid-column: 2; }
-.zt .no { font: 500 11px/1.3 var(--mono); letter-spacing: .1em; color: var(--faint); }
-.zt h3 { font-size: 21px; font-weight: 500; line-height: 1.25; margin-top: -4px; }
-.zt p { color: var(--ink-2); font-size: 15px; max-width: 54ch; }
-.zt-eq { justify-self: start; margin-top: 6px; padding: 9px 13px; border-radius: 10px; font: 400 12.5px/1.45 var(--mono); color: var(--ink); letter-spacing: .02em;
-  background: linear-gradient(180deg, rgba(255, 255, 255, .06), rgba(255, 255, 255, .015)); border: 1px solid rgba(255, 255, 255, .1); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1); }
-.zt-eq .nw { white-space: nowrap; }
-.zt-eq .div { color: var(--muted); padding: 0 6px; }
-
-.zn { margin-top: 40px; }
-.zn .hd { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
-.zn .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.zn .stat { padding: 22px 0 20px; gap: 9px; }
-.zn .stat + .stat { padding-left: 24px; }
-.zn .stat .v { font-size: clamp(28px, 3vw, 38px); font-weight: 400; }
-.zn .stat .v small { font-size: .5em; }
-.zn .stat .d { color: var(--muted); font-size: 13px; line-height: 1.45; }
-.zn .stat.wait .v { color: var(--faint); }
-
-.zc { margin: clamp(64px, 8vw, 104px) auto 0; max-width: 30ch; text-align: center; font: 400 clamp(28px, 3.4vw, 46px)/1.15 "Instrument Serif", Georgia, serif; font-style: italic; letter-spacing: -0.01em; color: var(--ink); text-wrap: balance; }
-.zc em { font-style: italic; background: linear-gradient(100deg, #fff 0%, #e4dcff 45%, #b9f2ff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; padding-right: .06em; }
-.zc + .label { display: block; margin-top: 18px; text-align: center; color: var(--faint); }
-
-@media (max-width: 860px) {
-  .zt { grid-template-columns: 1fr; }
-  .zl-row { grid-template-columns: minmax(0, 1fr) 76px; gap: 0 14px; }
-  .zl-who { grid-column: 1 / -1; padding: 14px 0 6px; }
-  .zl-tr { height: 18px; }
-  .zl-axis .zl-who { display: none; }
-  .zl-axis .zl-tr span.mid { display: none; }
-}
-@media (max-width: 720px) { .zn .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .zn .stat:nth-child(3) { padding-left: 0; border-left: 0; } .zn .stat:nth-child(n+3) { border-top: 1px solid var(--line); } }
-@media (max-width: 520px) { .zl { padding: 22px 18px 20px; } .zt li { grid-template-columns: 34px minmax(0, 1fr); gap: 8px 14px; } .zt svg { width: 32px; height: 32px; } }
-@media (prefers-reduced-motion: reduce) { .zl-row.us .zl-tr i::after { animation: none; } .zl-tr i { transition: none; } }
+#near0 { padding-block: 0; }
+.nz { position: relative; height: 270vh; height: 270svh; }
+.nz-stage { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; }
+.nz-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.nz-stage::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(180deg, var(--bg) 0%, transparent 14%, transparent 86%, var(--bg) 100%); }
+.nz-head { position: absolute; z-index: 2; left: 0; right: 0; top: calc(84px + env(safe-area-inset-top, 0px)); text-align: center; pointer-events: none; }
+.nz-head h2 { font: 400 clamp(64px, 11vw, 168px)/.9 "Instrument Serif", Georgia, serif; font-style: italic; letter-spacing: -0.03em; margin: 10px 0 0; }
+.nz-head h2 .serif { font-size: 1em; }
+.nz-cap { position: absolute; z-index: 2; left: 0; right: 0; bottom: clamp(40px, 9vh, 96px); text-align: center; pointer-events: none; transition: opacity .5s, transform .7s cubic-bezier(.2,.8,.2,1); }
+.nz-cap p { font: 400 clamp(26px, 3.4vw, 48px)/1.1 "Instrument Serif", Georgia, serif; font-style: italic; color: var(--ink); letter-spacing: -0.01em; }
+.nz-cap .label { display: block; margin-top: 12px; }
+.nz-cap.a { opacity: var(--a, 1); transform: translateY(calc((1 - var(--a, 1)) * -14px)); }
+.nz-cap.b { opacity: var(--b, 0); transform: translateY(calc((1 - var(--b, 0)) * 14px)); }
+.nz-cap.b p em { font-style: italic; background: linear-gradient(100deg, #fff 0%, #e4dcff 45%, #b9f2ff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; padding-right: .06em; }
+.nz-nums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding-block: 8px clamp(64px, 8vw, 110px); }
+.nz-num { position: relative; border-radius: 22px; padding: 30px 28px 26px; display: grid; gap: 10px; justify-items: start; }
+.nz-num b { font: 300 clamp(56px, 7vw, 96px)/.9 var(--display); letter-spacing: -0.05em; font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, #fff 20%, #cfc8ff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.nz-num b small { font-size: .32em; letter-spacing: -0.01em; font-weight: 400; margin-left: 6px; }
+.nz-num span { font: 500 11.5px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
+.nz-foot { grid-column: 1 / -1; text-align: center; color: var(--faint); margin-top: 6px; }
+@media (max-width: 760px) { .nz-nums { grid-template-columns: 1fr; gap: 12px; } .nz-num { grid-template-columns: auto 1fr; align-items: end; gap: 6px 18px; padding: 22px 22px 20px; } .nz-num span { padding-bottom: 6px; } }
 
 /* HellaSwag, at the end of the models: one wide glass panel */
 .hs { margin-top: 24px; scroll-margin-top: 90px; }
@@ -721,75 +667,22 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
 
   <!-- ===================== NEAR-0 COMPUTE ===================== -->
   <section class="block" id="near0" aria-labelledby="near0-h">
-    <div class="wrap">
-      <div class="head rv">
-        <div>
+    <div class="nz" id="nz">
+      <div class="nz-stage" role="img" aria-label="Animation: a vast hall of GPUs condenses, as you scroll, into one small glowing drop inside a phone">
+        <canvas id="nz-c" aria-hidden="true"></canvas>
+        <div class="nz-head">
           <span class="label">// near-0 compute</span>
-          <h2 id="near0-h">Good models on <span class="serif">near-zero</span> compute</h2>
+          <h2 id="near0-h"><span class="serif">Near-0</span></h2>
         </div>
-        <p>This is what the lab is for. Not bigger models on bigger clusters, but small ones that write well and run on what people already own: a phone, a laptop, a plain CPU. No GPU, no data centre, no connection.</p>
+        <div class="nz-cap a" id="nz-a"><p>Most models need a building.</p><span class="label">a hall of GPUs · tens of megawatts</span></div>
+        <div class="nz-cap b" id="nz-b"><p>Ours fit <em>in your pocket.</em></p><span class="label">one phone · a few watts · no connection</span></div>
       </div>
-
-      <figure class="zl glass rv" style="margin:0" aria-labelledby="zl-cap">
-        <figcaption class="zl-top" id="zl-cap">
-          <span class="label">The power behind a language model <b>· rough orders of magnitude</b></span>
-          <span class="label">log scale · each line ×10</span>
-        </figcaption>
-        <ol class="zl-rows">
-          <li class="zl-row"><div class="zl-who"><b>Training a frontier model</b><span>a cluster of many thousands of GPUs</span></div><div class="zl-tr"><i style="--w:93.5%"></i></div><span class="zl-w">10s of MW</span></li>
-          <li class="zl-row"><div class="zl-who"><b>Serving a large model</b><span>a server of 8 GPUs, per copy</span></div><div class="zl-tr"><i style="--w:50%;--d:.12s"></i></div><span class="zl-w">~10 kW</span></li>
-          <li class="zl-row train"><div class="zl-who"><b>Training ours<span class="zl-tag">us</span></b><span>one GPU, every model so far</span></div><div class="zl-tr"><i style="--w:37.5%;--d:.24s"></i></div><span class="zl-w">~1 kW</span></li>
-          <li class="zl-row us"><div class="zl-who"><b>Running ours<span class="zl-tag">us</span></b><span>a laptop or desktop CPU</span></div><div class="zl-tr"><i style="--w:17.5%;--d:.36s"></i></div><span class="zl-w">~15–45 W</span></li>
-          <li class="zl-row us"><div class="zl-who"><b>Running ours<span class="zl-tag">us</span></b><span>a phone, offline</span></div><div class="zl-tr"><i style="--w:7.5%;--d:.48s"></i></div><span class="zl-w">a few W</span></li>
-          <li class="zl-row zl-axis" aria-hidden="true"><div class="zl-who"></div><div class="zl-tr"><span style="left:0">1 W</span><span class="mid" style="left:12.5%">10 W</span><span class="mid" style="left:25%">100 W</span><span style="left:37.5%">1 kW</span><span class="mid" style="left:50%">10 kW</span><span class="mid" style="left:62.5%">100 kW</span><span style="left:75%">1 MW</span><span class="mid" style="left:87.5%">10 MW</span><span style="left:100%">100 MW</span></div><span class="zl-w"></span></li>
-        </ol>
-        <div class="zl-foot">
-          <p>Most of the field climbs this ladder. We work down it: each model is trained on a single GPU and built to run on the bottom two lines, where the limit is how fast memory can be read, not how much maths a chip can do.</p>
-          <div class="zl-gap"><b>×10<sup>6</sup>+</b><span>less power, top line to bottom</span></div>
-        </div>
-      </figure>
-
-      <ol class="zt">
-        <li class="rv">
-          <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><circle class="dim" cx="20" cy="20" r="17"/><circle class="dim" cx="20" cy="20" r="11"/><circle cx="20" cy="20" r="4.5" fill="currentColor" stroke="none"/></svg>
-          <span class="no">01</span>
-          <h3>Small on purpose</h3>
-          <p>We stay at or under about a billion parameters and ask what each one buys. Bee_v2 has 0.2B and already beats GPT-2 small on HellaSwag. Coral holds 1B but uses about 161M of them for each word.</p>
-        </li>
-        <li class="rv">
-          <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-linecap="round" aria-hidden="true"><path class="dim" stroke-width="1.2" d="M5 8h30M5 14h30M5 26h30M5 32h30"/><path stroke-width="2.4" d="M5 20h17"/><circle cx="22" cy="20" r="2.2" fill="currentColor" stroke="none"/></svg>
-          <span class="no">02</span>
-          <h3>Read fewer bytes</h3>
-          <p>On a phone or a laptop, writing a word means reading every working weight once, so memory sets the speed, not arithmetic. We design for that: experts that stay asleep unless a word needs them, and Memtrix memory that stays the same size however long the text gets.</p>
-          <span class="zt-eq"><span class="nw">words / s ≈</span> <span class="nw">memory bandwidth</span> <span class="nw"><span class="div">÷</span> bytes read per word</span></span>
-        </li>
-        <li class="rv">
-          <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" aria-hidden="true"><path d="M9 3.5h15l7.5 7.5v25.5H9z"/><path d="M24 3.5V11h7.5"/><path class="dim" stroke-linecap="round" d="M14 18h12M14 23h12M14 28h8"/></svg>
-          <span class="no">03</span>
-          <h3>One file, no libraries</h3>
-          <p>Our engine is a single C++ file. Weights are kept in 8 bits and multiplied as integers on the device's own CPU cores, and in full precision it matches PyTorch to within 2e-6. No GPU drivers, nothing to install but the app.</p>
-        </li>
-        <li class="rv">
-          <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><rect x="11" y="3" width="18" height="34" rx="4"/><path class="dim" stroke-linecap="round" d="M17.5 6.5h5"/><circle class="dim" cx="20" cy="20" r="6.5"/><circle cx="20" cy="20" r="2.6" fill="currentColor" stroke="none"/></svg>
-          <span class="no">04</span>
-          <h3>Offline, on the device</h3>
-          <p>Our Android app runs the models entirely on the phone. Nothing you write is sent anywhere, there is no account and no server bill, and it keeps working when the signal drops.</p>
-        </li>
-      </ol>
-
-      <div class="zn rv">
-        <div class="hd"><span class="label">Where it stands today <b>· no GPU in any of these</b></span><span class="chip real">Measured</span></div>
-        <div class="stats">
-          <div class="stat"><span class="v">40<small> tok/s</small></span><span class="k">Coral_1B, writing</span><span class="d">8-bit, on a 4-core PC CPU</span></div>
-          <div class="stat"><span class="v">211<small>M</small></span><span class="k">Read per word</span><span class="d">of Coral's 1,037M; the rest sleeps</span></div>
-          <div class="stat"><span class="v">0.23<small> GB</small></span><span class="k">Bee_v2_0.2B, whole</span><span class="d">8-bit. Coral is 1.2 GB, 0.7 GB in 4-bit</span></div>
-          <div class="stat wait"><span class="v">–</span><span class="k">On a phone</span><span class="d">not timed yet</span></div>
-        </div>
-        <p class="foot-note">The app runs the same engine on a phone's CPU, but no phone has been timed yet, so that box stays empty until one is. Speed does not depend on how well a model has learned; how well they write is in the HellaSwag chart under Models. The power ladder above is a sketch in orders of magnitude, not a measurement.</p>
-      </div>
-
-      <p class="zc rv">A model worth talking to, on <em>the power of a phone.</em></p>
-      <span class="label">the aim of the lab</span>
+    </div>
+    <div class="wrap nz-nums">
+      <div class="nz-num glass rv"><b>0</b><span>GPUs to run them</span></div>
+      <div class="nz-num glass rv"><b>0</b><span>bytes leave the phone</span></div>
+      <div class="nz-num glass rv"><b>40<small>tok/s</small></b><span>on a laptop CPU</span></div>
+      <p class="nz-foot label">Coral_1B, 8-bit, measured on a 4-core CPU · the hall is an illustration</p>
     </div>
   </section>
 
@@ -1498,6 +1391,100 @@ void main() {
     if (es[0].isIntersecting && !t) t = setInterval(() => show(k = (k + 3) % N), 1300);
     else if (!es[0].isIntersecting && t) { clearInterval(t); t = null; }
   }).observe(el);
+})();
+
+// near-0 compute: a hall of GPUs (thousands of small lights on a floor in perspective) condenses, as the section
+// scrolls past, into one glowing drop inside a phone. Progress comes from scroll; reduced motion shows the end state.
+(() => {
+  const host = document.getElementById('nz'), cv = document.getElementById('nz-c');
+  if (!host || !cv) return;
+  const ctx = cv.getContext('2d'), capA = document.getElementById('nz-a'), capB = document.getElementById('nz-b');
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let W = 0, H = 0, dpr = 1, P = [], phone = null, live = false, raf = 0, t0 = performance.now();
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const ease = x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+  let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  function inDrop(x, y) {               // unit drop: round bottom (r = 1 at the origin), point at y = -1.75
+    if (x * x + y * y <= 1) return true;
+    if (y < 0 && y > -1.75) { const k = (y + 1.75) / 1.75; return Math.abs(x) < 0.82 * Math.pow(k, 1.25); }
+    return false;
+  }
+  function build() {
+    const r = cv.getBoundingClientRect(); W = r.width; H = r.height; dpr = Math.min(2, devicePixelRatio || 1);
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const small = W < 700, N = small ? 1800 : 3600;
+    // the phone, centred a little low
+    const ph = Math.min(H * 0.5, 430), pw = ph * 0.49;
+    phone = { x: W / 2 - pw / 2, y: H * 0.56 - ph / 2, w: pw, h: ph, r: pw * 0.17 };
+    const dr = pw * 0.27, dcx = W / 2, dcy = phone.y + ph * 0.6;
+    // the hall: racks in rows on a floor that runs to a horizon
+    const cols = small ? 30 : 60, rows = Math.ceil(N / cols), hor = H * 0.36;
+    P = []; seed = 11;
+    for (let i = 0; i < N; i++) {
+      const c = i % cols, rw = Math.floor(i / cols);
+      const u = (c - (cols - 1) / 2) / ((cols - 1) / 2) + (Math.floor(c / 4) - (cols / 8)) * 0.012;  // racks of 4, with aisles
+      const v = rw / rows, z = 1 + v * 7;
+      const sx = W / 2 + u * W * 1.15 / z, sy = hor + (H * 0.95 - hor) / z;
+      let dx, dy; do { dx = rnd() * 2 - 1; dy = rnd() * 2.75 - 1.75; } while (!inDrop(dx, dy));
+      P.push({ sx, sy, sz: 1 / z, tx: dcx + dx * dr, ty: dcy + dy * dr, dy, d: rnd() * 0.45 + (1 - v) * 0.1, ph: rnd() * 6.28, f: 0.4 + rnd() * 1.6 });
+    }
+  }
+  function progress() {
+    const r = host.getBoundingClientRect(), span = r.height - innerHeight;
+    return clamp(-r.top / Math.max(1, span));
+  }
+  function hue(dy) {                    // the drop's light: cyan at the point, violet in the middle, pink at the base
+    const k = clamp((dy + 1.75) / 2.75);
+    return k < .5 ? [79 + (143 - 79) * k * 2, 216 + (123 - 216) * k * 2, 255] : [143 + (255 - 143) * (k - .5) * 2, 123 + (95 - 123) * (k - .5) * 2, 255 + (174 - 255) * (k - .5) * 2];
+  }
+  function draw(now) {
+    const t = (now - t0) / 1000, p = still ? 1 : progress(), m = clamp((p - 0.12) / 0.66);
+    host.style.setProperty('--a', clamp(1 - m * 3).toFixed(3));
+    capA.style.setProperty('--a', clamp(1 - m * 3).toFixed(3)); capB.style.setProperty('--b', clamp((m - 0.72) / 0.28).toFixed(3));
+    ctx.clearRect(0, 0, W, H);
+    // the phone's glass outline fades in as the hall leaves
+    const pa = clamp((m - 0.35) / 0.5);
+    if (pa > 0) {
+      const { x, y, w, h, r } = phone;
+      const rr = (ox) => { ctx.beginPath(); ctx.roundRect(x + ox, y, w, h, r); };
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = `rgba(255,95,174,${0.35 * pa})`; rr(-1); ctx.stroke();
+      ctx.strokeStyle = `rgba(79,216,255,${0.4 * pa})`; rr(1); ctx.stroke();
+      ctx.strokeStyle = `rgba(236,235,243,${0.55 * pa})`; rr(0); ctx.stroke();
+      const g = ctx.createLinearGradient(0, y, 0, y + h); g.addColorStop(0, `rgba(255,255,255,${0.06 * pa})`); g.addColorStop(1, `rgba(255,255,255,${0.01 * pa})`);
+      ctx.fillStyle = g; rr(0); ctx.fill();
+      ctx.fillStyle = `rgba(236,235,243,${0.35 * pa})`; ctx.beginPath(); ctx.roundRect(x + w / 2 - w * 0.12, y + h * 0.035, w * 0.24, 4, 2); ctx.fill();
+      // a soft bloom behind the drop
+      const b = ctx.createRadialGradient(W / 2, y + h * 0.56, 0, W / 2, y + h * 0.56, w * 0.7);
+      b.addColorStop(0, `rgba(143,123,255,${0.22 * pa})`); b.addColorStop(1, 'rgba(143,123,255,0)');
+      ctx.fillStyle = b; ctx.fillRect(x - w, y, w * 3, h);
+    }
+    ctx.globalCompositeOperation = 'lighter';
+    for (const q of P) {
+      const k = ease(clamp((m - q.d) / 0.55));
+      const bend = Math.sin(k * Math.PI) * (q.sx < W / 2 ? -1 : 1) * 40 * (1 - q.sz);
+      const x = q.sx + (q.tx - q.sx) * k + bend, y = q.sy + (q.ty - q.sy) * k;
+      const blink = 0.55 + 0.45 * Math.sin(t * q.f + q.ph);
+      const breathe = 1 + 0.06 * Math.sin(t * 1.4 + q.dy);
+      const xo = (x - W / 2) * (k > .98 ? breathe - 1 : 0), yo = 0;
+      const [hr, hg, hb] = hue(q.dy);
+      const led = q.f > 1.75 ? [76, 242, 196] : q.f > 1.6 ? [79, 216, 255] : [200, 206, 230];   // most lights cool white, a few green and cyan
+      const cr = led[0] + (hr - led[0]) * k, cg = led[1] + (hg - led[1]) * k, cb = led[2] + (hb - led[2]) * k;
+      const a = (0.3 + 0.7 * q.sz) * (1 - k) * blink + k * (0.55 + 0.25 * blink);
+      const s = (1 + 2.6 * q.sz) * (1 - k) + k * 1.3, sh = s * (1 + 1.6 * (1 - k));   // LEDs stand tall in the hall
+      ctx.fillStyle = `rgba(${cr | 0},${cg | 0},${cb | 0},${a.toFixed(3)})`;
+      ctx.fillRect(x + xo - s / 2, y + yo - sh, s, sh);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    if (live && !still) raf = requestAnimationFrame(draw);
+  }
+  build(); draw(performance.now());
+  addEventListener('resize', () => { build(); draw(performance.now()); });
+  new IntersectionObserver(es => {
+    live = es[0].isIntersecting;
+    if (live && !still) { cancelAnimationFrame(raf); raf = requestAnimationFrame(draw); }
+  }).observe(host);
+  if (still) addEventListener('scroll', () => draw(performance.now()), { passive: true });
 })();
 
 // glass cards: a soft light follows the pointer
