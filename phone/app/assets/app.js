@@ -138,18 +138,57 @@
   }
 
   const IDEAS = {
-    chat: ["What is a black hole, simply?", "Give me three tips to sleep better", "Explain photosynthesis to a child", "Write a haiku about the sea"],
-    write: ["Once upon a time, in a village by the sea,", "The most surprising thing about the ocean is", "Lisbon is a city where"],
+    chat: ["What is a black hole, simply?", "Give me three tips to sleep better", "Explain photosynthesis to a child",
+      "Write a haiku about the sea", "Why is the sky blue?", "How do airplanes stay in the air?", "What is a good breakfast before a run?",
+      "Explain gravity in two sentences", "Give me a fun fact about octopuses", "How do I make a simple tomato sauce?",
+      "What causes the seasons?", "Write a short poem about autumn", "How can I focus better when studying?",
+      "What is the difference between weather and climate?", "Tell me a short story about a lost robot", "Why do cats purr?",
+      "How does the heart pump blood?", "Give me three ideas for a rainy day", "What is DNA, simply?", "How do vaccines work?",
+      "Explain what a computer program is", "What makes a good friend?", "Why do leaves change colour?",
+      "How do I start running as a beginner?", "Write a limerick about a cat", "What is the Moon made of?",
+      "How do rainbows form?", "Give me tips to save money each month", "What is the tallest mountain in the world?",
+      "Explain how a volcano erupts", "Suggest a name for a small café by the sea", "How do bees make honey?",
+      "Why do we dream?", "Write a thank-you note to a teacher", "What is electricity?", "How can I sleep on a long flight?",
+      "Describe Lisbon in three sentences", "What are the planets in our solar system?", "How do I keep a plant alive indoors?",
+      "Explain the water cycle simply", "Give me a riddle", "What is a healthy lunch idea?", "How does the internet work, simply?"],
+    write: ["Once upon a time, in a village by the sea,", "The most surprising thing about the ocean is", "Lisbon is a city where",
+      "The old lighthouse keeper opened the door and", "Scientists have recently discovered that", "The best way to learn a new language is",
+      "On the first day of spring,", "The robot looked at the stars and", "In the year 2100, cities will", "My grandmother always said that",
+      "The secret to a perfect cup of coffee is", "Deep in the forest there was a small house where", "The history of the bicycle begins",
+      "When the train stopped in the middle of nowhere,", "A good morning routine starts with", "The library was empty except for",
+      "Volcanoes are formed when", "The little fox had never seen snow before, so", "Every great invention starts with",
+      "The storm arrived just after midnight and", "Honeybees are important because", "The map led them to a beach where"],
   };
+  const PICKS = { mode: null, on: false, list: [] };
+  const draw = (pool, taken) => { const free = pool.filter((t) => !taken.includes(t)); return free[Math.floor(Math.random() * free.length)]; };
   function chips() {
     const box = $("#chips");
+    if (!info) { box.innerHTML = ""; PICKS.list.forEach((c) => clearTimeout(c.t)); PICKS.list = []; PICKS.on = false; return; }
+    if (PICKS.on && PICKS.mode === mode) return;           // keep the four on screen; each swaps on its own timer
+    PICKS.list.forEach((c) => clearTimeout(c.t));
     box.innerHTML = "";
-    if (!info) return;
-    for (const t of IDEAS[mode]) {
+    PICKS.mode = mode; PICKS.on = true; PICKS.list = [];
+    const pool = IDEAS[mode];
+    for (let i = 0; i < Math.min(4, pool.length); i++) {
       const b = document.createElement("button");
       b.className = "chip";
-      b.textContent = t;
-      b.onclick = () => { $("#input").value = t; grow(); send(); };
+      const c = { b, text: draw(pool, PICKS.list.map((x) => x.text)) };
+      b.textContent = c.text;
+      b.onclick = () => { $("#input").value = c.text; grow(); send(); };
+      const swap = () => {
+        c.t = setTimeout(() => {
+          if (!b.isConnected) return;
+          b.classList.add("fade");
+          setTimeout(() => {
+            c.text = draw(pool, PICKS.list.map((x) => x.text));
+            b.textContent = c.text;
+            b.classList.remove("fade");
+            swap();
+          }, 350);
+        }, 15000 + Math.random() * 15000);
+      };
+      swap();
+      PICKS.list.push(c);
       box.appendChild(b);
     }
   }
@@ -356,6 +395,7 @@
     N.reset();
     thread.innerHTML = "";
     started = false;
+    PICKS.on = false;                                    // fresh suggestions too
     closeSheets();
     paint();
     $("#scroll").scrollTop = 0;
