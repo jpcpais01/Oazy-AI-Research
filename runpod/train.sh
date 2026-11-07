@@ -14,6 +14,7 @@
 #   bash runpod/train.sh frog --preset big --tokens 4e9     # Frog, Bee3 at 406M (needs: python3 -m oazy.tagus --run-tokens 4e9)
 #   bash runpod/train.sh coral --preset big --tokens 20e9 --micro 32   # Coral, 1B experts (needs: python3 -m oazy.tagus --run-tokens 20e9 --into tagus20)
 #   bash runpod/train.sh bee4 --preset big --tokens 10e9 --micro 32    # Bee4-200M, 198M all attention, Coral's recipe (reads tagus20 too)
+#   bash runpod/train.sh coralmini --preset big --tokens 10e9 --micro 32   # Coral Mini, 198M experts (16, top 2), Bee4's recipe (tagus20)
 #   bash runpod/train.sh blackt --preset race --minutes 30 --micro 32 --name blackt-125m   # a Code Black race (codeblack/README.md)
 #   (--name X: the run, its tmux window and its log are called X, so several races of one model can live side by side)
 #
@@ -28,7 +29,7 @@ cd "$(dirname "$0")/.."
 REPO="$(pwd)"
 MODEL="${1:-}"
 [ "$MODEL" = engram ] && MODEL=memtrix          # Memtrix's old name
-case "$MODEL" in memtrix|tide|fern|ember|fern2|fern3|bee|bee2|bee3|frog|coral|bee4|black|blackt|gpt) shift ;; *) echo "usage: bash runpod/train.sh memtrix|tide|fern|ember|fern2|fern3|bee|bee2|bee3|frog|coral|bee4|black|blackt|gpt [--gpt] [trainer options]"; exit 1 ;; esac
+case "$MODEL" in memtrix|tide|fern|ember|fern2|fern3|bee|bee2|bee3|frog|coral|bee4|coralmini|black|blackt|gpt) shift ;; *) echo "usage: bash runpod/train.sh memtrix|tide|fern|ember|fern2|fern3|bee|bee2|bee3|frog|coral|bee4|coralmini|black|blackt|gpt [--gpt] [trainer options]"; exit 1 ;; esac
 WITH_GPT=0
 ARGS=()
 WIN="$MODEL"
@@ -69,8 +70,8 @@ if { [ "$MODEL" = black ] || [ "$MODEL" = blackt ]; } && [ ! -f "$DATA/smol/cosm
     echo "Code Black and Black-T race on Tagus, our dataset; prepare it first: python3 -m oazy.tagus --run-tokens 2.5e9"
     exit 1
 fi
-if { [ "$MODEL" = coral ] || [ "$MODEL" = bee4 ]; } && [ ! -f "$DATA/tagus20/cosmo/train.bin" ] && [[ "$EXTRA" != *--data-sub* ]]; then
-    echo "Coral and Bee4 read the 20,000M-token Tagus (tagus20); prepare it first: nice -n 10 python3 -m oazy.tagus --run-tokens 20e9 --into tagus20"
+if { [ "$MODEL" = coral ] || [ "$MODEL" = bee4 ] || [ "$MODEL" = coralmini ]; } && [ ! -f "$DATA/tagus20/cosmo/train.bin" ] && [[ "$EXTRA" != *--data-sub* ]]; then
+    echo "Coral, Bee4 and Coral Mini read the 20,000M-token Tagus (tagus20); prepare it first: nice -n 10 python3 -m oazy.tagus --run-tokens 20e9 --into tagus20"
     exit 1
 fi
 

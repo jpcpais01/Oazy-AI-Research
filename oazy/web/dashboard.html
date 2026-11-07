@@ -321,8 +321,8 @@ fetch("api/version").then((r) => r.json()).then((v) => {
   el.title = `commit ${v.commit}${v.date ? ", " + v.date : ""}`;
 }).catch(() => {});
 "use strict";
-const C = { memtrix: UI.css("--brand"), tide: UI.css("--teal"), fern: UI.css("--fern"), ember: UI.css("--ember"), fern2: UI.css("--fern2"), fern3: UI.css("--fern3"), bee: UI.css("--bee"), bee2: UI.css("--bee2"), bee3: UI.css("--bee3"), frog: UI.css("--frog"), coral: UI.css("--coral"), bee4: UI.css("--bee4"), gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
-const NAMES = { memtrix: "Memtrix", tide: "Tide", fern: "Fern", ember: "Ember", fern2: "Fern2", fern3: "Fern3", bee: "Bee0.2B", bee2: "Bee_v2_0.2B", bee3: "Bee3", frog: "Frog", coral: "Coral", bee4: "Bee4-200M", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };
+const C = { memtrix: UI.css("--brand"), tide: UI.css("--teal"), fern: UI.css("--fern"), ember: UI.css("--ember"), fern2: UI.css("--fern2"), fern3: UI.css("--fern3"), bee: UI.css("--bee"), bee2: UI.css("--bee2"), bee3: UI.css("--bee3"), frog: UI.css("--frog"), coral: UI.css("--coral"), bee4: UI.css("--bee4"), coralmini: UI.css("--coralmini"), gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
+const NAMES = { memtrix: "Memtrix", tide: "Tide", fern: "Fern", ember: "Ember", fern2: "Fern2", fern3: "Fern3", bee: "Bee0.2B", bee2: "Bee_v2_0.2B", bee3: "Bee3", frog: "Frog", coral: "Coral", bee4: "Bee4-200M", coralmini: "Coral Mini", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };
 // Every model of the lab. role: "ours" (our architectures), "baseline" (the GPT-2 we train the same way), "reference" (OpenAI's).
 const MODELS = {
   memtrix: { name: "Memtrix", color: C.memtrix, role: "ours", blurb: "Learns while it reads: small memories fixed by their own surprise, word by word." },
@@ -336,6 +336,7 @@ const MODELS = {
   bee3: { name: "Bee3", color: C.bee3, role: "ours", blurb: "Bee_v2_0.2B's body (203M, next-word), raised better: Tagus, our dataset (seven kinds of text), no bleed between documents, the mentor for the whole run, twice the learning rate, 2,048-word windows throughout. Losses per GPT-2 token, like Bee2." },
   frog: { name: "Frog", color: C.frog, role: "ours", blurb: "Bee3 at twice the size (406M, next-word): 21 memory + 7 attention layers, 1,024 wide, 4,000M tokens of Tagus. The SmolLM2-360M mentor teaches a share of the sequences instead of a share of every word, so it reads only what it teaches. Losses per GPT-2 token." },
   coral: { name: "Coral", color: C.coral, role: "ours", blurb: "Our first mixture of experts (1,037M parameters, about 160M at work per word, next-word): 20 attention layers, each with 32 small experts (a router picks 2 per word) plus a shared MLP, 1,024 wide, trained on Tagus, built to train at about 1M tokens/s. Losses per GPT-2 token." },
+  coralmini: { name: "Coral Mini", color: C.coralmini, role: "ours", blurb: "Coral made small (about 198M parameters, about 115M at work per word, next-word): Bee4's 12 attention layers, each with 16 small experts (a router picks 2 per word) plus a shared MLP. Bee4's training recipe: grows from 6 to 12 layers, short windows first, the SmolLM2-360M mentor on a share of the passes, 10,000M tokens of Tagus20." },
   bee4: { name: "Bee4-200M", color: C.bee4, role: "ours", blurb: "Dense and all attention (198M, next-word): Coral's layers with one MLP instead of experts, no Memtrix. Coral's training recipe: grows from 6 to 12 layers, short windows first, the SmolLM2-360M mentor on a share of the passes, 10,000M tokens of Tagus20." },
   gpt: { name: NAMES.gpt, color: C.gpt, role: "baseline", blurb: "GPT-2 small (124M), trained on the same text, in the same order, with the same schedule." },
   "openai-gpt2": { name: NAMES.openai, color: C.ref, role: "reference", blurb: "OpenAI's 2019 GPT-2 small, measured with the same tests: the line to beat." },
@@ -348,7 +349,7 @@ const modelOf = (n) => MODELS[n] || MODELS[kindOf(RUNS.find((r) => r.name === n)
 const colorOf = (n) => modelOf(n).color;
 // the second color of a model: its held-out loss line, picked to stand apart from its training line
 // (Coral's violet gets teal); models without a pick get the opposite hue of their own color
-const HELD = { coral: "#4cf2c4", bee4: "#ffcf6b", bee3: "#5fd0ff", bee2: "#7fa8ff", bee: "#5fe0d0", frog: "#ff8fcf", gpt: "#ffd166", memtrix: "#ffb35c", fern3: "#9ff0a0" };
+const HELD = { coral: "#4cf2c4", coralmini: "#c8ff6b", bee4: "#ffcf6b", bee3: "#5fd0ff", bee2: "#7fa8ff", bee: "#5fe0d0", frog: "#ff8fcf", gpt: "#ffd166", memtrix: "#ffb35c", fern3: "#9ff0a0" };
 const heldColorOf = (n) => HELD[n] || HELD[kindOf(RUNS.find((r) => r.name === n) || { name: n })] || opposite(colorOf(n));
 function opposite(hex) {
   const m = /^#?([\da-f]{6})$/i.exec(hex || ""); if (!m) return "#ffd166";
@@ -479,12 +480,15 @@ function runCard(r) {
   const nm = nameOf(r.name), cut = nm.search(/[_0-9]/);
   const title = cut > 0 ? `${UI.escapeHtml(nm.slice(0, cut))}<span class="acc">${UI.escapeHtml(nm.slice(cut))}</span>` : UI.escapeHtml(nm);
   const chips = [cf.params ? [(cf.params / 1e6).toFixed(0) + "M params", true] : null,
+    cf.params_active && cf.params_active < cf.params ? [(cf.params_active / 1e6).toFixed(0) + "M at work per word"] : null,
     [MODELS[kindOf(r)]?.blurb?.includes("Not a next-word") ? "not next-token" : "next-token"],
     cf.mentor && cf.mentor !== "none" ? ["mentor " + cf.mentor] : null, cf.tokenizer && cf.tokenizer !== "gpt2" ? [cf.tokenizer + " tokens"] : null,
     cf.schedule ? [cf.schedule.toUpperCase() + " schedule"] : null].filter(Boolean);
   const tele = [["trained for", st.elapsed ? fmtTime(st.elapsed) : "–"], ["step", st.step != null ? st.step.toLocaleString() : "–"],
     lastT && lastT.lr != null ? ["learning rate", lastT.lr.toExponential(1)] : null, lastT && lastT.mentor_w != null ? ["mentor weight", lastT.mentor_w.toFixed(2)] : null,
     lastT && lastT.depth ? ["depth", lastT.depth + " blocks"] : null,
+    lastT && lastT.moe_uneven != null ? ["experts uneven", lastT.moe_uneven.toFixed(2), "how evenly the experts shared the work on the last step: the busiest expert's words over the average. 1.00 is perfectly even; under ~1.3 is healthy"] : null,
+    lastT && lastT.moe_dropped != null ? ["experts full", (lastT.moe_dropped * 100).toFixed(1) + "%", "share of the word-expert picks that found their expert full this pass (each expert takes at most 1.25x its fair share in training) and skipped it; the word keeps the shared MLP and its other expert. Under ~1% is healthy"] : null,
     wob ? ["loss wobble", `±${wob.sd.toFixed(3)} · ${wob.word}`, "how much the training loss jumps around its own trend over the last 400 steps (one standard deviation). Under 0.02 steady, under 0.05 normal, above that jumpy; spike = one of the last 3 log lines far above the rest. Early in a run (small steps) it is naturally higher."] : null,
     lastT && lastT.grad_norm != null ? ["gradient norm", lastT.grad_norm.toFixed(2) + (wob && wob.gmax != null && wob.gmax > 2 * lastT.grad_norm ? ` (peak ${wob.gmax.toFixed(2)})` : ""), "the size of the update before clipping (clipped at 1.0); steady around 0.1 is healthy, repeated spikes or a climb toward 1 mean the learning rate is too high"] : null,
     cf.gpu ? ["gpu", cf.gpu.replace(/^NVIDIA\s+/, "")] : null].filter(Boolean);
@@ -1092,7 +1096,7 @@ async function refresh() {
   const pill = document.getElementById("updated");
   try {
     RUNS = await getJSON("api/runs");
-    const ORDER = ["bee4", "coral", "frog", "bee3", "bee2", "bee", "fern3", "fern2", "ember", "fern", "tide", "memtrix", "gpt", "openai-gpt2", "smollm2-360m", "smollm2-135m"];
+    const ORDER = ["coralmini", "bee4", "coral", "frog", "bee3", "bee2", "bee", "fern3", "fern2", "ember", "fern", "tide", "memtrix", "gpt", "openai-gpt2", "smollm2-360m", "smollm2-135m"];
     RUNS.sort((a, b) => ORDER.indexOf(a.name) - ORDER.indexOf(b.name));
     for (const r of RUNS) {
       const [metrics, samples] = await Promise.all([getJSON(`api/run/${r.name}/metrics`), getJSON(`api/run/${r.name}/samples`)]);

@@ -18,6 +18,8 @@ MAKER = "Oazy AI Research"
 FACTS = {
     "coral": dict(name="Coral", size="about 1 billion parameters, of which only around 160 million work on each word",
                   what="a mixture-of-experts language model: 32 small expert networks, and a router picks two of them for every word"),
+    "coralmini": dict(name="Coral Mini", size="about 200 million parameters, of which only around 115 million work on each word",
+                      what="a small mixture-of-experts language model: 16 small expert networks, and a router picks two of them for every word"),
     "bee4": dict(name="Bee4", size="about 200 million parameters",
                  what="a small attention-only language model"),
     "bee3": dict(name="Bee3", size="about 200 million parameters",
