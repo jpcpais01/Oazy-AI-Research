@@ -145,6 +145,23 @@ def handler(runs: Path):
     return H
 
 
+def point_8001(port: int):
+    """RunPod's template nginx forwards the pod's 8001 link to the dashboard (8000); point it at this server once."""
+    conf = Path("/etc/nginx/nginx.conf")
+    try:
+        text = conf.read_text()
+    except OSError:
+        return
+    if f"localhost:{port}" in text or "localhost:8000" not in text:
+        return
+    try:
+        conf.write_text(text.replace("localhost:8000", f"localhost:{port}"))
+        subprocess.call(["nginx", "-s", "reload"])
+        print(f"[phone] pointed the pod's 8001 link at port {port} (it showed the dashboard before)", flush=True)
+    except Exception as e:
+        print(f"[phone] could not point the 8001 link here ({e}); see docs/RUNPOD.md", flush=True)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", type=int, default=8002)
@@ -165,6 +182,7 @@ def main():
             raise SystemExit(f"[phone] converting {r} failed (see above)")
     fs = files(runs)
     print(f"[phone] sharing {len(fs)} file(s) on port {a.port}: " + ", ".join(fs) if fs else "[phone] nothing to share yet", flush=True)
+    point_8001(a.port)
     pod = os.environ.get("RUNPOD_POD_ID")
     link = f"https://{pod}-8001.proxy.runpod.net" if pod else "the pod's 8001 link (RunPod: Connect -> HTTP 8001)"
     print(f"[phone] on the phone, open in Chrome:  {link}", flush=True)
