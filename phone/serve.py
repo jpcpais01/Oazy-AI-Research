@@ -1,6 +1,7 @@
 """Share the phone app and the phone models from the pod, so the phone can fetch them over the pod's port link.
 
     python3 -m phone.serve                 # on port 8002, which the pod shows on its 8001 link (docs/RUNPOD.md)
+    python3 -m phone.serve --run coral-chat   # the one command: converts that run for the phone first if needed
 
 The page lists the app (phone/dist/oazy.apk, if built) and every model written by phone.export (<runs>/*/phone/*.oazy),
 each with an "Open in Oazy" button (the app then downloads it itself, and can resume a cut download) and a plain
@@ -12,6 +13,8 @@ from __future__ import annotations
 import argparse
 import html
 import os
+import subprocess
+import sys
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -146,12 +149,26 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", type=int, default=8002)
     ap.add_argument("--runs", default=None, help="the runs folder (default: the lab's)")
+    ap.add_argument("--run", default=None, help="comma-separated runs to convert for the phone first (skipped if done)")
     a = ap.parse_args()
     from oazy.data import default_dir
     runs = Path(a.runs or default_dir("runs"))
+    for r in [x.strip() for x in (a.run or "").split(",") if x.strip()]:
+        if list((runs / r / "phone").glob("*.oazy")):
+            print(f"[phone] {r}: already converted", flush=True)
+            continue
+        print(f"[phone] {r}: converting for the phone (a few minutes, CPU only) ...", flush=True)
+        cmd = [sys.executable, "-m", "phone.export", "--run", r]
+        if a.runs:
+            cmd += ["--ckpt", str(runs / r / "ckpt.pt")]
+        if subprocess.call(cmd) != 0:
+            raise SystemExit(f"[phone] converting {r} failed (see above)")
     fs = files(runs)
     print(f"[phone] sharing {len(fs)} file(s) on port {a.port}: " + ", ".join(fs) if fs else "[phone] nothing to share yet", flush=True)
-    print(f"[phone] open the pod's 8001 link (RunPod: Connect -> HTTP 8001) on the phone; Ctrl-C to stop", flush=True)
+    pod = os.environ.get("RUNPOD_POD_ID")
+    link = f"https://{pod}-8001.proxy.runpod.net" if pod else "the pod's 8001 link (RunPod: Connect -> HTTP 8001)"
+    print(f"[phone] on the phone, open in Chrome:  {link}", flush=True)
+    print(f"[phone]   1. Install the app   2. Open in Oazy next to the model   (Ctrl-C here when done)", flush=True)
     os.nice(5)
     ThreadingHTTPServer(("0.0.0.0", a.port), handler(runs)).serve_forever()
 
