@@ -135,13 +135,13 @@
   <div class="grid">
     <div class="card span7">
       <div class="cardhead">
-        <div class="titles"><h2>How wrong the models still are</h2><div class="sub">Next-word loss as they train. Hover to also see the loss on held-out web pages. Lower is better.</div></div>
+        <div class="titles"><h2>How wrong the models still are</h2><div class="sub">Next-word loss as they train: on the text they learn from, and on held-out text they never see. Lower is better.</div></div>
         <div class="tools"><div class="seg" id="xmode"><button data-x="tokens" class="on">Words read</button><button data-x="minutes">Training time</button></div></div>
       </div>
       <details class="why"><summary>What is loss?</summary><div class="body">
         <p>At every word, a model gives each possible next word a chance. <b>Loss</b> measures how surprised it was by the word that really came next. Lower means it saw it coming.</p>
         <p>A loss of <b>L</b> is as hard as picking the right word out of about <b>e<sup>L</sup></b> equally likely ones: 3.3 is like choosing among 27 words.</p>
-        <p>The <b>lines</b> are the loss on the training batches as they go by. Hover to also see the loss on <b>held-out</b> text the models never train on (the "finish line" scores above use those). The dashed line is OpenAI's own GPT-2 (124M) measured on the same text, if you ran <span class="kbd">oazy.compare</span>.</p>
+        <p>Each model has two lines in two colors. The <b>training</b> line is the loss on the batches it is learning from, as they go by. The <b>held-out</b> line, with a dot at each check, is the loss on text it never trains on (the "finish line" scores above use those). If the held-out line stays close to the training one, the model is learning things that carry over to new text; if it starts climbing away above it, the model is memorising its training text. The dashed line is OpenAI's own GPT-2 (124M) measured on the same text, if you ran <span class="kbd">oazy.compare</span>.</p>
         <p>The faint <b>dashed</b> line is a forecast: while a model trains, a learning curve (loss = a + b × words<sup>−c</sup>, the shape loss curves usually follow) is fitted to its most recent points (the newest 30% of them, so the early rush does not pull it) and drawn out to the planned number of words, with the predicted end value at its tip. The forecast is also replayed from earlier moments of the run: the small dots stacked at the end are those earlier forecasts (older ones fainter), and the shaded cone is how much the forecast has swung lately, so a wide cone means "don't trust the number yet". Hover past the end of a line to read how it has moved. It is a rough guess, and appears once there are enough points. The run card's "heading for" is the same forecast for the held-out loss.</p>
       </div></details>
       <div class="legend" id="lossLegend" style="margin-bottom:10px"></div>
@@ -309,6 +309,21 @@ const MODELS = {
 const kindOf = (r) => (r.config && r.config.model) || r.name;
 const modelOf = (n) => MODELS[n] || MODELS[kindOf(RUNS.find((r) => r.name === n) || { name: n })] || { name: n, color: C.ref, role: "ours", blurb: "" };
 const colorOf = (n) => modelOf(n).color;
+// the second color of a model: its held-out loss line, picked to stand apart from its training line
+// (Coral's violet gets teal); models without a pick get the opposite hue of their own color
+const HELD = { coral: "#4cf2c4", bee3: "#5fd0ff", bee2: "#7fa8ff", bee: "#5fe0d0", frog: "#ff8fcf", gpt: "#ffd166", memtrix: "#ffb35c", fern3: "#9ff0a0" };
+const heldColorOf = (n) => HELD[n] || HELD[kindOf(RUNS.find((r) => r.name === n) || { name: n })] || opposite(colorOf(n));
+function opposite(hex) {
+  const m = /^#?([\da-f]{6})$/i.exec(hex || ""); if (!m) return "#ffd166";
+  const v = parseInt(m[1], 16), [r, g, b] = [(v >> 16) & 255, (v >> 8) & 255, v & 255].map((c) => c / 255);
+  const hi = Math.max(r, g, b), lo = Math.min(r, g, b), l = (hi + lo) / 2, d = hi - lo;
+  if (!d) return "#ffd166";
+  let h = hi === r ? (g - b) / d + (g < b ? 6 : 0) : hi === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  h = (h * 60 + 180) % 360;
+  const s = 0.85, L = Math.min(0.72, Math.max(0.6, l)), k = (x) => (x + h / 30) % 12, a = s * Math.min(L, 1 - L);
+  const f = (x) => Math.round(255 * (L - a * Math.max(-1, Math.min(k(x) - 3, 9 - k(x), 1))));
+  return "#" + [f(0), f(8), f(4)].map((c) => c.toString(16).padStart(2, "0")).join("");
+}
 const nameOf = (n) => MODELS[n] ? MODELS[n].name : (modelOf(n).name + (n !== kindOf(RUNS.find((r) => r.name === n) || {}) ? ` (${n})` : ""));
 // a run that says it is training but has written nothing for an hour was cut off (the pod stopped under it): not live
 const isLive = (r) => !!r.status && Date.now() / 1000 - (r.status.updated || 0) < (r.status.state === "starting" ? 1800 : 3600)
@@ -656,7 +671,7 @@ function drawLearning() {
   const series = [], hsS = [], leg = [], hleg = [];
   let anyFore = false, anyHsFore = false, foreFrom = Infinity;
   for (const r of VIS()) {
-    const m = DATA[r.name]?.metrics || [], col = colorOf(r.name);
+    const m = DATA[r.name]?.metrics || [], col = colorOf(r.name), hcol = heldColorOf(r.name);
     if (r.name === "openai-gpt2") {
       const e = lastOf(r.name, "eval");
       if (e) { series.push({ name: NAMES.openai, color: col, dash: [6, 5], width: 1.5, points: [], hline: e.val_loss, keep: true }); leg.push([NAMES.openai, col, true]); }
@@ -664,8 +679,9 @@ function drawLearning() {
     }
     const tr = m.filter((x) => x.kind === "train"), ev = m.filter((x) => x.kind === "eval"), hs = m.filter(hsOK);
     const step = Math.max(1, Math.floor(tr.length / 400));
-    series.push({ name: nameOf(r.name), color: col, width: 2, endLabel: true, points: tr.filter((_, i) => i % step === 0).map((x) => [xOf(x), x.loss]) });
-    series.push({ name: nameOf(r.name) + " · held-out", color: col, ghost: true, points: ev.map((x) => [xOf(x), x.val_loss]) });
+    const trS = { name: nameOf(r.name) + " · training", color: col, width: 2, endLabel: true, points: tr.filter((_, i) => i % step === 0).map((x) => [xOf(x), x.loss]) };
+    const evS = { name: nameOf(r.name) + " · held-out", color: hcol, width: 2, pts: 2.2, sparse: true, endLabel: true, points: ev.map((x) => [xOf(x), x.val_loss]).filter((p) => p[1] != null) };
+    series.push(trS, evS);
     hsS.push({ name: nameOf(r.name), color: col, width: 2.4, dots: true, endLabel: true, points: hs.map((x) => [xOf(x), x.acc_norm]) });
     // the dashed forecasts, out to the planned number of words
     const F = FORE[r.name] || {}, mAt = xmode === "tokens" ? null : minutesAt(r), mx = xmode === "tokens" ? (t) => t : mAt && ((t) => mAt(t) / tu);
@@ -674,11 +690,14 @@ function drawLearning() {
     // earlier forecasts, stacked at the end line like a trail: older ones fainter
     const marks = (f, mx) => f.hist.map(([t, y], i) => [mx(f.end), y, 0.15 + 0.6 * (i + 1) / f.hist.length]);
     if (mx && F.loss) {          // past the line's end, the tooltip shows the forecast instead; its tip carries the label
-      series[series.length - 2].endLabel = false; series[series.length - 2].tipRange = true; series[series.length - 1].tipRange = true;
-      series.push({ name: nameOf(r.name) + " · forecast", color: col, alpha: 0.55, width: 2, dash: [5, 5], tipRange: true, endDot: true,
-        endLabel: "≈" + fmtL(F.loss.yEnd), labelAlpha: 0.7, points: fc(F.loss), band: F.loss.band && fcb(F.loss.band), marks: marks(F.loss, mx) });
-      if (F.val) series.push({ name: nameOf(r.name) + " · held-out forecast", color: col, ghost: true, tipRange: true, points: fc(F.val) });
-      anyFore = true; foreFrom = Math.min(foreFrom, series[series.length - (F.val ? 2 : 1)].points[0][0]);
+      trS.endLabel = false; evS.endLabel = false; trS.tipRange = true; evS.tipRange = true;
+      const fl = { name: nameOf(r.name) + " · training forecast", color: col, alpha: 0.55, width: 2, dash: [5, 5], tipRange: true, endDot: true,
+        endLabel: "≈" + fmtL(F.loss.yEnd), labelAlpha: 0.7, points: fc(F.loss), band: F.loss.band && fcb(F.loss.band), marks: marks(F.loss, mx) };
+      series.push(fl);
+      if (F.val)                 // the held-out line gets its own (plainer) forecast, in its own color
+        series.push({ name: nameOf(r.name) + " · held-out forecast", color: hcol, alpha: 0.55, width: 2, dash: [5, 5], tipRange: true, endDot: true,
+          endLabel: "≈" + fmtL(F.val.yEnd), labelAlpha: 0.7, points: fc(F.val) });
+      anyFore = true; foreFrom = Math.min(foreFrom, fl.points[0][0]);
     }
     if (mx && F.hs) {
       Object.assign(hsS[hsS.length - 1], { endLabel: false, tipRange: true });
@@ -686,7 +705,8 @@ function drawLearning() {
         endLabel: "≈" + pct(F.hs.yEnd), labelAlpha: 0.7, points: fc(F.hs), band: F.hs.band && fcb(F.hs.band), marks: marks(F.hs, mx) });
       anyHsFore = true;
     }
-    leg.push([nameOf(r.name), col]); hleg.push([nameOf(r.name), col]);
+    leg.push([nameOf(r.name) + " · training", col]); if (evS.points.length) leg.push([nameOf(r.name) + " · held-out", hcol]);
+    hleg.push([nameOf(r.name), col]);
   }
   // reference lines span the x range
   const xs = series.flatMap((s) => s.points.map((p) => p[0]));
@@ -708,7 +728,7 @@ function drawLearning() {
     tipNote: (xv) => xv > foreFrom
       ? "dashed: forecast · dots: earlier forecasts · shade: their recent swing"
         + trails("loss", fmtL) + (VIS().some((r) => FORE[r.name]?.loss?.wsd) ? "<br>the final cool-down usually pulls it lower still" : "")
-      : "lines: training batches · held-out: text never trained on" });
+      : "training: the batches it learns from · held-out: text it never trains on" });
   charts.hs.set({ series: hsS, xFmt: xf, yFmt: (v, d) => (v * 100).toFixed(Math.max(0, d - 2)) + "%", tipFmt: pct, empty: "Waiting for the first HellaSwag check",
     tipNote: () => anyHsFore ? "dashed: forecast · dots: earlier forecasts · shade: their recent swing" + trails("hs", pct) : "" });
 }
