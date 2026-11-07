@@ -95,6 +95,7 @@ reasons in `bee3/README.md`.
 ```bash
 cd /workspace/oazy && git pull
 python3 -m oazy.evals --prepare                          # once: ARC-Easy, PIQA, LAMBADA (tiny downloads)
+python3 -m oazy.compare --model smollm2                   # once: SmolLM2-135M and -360M measured with our tests (a few min; fine next to a run)
 python3 -m bee3.tests --device cuda                      # self-tests: the kernels, the document rule, the loss in slices
 python3 -m oazy.profile --model bee3 --preset big        # where a step's time goes, tokens/s, MFU (paste it in the thread)
 python3 -m oazy.profile --model bee3 --preset big --mentor none    # the student alone
