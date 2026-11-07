@@ -59,7 +59,8 @@ def render(text: str, enc):
 class Conversations:
     """Windows of T+1 tokens packed from whole conversations, with their scored mask, from a chat .bin file."""
 
-    def __init__(self, path: Path, enc, T: int, batch: int, seed: int = 0, prefetch: int = 4):
+    def __init__(self, path: Path, enc, T: int, batch: int, seed: int = 0, prefetch: int = 4, extra=(), share=0.0):
+        self.extra, self.share, self.rng = list(extra), share, np.random.default_rng(seed + 7)
         self.data = np.memmap(path, dtype=np.uint16, mode="r")
         self.enc, self.T, self.batch = enc, T, batch
         self.eot = enc.eot_token
@@ -72,6 +73,10 @@ class Conversations:
 
     def _docs(self):
         while True:
+            if self.extra and self.rng.random() < self.share:     # a "who are you?" conversation (oazy/identity.py)
+                ids, sc = render(self.extra[int(self.rng.integers(len(self.extra)))], self.enc)
+                yield ids + [self.eot], sc + [1]
+                continue
             i = self.order[self.pos % len(self.order)]
             self.pos += 1
             a = 0 if i == 0 else self.cuts[i - 1] + 1
@@ -140,6 +145,8 @@ def main():
     ap.add_argument("--compile", type=int, default=1)
     ap.add_argument("--device", default=None)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--identity", type=float, default=0.02,
+                    help="share of conversations that teach the model its own name and maker (oazy/identity.py); 0 = off")
     a = ap.parse_args()
     a.data, a.runs = a.data or default_dir("data"), a.runs or default_dir("runs")
     device = torch.device(a.device or ("cuda" if torch.cuda.is_available() else "cpu"))
@@ -168,7 +175,11 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     say(f"{NICE.get(kind, kind)} chat fine-tune: {src} -> {out}\n  {steps} steps of {micro * accum * T:,} tokens "
         f"({micro} x {T} words, {accum} passes), AdamW {lr:.1e} / Muon {muon_lr:.1e}, cosine to 0, warm-up {a.warmup}")
-    train = Conversations(chat / "train.bin", enc, T, micro, seed=a.seed)
+    from .identity import conversations as who
+    ident = who(kind, 2000, seed=a.seed) if a.identity > 0 else []
+    if ident:
+        say(f"  identity: {a.identity:.0%} of conversations teach it who it is, e.g. {ident[0]!r}")
+    train = Conversations(chat / "train.bin", enc, T, micro, seed=a.seed, extra=ident, share=a.identity)
     val = Conversations(chat / "val.bin", enc, T, micro, seed=1) if (chat / "val.bin").exists() else None
     if a.compile and device.type == "cuda":
         model.enable_compile()
@@ -203,7 +214,7 @@ def main():
     after = conv_loss(model, val, device, 8) if val else None
     meta = {k: v for k, v in st.items() if k not in ("model", "opt")}
     meta["sft"] = {"from": str(src), "tokens": steps * micro * accum * T, "steps": steps, "lr": lr, "muon_lr": muon_lr,
-                   "conv_loss_before": before, "conv_loss_after": after, "skipped_docs": train.skipped, "minutes": (time.time() - t0) / 60}
+                   "conv_loss_before": before, "conv_loss_after": after, "identity": a.identity, "skipped_docs": train.skipped, "minutes": (time.time() - t0) / 60}
     class _Opt:                                    # save_ckpt wants an optimizer; the fine-tune's is not worth keeping
         @staticmethod
         def state_dict():
