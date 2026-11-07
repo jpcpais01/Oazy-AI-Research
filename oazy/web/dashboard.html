@@ -68,17 +68,17 @@
   .hlaxis { display: grid; grid-template-columns: 58px 1fr; gap: 10px; font-size: 11px; color: var(--muted); }
   .hlaxis div:last-child { display: flex; justify-content: space-between; }
 
-  .samples { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
-  @media (max-width: 760px) { .samples { grid-template-columns: 1fr; } }
-  .sample { background: rgba(4, 12, 28, 0.4); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; font-size: 14px; line-height: 1.75; position: relative; overflow: hidden; }
-  .sample::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--c); }
+  /* what they write: one box per prompt, two by two (one column on a phone); each visible model's newest writing inside */
+  .pgrid { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  @media (max-width: 760px) { .pgrid { grid-template-columns: 1fr; } }
+  .pbox { background: rgba(4, 12, 28, 0.4); border: 1px solid var(--border); border-radius: 12px; padding: 0 16px; min-width: 0; }
+  .pbox .pn { font-size: 11px; color: var(--muted); padding: 12px 0 0; }
+  .sample { padding: 12px 0 14px; font-size: 14px; line-height: 1.75; position: relative; overflow-wrap: anywhere; }
+  .sample::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px; background: var(--c); opacity: .6; }
   .sample .who { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
   .sample .who b { color: var(--text-2); }
-  .sample.teacher { border-style: dashed; background: rgba(4, 12, 28, 0.25); }
   .sample .prompt { color: var(--text); font-weight: 600; }
   .sample .gen { color: var(--text-2); white-space: pre-wrap; }
-  .prompt-block { margin-bottom: 18px; } .prompt-block:last-child { margin-bottom: 0; }
-  .prompt-block .ph { font-size: 12px; color: var(--muted); margin: 0 0 8px 2px; }
 
   /* the model library */
   .lib { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -263,7 +263,10 @@
   </div>
 
   <div class="section-title" id="writing" data-k="writing"><h3>What they write</h3><div class="line"></div></div>
-  <div class="card"><div id="samples"><div class="empty">Waiting for the first samples</div></div></div>
+  <div class="card">
+    <div class="cardhead"><div class="titles"><h2>Four prompts</h2><div class="sub">The same four openings at every check, so the writing can be watched as it improves. Each box holds the newest text of every model on the page.</div></div></div>
+    <div id="samples"><div class="empty">Waiting for the first samples</div></div>
+  </div>
 
   <div class="section-title" id="models" data-k="models"><h3>All our models</h3><div class="line"></div></div>
   <div class="card">
@@ -888,17 +891,18 @@ async function loadSnap(i) {
   drawSnapshot();
 }
 
-let TEACH = [];      // the teachers' samples (oazy/teachers.py)
+// what they write: one box per prompt in a 2 x 2 grid (oazy/train.py SAMPLE_PROMPTS, in that order), and in each box the
+// newest writing of every model on the page. A prompt added after a run started shows up once that run writes it
+// (its next restart, or right away with python3 -m oazy.writenow --run <run>).
 function drawSamples() {
   const box = document.getElementById("samples");
   const by = {};
   for (const r of VIS()) for (const s of DATA[r.name]?.samples || []) (by[s.prompt] ||= {})[r.name] = s;
   const prompts = Object.keys(by);
   if (!prompts.length) { box.innerHTML = `<div class="empty">Waiting for the first samples</div>`; return; }
-  // the finished teachers on the same prompts (python3 -m oazy.teachers), after our models: how far a run still is
-  const teach = (p) => TEACH.filter((t) => t.prompt === p).map((t) => `<div class="sample teacher" style="--c:#9a96b8"><div class="who"><b>${UI.escapeHtml(t.name)}</b> · teacher, finished · read ${UI.escapeHtml(t.read)} tokens</div><span class="prompt">${UI.escapeHtml(p)}</span><span class="gen">${UI.escapeHtml(t.text)}</span></div>`).join("");
-  box.innerHTML = prompts.map((p) => `<div class="prompt-block"><div class="ph">Prompt: <b>${UI.escapeHtml(p)}</b></div><div class="samples">${
-    Object.entries(by[p]).map(([n, s]) => `<div class="sample" style="--c:${colorOf(n)}"><div class="who"><b>${nameOf(n)}</b> · after ${fmtM(s.tokens)} tokens</div><span class="prompt">${UI.escapeHtml(p)}</span><span class="gen">${UI.escapeHtml(s.text)}</span></div>`).join("") + teach(p)}</div></div>`).join("");
+  const esc = UI.escapeHtml;
+  box.innerHTML = `<div class="pgrid">${prompts.map((p, i) => `<div class="pbox"><div class="pn">Prompt ${i + 1}</div>${
+    Object.entries(by[p]).map(([n, s]) => `<div class="sample" style="--c:${colorOf(n)}"><div class="who"><b>${nameOf(n)}</b> · after ${fmtM(s.tokens)} tokens</div><span class="prompt">${esc(p)}</span><span class="gen">${esc(s.text)}</span></div>`).join("")}</div>`).join("")}</div>`;
 }
 
 // the head: the pod at a glance (how many train, combined speed, the next to finish, the best held-out loss so far)
@@ -930,7 +934,6 @@ async function refresh() {
   const pill = document.getElementById("updated");
   try {
     RUNS = await getJSON("api/runs");
-    try { TEACH = await getJSON("api/teachers"); } catch (e) { TEACH = []; }
     const ORDER = ["coral", "frog", "bee3", "bee2", "bee", "fern3", "fern2", "ember", "fern", "tide", "memtrix", "gpt", "openai-gpt2"];
     RUNS.sort((a, b) => ORDER.indexOf(a.name) - ORDER.indexOf(b.name));
     for (const r of RUNS) {
