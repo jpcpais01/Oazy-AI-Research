@@ -109,14 +109,14 @@ class GPT(nn.Module):
         return logits, loss, stats
 
     @torch.no_grad()
-    def generate(self, prompt_ids, max_new_tokens=100, temperature=0.8, top_k=40, eos=None):
+    def generate(self, prompt_ids, max_new_tokens=100, temperature=0.8, top_k=40, eos=None, rep=1.0):
         from .sample import sample_logits
         ids = list(prompt_ids)
         out = []
         dev = self.embed.weight.device
         for _ in range(max_new_tokens):
             x = torch.tensor([ids[-self.cfg.max_len:]], device=dev)
-            nxt = sample_logits(self._body(x)[0, -1], temperature, top_k)
+            nxt = sample_logits(self._body(x)[0, -1], temperature, top_k, recent=ids[-64:], rep=rep)
             if eos is not None and nxt == eos:
                 break
             ids.append(nxt)
