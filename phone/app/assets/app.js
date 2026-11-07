@@ -11,20 +11,20 @@
 
   // ------------------------------------------------------------------ settings (each explained in plain words)
   const SETTINGS = [
-    { k: "temp", label: "Temperature", min: 0, max: 1.5, step: 0.05, def: 0.7, fmt: (v) => v.toFixed(2),
-      help: "How adventurous each next word is. 0 always takes the model's top guess." },
-    { k: "topK", label: "Top-k", min: 1, max: 100, step: 1, def: 40, fmt: (v) => v,
-      help: "Only the k likeliest next words are ever considered." },
-    { k: "topP", label: "Top-p", min: 0.5, max: 1, step: 0.01, def: 0.95, fmt: (v) => v.toFixed(2),
-      help: "…and of those, only the likeliest ones that together cover this share of the chance." },
-    { k: "rep", label: "Repetition guard", min: 1, max: 1.5, step: 0.01, def: 1.1, fmt: (v) => v.toFixed(2),
-      help: "Makes words used in the last 64 tokens a little less likely, so small models loop less. 1 = off." },
-    { k: "maxNew", label: "Longest answer", min: 32, max: 1024, step: 16, def: 320, fmt: (v) => v + " tokens",
-      help: "The model stops earlier when it hands the turn back." },
-    { k: "threads", label: "Processor cores", min: 1, max: Math.max(2, device.cores || 8), step: 1, def: device.fast || 4, fmt: (v) => v,
-      help: `How many cores do the sums. This phone has ${device.cores || "?"}; ${device.fast || "?"} of them are its fast ones. Applies when a model is opened.` },
-    { k: "ctx", label: "Conversation memory", min: 512, max: 8192, step: 256, def: 2048, fmt: (v) => v.toLocaleString("en") + " tokens",
-      help: "How much of the conversation the model keeps in view (it was trained on 2,048). More uses more memory. Applies when a model is opened." },
+    { k: "temp", grp: "main", label: "Creativity", min: 0, max: 1.5, step: 0.05, def: 0.7, fmt: (v) => v.toFixed(2),
+      help: "Temperature. 0 always picks the likeliest word." },
+    { k: "maxNew", grp: "main", label: "Answer length", min: 32, max: 1024, step: 16, def: 320, fmt: (v) => v + " tok",
+      help: "The most it writes in one go. It often stops sooner." },
+    { k: "rep", grp: "main", label: "Avoid repeating", min: 1, max: 1.5, step: 0.01, def: 1.1, fmt: (v) => v.toFixed(2),
+      help: "Fewer loops. 1 = off." },
+    { k: "topK", grp: "more", label: "Top-k", min: 1, max: 100, step: 1, def: 40, fmt: (v) => v,
+      help: "Only the k likeliest next words are considered." },
+    { k: "topP", grp: "more", label: "Top-p", min: 0.5, max: 1, step: 0.01, def: 0.95, fmt: (v) => v.toFixed(2),
+      help: "Of those, keep the likeliest that cover this share of the chance." },
+    { k: "threads", grp: "more", label: "Processor cores", min: 1, max: Math.max(2, device.cores || 8), step: 1, def: device.fast || 4, fmt: (v) => v,
+      help: `This phone has ${device.cores || "?"}, ${device.fast || "?"} of them fast. Applies when a model opens.` },
+    { k: "ctx", grp: "more", label: "Conversation memory", min: 512, max: 8192, step: 256, def: 2048, fmt: (v) => v.toLocaleString("en") + " tok",
+      help: "How much of the chat it keeps in view (trained on 2,048). Applies when a model opens." },
   ];
   const S = Object.fromEntries(SETTINGS.map((s) => [s.k, store.get("set." + s.k, s.def)]));
 
@@ -412,19 +412,24 @@
     N.selftest();
   };
 
-  // sliders
-  const sl = $("#sliders");
+  // sliders, in two groups: the everyday ones, and "More options"
+  const shows = [];
   for (const s of SETTINGS) {
     const w = document.createElement("div");
     w.className = "sl";
-    w.innerHTML = `<label>${s.label}<output></output></label><input type="range" min="${s.min}" max="${s.max}" step="${s.step}"><small>${s.help}</small>`;
+    w.innerHTML = `<label><span>${s.label}</span><output></output></label><input type="range" min="${s.min}" max="${s.max}" step="${s.step}" aria-label="${s.label}"><small>${s.help}</small>`;
     const r = w.querySelector("input"), o = w.querySelector("output");
-    const show = () => { o.textContent = s.fmt(+r.value); r.style.setProperty("--p", (100 * (r.value - s.min) / (s.max - s.min)) + "%"); };
-    r.value = S[s.k];
+    const show = () => { r.value = S[s.k]; o.textContent = s.fmt(+r.value); r.style.setProperty("--p", (100 * (r.value - s.min) / (s.max - s.min)) + "%"); };
     show();
+    shows.push(show);
     r.oninput = () => { S[s.k] = +r.value; store.set("set." + s.k, S[s.k]); show(); };
-    sl.appendChild(w);
+    $(s.grp === "main" ? "#setMain" : "#setMore").appendChild(w);
   }
+  $("#resetSet").onclick = () => {
+    for (const s of SETTINGS) { S[s.k] = s.def; store.set("set." + s.k, s.def); }
+    shows.forEach((f) => f());
+    toast("Back to the defaults");
+  };
 
   // composer
   const inp = $("#input");
@@ -437,7 +442,7 @@
     if (!on.offsetWidth) return;
     if (!slide.style.width) { slide.style.transition = "none"; requestAnimationFrame(() => (slide.style.transition = "")); }
     slide.style.width = on.offsetWidth + "px";
-    slide.style.transform = `translateX(${on.offsetLeft - 3}px)`;
+    slide.style.transform = `translateX(${on.offsetLeft - 4}px)`;
   }
   function setMode(m) {
     mode = m;

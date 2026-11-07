@@ -92,23 +92,30 @@
 
 <section class="sheet glass" id="settings" hidden>
   <div class="grip"></div>
-  <div class="sheethead"><h3>Settings</h3></div>
-  <div class="moderow">
-    <div class="tline"><span class="mono">MODE</span>
-      <div class="modes" role="tablist">
-        <i class="slide"></i>
-        <button role="tab" data-mode="chat" class="on">Chat</button>
-        <button role="tab" data-mode="write">Write</button>
-      </div>
+  <div class="sheethead"><h3>Settings</h3><button class="link" id="resetSet">Reset</button></div>
+
+  <div class="modes" role="tablist">
+    <i class="slide"></i>
+    <button role="tab" data-mode="chat" class="on"><b>Chat</b><small>It answers you</small></button>
+    <button role="tab" data-mode="write"><b>Write</b><small>It carries on your text</small></button>
+  </div>
+
+  <h4 class="grouphead">Answers</h4>
+  <div class="group" id="setMain"></div>
+
+  <details class="group fold">
+    <summary><span>More options</span><small>Top-k, top-p, cores, memory</small><i class="chev"></i></summary>
+    <div id="setMore"></div>
+  </details>
+
+  <details class="group fold">
+    <summary><span>This model and phone</span><small>Check, engine, device</small><i class="chev"></i></summary>
+    <div class="check">
+      <div class="tline"><span>Check the model</span><button class="btn small" id="checkBtn">Run check</button></div>
+      <p class="hint" id="checkOut">Compares the phone's answers and word-cutting with what PyTorch wrote into the file.</p>
     </div>
-    <p class="hint" id="modeHint">Chat answers you. Write carries on any text you start.</p>
-  </div>
-  <div class="sliders" id="sliders"></div>
-  <div class="check">
-    <div class="tline"><span class="mono">CHECK THE MODEL</span><button class="btn small" id="checkBtn">Run check</button></div>
-    <p class="hint" id="checkOut">Reads a short prompt and compares the scores with the ones PyTorch wrote into the file, and cuts some texts into tokens exactly like SmolLM2's tokenizer.</p>
-  </div>
-  <dl class="facts" id="facts"></dl>
+    <dl class="facts" id="facts"></dl>
+  </details>
 </section>
 
 <div class="toast" id="toast" hidden></div>
