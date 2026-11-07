@@ -58,7 +58,7 @@ code { font: 12.5px var(--mono); color: #d9d4ff; background: rgba(255, 255, 255,
 .bar { position: fixed; top: 0; left: 0; right: 0; height: var(--top); z-index: 5; display: flex; align-items: center; gap: 10px; padding: 0 16px;
   background: linear-gradient(180deg, rgba(5, 5, 7, .92), rgba(5, 5, 7, .55) 70%, rgba(5, 5, 7, 0)); }
 .mark { display: flex; align-items: center; gap: 9px; margin-right: auto; min-width: 0; }
-.mark img { width: 34px; height: 34px; display: block; object-fit: contain; margin-left: 2px; filter: drop-shadow(0 0 10px rgba(143, 123, 255, .3)) drop-shadow(0 2px 6px rgba(0, 0, 0, .5)); }
+.mark img { width: 30.3px; height: 30.3px;  /* the drop itself 29.1px tall = 18px (half a top-bar button) × φ */ display: block; object-fit: contain; margin-left: 2px; filter: drop-shadow(0 0 10px rgba(143, 123, 255, .3)) drop-shadow(0 2px 6px rgba(0, 0, 0, .5)); }
 .word { font: 800 17px/1 var(--display); letter-spacing: .2em; color: #fff; }
 .word small { display: block; font: 500 8.5px/1 var(--mono); letter-spacing: .24em; color: var(--muted); margin-top: 5px; }
 .pill, .round { display: inline-flex; align-items: center; gap: 8px; height: 36px; border-radius: 999px; padding: 0 12px 0 11px;
