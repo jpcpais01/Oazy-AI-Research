@@ -339,7 +339,10 @@ const MODELS = {
   bee4: { name: "Bee4-200M", color: C.bee4, role: "ours", blurb: "Dense and all attention (198M, next-word): Coral's layers with one MLP instead of experts, no Memtrix. Coral's training recipe: grows from 6 to 12 layers, short windows first, the SmolLM2-360M mentor on a share of the passes, 10,000M tokens of Tagus20." },
   gpt: { name: NAMES.gpt, color: C.gpt, role: "baseline", blurb: "GPT-2 small (124M), trained on the same text, in the same order, with the same schedule." },
   "openai-gpt2": { name: NAMES.openai, color: C.ref, role: "reference", blurb: "OpenAI's 2019 GPT-2 small, measured with the same tests: the line to beat." },
+  "smollm2-135m": { name: "SmolLM2-135M", color: "#ffa86b", role: "reference", blurb: "Hugging Face's 2024 small model (135M, next-word), trained on about 2,000,000M tokens. Measured here with the same tests (python3 -m oazy.compare --model smollm2-135m)." },
+  "smollm2-360m": { name: "SmolLM2-360M", color: "#ff9fb2", role: "reference", blurb: "Hugging Face's 2024 small model (360M, next-word), trained on about 4,000,000M tokens; Bee4's mentor. Measured here with the same tests (python3 -m oazy.compare --model smollm2-360m)." },
 };
+const isRef = (n) => modelOf(n).role === "reference";
 const kindOf = (r) => (r.config && r.config.model) || r.name;
 const modelOf = (n) => MODELS[n] || MODELS[kindOf(RUNS.find((r) => r.name === n) || { name: n })] || { name: n, color: C.ref, role: "ours", blurb: "" };
 const colorOf = (n) => modelOf(n).color;
@@ -466,9 +469,9 @@ function runCard(r) {
   const stat = (k, v, h) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div>${h ? `<div class="h">${h}</div>` : ""}</div>`;
   const hs = latest.hellaswag_full != null ? pct(latest.hellaswag_full) : latest.hellaswag != null ? pct(latest.hellaswag) : "–";
   const hsH = latest.hellaswag_full != null ? "all 10,042" : latest.hellaswag != null ? "1,000 sample" : "";
-  if (r.name === "openai-gpt2") {
+  if (isRef(r.name)) {
     return `<div class="card run" style="--acc:${col}"><div class="head"><div class="name">${nameOf(r.name)}</div><span class="badge done">reference</span></div>
-      <div class="meta">OpenAI's 2019 release · ${(cf.params / 1e6).toFixed(0)}M parameters · trained on ~${cf.trained_tokens_note || "WebText"}</div>
+      <div class="meta">${r.name === "openai-gpt2" ? "OpenAI's 2019 release" : "Hugging Face's 2024 release"} · ${(cf.params / 1e6).toFixed(0)}M parameters · trained on ${cf.trained_tokens_note || "WebText"}</div>
       <div class="stats" style="margin-top:18px">${stat("val loss", latest.val_loss != null ? fmtL(latest.val_loss) : "–", "on the same text")}
       ${stat("HellaSwag", hs, hsH)}${stat("exact recall", latest.recall_acc != null ? pct(latest.recall_acc) : "–", "of a repeated passage")}</div></div>`;
   }
@@ -569,7 +572,7 @@ function library() {
   const head = `<tr><th>Model</th><th>Status</th><th class="num">Size</th><th class="num">Text read</th><th class="num">Val loss</th><th class="num">HellaSwag</th><th>Show</th></tr>`;
   const rows = RUNS.map((r) => {
     const m = modelOf(r.name), st = r.status || {}, cf = r.config || {}, L = st.latest || {};
-    const state = r.name === "openai-gpt2" ? "reference" : (st.state || "starting");
+    const state = isRef(r.name) ? "reference" : (st.state || "starting");
     const hs = L.hellaswag_full ?? L.hellaswag;
     const on = shown(r.name), md = mode(r.name);
     const opts = m.role === "ours" ? [["all", "All"], ["plots", "Plots only"], ["off", "Off"]] : [["all", "Show"], ["off", "Off"]];
@@ -577,7 +580,7 @@ function library() {
     return `<tr class="${on ? "" : "off"}"><td><div class="mname"><span class="chip" style="background:${m.color}"></span>${nameOf(r.name)}</div><div class="blurb">${m.blurb}</div></td>
       <td><span class="badge ${state === "reference" ? "done" : state}">${state}</span></td>
       <td class="num">${cf.params ? (cf.params / 1e6).toFixed(0) + "M" : "–"}</td>
-      <td class="num">${r.name === "openai-gpt2" ? "~10,000M" : fmtM(st.tokens || 0)}</td>
+      <td class="num">${r.name === "openai-gpt2" ? "~10,000M" : cf.trained_tokens ? "~" + fmtM(cf.trained_tokens) : fmtM(st.tokens || 0)}</td>
       <td class="num">${L.val_loss != null ? fmtL(L.val_loss) : "–"}</td>
       <td class="num">${hs != null ? pct(hs) + (L.hellaswag_full != null ? "" : "*") : "–"}</td>
       <td>${seg}</td></tr>`;
@@ -595,16 +598,19 @@ function scoreboard() {
   // One table: a row per model on the page (plus OpenAI GPT-2 as the yardstick), a column per test. The best score
   // in each column is green. Held-out loss by kind of text sits folded underneath.
   const box = document.getElementById("board");
-  const names = VIS().map((r) => r.name).filter((n) => n !== "openai-gpt2");
+  const names = VIS().map((r) => r.name).filter((n) => !isRef(n));
+  const refNames = VIS().map((r) => r.name).filter((n) => isRef(n) && n !== "openai-gpt2");
   const runOf = (n) => RUNS.find((r) => r.name === n);
-  const rows = names.map((n) => {
+  const rowOf = (n) => {
     const m = DATA[n]?.metrics || [], ev = lastOf(n, "evals"), e = lastOf(n, "eval");
     const full = m.filter((x) => x.kind === "hellaswag" && x.full).pop(), quick = m.filter(hsOK).pop(), h = full || quick;
     const cf = runOf(n)?.config || {};
     return { n, size: cf.params, active: cf.params_active && cf.params_active < cf.params ? cf.params_active : null,
       val: e?.val_loss, hs: h?.acc_norm, hsQ: h && !h.full,
       arc_easy: ev?.arc_easy, piqa: ev?.piqa, lambada: ev?.lambada, evQ: ev && ev.full === false };
-  }).filter((r) => r.val != null || r.hs != null);
+  };
+  const rows = names.map(rowOf).filter((r) => r.val != null || r.hs != null);
+  const refs = refNames.map(rowOf).filter((r) => r.val != null || r.hs != null).map((r) => ({ ...r, ref: true }));
   if (!rows.length) { box.innerHTML = `<div class="card"><div class="empty">The scores fill in after the first evaluation.</div></div>`; return; }
   const gv = lastOf("openai-gpt2", "eval")?.val_loss;
   const ref = { n: "openai-gpt2", ref: true, size: 124e6, val: gv, hs: gpt2HS() };
@@ -614,10 +620,10 @@ function scoreboard() {
     ["arc_easy", "ARC-Easy", "guessing 25%", 1, pct],
     ["piqa", "PIQA", "guessing 50%", 1, pct],
     ["lambada", "LAMBADA", "exact last word · guessing ~0%", 1, pct],
-  ].filter(([k]) => rows.some((r) => r[k] != null));
-  const best = {};
+  ].filter(([k]) => rows.concat(refs).some((r) => r[k] != null));
+  const best = {};                                  // the best of OUR models in each column
   for (const [k, , , dir] of COLS) {
-    const vs = rows.map((r) => r[k]).concat(ref[k] ?? []).filter((v) => v != null);
+    const vs = rows.map((r) => r[k]).filter((v) => v != null);
     if (vs.length > 1) best[k] = dir < 0 ? Math.min(...vs) : Math.max(...vs);
   }
   const quickOf = (r, k) => (k === "hs" && r.hsQ) || (k !== "hs" && k !== "val" && r.evQ);
@@ -625,7 +631,7 @@ function scoreboard() {
     : `<td class="${best[k] === r[k] ? "top" : ""}">${fmt(r[k])}${quickOf(r, k) ? `<sup>*</sup>` : ""}</td>`;
   const big = (v) => v >= 1e9 ? (v / 1e9).toFixed(2) + "B" : (v / 1e6).toFixed(0) + "M";
   const sizeOf = (r) => r.size ? big(r.size) + (r.active ? `<small> · ${(r.active / 1e6).toFixed(0)}M at work</small>` : "") : "–";
-  const tr = (r) => `<tr class="${r.ref ? "ref" : ""}"><td class="who"><i style="background:${r.ref ? "var(--muted)" : colorOf(r.n)}"></i>${r.ref ? "OpenAI GPT-2" : UI.escapeHtml(nameOf(r.n))}</td>`
+  const tr = (r) => `<tr class="${r.ref ? "ref" : ""}"><td class="who"><i style="background:${r.n === "openai-gpt2" ? "var(--muted)" : colorOf(r.n)}"></i>${r.n === "openai-gpt2" ? "OpenAI GPT-2" : UI.escapeHtml(nameOf(r.n))}</td>`
     + `<td class="size">${sizeOf(r)}</td>` + COLS.map(([k, , , , fmt]) => cell(r, k, fmt)).join("") + `</tr>`;
   // the headline: the leader on HellaSwag against GPT-2
   const lead = rows.filter((r) => r.hs != null).sort((a, b) => b.hs - a.hs)[0];
@@ -648,9 +654,9 @@ function scoreboard() {
       ${headline ? `<div class="big">${headline}</div>` : ""}
       <div class="fcwrap"><table class="scores">
         <tr><th></th><th>Size</th>${COLS.map(([, t, h]) => `<th>${t}<span>${h}</span></th>`).join("")}</tr>
-        ${rows.map(tr).join("")}${tr(ref)}
+        ${rows.map(tr).join("")}${refs.concat(ref).sort((a, b) => (b.hs ?? 0) - (a.hs ?? 0)).map(tr).join("")}
       </table></div>
-      <p class="note">Held-out loss: next-word surprise on the same FineWeb-Edu text for every model. The tests: higher is better, green is the best in each column. HellaSwag is scored per letter, like published small-model results.${anyQ ? " <sup>*</sup> A quick check on part of the questions, run during training; the whole test runs at the end." : ""}</p>
+      <p class="note">Held-out loss: next-word surprise on the same FineWeb-Edu text for every model. The tests: higher is better, green is our best in each column. Rows in italics are published models measured here with the same tests (toggle them in the model library). HellaSwag is scored per letter, like published small-model results.${anyQ ? " <sup>*</sup> A quick check on part of the questions, run during training; the whole test runs at the end." : ""}</p>
       ${srcHtml}
     </div>`;
 }
@@ -662,7 +668,7 @@ function scoreboard() {
 const runOf = (r) => ({ name: r.name, cfg: r.config || {}, metrics: DATA[r.name]?.metrics || [] });
 let PRIORS = null, PRIORS_KEY = "";
 function priors() {
-  const done = RUNS.filter((r) => r.name !== "openai-gpt2" && !isLive(r) && r.config?.schedule === "wsd");
+  const done = RUNS.filter((r) => !isRef(r.name) && !isLive(r) && r.config?.schedule === "wsd");
   const key = done.map((r) => r.name + ":" + (DATA[r.name]?.metrics || []).length).join(",");
   if (key !== PRIORS_KEY || !PRIORS) { PRIORS = Forecast.priorsFrom(done.map(runOf)); PRIORS_KEY = key; }
   return PRIORS;
@@ -683,7 +689,7 @@ function computeForecasts() {
   FORE = {};
   const P = priors();
   for (const r of RUNS) {
-    if (r.name === "openai-gpt2" || !isLive(r) || !r.config?.total_tokens) continue;
+    if (isRef(r.name) || !isLive(r) || !r.config?.total_tokens) continue;
     const { cfg, metrics } = runOf(r), key = metrics.length + ":" + cfg.total_tokens + ":" + PRIORS_KEY + ":" + HORIZON;
     if (FORE_MEMO[r.name]?.key === key) { FORE[r.name] = FORE_MEMO[r.name].F; continue; }
     const F = {};
@@ -758,7 +764,7 @@ function oldForecast(metrics, key, now, endT) {
 let CHECK_KEY = "", CHECK_HTML = "";
 function foreCheck() {
   const box = document.getElementById("foreCheck"); if (!box) return;
-  const done = RUNS.filter((r) => r.name !== "openai-gpt2" && !isLive(r) && r.config?.total_tokens && ["wsd", "cos"].includes(r.config?.schedule)
+  const done = RUNS.filter((r) => !isRef(r.name) && !isLive(r) && r.config?.total_tokens && ["wsd", "cos"].includes(r.config?.schedule)
     && (DATA[r.name]?.metrics || []).some((x) => x.kind === "eval"));
   const key = done.map((r) => r.name + ":" + (DATA[r.name]?.metrics || []).length).join(",");
   if (key === CHECK_KEY) { if (box.innerHTML !== CHECK_HTML) box.innerHTML = CHECK_HTML; return; }
@@ -796,9 +802,9 @@ function drawLearning() {
   let anyFore = false, anyHsFore = false, foreFrom = Infinity;
   for (const r of VIS()) {
     const m = DATA[r.name]?.metrics || [], col = colorOf(r.name), hcol = heldColorOf(r.name);
-    if (r.name === "openai-gpt2") {
+    if (isRef(r.name)) {
       const e = lastOf(r.name, "eval");
-      if (e) { series.push({ name: NAMES.openai, color: col, dash: [6, 5], width: 1.5, points: [], hline: e.val_loss, keep: true }); leg.push([NAMES.openai, col, true]); }
+      if (e) { series.push({ name: nameOf(r.name), color: col, dash: [6, 5], width: 1.5, points: [], hline: e.val_loss, keep: true }); leg.push([nameOf(r.name), col, true]); }
       continue;
     }
     const tr = m.filter((x) => x.kind === "train"), ev = m.filter((x) => x.kind === "eval"), hs = m.filter(hsOK);
@@ -874,12 +880,12 @@ function drawMemoryUse() {
   const ctxS = [], posS = [], recS = [], leg = [];
   for (const r of VIS()) {
     const m = lastOf(r.name, "memory"); if (!m) continue;
-    const col = colorOf(r.name), dash = r.name === "openai-gpt2" ? [6, 5] : null;
+    const col = colorOf(r.name), dash = isRef(r.name) ? [6, 5] : null;
     ctxS.push({ name: nameOf(r.name), color: col, dash, width: 2.4, dots: true, endLabel: true, points: m.context.map(([s, l]) => [Math.log2(s), l]) });
     posS.push({ name: nameOf(r.name), color: col, dash, width: 2.4, dots: true, endLabel: true, points: m.by_pos.map(([a, b, l], i) => [i, l]) });
     POSLAB = m.by_pos.map(([a, b]) => `words ${a + 1}–${b}`);
     const hist = (DATA[r.name]?.metrics || []).filter((x) => x.kind === "memory");
-    if (r.name === "openai-gpt2") recS.push({ name: nameOf(r.name), color: col, dash, width: 1.5, points: [], hline: m.recall_acc });
+    if (isRef(r.name)) recS.push({ name: nameOf(r.name), color: col, dash, width: 1.5, points: [], hline: m.recall_acc });
     else recS.push({ name: nameOf(r.name), color: col, width: 2.4, dots: true, endLabel: true, points: hist.map((x) => [x.tokens, x.recall_acc]) });
     leg.push([nameOf(r.name), col, !!dash]);
   }
@@ -1086,7 +1092,7 @@ async function refresh() {
   const pill = document.getElementById("updated");
   try {
     RUNS = await getJSON("api/runs");
-    const ORDER = ["bee4", "coral", "frog", "bee3", "bee2", "bee", "fern3", "fern2", "ember", "fern", "tide", "memtrix", "gpt", "openai-gpt2"];
+    const ORDER = ["bee4", "coral", "frog", "bee3", "bee2", "bee", "fern3", "fern2", "ember", "fern", "tide", "memtrix", "gpt", "openai-gpt2", "smollm2-360m", "smollm2-135m"];
     RUNS.sort((a, b) => ORDER.indexOf(a.name) - ORDER.indexOf(b.name));
     for (const r of RUNS) {
       const [metrics, samples] = await Promise.all([getJSON(`api/run/${r.name}/metrics`), getJSON(`api/run/${r.name}/samples`)]);
