@@ -2,6 +2,7 @@
 
     nice -n 10 python3 -m oazy.writenow --run coral           # the prompts its last check did not write (on the CPU)
     nice -n 10 python3 -m oazy.writenow --run coral --all     # every prompt again
+    nice -n 10 python3 -m oazy.writenow --run coral --all --seed 7   # a different sample from the same checkpoint
 
 The trainer writes the prompts of oazy/train.py SAMPLE_PROMPTS at each check, but a running trainer keeps the list it
 started with. When a prompt is added mid-run, this writes it straight away, from the checkpoint the trainer saves every
@@ -45,6 +46,8 @@ def main():
     ap.add_argument("--runs", default=None, help="where the runs live (default: the trainer's)")
     ap.add_argument("--all", action="store_true", help="write every prompt, not only the missing ones")
     ap.add_argument("--tokens", type=int, default=80, help="how many words (tokens) each sample runs to")
+    ap.add_argument("--seed", type=int, default=1234, help="the sampling seed (1234 = the trainer's, so samples compare "
+                    "across checks; another number writes a different sample from the same checkpoint)")
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--threads", type=int, default=8, help="CPU threads (keep it low while a run trains)")
     a = ap.parse_args()
@@ -62,16 +65,17 @@ def main():
     t0 = time.time()
     model, st = load_model(ck, torch.device(a.device), mmap=True)
     enc = tok.get(tok.name_of(model))
-    print(f"{a.run}: checkpoint after {st.get('tokens', 0) / 1e6:,.0f}M tokens, loaded in {time.time() - t0:.0f}s")
+    print(f"{a.run}: checkpoint after {st.get('tokens', 0) / 1e6:,.0f}M tokens, loaded in {time.time() - t0:.0f}s; "
+          f"seed {a.seed}, repetition guard {REP}")
     run = Run(rd)
     with torch.no_grad():
         for p in todo:
-            torch.manual_seed(1234)
+            torch.manual_seed(a.seed)
             ids, _ = model.generate(enc.encode_ordinary(p), max_new_tokens=a.tokens, temperature=0.8, top_k=40,
                                     eos=enc.eot_token, rep=REP)
             text = enc.decode(ids)
             run.log("samples.jsonl", {"step": st.get("step", 0), "tokens": st.get("tokens", 0), "prompt": p,
-                                      "text": text, "late": True})
+                                      "text": text, "late": True, "seed": a.seed, "rep": REP})
             print(f"\n{p}{text}")
     print(f"\nwrote {len(todo)} sample(s) to {rd / 'samples.jsonl'}; the dashboard shows them on its next refresh")
 
