@@ -1,7 +1,7 @@
 /* The stage behind the app: the lab dashboard's photon field (oazy/web/lab.js, land()), the page as a detector slowly
    catching light, tiny points that flash as single photons land, and every .glass panel a pane of clear glass drawn by
    the light it bends (a calm middle for reading, a thick rim that splits into colour and catches the light from the
-   top left). The same shader, tuned for a phone: rendered at screen-pixel density 1, ~30 frames a second, slower
+   top left). The same shader, tuned for a phone: rendered at the screen's full pixel density (sharp points on a phone's 3x screen), ~30 frames a second, slower
    while the model is writing (the processor is busy), stopped when the app is in the background. */
 window.Land = (() => {
   const cv = document.getElementById("land");
@@ -87,7 +87,7 @@ void main(){
   const N = 10, B = new Float32Array(N * 4), BR = new Float32Array(N), radius = new WeakMap();
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   let dpr = 1, glow = 0, glowTo = 0, acc = [1, .54, .47], busy = false, shown = true;
-  const size = () => { dpr = Math.min(devicePixelRatio || 1, 1); cv.width = Math.round(innerWidth * dpr); cv.height = Math.round(innerHeight * dpr); gl.viewport(0, 0, cv.width, cv.height); };
+  const size = () => { dpr = Math.min(devicePixelRatio || 1, 3); cv.width = Math.round(innerWidth * dpr); cv.height = Math.round(innerHeight * dpr); gl.viewport(0, 0, cv.width, cv.height); };
   const scroller = () => document.getElementById("scroll");
   function draw(t) {
     glow += (glowTo - glow) * 0.06;
