@@ -39,12 +39,12 @@ FULL_T = [2048]     # the longest window (set from the model in main)
 def flops_per_token(model, Tw):
     """Training work per token: 6 x the weights (the word table counted once, as the score head) + attention."""
     c = model.cfg
-    return 6 * model.num_params() + 6 * len(model.blocks) * Tw * c.attn_heads * c.attn_head_dim
+    return 6 * (model.active_params() if hasattr(model, "active_params") else model.num_params()) + 6 * len(model.blocks) * Tw * c.attn_heads * c.attn_head_dim
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--model", default="bee4", choices=["bee4"])
+    ap.add_argument("--model", default="bee4", choices=["bee4", "coralmini"])
     ap.add_argument("--preset", default="big")
     ap.add_argument("--device", default=None)
     ap.add_argument("--passes", type=int, default=6, help="timed passes per setting (after 2 warm-up passes)")

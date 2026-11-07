@@ -173,6 +173,25 @@ If the profile runs out of memory, use `--micro 16`. To make the
 run longer (e.g. `--tokens 15e9`), decide before 70% of it (Bee4's cool-down is the last 30%). If the loss turns noisy,
 resume with `--lr 1.2e-3 --muon-lr 0.02`.
 
+### Coral Mini (198M experts: 16 of 160, top 2; ~115M at work per word; Bee4's recipe, 10,000M tokens)
+
+A next-word mixture of experts: Coral's experts shrunk to Bee4's size, raised exactly like Bee4 (the same mentor,
+cool-down, bf16, short windows first, Tagus20). Reasons in `coralmini/README.md`. Nothing new to build.
+Start it only when the GPU is free (not while Bee4 trains).
+
+```bash
+cd /workspace/oazy && git pull
+python3 -m coralmini.tests --device cuda                  # self-tests: compiled step (~2 min)
+python3 -m oazy.speedcheck --model coralmini --preset big # optional, ~15-20 min: measures only, prints the train line to use
+bash runpod/train.sh coralmini --preset big --tokens 10e9 --micro 32   # the run; resumes if stopped
+python3 -m oazy.sft --run coralmini                       # afterwards: the chat fine-tune -> runs/coralmini-chat
+python3 -m coralmini.chat --run coralmini-chat --port 8002   # chat
+```
+
+The log line also shows `experts 1.05 uneven, 0.4% dropped` (busiest expert's work over the average; share of
+word-expert pairs that found their expert full this pass). Uneven staying above ~1.5 after the first 5% means the
+balancing is too slow: resume with `--set balance_rate=3e-3`.
+
 ## The phone app (our models on an Android phone, offline)
 
 Any finished or running model with SmolLM2's tokenizer (Coral, Bee4, Bee_v2_0.2B, Bee3, Frog, and their -chat runs) can
