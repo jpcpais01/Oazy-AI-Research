@@ -10,8 +10,10 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import os
 import re
 import subprocess
+import sys
 import time
 import zipfile
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
@@ -21,6 +23,9 @@ from urllib.parse import urlparse, unquote
 from .data import run_dir
 
 WEB = Path(__file__).parent / "web"
+REPO = Path(__file__).resolve().parent.parent
+APK = REPO / "phone" / "dist" / "oazy.apk"
+PHONE_JOBS: dict = {}                     # run -> the phone.export process the library's button started
 
 
 def read_jsonl(path: Path):
@@ -78,9 +83,29 @@ def downloads(runs: Path, name: str):
             out.append({"run": rn, "file": "report.zip", "label": label + "report", "bytes": None})
         if (d / "ckpt.pt").is_file():
             out.append({"run": rn, "file": "ckpt.pt", "label": label + "checkpoint", "bytes": (d / "ckpt.pt").stat().st_size})
-        for f in sorted((d / "phone").glob("*.oazy")) if (d / "phone").is_dir() else []:
-            out.append({"run": rn, "file": f.name, "label": label + "phone file", "bytes": f.stat().st_size})
+        job = PHONE_JOBS.get(rn)
+        busy = job is not None and job.poll() is None
+        phone = sorted((d / "phone").glob("*.oazy")) if (d / "phone").is_dir() else []
+        for f in ([] if busy else phone):
+            out.append({"run": rn, "file": f.name, "label": label + "phone file", "bytes": f.stat().st_size, "phone": True})
+        if (d / "ckpt.pt").is_file() and (busy or not phone):
+            failed = job is not None and not busy and job.returncode != 0
+            out.append({"run": rn, "make_phone": True, "busy": busy, "failed": failed, "label": label + "phone file"})
     return out
+
+
+def make_phone(runs: Path, rn: str) -> bool:
+    """Convert a run for the phone app in the background (phone.export, CPU, a few minutes)."""
+    job = PHONE_JOBS.get(rn)
+    if job is not None and job.poll() is None:
+        return True
+    d = run_dir(runs, rn)
+    if not (d / "ckpt.pt").is_file():
+        return False
+    log = open(d / "phone-export.log", "a")
+    PHONE_JOBS[rn] = subprocess.Popen([sys.executable, "-m", "phone.export", "--run", rn, "--ckpt", str(d / "ckpt.pt"), "--threads", "4"],
+                                      cwd=str(REPO), stdout=log, stderr=subprocess.STDOUT, preexec_fn=lambda: os.nice(10))
+    return True
 
 
 def make_handler(runs: Path, web: Path = WEB):
@@ -103,6 +128,8 @@ def make_handler(runs: Path, web: Path = WEB):
             """GET /download/<run>/<file>: report.zip (made on the fly), ckpt.pt, or a phone/*.oazy; resumable."""
             if ".." in rn or "/" in rn or not re.fullmatch(r"[\w.-]+", fname):
                 return self.send(404, b"{}")
+            if rn == "app" and fname == "oazy.apk":
+                return self.stream(APK, "oazy.apk", "application/vnd.android.package-archive")
             d = run_dir(runs, rn)
             if fname == "report.zip":
                 buf = io.BytesIO()
@@ -118,7 +145,13 @@ def make_handler(runs: Path, web: Path = WEB):
                 self.end_headers()
                 return self.wfile.write(body)
             f = d / fname if fname == "ckpt.pt" else d / "phone" / fname if fname.endswith(".oazy") else None
-            if f is None or not f.is_file():
+            job = PHONE_JOBS.get(rn)
+            if f is None or (fname.endswith(".oazy") and job is not None and job.poll() is None):
+                return self.send(404, b"{}")
+            return self.stream(f, f"{rn}-{fname}" if fname == "ckpt.pt" else fname)
+
+        def stream(self, f: Path, filename: str, ctype="application/octet-stream"):
+            if not f.is_file():
                 return self.send(404, b"{}")
             size, start, end = f.stat().st_size, 0, None
             m = re.fullmatch(r"bytes=(\d+)-(\d*)", self.headers.get("Range") or "")
@@ -128,8 +161,8 @@ def make_handler(runs: Path, web: Path = WEB):
             if start > end:
                 self.send_response(416); self.send_header("Content-Range", f"bytes */{size}"); self.end_headers(); return
             self.send_response(206 if m else 200)
-            self.send_header("Content-Type", "application/octet-stream")
-            self.send_header("Content-Disposition", f'attachment; filename="{rn}-{fname}"')
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
             self.send_header("Accept-Ranges", "bytes")
             self.send_header("Content-Length", str(end - start + 1))
             if m:
@@ -195,6 +228,8 @@ def make_handler(runs: Path, web: Path = WEB):
         def do_POST(self):
             """POST /api/run/<name>/control {"action": "pause" | "resume" | "end"}: the trainer picks it up within a step."""
             parts = [p for p in unquote(urlparse(self.path).path).split("/") if p]
+            if len(parts) == 4 and parts[:2] == ["api", "run"] and parts[3] == "phone" and ".." not in parts[2]:
+                return self.js({"ok": make_phone(runs, parts[2])})
             if len(parts) != 4 or parts[:2] != ["api", "run"] or parts[3] != "control" or ".." in parts[2]:
                 return self.send(404, b"{}")
             d = run_dir(runs, parts[2])
