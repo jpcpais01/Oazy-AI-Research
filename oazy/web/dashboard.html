@@ -45,6 +45,21 @@
   .score .track { height: 10px; border-radius: 99px; background: rgba(4, 12, 28, 0.55); overflow: hidden; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5); }
   .score .track div { height: 100%; border-radius: 99px; background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.06) 50%, rgba(0, 0, 0, 0.06) 51%, rgba(255, 255, 255, 0.15)); transition: width .8s cubic-bezier(.2,.8,.2,1); }
   .score .note { font-size: 11.5px; color: var(--muted); margin-top: 8px; }
+  .board:has(> .card:only-child) { grid-template-columns: 1fr; }
+  table.scores { border-collapse: collapse; width: 100%; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+  table.scores th { font-family: var(--mono); font-size: 10.5px; font-weight: 500; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); text-align: right; padding: 0 10px 10px; vertical-align: bottom; white-space: nowrap; }
+  table.scores th span { display: block; text-transform: none; letter-spacing: 0; font-family: inherit; font-size: 11px; opacity: .75; margin-top: 2px; }
+  table.scores td { text-align: right; padding: 11px 10px; border-top: 1px solid var(--border); color: var(--text); white-space: nowrap; }
+  table.scores th:first-child, table.scores td.who { text-align: left; padding-left: 0; }
+  table.scores td.who { font-weight: 600; }
+  table.scores td.who i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 9px; vertical-align: 1px; }
+  table.scores td.size { color: var(--text-2); } table.scores td.size small { color: var(--muted); }
+  table.scores td.top { color: var(--good); font-weight: 700; }
+  table.scores td.na { color: var(--muted); }
+  table.scores tr.ref td { color: var(--muted); font-style: italic; }
+  table.scores sup { color: var(--muted); font-size: 9px; margin-left: 1px; }
+  .score details.why { margin-top: 14px; }
+  @media (max-width: 600px) { table.scores td.size small { display: none; } table.scores { font-size: 13px; } }
   .win { color: var(--good); } .lose { color: var(--warn); }
   .fcwrap { overflow-x: auto; max-width: 100%; }
   table.fc { border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; width: 100%; margin-top: 4px; }
@@ -306,8 +321,8 @@ fetch("api/version").then((r) => r.json()).then((v) => {
   el.title = `commit ${v.commit}${v.date ? ", " + v.date : ""}`;
 }).catch(() => {});
 "use strict";
-const C = { memtrix: UI.css("--brand"), tide: UI.css("--teal"), fern: UI.css("--fern"), ember: UI.css("--ember"), fern2: UI.css("--fern2"), fern3: UI.css("--fern3"), bee: UI.css("--bee"), bee2: UI.css("--bee2"), bee3: UI.css("--bee3"), frog: UI.css("--frog"), coral: UI.css("--coral"), gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
-const NAMES = { memtrix: "Memtrix", tide: "Tide", fern: "Fern", ember: "Ember", fern2: "Fern2", fern3: "Fern3", bee: "Bee0.2B", bee2: "Bee_v2_0.2B", bee3: "Bee3", frog: "Frog", coral: "Coral", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };
+const C = { memtrix: UI.css("--brand"), tide: UI.css("--teal"), fern: UI.css("--fern"), ember: UI.css("--ember"), fern2: UI.css("--fern2"), fern3: UI.css("--fern3"), bee: UI.css("--bee"), bee2: UI.css("--bee2"), bee3: UI.css("--bee3"), frog: UI.css("--frog"), coral: UI.css("--coral"), bee4: UI.css("--bee4"), gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
+const NAMES = { memtrix: "Memtrix", tide: "Tide", fern: "Fern", ember: "Ember", fern2: "Fern2", fern3: "Fern3", bee: "Bee0.2B", bee2: "Bee_v2_0.2B", bee3: "Bee3", frog: "Frog", coral: "Coral", bee4: "Bee4-200M", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };
 // Every model of the lab. role: "ours" (our architectures), "baseline" (the GPT-2 we train the same way), "reference" (OpenAI's).
 const MODELS = {
   memtrix: { name: "Memtrix", color: C.memtrix, role: "ours", blurb: "Learns while it reads: small memories fixed by their own surprise, word by word." },
@@ -321,6 +336,7 @@ const MODELS = {
   bee3: { name: "Bee3", color: C.bee3, role: "ours", blurb: "Bee_v2_0.2B's body (203M, next-word), raised better: Tagus, our dataset (seven kinds of text), no bleed between documents, the mentor for the whole run, twice the learning rate, 2,048-word windows throughout. Losses per GPT-2 token, like Bee2." },
   frog: { name: "Frog", color: C.frog, role: "ours", blurb: "Bee3 at twice the size (406M, next-word): 21 memory + 7 attention layers, 1,024 wide, 4,000M tokens of Tagus. The SmolLM2-360M mentor teaches a share of the sequences instead of a share of every word, so it reads only what it teaches. Losses per GPT-2 token." },
   coral: { name: "Coral", color: C.coral, role: "ours", blurb: "Our first mixture of experts (1,037M parameters, about 160M at work per word, next-word): 20 attention layers, each with 32 small experts (a router picks 2 per word) plus a shared MLP, 1,024 wide, trained on Tagus, built to train at about 1M tokens/s. Losses per GPT-2 token." },
+  bee4: { name: "Bee4-200M", color: C.bee4, role: "ours", blurb: "Dense and all attention (198M, next-word): Coral's layers with one MLP instead of experts, no Memtrix. Coral's training recipe: grows from 6 to 12 layers, short windows first, the SmolLM2-360M mentor on a share of the passes, 10,000M tokens of Tagus20." },
   gpt: { name: NAMES.gpt, color: C.gpt, role: "baseline", blurb: "GPT-2 small (124M), trained on the same text, in the same order, with the same schedule." },
   "openai-gpt2": { name: NAMES.openai, color: C.ref, role: "reference", blurb: "OpenAI's 2019 GPT-2 small, measured with the same tests: the line to beat." },
 };
@@ -329,7 +345,7 @@ const modelOf = (n) => MODELS[n] || MODELS[kindOf(RUNS.find((r) => r.name === n)
 const colorOf = (n) => modelOf(n).color;
 // the second color of a model: its held-out loss line, picked to stand apart from its training line
 // (Coral's violet gets teal); models without a pick get the opposite hue of their own color
-const HELD = { coral: "#4cf2c4", bee3: "#5fd0ff", bee2: "#7fa8ff", bee: "#5fe0d0", frog: "#ff8fcf", gpt: "#ffd166", memtrix: "#ffb35c", fern3: "#9ff0a0" };
+const HELD = { coral: "#4cf2c4", bee4: "#ffcf6b", bee3: "#5fd0ff", bee2: "#7fa8ff", bee: "#5fe0d0", frog: "#ff8fcf", gpt: "#ffd166", memtrix: "#ffb35c", fern3: "#9ff0a0" };
 const heldColorOf = (n) => HELD[n] || HELD[kindOf(RUNS.find((r) => r.name === n) || { name: n })] || opposite(colorOf(n));
 function opposite(hex) {
   const m = /^#?([\da-f]{6})$/i.exec(hex || ""); if (!m) return "#ffd166";
@@ -576,68 +592,67 @@ function lastOf(name, kind) {
 }
 
 function scoreboard() {
+  // One table: a row per model on the page (plus OpenAI GPT-2 as the yardstick), a column per test. The best score
+  // in each column is green. Held-out loss by kind of text sits folded underneath.
   const box = document.getElementById("board");
-  const names = VIS().map((r) => r.name);
-  const val = {}, hs = {};
-  for (const n of names) {
-    const e = lastOf(n, "eval"); if (e) val[n] = e.val_loss;
-    const m = DATA[n]?.metrics || [];
-    const full = m.filter((x) => x.kind === "hellaswag" && x.full).pop(), quick = m.filter(hsOK).pop();
-    if (full || quick) hs[n] = (full || quick).acc_norm;
+  const names = VIS().map((r) => r.name).filter((n) => n !== "openai-gpt2");
+  const runOf = (n) => RUNS.find((r) => r.name === n);
+  const rows = names.map((n) => {
+    const m = DATA[n]?.metrics || [], ev = lastOf(n, "evals"), e = lastOf(n, "eval");
+    const full = m.filter((x) => x.kind === "hellaswag" && x.full).pop(), quick = m.filter(hsOK).pop(), h = full || quick;
+    const cf = runOf(n)?.config || {};
+    return { n, size: cf.params, active: cf.params_active && cf.params_active < cf.params ? cf.params_active : null,
+      val: e?.val_loss, hs: h?.acc_norm, hsQ: h && !h.full,
+      arc_easy: ev?.arc_easy, piqa: ev?.piqa, lambada: ev?.lambada, evQ: ev && ev.full === false };
+  }).filter((r) => r.val != null || r.hs != null);
+  if (!rows.length) { box.innerHTML = `<div class="card"><div class="empty">The scores fill in after the first evaluation.</div></div>`; return; }
+  const gv = lastOf("openai-gpt2", "eval")?.val_loss;
+  const ref = { n: "openai-gpt2", ref: true, size: 124e6, val: gv, hs: gpt2HS() };
+  const COLS = [
+    ["val", "Held-out loss", "lower is better", -1, fmtL],
+    ["hs", "HellaSwag", "guessing 25%", 1, pct],
+    ["arc_easy", "ARC-Easy", "guessing 25%", 1, pct],
+    ["piqa", "PIQA", "guessing 50%", 1, pct],
+    ["lambada", "LAMBADA", "last word", 1, pct],
+  ].filter(([k]) => rows.some((r) => r[k] != null));
+  const best = {};
+  for (const [k, , , dir] of COLS) {
+    const vs = rows.map((r) => r[k]).concat(ref[k] ?? []).filter((v) => v != null);
+    if (vs.length > 1) best[k] = dir < 0 ? Math.min(...vs) : Math.max(...vs);
   }
-  if (!Object.keys(val).length) { box.innerHTML = `<div class="card"><div class="empty">The scoreboard fills in after the first evaluation.</div></div>`; return; }
-  const ref = (obj) => obj["openai-gpt2"];
-  const lossRows = Object.entries(val).map(([n, v]) => [n, v]);
-  const lo = Math.min(...lossRows.map((r) => r[1])) - 0.3, hi = Math.max(...lossRows.map((r) => r[1])) + 0.05;
-  const row = (n, v, w, fmt) => `<div class="row"><span>${nameOf(n)}</span><div class="track"><div style="width:${Math.max(2, w * 100).toFixed(1)}%;background-color:${colorOf(n)}"></div></div><b>${fmt(v)}</b></div>`;
-  let verdictL = "", verdictH = "";
-  const target = ref(val) != null ? ["OpenAI GPT-2", ref(val)] : val.gpt != null ? [NAMES.gpt, val.gpt] : null;
-  for (const me of ["coral", "frog", "bee3", "bee2", "bee", "memtrix", "tide", "fern", "ember", "fern2", "fern3"]) {
-    const nm = nameOf(me), br = verdictL ? "<br>" : "";
-    if (val[me] != null && target) {
-      const d = val[me] - target[1];
-      verdictL += br + (d < 0 ? `<span class="win">${nm} is ahead of ${target[0]} by ${(-d).toFixed(3)}</span>` : `<span class="lose">${nm} is ${d.toFixed(3)} behind ${target[0]}</span>`);
-    }
-    if (hs[me] != null) {
-      const g = gpt2HS(), d = hs[me] - g, bh = verdictH ? "<br>" : "";
-      verdictH += bh + (d > 0 ? `<span class="win">${nm} beats GPT-2's ${pct(g)} by ${(d * 100).toFixed(1)} points</span>` : `<span class="lose">${nm}: ${(-d * 100).toFixed(1)} points below GPT-2's ${pct(g)}</span>`);
-    }
-  }
-  const hsRows = Object.entries(hs);
-  if (!("openai-gpt2" in hs)) hsRows.push(["openai-gpt2", gpt2HS()]);
-  // three more standard tests (oazy/evals.py), once a run has them
-  const EV = [["arc_easy", "ARC-Easy", "science questions, 4 answers · guessing 25%"], ["piqa", "PIQA", "physical common sense, 2 answers · guessing 50%"],
-    ["lambada", "LAMBADA", "guess the last word of a passage · long-range memory"]];
-  const evRuns = names.filter((n) => lastOf(n, "evals"));
-  const evCard = evRuns.length ? `<div class="card score"><div class="t">More tests (higher is better)</div>
-      ${EV.map(([k, t, h]) => { const rows = evRuns.map((n) => [n, lastOf(n, "evals")[k]]).filter((r) => r[1] != null); if (!rows.length) return "";
-        return `<div class="sub">${t}</div>${rows.map(([n, v]) => row(n, v, v, pct)).join("")}<div class="note">${h}</div>`; }).join("")}
-      ${evRuns.some((n) => lastOf(n, "evals").full === false) ? `<div class="note">During training: a quick check on ${evRuns.map((n) => lastOf(n, "evals")).filter((e) => e.full === false).map((e) => e.arc_easy_n || e.piqa_n || e.lambada_n)[0]} questions of each test, every 500M tokens; all of them at the end.</div>` : ""}</div>` : "";
-  // held-out loss per kind of text (Tagus per-source held-out slices)
-  const SRC = { dclm: "DCLM (web)", chat: "conversations", cosmo: "Cosmopedia (textbooks)", wiki: "Wikipedia", math: "FineMath", code: "Python code" };
-  const srcRuns = names.map((n) => [n, lastOf(n, "eval")]).filter(([, e]) => e && Object.keys(e).some((k) => k.startsWith("val_loss_")));
-  const srcCard = srcRuns.length ? `<div class="card score"><div class="t">Held-out loss by kind of text</div>
-      ${Object.keys(SRC).map((k) => { const rows = srcRuns.map(([n, e]) => [n, e["val_loss_" + k]]).filter((r) => r[1] != null); if (!rows.length) return "";
-        const mx = Math.max(...rows.map((r) => r[1])) + 0.05, mn = Math.min(...rows.map((r) => r[1])) - 0.3;
-        return `<div class="sub">${SRC[k]}</div>${rows.map(([n, v]) => row(n, v, (mx - v) / (mx - mn), fmtL)).join("")}`; }).join("")}
-      <div class="note">2M held-out tokens of each kind, never trained on. Lower is better; kinds are not comparable with each other.</div></div>` : "";
-  // sizes: bars against the biggest model on the page; a mixture of experts also says how much of it works per word
-  const sized = VIS().filter((r) => r.config?.params), pmax = Math.max(130e6, ...sized.map((r) => r.config.params));
-  const mxRun = VIS().find((r) => hasMemtrix(r) && r.config?.memory_numbers && !r.config?.layout);
-  const sizeNote = [sized.some((r) => r.config.params_active && r.config.params_active < r.config.params)
-      ? "A mixture of experts holds many small expert networks and lets a router pick a few for each word, so only part of it works at a time." : "",
-    mxRun ? `${nameOf(mxRun.name)}'s memory of the text is a fixed ${UI.fmtTokens(mxRun.config.memory_numbers)} numbers, however long the text. A GPT's grows with every word (18.9M numbers at 1,024 words).` : "",
-  ].filter(Boolean).join(" ") || "Parameters: the numbers a model learns.";
-  box.innerHTML = evCard + srcCard + `
-    <div class="card score"><div class="t">Validation loss (lower is better)</div><div class="big">${verdictL || "&nbsp;"}</div>
-      ${lossRows.map(([n, v]) => row(n, v, (hi - v) / (hi - lo), fmtL)).join("")}
-      <div class="note">Same held-out FineWeb-Edu text for every model.</div></div>
-    <div class="card score"><div class="t">HellaSwag (higher is better)</div><div class="big">${verdictH || "&nbsp;"}</div>
-      ${hsRows.map(([n, v]) => row(n, v, (v - 0.2) / 0.2, pct)).join("")}
-      <div class="note">Scored per letter, the way published small-model results are (lm-evaluation-harness's acc_norm). Random guessing is 25%; OpenAI GPT-2 small gets ${pct(gpt2HS())}.</div></div>
-    <div class="card score"><div class="t">Size</div><div class="big">${sized.map((r) => `${nameOf(r.name)} ${(r.config.params / 1e6).toFixed(0)}M` + (r.config.params_active && r.config.params_active < r.config.params ? ` <small>(${(r.config.params_active / 1e6).toFixed(0)}M at work per word)</small>` : "")).join(" · ")}</div>
-      ${sized.map((r) => row(r.name, r.config.params, r.config.params / pmax, (v) => (v / 1e6).toFixed(0) + "M")).join("")}
-      <div class="note">${sizeNote}</div></div>`;
+  const quickOf = (r, k) => (k === "hs" && r.hsQ) || (k !== "hs" && k !== "val" && r.evQ);
+  const cell = (r, k, fmt) => r[k] == null ? `<td class="na">–</td>`
+    : `<td class="${best[k] === r[k] ? "top" : ""}">${fmt(r[k])}${quickOf(r, k) ? `<sup>*</sup>` : ""}</td>`;
+  const big = (v) => v >= 1e9 ? (v / 1e9).toFixed(2) + "B" : (v / 1e6).toFixed(0) + "M";
+  const sizeOf = (r) => r.size ? big(r.size) + (r.active ? `<small> · ${(r.active / 1e6).toFixed(0)}M at work</small>` : "") : "–";
+  const tr = (r) => `<tr class="${r.ref ? "ref" : ""}"><td class="who"><i style="background:${r.ref ? "var(--muted)" : colorOf(r.n)}"></i>${r.ref ? "OpenAI GPT-2" : UI.escapeHtml(nameOf(r.n))}</td>`
+    + `<td class="size">${sizeOf(r)}</td>` + COLS.map(([k, , , , fmt]) => cell(r, k, fmt)).join("") + `</tr>`;
+  // the headline: the leader on HellaSwag against GPT-2
+  const lead = rows.filter((r) => r.hs != null).sort((a, b) => b.hs - a.hs)[0];
+  const d = lead ? lead.hs - ref.hs : 0;
+  const headline = lead ? (d > 0
+      ? `<span class="win">${UI.escapeHtml(nameOf(lead.n))} leads with ${pct(lead.hs)} on HellaSwag, ${(d * 100).toFixed(1)} points above GPT-2.</span>`
+      : `<span class="lose">${UI.escapeHtml(nameOf(lead.n))} is at ${pct(lead.hs)} on HellaSwag, ${(-d * 100).toFixed(1)} points below GPT-2.</span>`) : "";
+  const anyQ = rows.some((r) => COLS.some(([k]) => r[k] != null && quickOf(r, k)));
+  // held-out loss per kind of text (Tagus' held-out slices), folded away
+  const SRC = { dclm: "Web", chat: "Chats", cosmo: "Textbooks", wiki: "Wikipedia", math: "Math", code: "Code" };
+  const srcRuns = rows.map((r) => [r.n, lastOf(r.n, "eval")]).filter(([, e]) => e && Object.keys(e).some((k) => k.startsWith("val_loss_")));
+  const kinds = Object.keys(SRC).filter((k) => srcRuns.some(([, e]) => e["val_loss_" + k] != null));
+  const srcBest = Object.fromEntries(kinds.map((k) => [k, Math.min(...srcRuns.map(([, e]) => e["val_loss_" + k]).filter((v) => v != null))]));
+  const srcHtml = srcRuns.length && kinds.length ? `<details class="why"><summary>Held-out loss by kind of text</summary><div class="body">
+      <div class="fcwrap"><table class="scores"><tr><th></th>${kinds.map((k) => `<th>${SRC[k]}</th>`).join("")}</tr>
+      ${srcRuns.map(([n, e]) => `<tr><td class="who"><i style="background:${colorOf(n)}"></i>${UI.escapeHtml(nameOf(n))}</td>${kinds.map((k) => { const v = e["val_loss_" + k];
+        return v == null ? `<td class="na">–</td>` : `<td class="${srcRuns.length > 1 && v === srcBest[k] ? "top" : ""}">${fmtL(v)}</td>`; }).join("")}</tr>`).join("")}
+      </table></div><p class="note">2M held-out words of each kind, never trained on. Lower is better. Kinds can't be compared with each other (code is easier to predict than the web).</p></div></details>` : "";
+  box.innerHTML = `<div class="card score">
+      ${headline ? `<div class="big">${headline}</div>` : ""}
+      <div class="fcwrap"><table class="scores">
+        <tr><th></th><th>Size</th>${COLS.map(([, t, h]) => `<th>${t}<span>${h}</span></th>`).join("")}</tr>
+        ${rows.map(tr).join("")}${tr(ref)}
+      </table></div>
+      <p class="note">Held-out loss: next-word surprise on the same FineWeb-Edu text for every model. The tests: higher is better, green is the best in each column. HellaSwag is scored per letter, like published small-model results.${anyQ ? " <sup>*</sup> A quick check on part of the questions, run during training; the whole test runs at the end." : ""}</p>
+      ${srcHtml}
+    </div>`;
 }
 
 // ---- forecasts (oazy/web/forecast.js): where each live run's losses and HellaSwag land at the planned end.
@@ -1071,7 +1086,7 @@ async function refresh() {
   const pill = document.getElementById("updated");
   try {
     RUNS = await getJSON("api/runs");
-    const ORDER = ["coral", "frog", "bee3", "bee2", "bee", "fern3", "fern2", "ember", "fern", "tide", "memtrix", "gpt", "openai-gpt2"];
+    const ORDER = ["bee4", "coral", "frog", "bee3", "bee2", "bee", "fern3", "fern2", "ember", "fern", "tide", "memtrix", "gpt", "openai-gpt2"];
     RUNS.sort((a, b) => ORDER.indexOf(a.name) - ORDER.indexOf(b.name));
     for (const r of RUNS) {
       const [metrics, samples] = await Promise.all([getJSON(`api/run/${r.name}/metrics`), getJSON(`api/run/${r.name}/samples`)]);
