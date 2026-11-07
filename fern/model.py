@@ -343,7 +343,8 @@ class Fern(nn.Module):
         return seq[0, base + 1:].tolist()
 
     @torch.no_grad()
-    def generate(self, prompt_ids, max_new_tokens=100, temperature=0.8, top_k=40, eos=None, record=None):
+    def generate(self, prompt_ids, max_new_tokens=100, temperature=0.8, top_k=40, eos=None, record=None, rep=1.0):
+        """rep: accepted for a common signature; Fern writes whole passages at once, so no repetition guard."""
         ids = list(prompt_ids)
         out = []
         while len(out) < max_new_tokens:

@@ -480,7 +480,7 @@ class Black(nn.Module):
         return None, loss, stats
 
     @torch.no_grad()
-    def generate(self, prompt_ids, max_new_tokens=100, temperature=0.8, top_k=40, eos=None):
+    def generate(self, prompt_ids, max_new_tokens=100, temperature=0.8, top_k=40, eos=None, rep=1.0):
         """Writes by reading the whole text again for every new token (simple and exact; the fast generation path,
         with the slow stream waking once per group, is rung R8 of the plan)."""
         dev = self.embed.weight.device
@@ -488,7 +488,7 @@ class Black(nn.Module):
         out = []
         for _ in range(max_new_tokens):
             logits = self._body(torch.tensor([ids[-self.cfg.max_len:]], device=dev))
-            nxt = sample_logits(logits[0, -1], temperature, top_k)
+            nxt = sample_logits(logits[0, -1], temperature, top_k, recent=ids[-64:], rep=rep)
             if eos is not None and nxt == eos:
                 break
             out.append(nxt)

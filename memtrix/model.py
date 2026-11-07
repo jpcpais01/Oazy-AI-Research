@@ -286,12 +286,12 @@ class Memtrix(nn.Module):
         return F.linear(self.norm(x), self.embed.weight), new, infos
 
     @torch.no_grad()
-    def generate(self, prompt_ids, max_new_tokens=100, temperature=0.8, top_k=40, eos=None):
+    def generate(self, prompt_ids, max_new_tokens=100, temperature=0.8, top_k=40, eos=None, rep=1.0):
         dev = self.embed.weight.device
         logits, states = self.read(torch.tensor([list(prompt_ids)], device=dev))
         out = []
         for _ in range(max_new_tokens):
-            nxt = sample_logits(logits[0, -1], temperature, top_k)
+            nxt = sample_logits(logits[0, -1], temperature, top_k, recent=(list(prompt_ids) + out)[-64:], rep=rep)
             if eos is not None and nxt == eos:
                 break
             out.append(nxt)

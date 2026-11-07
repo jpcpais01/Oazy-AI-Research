@@ -512,10 +512,13 @@ def val_loss(model, windows, device, micro, bpb=False):
 
 @torch.no_grad()
 def write_samples(model, enc, run, step, tokens, n_tok):
+    """The dashboard's "What they write": every prompt, the same seed, with the repetition guard (oazy/sample.py REP)."""
+    from .sample import REP
     model.eval()
     for p in SAMPLE_PROMPTS:
         torch.manual_seed(1234)
-        ids, _ = model.generate(enc.encode_ordinary(p), max_new_tokens=n_tok, temperature=0.8, top_k=40, eos=enc.eot_token)
+        ids, _ = model.generate(enc.encode_ordinary(p), max_new_tokens=n_tok, temperature=0.8, top_k=40, eos=enc.eot_token,
+                              rep=REP)
         run.log("samples.jsonl", {"step": step, "tokens": tokens, "prompt": p, "text": enc.decode(ids)})
     model.train()
 

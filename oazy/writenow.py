@@ -6,7 +6,7 @@
 The trainer writes the prompts of oazy/train.py SAMPLE_PROMPTS at each check, but a running trainer keeps the list it
 started with. When a prompt is added mid-run, this writes it straight away, from the checkpoint the trainer saves every
 few minutes, so the dashboard's "What they write" box for it fills without a restart. Same sampling as the trainer
-(temperature 0.8, top 40, seed 1234, 80 words by default), labelled with the checkpoint's token count, and added to the
+(temperature 0.8, top 40, repetition guard 1.1, seed 1234, 80 words by default), labelled with the checkpoint's token count, and added to the
 run's samples.jsonl next to the trainer's own lines. On the CPU with a few threads by default, so the GPU is not
 disturbed; the checkpoint is read straight from the file (memory-mapped), so its optimizer state never fills the RAM.
 """
@@ -21,6 +21,7 @@ import torch
 from .data import default_dir, run_dir
 from . import tok
 from .train import SAMPLE_PROMPTS, Run, load_model
+from .sample import REP
 
 
 def last_check(path):
@@ -67,7 +68,7 @@ def main():
         for p in todo:
             torch.manual_seed(1234)
             ids, _ = model.generate(enc.encode_ordinary(p), max_new_tokens=a.tokens, temperature=0.8, top_k=40,
-                                    eos=enc.eot_token)
+                                    eos=enc.eot_token, rep=REP)
             text = enc.decode(ids)
             run.log("samples.jsonl", {"step": st.get("step", 0), "tokens": st.get("tokens", 0), "prompt": p,
                                       "text": text, "late": True})
