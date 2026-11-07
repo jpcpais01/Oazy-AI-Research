@@ -459,34 +459,23 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
 .bar-cta::after { content: "\2197"; font-size: 12px; opacity: .6; transition: transform .3s; }
 .bar-cta:hover::after { transform: translate(2px, -2px); }
 
-/* ---------- near-0 compute: a scroll-driven showpiece. A hall of GPUs (the usual way to run a model) condenses,
-   as you scroll, into one glowing drop inside a phone. Almost no text: a headline, two captions, three numbers ---------- */
+/* ---------- near-0 compute: a short essay beside one calm piece of art. Rings for the power it takes to run a
+   model, from a data centre down to a phone, with light drifting in towards a point near zero ---------- */
 .serif { font-family: "Instrument Serif", Georgia, serif; font-style: italic; font-weight: 400; letter-spacing: -0.01em; padding-right: .06em;
   background: linear-gradient(100deg, #fff 0%, #e4dcff 45%, #b9f2ff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
-#near0 { padding-block: 0; }
-.nz { position: relative; height: 270vh; height: 270svh; }
-.nz-stage { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; }
-.nz-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.nz-stage canvas#nz-g { inset: auto; z-index: 1; pointer-events: none; }
-.nz-stage::after { content: ""; position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(180deg, var(--bg) 0%, transparent 14%, transparent 86%, var(--bg) 100%); }
-.nz-head { position: absolute; z-index: 2; left: 0; right: 0; top: calc(84px + env(safe-area-inset-top, 0px)); text-align: center; pointer-events: none; }
-.nz-head h2 { font: 400 clamp(56px, min(11vw, 17vh), 168px)/.9 "Instrument Serif", Georgia, serif; font-style: italic; letter-spacing: -0.03em; margin: 10px 0 0; }
-.nz-head h2 .serif { font-size: 1em; }
-.nz-cap { position: absolute; z-index: 2; left: 0; right: 0; bottom: clamp(40px, 9vh, 96px); text-align: center; pointer-events: none; transition: opacity .5s, transform .7s cubic-bezier(.2,.8,.2,1); }
-.nz-cap p { font: 400 clamp(26px, 3.4vw, 48px)/1.1 "Instrument Serif", Georgia, serif; font-style: italic; color: var(--ink); letter-spacing: -0.01em; }
-.nz-cap .label { display: block; margin-top: 12px; }
-.nz-cap.a { opacity: var(--a, 1); transform: translateY(calc((1 - var(--a, 1)) * -14px)); }
-.nz-cap.b { opacity: var(--b, 0); transform: translateY(calc((1 - var(--b, 0)) * 14px)); }
-.nz-cap.b p em { font-style: italic; background: linear-gradient(100deg, #fff 0%, #e4dcff 45%, #b9f2ff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; padding-right: .06em; }
-.nz-nums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding-block: 8px clamp(64px, 8vw, 110px); }
-.nz-num { position: relative; border-radius: 22px; padding: 30px 28px 26px; display: grid; gap: 10px; justify-items: start; }
-.nz-num b { font: 300 clamp(56px, 7vw, 96px)/1 var(--display); letter-spacing: -0.04em; padding: 0 .1em .04em 0; margin-right: -.1em; font-variant-numeric: tabular-nums;
-  background: linear-gradient(180deg, #fff 20%, #cfc8ff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.nz-num b small { font-size: .32em; letter-spacing: -0.01em; font-weight: 400; margin-left: 6px; }
-.nz-num span { font: 500 11.5px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
-.nz-foot { grid-column: 1 / -1; text-align: center; color: var(--faint); margin-top: 6px; }
-@media (max-width: 760px) { .nz-nums { grid-template-columns: 1fr; gap: 12px; } .nz-num { grid-template-columns: auto 1fr; align-items: end; gap: 6px 18px; padding: 22px 22px 20px; } .nz-num span { padding-bottom: 6px; } }
+.nz { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 40px clamp(40px, 6vw, 96px); align-items: center; }
+.nz-text { display: grid; gap: 22px; align-content: center; max-width: 520px; }
+.nz-text h2 { font: 400 clamp(40px, 4.6vw, 64px)/1.02 "Instrument Serif", Georgia, serif; letter-spacing: -0.015em; margin-top: 4px; color: var(--ink); }
+.nz-text h2 .serif { font-size: 1em; }
+.nz-text p { color: var(--ink-2); font-size: 16.5px; line-height: 1.7; }
+.nz-facts { list-style: none; margin: 10px 0 0; padding: 18px 0 0; border-top: 1px solid var(--line); display: grid; gap: 10px; }
+.nz-facts li { display: flex; justify-content: space-between; gap: 16px; font: 400 13px/1.4 var(--mono); color: var(--muted); }
+.nz-facts li b { font-weight: 400; color: var(--ink); text-align: right; }
+.nz-art { position: relative; margin: 0; aspect-ratio: 1; width: 100%; max-width: 600px; justify-self: center; }
+.nz-art canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.nz-art figcaption { position: absolute; left: 0; right: 0; bottom: -6px; text-align: center; color: var(--faint); }
+@media (max-width: 900px) { .nz { grid-template-columns: 1fr; } .nz-text { max-width: 60ch; } .nz-art { max-width: 520px; } }
+@media (max-width: 520px) { .nz-text p { font-size: 15.5px; } }
 
 /* HellaSwag, at the end of the models: one wide glass panel */
 .hs { margin-top: 24px; scroll-margin-top: 90px; }
@@ -668,23 +657,22 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
 
   <!-- ===================== NEAR-0 COMPUTE ===================== -->
   <section class="block" id="near0" aria-labelledby="near0-h">
-    <div class="nz" id="nz">
-      <div class="nz-stage" role="img" aria-label="Animation: a vast hall of GPUs condenses, as you scroll, into one small drop of liquid glass">
-        <canvas id="nz-c" aria-hidden="true"></canvas>
-        <canvas id="nz-g" aria-hidden="true"></canvas>
-        <div class="nz-head">
-          <span class="label">// near-0 compute</span>
-          <h2 id="near0-h"><span class="serif">Near-0</span></h2>
-        </div>
-        <div class="nz-cap a" id="nz-a"><p>Most models need a building.</p><span class="label">a hall of GPUs · tens of megawatts</span></div>
-        <div class="nz-cap b" id="nz-b"><p>Ours need <em>a drop.</em></p><span class="label">a phone or a laptop · a few watts · offline</span></div>
+    <div class="wrap nz">
+      <div class="nz-text rv">
+        <span class="label">// near-0 compute</span>
+        <h2 id="near0-h">Small enough to run on <span class="serif">almost nothing</span></h2>
+        <p>The usual way to run a language model is a room full of GPUs. We are trying to go the other way: models small enough for an old laptop or the phone in your pocket, with no GPU and no connection, that still write well.</p>
+        <p>That shapes how we build them. On a phone, a model writes only as fast as it can read its own weights, so we look for designs that read less for each word: experts that stay asleep until needed, and memory that does not grow with the text.</p>
+        <ul class="nz-facts">
+          <li><span>Coral_1B on a 4-core CPU</span><b>about 40 words/s</b></li>
+          <li><span>Read for each word</span><b>211M of 1,037M</b></li>
+          <li><span>On a phone</span><b>runs offline · not timed yet</b></li>
+        </ul>
       </div>
-    </div>
-    <div class="wrap nz-nums">
-      <div class="nz-num glass rv"><b>0</b><span>GPUs to run them</span></div>
-      <div class="nz-num glass rv"><b>0</b><span>bytes leave the phone</span></div>
-      <div class="nz-num glass rv"><b>40<small>tok/s</small></b><span>on a laptop CPU</span></div>
-      <p class="nz-foot label">Coral_1B, 8-bit, measured on a 4-core CPU · the hall and the drop are an illustration</p>
+      <figure class="nz-art rv" role="img" aria-label="Rings for the power it takes to run a model, from tens of megawatts for a data centre down to a few watts for a phone, on a log scale, with light drifting in towards the centre">
+        <canvas id="nz-c" aria-hidden="true"></canvas>
+        <figcaption class="label">power to run a model · log scale, roughly</figcaption>
+      </figure>
     </div>
   </section>
 
@@ -1395,214 +1383,75 @@ void main() {
   }).observe(el);
 })();
 
-// near-0 compute: a hall of GPUs (racks of status lights on a floor running to a hazy horizon, with waves of
-// activity) pours, as the section scrolls past, into a single drop of liquid glass. The lights are drawn on a 2D
-// canvas; the drop is a WebGL lens over it that refracts them, splitting red, green and blue at its edges.
-// Progress comes from scroll; reduced motion shows the end state.
+// near-0 compute: rings for the power it takes to run a model (log scale), from a data centre down to a phone.
+// Thin waves of light travel inward through them and gather at a point near zero; a little dust drifts in too.
 (() => {
-  const host = document.getElementById('nz'), cv = document.getElementById('nz-c'), gc = document.getElementById('nz-g');
-  if (!host || !cv) return;
-  const ctx = cv.getContext('2d'), capA = document.getElementById('nz-a'), capB = document.getElementById('nz-b');
-  const head = host.querySelector('.nz-head');
-  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let W = 0, H = 0, dpr = 1, P = [], D = null, live = false, raf = 0, t0 = performance.now();
-  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
-  const ease = x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
-  let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  // the drop: a round base of radius 1 joined smoothly to a point 1.79 above it (an "uneven capsule"), y up
-  const R2 = 0.04, HH = 1.75, Bk = (1 - R2) / HH, Ak = Math.sqrt(1 - Bk * Bk);
-  function sdDrop(x, y) {
-    x = Math.abs(x);
-    const k = -Bk * x + Ak * y;
-    if (k < 0) return Math.hypot(x, y) - 1;
-    if (k > Ak * HH) return Math.hypot(x, y - HH) - R2;
-    return Ak * x + Bk * y - 1;
-  }
-
-  // ---------- the lens (WebGL); without it, a quieter 2D drop stands in ----------
-  let gl = null, prog, tex, U = {}, tmp = document.createElement('canvas'), tctx = tmp.getContext('2d');
-  try { gl = gc && gc.getContext('webgl', { premultipliedAlpha: true, alpha: true, antialias: false }); } catch (e) { gl = null; }
-  if (gl) {
-    const vs = 'attribute vec2 a;varying vec2 v;void main(){v=vec2(a.x*.5+.5,.5-a.y*.5);gl_Position=vec4(a,0.,1.);}';
-    const fs = `precision highp float;
-varying vec2 v; uniform sampler2D T; uniform vec2 R, C, Q; uniform float r, d, t;
-float sdUC(vec2 p, float r1, float r2, float h){ p.x=abs(p.x); float b=(r1-r2)/h; float a=sqrt(1.-b*b); float k=dot(p,vec2(-b,a));
-  if(k<0.) return length(p)-r1; if(k>a*h) return length(p-vec2(0.,h))-r2; return dot(p,vec2(a,b))-r1; }
-float sd(vec2 px){ vec2 p=vec2(px.x-C.x, C.y-px.y)/Q; return sdUC(p, r, ${R2.toFixed(3)}*r, ${HH.toFixed(3)}*r); }
-// the surface height: the outline's distance with the ridge down the point rounded off, so the glass has no crease
-float hgt(vec2 px){ vec2 p=vec2(px.x-C.x, C.y-px.y)/Q; float e=.22*r; p.x=sqrt(p.x*p.x+e*e)-e;
-  float k=clamp(-sdUC(p, r, ${R2.toFixed(3)}*r, ${HH.toFixed(3)}*r)/(.7*r),0.,1.); return sqrt(1.-(1.-k)*(1.-k)); }
-void main(){
-  vec2 px=v*R; float s=sd(px);
-  float e=1.5*d; vec2 g=vec2(hgt(px+vec2(e,0.))-hgt(px-vec2(e,0.)), hgt(px+vec2(0.,e))-hgt(px-vec2(0.,e)))/(2.*e);
-  float h=hgt(px);
-  vec2 off=-g*r*r*.42;                                   // bend towards the thick middle, hardest at the rim
-  vec2 base=C+(px-C)*.8;                                  // and magnify a little, like a lens
-  vec4 cg=texture2D(T,(base+off)/R);
-  vec3 col=vec3(texture2D(T,(base+off*.86)/R).r, cg.g, texture2D(T,(base+off*1.16)/R).b);
-  col+=(1.-cg.a)*vec3(.02,.02,.027);                   // the page's own black where no light is
-  col*=vec3(.97,.98,1.03); col*=mix(.35,1.,smoothstep(0.,.4,h));
-  col+=vec3(.02,.015,.04)*h;                              // a faint violet body
-  vec3 n=normalize(vec3(-g.x*r*.5, g.y*r*.5, 1.));       // y of g is screen-down, so flip it
-  vec3 L=normalize(vec3(-.55,.62,.56)), Hv=normalize(L+vec3(0.,0.,1.));
-  float sp=pow(max(dot(n,Hv),0.),110.)*1.4 + pow(max(dot(n,Hv),0.),14.)*.12;
-  vec3 L2=normalize(vec3(.6,-.7,.4)); float sp2=pow(max(dot(n,normalize(L2+vec3(0.,0.,1.))),0.),40.)*.35;
-  float fr=pow(1.-n.z,2.2);
-  col+=vec3(1.)*sp + vec3(1.,.55,.85)*sp2*.6 + vec3(.7,.75,1.)*fr*.16;
-  float a=smoothstep(.9*d,-.9*d,s);
-  // the rim, split into colour: pink a touch to the left, cyan a touch to the right, white between
-  float w=.75*d, sh=1.4*d;
-  float lr=exp(-pow(sd(px+vec2(sh,0.))/w,2.)), lg=exp(-pow(sd(px)/w,2.)), lb=exp(-pow(sd(px-vec2(sh,0.))/w,2.));
-  float lit=.55+.45*clamp(dot(normalize(vec2(px.x-C.x, C.y-px.y)+1e-3), normalize(vec2(-.6,.8))),-1.,1.);
-  vec3 rim=vec3(lr*1.+lg*.55, lg*.7+lb*.25, lb*1.+lg*.6)*lit*.9;
-  float ra=max(max(lr,lb),lg)*.85*lit;
-  gl_FragColor=vec4(col*a+rim, clamp(a+ra,0.,1.));
-}`;
-    const sh = (type, src) => { const o = gl.createShader(type); gl.shaderSource(o, src); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(o); return o; };
-    try {
-      prog = gl.createProgram(); gl.attachShader(prog, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(prog);
-      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw 'link';
-      gl.useProgram(prog);
-      const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-      const loc = gl.getAttribLocation(prog, 'a'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);   // the lights canvas is mostly transparent
-      tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
-      [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T].forEach(k => gl.texParameteri(gl.TEXTURE_2D, k, gl.CLAMP_TO_EDGE));
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      ['R', 'C', 'Q', 'r', 'd', 't'].forEach(k => U[k] = gl.getUniformLocation(prog, k));
-    } catch (e) { gl = null; }
-  }
-  if (!gl && gc) gc.style.display = 'none';
-
+  const cv = document.getElementById('nz-c');
+  if (!cv) return;
+  const ctx = cv.getContext('2d'), still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const RINGS = [                      // watts, label
+    [3e7, 'a data centre · tens of MW'], [1e4, 'a server · ~10 kW'], [1e3, 'one GPU · ~1 kW'],
+    [30, 'a laptop · ~30 W'], [4, 'a phone · a few W'],
+  ];
+  const TOP = Math.log10(3e7) + 0.25;
+  let S = 0, dpr = 1, live = false, raf = 0, dust = [], t0 = performance.now();
+  let seed = 5; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   function build() {
-    const r = cv.getBoundingClientRect(); W = r.width; H = r.height; dpr = Math.min(2, devicePixelRatio || 1);
-    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const small = W < 700;
-    // the drop sits in the space between the headline and the caption
-    const top = head.getBoundingClientRect().bottom - r.top + (small ? 30 : 40);
-    const bot = capB.getBoundingClientRect().top - r.top - (small ? 34 : 44);
-    const rad = clamp((bot - top) / 2.85, 40, Math.min(150, W * (W < 700 ? 0.3 : 0.22)));
-    D = { r: rad, cx: W / 2, cy: top + (bot - top - 2.79 * rad) / 2 + 1.79 * rad };
-    // the lens canvas covers the drop and a margin round it
-    D.gx = Math.round(D.cx - rad * 1.45); D.gy = Math.round(D.cy - rad * 2.15); D.gw = Math.round(rad * 2.9); D.gh = Math.round(rad * 3.6);
-    if (gl) {
-      Object.assign(gc.style, { left: D.gx + 'px', top: D.gy + 'px', width: D.gw + 'px', height: D.gh + 'px' });
-      gc.width = Math.round(D.gw * dpr); gc.height = Math.round(D.gh * dpr); tmp.width = gc.width; tmp.height = gc.height;
-      gl.viewport(0, 0, gc.width, gc.height);
-    }
-    // the hall: racks of three status lights in rows, aisles every four racks, receding to a horizon
-    const cols = small ? 22 : 46, per = 3, N = small ? 2100 : 4200, rows = Math.ceil(N / (cols * per)), hor = H * 0.38;
-    P = []; seed = 11;
-    for (let i = 0; i < N; i++) {
-      const led = i % per, rk = Math.floor(i / per), c = rk % cols, rw = Math.floor(rk / cols);
-      const u = (c - (cols - 1) / 2) / ((cols - 1) / 2) * 1.05 + (Math.floor(c / 4) - cols / 8) * 0.02;
-      const v = rw / rows, z = 1 + v * 9, sz = 1 / z;
-      const floor = hor + (H * 1.02 - hor) * sz, rackH = H * 0.11 * sz;
-      const sx = W / 2 + u * W * 1.25 * sz, sy = floor - rackH * (0.25 + led * 0.3);
-      let dx, dy; do { dx = rnd() * 2 - 1; dy = rnd() * 2.8 - 1; } while (sdDrop(dx, dy) > -0.06);
-      const kind = rnd();
-      P.push({ sx, sy, fy: floor, sz, u, v, tx: dx, ty: dy, d: rnd() * 0.42 + (1 - v) * 0.12, ph: rnd() * 6.28, f: 0.5 + rnd() * 2.5,
-        c: kind < .06 ? [255, 190, 110] : kind < .2 ? [76, 242, 196] : kind < .36 ? [79, 216, 255] : [196, 204, 232], o: 0.4 + rnd() * 0.6, px: NaN, py: NaN });
-    }
+    const r = cv.getBoundingClientRect(); S = r.width; dpr = Math.min(2, devicePixelRatio || 1);
+    cv.width = Math.round(S * dpr); cv.height = Math.round(S * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    seed = 5; dust = Array.from({ length: 140 }, () => ({ a: rnd() * 6.283, r: rnd(), s: 0.04 + rnd() * 0.08, w: (rnd() - .5) * .5, o: .2 + rnd() * .6 }));
   }
-  const progress = () => { const r = host.getBoundingClientRect(); return clamp(-r.top / Math.max(1, r.height - innerHeight)); };
-  function hue(k) {                     // inside the drop: cyan near the point, violet in the middle, pink at the base
-    k = clamp(k);
-    return k < .5 ? [79 + 64 * k * 2, 216 - 93 * k * 2, 255] : [143 + 112 * (k - .5) * 2, 123 - 28 * (k - .5) * 2, 255 - 81 * (k - .5) * 2];
-  }
-  function fallbackDrop(a) {
-    const { cx, cy, r } = D, p = new Path2D();
-    for (let i = 0; i <= 120; i++) {   // trace the outline by marching out from the centre of the base
-      const th = i / 120 * Math.PI * 2; let lo = 0, hi = 3;
-      for (let j = 0; j < 22; j++) { const m = (lo + hi) / 2; sdDrop(Math.sin(th) * m, Math.cos(th) * m) < 0 ? lo = m : hi = m; }
-      const x = cx + Math.sin(th) * lo * r, y = cy - Math.cos(th) * lo * r; i ? p.lineTo(x, y) : p.moveTo(x, y);
-    }
-    ctx.save(); ctx.globalAlpha = a;
-    ctx.fillStyle = 'rgba(143,123,255,.12)'; ctx.fill(p);
-    ctx.lineWidth = 1; ctx.translate(-1.2, 0); ctx.strokeStyle = 'rgba(255,95,174,.7)'; ctx.stroke(p);
-    ctx.translate(2.4, 0); ctx.strokeStyle = 'rgba(79,216,255,.7)'; ctx.stroke(p);
-    ctx.translate(-1.2, 0); ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.stroke(p); ctx.restore();
+  const rad = w => (Math.log10(w) + 0.25) / TOP;   // a ring's radius, as a share of the largest
+  function ring(cx, cy, R, a, lw, at = 0, gap = 0) {   // a hairline split into colour at its edges, like the page's glass;
+    ctx.lineWidth = lw;                                  // `gap` leaves an opening at angle `at` for a label
+    const a0 = at + gap, a1 = at - gap + 6.2832;
+    ctx.strokeStyle = `rgba(255,95,174,${a * .55})`; ctx.beginPath(); ctx.arc(cx - .7, cy, R, a0, a1); ctx.stroke();
+    ctx.strokeStyle = `rgba(79,216,255,${a * .6})`; ctx.beginPath(); ctx.arc(cx + .7, cy, R, a0, a1); ctx.stroke();
+    ctx.strokeStyle = `rgba(236,235,243,${a})`; ctx.beginPath(); ctx.arc(cx, cy, R, a0, a1); ctx.stroke();
   }
   function draw(now) {
-    const t = (now - t0) / 1000, p = still ? 1 : progress(), m = clamp((p - 0.08) / 0.66);
-    capA.style.setProperty('--a', clamp(1 - m * 3).toFixed(3)); capB.style.setProperty('--b', clamp((m - 0.74) / 0.26).toFixed(3));
-    ctx.clearRect(0, 0, W, H);
-    const hall = 1 - clamp(m * 1.6), { cx, cy, r } = D;
-    // haze along the horizon, fading as the hall empties
-    if (hall > 0) {
-      const hor = H * 0.38, g = ctx.createLinearGradient(0, hor - H * .12, 0, hor + H * .16);
-      g.addColorStop(0, 'rgba(106,77,255,0)'); g.addColorStop(.45, `rgba(110,130,255,${.06 * hall})`); g.addColorStop(.55, `rgba(150,200,255,${.05 * hall})`); g.addColorStop(1, 'rgba(79,216,255,0)');
-      ctx.fillStyle = g; ctx.fillRect(0, hor - H * .12, W, H * .28);
-    }
-    // light gathering where the drop will be
-    const form = ease(clamp((m - 0.45) / 0.4));
-    if (m > 0.2) {
-      const gr = ctx.createRadialGradient(cx, cy - r * .35, 0, cx, cy - r * .35, r * 2.6);
-      const ga = clamp((m - 0.2) / 0.5);
-      gr.addColorStop(0, `rgba(160,130,255,${.16 * ga})`); gr.addColorStop(.35, `rgba(106,77,255,${.06 * ga})`); gr.addColorStop(1, 'rgba(106,77,255,0)');
-      ctx.fillStyle = gr; ctx.fillRect(cx - r * 3, cy - r * 3.4, r * 6, r * 6);
-    }
-    ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round';
-    const wave = (t * 0.11) % 1.8 - 0.4, swirl = t * 0.5;
-    for (const q of P) {
-      const k = ease(clamp((m - q.d) / 0.48));
-      // in the drop the lights circulate slowly, up the middle and down the sides, like something liquid
-      let ux = q.tx, uy = q.ty;
-      if (k > 0) {
-        const ang = Math.atan2(uy - 0.1, ux) + Math.sin(swirl * .6 + q.ph) * 0.06 * q.o, rad = Math.hypot(ux, uy - 0.1);
-        const nx = Math.cos(ang) * rad, ny = Math.sin(ang) * rad + 0.1;
-        if (sdDrop(nx, ny) < -0.05) { ux = nx; uy = ny; }
-      }
-      const tx = cx + ux * r * 0.92, ty = cy - uy * r * 0.92;
-      const side = q.sx < W / 2 ? -1 : 1, lift = Math.sin(k * Math.PI);
-      const x = q.sx + (tx - q.sx) * k + side * lift * 60 * (1 - q.sz), y = q.sy + (ty - q.sy) * k - lift * 70 * (1 - q.v);
-      const blink = 0.5 + 0.5 * Math.sin(t * q.f + q.ph);
-      const act = Math.exp(-Math.pow(((q.u + 1) * .5 * .7 + q.v * .9 - wave) * 7, 2));   // a wave of work sweeping the hall
-      const fog = 0.25 + 0.75 * Math.pow(q.sz, .6);
-      const [hr, hg, hb] = hue((uy + 1) / 2.8 + 0.08 * Math.sin(t * .7 + uy * 2));
-      const cr = q.c[0] + (255 - (255 - hr) - q.c[0]) * k, cg = q.c[1] + (hg - q.c[1]) * k, cb = q.c[2] + (hb - q.c[2]) * k;
-      const a = (1 - k) * fog * (0.25 + 0.55 * blink + 0.9 * act) + k * (0.45 + 0.55 * blink) * q.o;
-      const s = (0.9 + 2.4 * q.sz) * (1 - k) + k * (r > 90 ? 2.1 : 1.6);
-      const col = `rgba(${cr | 0},${cg | 0},${cb | 0},`;
-      const moving = k > 0.02 && k < 0.98 && !isNaN(q.px) && Math.hypot(x - q.px, y - q.py) > 1.5;
-      if (moving) {                     // a short trail while it flies
-        ctx.strokeStyle = col + (a * .8).toFixed(3) + ')'; ctx.lineWidth = s;
-        ctx.beginPath(); ctx.moveTo(q.px + (q.px - x) * .8, q.py + (q.py - y) * .8); ctx.lineTo(x, y); ctx.stroke();
-      } else {
-        ctx.fillStyle = col + Math.min(1, a).toFixed(3) + ')'; ctx.fillRect(x - s / 2, y - s / 2, s, s);
-        if (k < 0.02) {                 // its reflection in the polished floor
-          ctx.fillStyle = col + (a * .12).toFixed(3) + ')'; ctx.fillRect(x - s / 2, q.fy + (q.fy - y) * .7 - s / 2, s, s * 1.6);
-        }
-      }
-      q.px = x; q.py = y;
-    }
-    ctx.globalCompositeOperation = 'source-over';
-    // the glass, over its own patch of the lights
-    if (gl) {
-      gc.style.opacity = form.toFixed(3);
-      if (form > 0) {
-        tctx.clearRect(0, 0, tmp.width, tmp.height);
-        tctx.drawImage(cv, D.gx * dpr, D.gy * dpr, tmp.width, tmp.height, 0, 0, tmp.width, tmp.height);
-        gl.bindTexture(gl.TEXTURE_2D, tex);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, tmp);
-        const wob = still ? 0 : 0.018 * Math.sin(t * 1.7), sc = 0.35 + 0.65 * form;
-        gl.uniform2f(U.R, gc.width, gc.height);
-        gl.uniform2f(U.C, (D.cx - D.gx) * dpr, (D.cy - D.gy) * dpr);
-        gl.uniform2f(U.Q, 1 + wob, 1 - wob);
-        gl.uniform1f(U.r, D.r * dpr * sc * 0.985); gl.uniform1f(U.d, dpr); gl.uniform1f(U.t, t);
-        gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-      }
-    } else if (form > 0) fallbackDrop(form);
+    const t = still ? 2.2 : (now - t0) / 1000, cx = S / 2, cy = S / 2, M = S * 0.46;
+    ctx.clearRect(0, 0, S, S);
+    const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, M);
+    glow.addColorStop(0, 'rgba(143,123,255,.13)'); glow.addColorStop(.35, 'rgba(106,77,255,.04)'); glow.addColorStop(1, 'rgba(106,77,255,0)');
+    ctx.fillStyle = glow; ctx.fillRect(0, 0, S, S);
+    // waves of light, each travelling inward over ~7 s and speeding up as it closes
+    const P = 7, waves = [0, 1, 2].map(i => ((t / P + i / 3) % 1));
+    const fronts = waves.map(f => M * 1.08 * Math.pow(1 - f, 1.6));
+    fronts.forEach((F, i) => { if (F > 3) ring(cx, cy, F, .1 + .3 * (1 - F / (M * 1.08)), .8); });
+    RINGS.forEach(([w, label], i) => {
+      const R = M * rad(w);
+      let lit = 0; fronts.forEach(F => { lit = Math.max(lit, Math.exp(-Math.pow((F - R) / (S * .02), 2))); });
+      // its label sits in an opening in the ring, at the top or the bottom in turn so neighbours never touch
+      ctx.font = `400 ${S < 420 ? 9.5 : 11}px "JetBrains Mono", ui-monospace, monospace`; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+      const tw = ctx.measureText(label).width + 16, up = i % 2 === 0, at = up ? -Math.PI / 2 : Math.PI / 2;
+      ring(cx, cy, R, .16 + .5 * lit, 1, at, Math.min(1.4, tw / 2 / R));
+      ctx.fillStyle = `rgba(190,189,206,${.62 + .38 * lit})`; ctx.fillText(label, cx, up ? cy - R : cy + R); ctx.textAlign = 'left';
+    });
+    // dust drifting in, slowly, on a gentle spiral
+    dust.forEach(d => {
+      const f = ((d.r - t * d.s * .1) % 1 + 1) % 1, rr = M * 1.05 * f, a = d.a + (1 - f) * 2.2 + d.w * t * .1;
+      ctx.fillStyle = `rgba(214,210,255,${(d.o * Math.min(1, f * 5) * (f < .95 ? 1 : (1 - f) * 20)).toFixed(3)})`;
+      ctx.fillRect(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr, 1.2, 1.2);
+    });
+    // the point: where we aim. It flares softly each time a wave arrives
+    const arrive = Math.max(...waves.map(f => Math.exp(-Math.pow((f - .985) / .03, 2))));
+    const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, S * (.03 + .02 * arrive));
+    core.addColorStop(0, `rgba(255,255,255,${.95})`); core.addColorStop(.18, `rgba(200,190,255,${.55 + .3 * arrive})`); core.addColorStop(1, 'rgba(143,123,255,0)');
+    ctx.fillStyle = core; ctx.beginPath(); ctx.arc(cx, cy, S * (.03 + .02 * arrive), 0, 6.2832); ctx.fill();
+    ctx.fillStyle = 'rgba(255,95,174,.8)'; ctx.fillRect(cx - 2.2, cy - 1, 1.2, 2);
+    ctx.fillStyle = 'rgba(79,216,255,.8)'; ctx.fillRect(cx + 1, cy - 1, 1.2, 2);
+    ctx.font = `italic 400 ${S < 420 ? 14 : 17}px "Instrument Serif", Georgia, serif`; ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(236,235,243,.85)'; ctx.fillText('ours', cx, cy + S * .028 + 9); ctx.textAlign = 'left';
     if (live && !still) raf = requestAnimationFrame(draw);
   }
   build(); draw(performance.now());
   addEventListener('resize', () => { build(); draw(performance.now()); });
-  if (document.fonts) document.fonts.ready.then(() => { build(); draw(performance.now()); });
+  if (document.fonts) document.fonts.ready.then(() => draw(performance.now()));
   new IntersectionObserver(es => {
     live = es[0].isIntersecting;
     if (live && !still) { cancelAnimationFrame(raf); raf = requestAnimationFrame(draw); }
-  }).observe(host);
-  if (still) addEventListener('scroll', () => draw(performance.now()), { passive: true });
+  }).observe(cv);
 })();
 
 // glass cards: a soft light follows the pointer
