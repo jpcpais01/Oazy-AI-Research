@@ -72,6 +72,8 @@ const UI = (() => {
 
   // Line chart with a crosshair tooltip.
   // series: [{name, color, dash, width, alpha, area, dots, noTip, tipRange, endDot, band: [[x,lo,hi]], marks: [[x,y,alpha]], endLabel, labelAlpha, points: [[x,y],...]}]
+  // ghost: only in the tooltip, never drawn. sparse: measured only now and then, so the tooltip shows it only near
+  // one of its real points. pts: a dot of that radius on every point (the real measurements of a sparse line).
   function lineChart(cv, tip, opt) {
     const state = { opt, hoverX: null, hoverY: 0 };
     function draw() {
@@ -183,6 +185,10 @@ const UI = (() => {
           ctx.beginPath(); ctx.arc(X(mx), py, py === yy ? 2 : 1.4, 0, 7); ctx.fill();
         }
         ctx.globalAlpha = s.alpha || 1;
+        if (s.pts) {                                      // a dot on every real measurement
+          ctx.fillStyle = s.color;
+          for (const p of pts) { ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), s.pts, 0, 7); ctx.fill(); }
+        }
         if (s.endDot && pts.length) {                     // a hollow ring where a forecast lands
           const p = pts[pts.length - 1];
           ctx.fillStyle = css("--solid"); ctx.lineWidth = 1.4;
@@ -219,9 +225,9 @@ const UI = (() => {
           if (s.tipRange && (xv < s.points[0][0] || xv > s.points[s.points.length - 1][0])) continue;
           let best = s.points[0];
           for (const p of s.points) if (Math.abs(p[0] - xv) < Math.abs(best[0] - xv)) best = p;
-          // a ghost line (e.g. held-out loss, measured only now and then) is shown only near one of its real points,
-          // so the hover never repeats an old measurement as if it were new
-          if (s.ghost && Math.abs(best[0] - xv) > 0.03 * (x1 - x0)) continue;
+          // a ghost or sparse line (e.g. held-out loss, measured only now and then) is shown only near one of its real
+          // points, so the hover never repeats an old measurement as if it were new
+          if ((s.ghost || s.sparse) && Math.abs(best[0] - xv) > 0.03 * (x1 - x0)) continue;
           if (!s.ghost) {
             ctx.fillStyle = css("--solid");
             ctx.beginPath(); ctx.arc(X(best[0]), Y(best[1]), 4.5, 0, 7); ctx.fill();
