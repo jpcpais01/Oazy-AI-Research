@@ -141,7 +141,7 @@
       <details class="why"><summary>What is loss?</summary><div class="body">
         <p>At every word, a model gives each possible next word a chance. <b>Loss</b> measures how surprised it was by the word that really came next. Lower means it saw it coming.</p>
         <p>A loss of <b>L</b> is as hard as picking the right word out of about <b>e<sup>L</sup></b> equally likely ones: 3.3 is like choosing among 27 words.</p>
-        <p>Each model has two lines in two colors. The <b>training</b> line is the loss on the batches it is learning from, as they go by. The <b>held-out</b> line, with a dot at each check, is the loss on text it never trains on (the "finish line" scores above use those). If the held-out line stays close to the training one, the model is learning things that carry over to new text; if it starts climbing away above it, the model is memorising its training text. The dashed line is OpenAI's own GPT-2 (124M) measured on the same text, if you ran <span class="kbd">oazy.compare</span>.</p>
+        <p>Each model has two lines in two colors. The <b>training</b> line is the loss on the batches it is learning from, as they go by. The <b>held-out</b> line is the loss on text it never trains on (the "finish line" scores above use those). If the held-out line stays close to the training one, the model is learning things that carry over to new text; if it starts climbing away above it, the model is memorising its training text. The dashed line is OpenAI's own GPT-2 (124M) measured on the same text, if you ran <span class="kbd">oazy.compare</span>.</p>
         <p>The faint <b>dashed</b> line is a forecast: while a model trains, a learning curve (loss = a + b × words<sup>−c</sup>, the shape loss curves usually follow) is fitted to its most recent points (the newest 30% of them, so the early rush does not pull it) and drawn out to the planned number of words, with the predicted end value at its tip. The forecast is also replayed from earlier moments of the run: the small dots stacked at the end are those earlier forecasts (older ones fainter), and the shaded cone is how much the forecast has swung lately, so a wide cone means "don't trust the number yet". Hover past the end of a line to read how it has moved. It is a rough guess, and appears once there are enough points. The run card's "heading for" is the same forecast for the held-out loss.</p>
       </div></details>
       <div class="legend" id="lossLegend" style="margin-bottom:10px"></div>
@@ -681,7 +681,7 @@ function drawLearning() {
     const tr = m.filter((x) => x.kind === "train"), ev = m.filter((x) => x.kind === "eval"), hs = m.filter(hsOK);
     const step = Math.max(1, Math.floor(tr.length / 400));
     const trS = { name: nameOf(r.name) + " · training", color: col, width: 2, endLabel: true, points: tr.filter((_, i) => i % step === 0).map((x) => [xOf(x), x.loss]) };
-    const evS = { name: nameOf(r.name) + " · held-out", color: hcol, width: 2, pts: 2.2, sparse: true, endLabel: true, points: ev.map((x) => [xOf(x), x.val_loss]).filter((p) => p[1] != null) };
+    const evS = { name: nameOf(r.name) + " · held-out", color: hcol, width: 2, sparse: true, endLabel: true, points: ev.map((x) => [xOf(x), x.val_loss]).filter((p) => p[1] != null) };
     series.push(trS, evS);
     hsS.push({ name: nameOf(r.name), color: col, width: 2.4, dots: true, endLabel: true, points: hs.map((x) => [xOf(x), x.acc_norm]) });
     // the dashed forecasts, out to the planned number of words
@@ -696,7 +696,7 @@ function drawLearning() {
         endLabel: "≈" + fmtL(F.loss.yEnd), labelAlpha: 0.7, points: fc(F.loss), band: F.loss.band && fcb(F.loss.band), marks: marks(F.loss, mx) };
       series.push(fl);
       if (F.val)                 // the held-out line gets its own (plainer) forecast, in its own color
-        series.push({ name: nameOf(r.name) + " · held-out forecast", color: hcol, alpha: 0.55, width: 2, dash: [5, 5], tipRange: true, endDot: true,
+        series.push({ name: nameOf(r.name) + " · held-out forecast", color: hcol, alpha: 0.55, width: 2, dash: [5, 5], tipRange: true,
           endLabel: "≈" + fmtL(F.val.yEnd), labelAlpha: 0.7, points: fc(F.val) });
       anyFore = true; foreFrom = Math.min(foreFrom, fl.points[0][0]);
     }
