@@ -113,6 +113,11 @@
   .lib tr.off td:last-child { opacity: 1; }
   .showseg button { padding: 4px 10px; font-size: 12px; white-space: nowrap; }
   .libwrap { overflow-x: auto; }
+  td.dl a { display: block; white-space: nowrap; font-size: 12.5px; color: var(--text); text-decoration: none; padding: 2px 0; }
+  td.dl a::before { content: "↓ "; color: var(--muted); } td.dl a.app { color: var(--good); font-weight: 600; } td.dl a.app::before { content: "▸ "; color: var(--good); }
+  td.dl .busy { display: block; font-size: 12.5px; color: var(--muted); padding: 2px 0; } td.dl .bad { color: var(--bad, #ff6b6b); }
+  td.dl button.mkphone { display: block; margin: 2px 0; font: inherit; font-size: 12px; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--line, #333); background: transparent; color: var(--text); cursor: pointer; white-space: nowrap; }
+  td.dl button.mkphone:hover { border-color: var(--good); color: var(--good); } .apphint { margin-top: 6px; } .apphint a { color: var(--good); } td.dl a:hover { color: var(--good); } td.dl small { color: var(--muted); }
   .nowhint { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
   .nowhint .t { font-weight: 600; font-size: 15px; }
   .nowhint .s { color: var(--muted); font-size: 13px; }
@@ -302,7 +307,7 @@
 
   <div class="section-title" id="models" data-k="models"><h3>All our models</h3><div class="line"></div></div>
   <div class="card">
-    <div class="cardhead"><div class="titles"><h2>Model library</h2><div class="sub">Every model trained in this lab. The page shows the ones training right now; use "Show" to bring a finished one back. "Plots only" keeps a model's lines in the charts but hides its own cards (like Tide's drafts or Inside Memtrix).</div></div></div>
+    <div class="cardhead"><div class="titles"><h2>Model library</h2><div class="sub">Every model trained in this lab. The page shows the ones training right now; use "Show" to bring a finished one back. "Plots only" keeps a model's lines in the charts but hides its own cards (like Tide's drafts or Inside Memtrix).</div><div class="sub apphint">On your phone: <a href="download/app/oazy.apk" download>install the Oazy app</a> once, then tap "Open in the Oazy app" next to a model and it downloads straight into the app.</div></div></div>
     <div class="libwrap"><table class="lib" id="library"></table></div>
   </div>
 </div>
@@ -582,8 +587,40 @@ function nowCards() {
   return `<div class="card nowhint"><img class="logo" src="icon.svg" alt="" style="width:34px;height:34px"><div><div class="t">Nothing is training right now</div><div class="s">${what} Pick others in the model library at the bottom.</div></div></div>`;
 }
 
+// downloads (oazy/dashboard.py /download/...): the report bundle, the checkpoint and the phone files of a run and its chat version
+let DL = {}, DL_T = 0;
+async function loadDownloads() {
+  if (Date.now() - DL_T < 60000) return;
+  DL_T = Date.now();
+  const got = {};
+  await Promise.all(RUNS.filter((r) => !isRef(r.name)).map(async (r) => { try { got[r.name] = await getJSON(`api/run/${encodeURIComponent(r.name)}/downloads`); } catch (e) { got[r.name] = []; } }));
+  DL = got; library();
+}
+const fmtBytes = (b) => b == null ? "" : b >= 1e9 ? (b / 1e9).toFixed(1) + " GB" : Math.max(1, Math.round(b / 1e6)) + " MB";
+const dlURL = (run, file) => `download/${encodeURIComponent(run)}/${encodeURIComponent(file)}`;
+// the phone app (phone/app) opens oazy://download?url=...: one tap on the phone, it downloads the model itself
+const inApp = (run, file) => `intent://download?url=${encodeURIComponent(new URL(dlURL(run, file), location.href).href)}#Intent;scheme=oazy;package=ai.oazy.phone;end`;
+function dlLinks(n) {
+  const L = DL[n] || [];
+  if (!L.length) return `<span class="muted">–</span>`;
+  return L.map((d) => {
+    if (d.make_phone) {
+      if (d.busy) return `<span class="busy">${d.label}: making it… <small>a few min</small></span>`;
+      return `<button class="mkphone" data-phone="${d.run}">${d.failed ? "retry " : "make "}${d.label}</button>${d.failed ? ` <small class="bad">failed (phone-export.log)</small>` : ""}`;
+    }
+    const plain = `<a href="${dlURL(d.run, d.file)}" download>${d.label}${d.bytes ? ` <small>${fmtBytes(d.bytes)}</small>` : ""}</a>`;
+    return d.phone ? `<a class="app" href="${inApp(d.run, d.file)}">Open in the Oazy app${d.run !== n ? " (chat)" : ""}</a>` + plain : plain;
+  }).join("");
+}
+async function makePhone(run) {
+  try { await fetch(`api/run/${encodeURIComponent(run)}/phone`, { method: "POST" }); } catch (e) { /* offline */ }
+  DL_T = 0; await loadDownloads();
+}
+// while a phone file is being made, look again every 10 s
+setInterval(() => { if (Object.values(DL).some((L) => L.some((d) => d.busy))) { DL_T = 0; loadDownloads(); } }, 10000);
+
 function library() {
-  const head = `<tr><th>Model</th><th>Status</th><th class="num">Size</th><th class="num">Text read</th><th class="num">Val loss</th><th class="num">HellaSwag</th><th>Show</th></tr>`;
+  const head = `<tr><th>Model</th><th>Status</th><th class="num">Size</th><th class="num">Text read</th><th class="num">Val loss</th><th class="num">HellaSwag</th><th>Download</th><th>Show</th></tr>`;
   const rows = RUNS.map((r) => {
     const m = modelOf(r.name), st = r.status || {}, cf = r.config || {}, L = st.latest || {};
     const state = isRef(r.name) ? "reference" : (st.state || "starting");
@@ -597,7 +634,7 @@ function library() {
       <td class="num">${r.name === "openai-gpt2" ? "~10,000M" : cf.trained_tokens ? "~" + fmtM(cf.trained_tokens) : fmtM(st.tokens || 0)}</td>
       <td class="num">${L.val_loss != null ? fmtL(L.val_loss) : "–"}</td>
       <td class="num">${hs != null ? pct(hs) + (L.hellaswag_full != null ? "" : "*") : "–"}</td>
-      <td>${seg}</td></tr>`;
+      <td class="dl">${dlLinks(r.name)}</td><td>${seg}</td></tr>`;
   }).join("");
   document.getElementById("library").innerHTML = RUNS.length ? head + rows : `<tr><td class="empty">No models trained yet.</td></tr>`;
 }
@@ -1106,7 +1143,7 @@ function draw() {
   computeForecasts();
   podSummary();
   document.getElementById("runs").innerHTML = nowCards();
-  scoreboard(); drawLearning(); foreCheck(); drawMemoryUse(); drawDrafts(); drawRounds(); drawSamples(); library();
+  scoreboard(); drawLearning(); foreCheck(); drawMemoryUse(); drawDrafts(); drawRounds(); drawSamples(); library(); loadDownloads();
 }
 
 async function refresh() {
@@ -1167,6 +1204,7 @@ const tSlider = document.getElementById("tSnapSlider");
 tSlider.addEventListener("input", () => { UI.syncRange(tSlider); loadTSnap(+tSlider.value); });
 document.getElementById("tRamp").style.background = UI.heatCSS();
 document.getElementById("library").addEventListener("click", (e) => {
+  const p = e.target.closest("[data-phone]"); if (p) { p.disabled = true; p.textContent = "starting…"; return makePhone(p.dataset.phone); }
   const b = e.target.closest("[data-mode]"); if (!b) return;
   const n = b.dataset.run;
   OVERRIDE[n] = b.dataset.mode;
