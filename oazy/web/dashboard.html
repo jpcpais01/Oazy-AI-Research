@@ -113,6 +113,8 @@
   .lib tr.off td:last-child { opacity: 1; }
   .showseg button { padding: 4px 10px; font-size: 12px; white-space: nowrap; }
   .libwrap { overflow-x: auto; }
+  td.dl a { display: block; white-space: nowrap; font-size: 12.5px; color: var(--text); text-decoration: none; padding: 2px 0; }
+  td.dl a::before { content: "↓ "; color: var(--muted); } td.dl a:hover { color: var(--good); } td.dl small { color: var(--muted); }
   .nowhint { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
   .nowhint .t { font-weight: 600; font-size: 15px; }
   .nowhint .s { color: var(--muted); font-size: 13px; }
@@ -582,8 +584,23 @@ function nowCards() {
   return `<div class="card nowhint"><img class="logo" src="icon.svg" alt="" style="width:34px;height:34px"><div><div class="t">Nothing is training right now</div><div class="s">${what} Pick others in the model library at the bottom.</div></div></div>`;
 }
 
+// downloads (oazy/dashboard.py /download/...): the report bundle, the checkpoint and the phone files of a run and its chat version
+let DL = {}, DL_T = 0;
+async function loadDownloads() {
+  if (Date.now() - DL_T < 60000) return;
+  DL_T = Date.now();
+  const got = {};
+  await Promise.all(RUNS.filter((r) => !isRef(r.name)).map(async (r) => { try { got[r.name] = await getJSON(`api/run/${encodeURIComponent(r.name)}/downloads`); } catch (e) { got[r.name] = []; } }));
+  DL = got; library();
+}
+const fmtBytes = (b) => b == null ? "" : b >= 1e9 ? (b / 1e9).toFixed(1) + " GB" : Math.max(1, Math.round(b / 1e6)) + " MB";
+function dlLinks(n) {
+  const L = DL[n] || [];
+  return L.length ? L.map((d) => `<a href="download/${encodeURIComponent(d.run)}/${encodeURIComponent(d.file)}" download>${d.label}${d.bytes ? ` <small>${fmtBytes(d.bytes)}</small>` : ""}</a>`).join("") : `<span class="muted">–</span>`;
+}
+
 function library() {
-  const head = `<tr><th>Model</th><th>Status</th><th class="num">Size</th><th class="num">Text read</th><th class="num">Val loss</th><th class="num">HellaSwag</th><th>Show</th></tr>`;
+  const head = `<tr><th>Model</th><th>Status</th><th class="num">Size</th><th class="num">Text read</th><th class="num">Val loss</th><th class="num">HellaSwag</th><th>Download</th><th>Show</th></tr>`;
   const rows = RUNS.map((r) => {
     const m = modelOf(r.name), st = r.status || {}, cf = r.config || {}, L = st.latest || {};
     const state = isRef(r.name) ? "reference" : (st.state || "starting");
@@ -597,7 +614,7 @@ function library() {
       <td class="num">${r.name === "openai-gpt2" ? "~10,000M" : cf.trained_tokens ? "~" + fmtM(cf.trained_tokens) : fmtM(st.tokens || 0)}</td>
       <td class="num">${L.val_loss != null ? fmtL(L.val_loss) : "–"}</td>
       <td class="num">${hs != null ? pct(hs) + (L.hellaswag_full != null ? "" : "*") : "–"}</td>
-      <td>${seg}</td></tr>`;
+      <td class="dl">${dlLinks(r.name)}</td><td>${seg}</td></tr>`;
   }).join("");
   document.getElementById("library").innerHTML = RUNS.length ? head + rows : `<tr><td class="empty">No models trained yet.</td></tr>`;
 }
@@ -1106,7 +1123,7 @@ function draw() {
   computeForecasts();
   podSummary();
   document.getElementById("runs").innerHTML = nowCards();
-  scoreboard(); drawLearning(); foreCheck(); drawMemoryUse(); drawDrafts(); drawRounds(); drawSamples(); library();
+  scoreboard(); drawLearning(); foreCheck(); drawMemoryUse(); drawDrafts(); drawRounds(); drawSamples(); library(); loadDownloads();
 }
 
 async function refresh() {
