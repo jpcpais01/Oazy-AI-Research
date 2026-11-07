@@ -240,7 +240,10 @@ PRESETS = {
     ),
 }
 
-SAMPLE_PROMPTS = ["The water cycle is", "In 1905, Albert Einstein", "The most important thing about learning is"]
+# what every run writes at each check (the dashboard's "What they write", one box each). The fourth, a story, came
+# Nov 7 2026; a run that started before it writes it from its next restart (or now: python3 -m oazy.writenow).
+SAMPLE_PROMPTS = ["The water cycle is", "In 1905, Albert Einstein", "The most important thing about learning is",
+                  "Once upon a time, in a small village by the sea,"]
 
 
 def parse_overrides(items):
@@ -324,8 +327,9 @@ def build(kind, preset, overrides=None):
     return GPT(cfg), cfg
 
 
-def load_model(ckpt: Path, device):
-    st = torch.load(ckpt, map_location="cpu", weights_only=False)
+def load_model(ckpt: Path, device, mmap=False):
+    # mmap: read the weights from the file as they are needed, so the optimizer's state never fills the memory
+    st = torch.load(ckpt, map_location="cpu", weights_only=False, mmap=mmap)
     kind = st.get("kind", "memtrix")
     if kind == "engram":                      # Memtrix's name before Nov 5
         kind = st["kind"] = "memtrix"
