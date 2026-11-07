@@ -58,13 +58,15 @@ const Forecast = (() => {
 
   // Everything the fit needs about a run, on a grid of tokens from 0 to the planned end: the learning rate (logged
   // where it was logged, planned after), "learning so far" S1 and "settled fall" S2. Returns null if there is no plan.
-  function plan(cfg, train, lagSteps = LAG_STEPS) {
-    const end = cfg.total_tokens;
+  // hypo: a longer run of `hypo` tokens on the same recipe (same warmup and peak, its cool-down over ITS last 20%,
+  // its text change at ITS 80%): the learning rate logged so far is used only up to the end of the warmup.
+  function plan(cfg, train, lagSteps = LAG_STEPS, hypo = 0) {
+    const end = hypo || cfg.total_tokens;
     if (!(end > 0) || cfg.minutes) return null;          // races on the clock follow time, not tokens: no forecast
     const peak = cfg.lr || Math.max(...train.map((x) => x.lr || 0)) || 1;
     const logged = train.filter((x) => x.lr != null && x.tokens > 0).map((x) => [x.tokens, x.lr / peak]);
-    const lastLog = logged.length ? logged[logged.length - 1][0] : 0;
     const warmEnd = (logged.find((x) => x[1] >= 0.98) || [0])[0];
+    const lastLog = hypo ? warmEnd : logged.length ? logged[logged.length - 1][0] : 0;
     const N = 2000, dt = end / N;
     const eta = new Float64Array(N + 1);
     let j = 0;
@@ -76,14 +78,14 @@ const Forecast = (() => {
         eta[i] = t <= t0 ? e0 : e0 + (e1 - e0) * Math.min(1, (t - t0) / Math.max(1, t1 - t0));
       } else eta[i] = t < warmEnd ? 1 : etaPlanned(cfg, t / end);
     }
-    // S1: learning so far, in "full-rate runs" (1 = the whole run at the peak rate)
+    // S1: learning so far, in billions of tokens at the peak rate (the same unit for every length of run)
     // S2: how much of the learning rate's fall has paid off: each fall pays off over ~LAG_STEPS steps
     const L = lagSteps * (cfg.batch_tokens || 524288);
     const k = Math.exp(-dt / L);
     const S1 = new Float64Array(N + 1), S2 = new Float64Array(N + 1);
     let m = 0, top = 0;
     for (let i = 1; i <= N; i++) {
-      S1[i] = S1[i - 1] + 0.5 * (eta[i] + eta[i - 1]) * dt / end;
+      S1[i] = S1[i - 1] + 0.5 * (eta[i] + eta[i - 1]) * dt / 1e9;
       if (i * dt > warmEnd) {
         top = Math.max(top, eta[i - 1]);
         const fall = Math.max(0, eta[i - 1] - eta[i]);      // only falls count; the warmup's rise does not
@@ -146,7 +148,7 @@ const Forecast = (() => {
     const floor = 1e-4;
     const ws0 = pts.map((p) => 1 / Math.max(floor, p[2] || 0) ** 2);
     const uniform = noise.length < pts.length / 2;
-    let best = null;
+    let best = null, grid = [];
     const tryAlpha = (alpha, ws, sig) => {
       const rows = pts.map((_, i) => [1, Math.pow(s1[i], -alpha), -s2[i], ...(jump ? [after[i]] : [])]);
       const ridge = [];
@@ -170,8 +172,10 @@ const Forecast = (() => {
         sig = uniform ? best.e / dof : Math.max(1, best.e / dof);
         continue;
       }
+      grid = [];
       for (let i = 0; i <= 60; i++) {
         const r = tryAlpha(0.03 * Math.pow(100, i / 60), ws, sig);              // alpha from 0.03 to 3
+        if (r) grid.push(r);
         if (r && (!best || r.e < best.e)) best = r;
       }
       if (!best) return null;
@@ -192,7 +196,14 @@ const Forecast = (() => {
     const rmse = Math.sqrt(resid.reduce((a, r) => a + r * r, 0) / resid.length);
     const f = (t, withJump = true) => E + A * Math.pow(P.S1(t), -alpha) - C * P.S2(t) + (jump && withJump && t >= jump.at ? J : 0);
     const noCool = (t) => E + A * Math.pow(P.S1(t), -alpha) + (jump && t >= jump.at ? J : 0);
-    return { E, A, C, J, alpha, f, noCool, rmse, n: pts.length };
+    // the other curve shapes the points can't rule out (about two standard errors): they agree where there are
+    // points and part ways far beyond them, which is how unsure a long-range forecast is
+    const dof = Math.max(1, pts.length - 3 - (jump ? 1 : 0));
+    const alts = (fixed ? [best] : grid.filter((r) => r.e <= best.e * (1 + 4 / dof))).map((r) => {
+      const [e, a, c, j = 0] = r.c;
+      return (PP, t, ja) => e + a * Math.pow(PP.S1(t), -r.alpha) - c * PP.S2(t) + (ja != null && t >= ja ? j : 0);
+    });
+    return { E, A, C, J, alpha, f, noCool, rmse, n: pts.length, alts };
   }
 
   // ---------- one forecast ----------
@@ -330,7 +341,47 @@ const Forecast = (() => {
       key, now, end, curve, band, yEnd, lo: yEnd - Z * sd, hi: yEnd + Z * sd, sd, g,
       coolLeft, coolFromPrior, priorRuns: c.pr.n, priorFrom: c.pr.from || [], seenCool, jumpLeft, jumpAt: c.jump?.at ?? null,
       checks, relSd, lag: P.lag, fit: { E: fit.E, A: fit.A, C: fit.C, J: fit.J, alpha: fit.alpha, rmse: fit.rmse, from: c.from, n: fit.n },
+      _: { cfg, metrics, law: fit, P, shift, sdCool, jump: c.jump },
     };
+  }
+
+  // A forecast stretched to a longer run of H tokens on the same recipe: what the loss would reach had the run been
+  // planned that long (its flat learning rate kept going, its cool-down and text change moved to ITS last 20%), and
+  // assuming fresh text all the way. The law's numbers are the ones fitted on the real run; only the schedule
+  // changes. It leaves the real line where their schedules part (the real cool-down's start, or now if that's later).
+  // The range adds how far apart the curve shapes the points can't rule out drift that far out, and 1% of the loss
+  // for every doubling beyond the planned end. borrow: for the training loss, the held-out stretch's shape doubt.
+  function stretch(F, H, { borrow = null } = {}) {
+    if (!F || !(H > F.end * 1.01)) return null;
+    const { cfg, metrics, law, P, shift, sdCool, jump } = F._;
+    const PH = plan(cfg, metrics.filter((x) => x.kind === "train"), P.lag, H);
+    if (!PH) return null;
+    const ja = jump ? H * (jump.at / P.end) : null;
+    const lawH = (t) => law.E + law.A * Math.pow(PH.S1(t), -law.alpha) - law.C * PH.S2(t) + (ja != null && t >= ja ? law.J : 0);
+    const g = (t) => lawH(t) + shift;
+    const from = cfg.schedule === "wsd" ? Math.min(F.now, P.decayAt || F.now) : F.now;
+    const spread = (t) => {                     // half the gap between the shapes the points allow, as a share
+      if (borrow) return borrow(t);
+      const v = law.alts.map((a) => a(PH, t, ja));
+      return v.length > 1 ? (Math.max(...v) - Math.min(...v)) / 2 / Math.max(1e-9, lawH(t)) : 0;
+    };
+    const sdAt = (t) => {
+      const y = g(t), u = Math.min(1, Math.max(0, (t - F.now) / (F.end - F.now)));
+      const beyond = t > F.end ? 0.01 * Math.log2(t / F.end) : 0;
+      return Math.sqrt((F.relSd * y * u) ** 2 + (spread(t) / 2 * y) ** 2 + (beyond * y) ** 2 + (sdCool * (t > F.now ? 1 : 0)) ** 2);
+    };
+    const curve = [], band = [], n = 90;
+    for (let i = 0; i <= n; i++) {              // even steps on a log scale: the chart shows these on one
+      const t = from * Math.pow(H / from, i / n);
+      if (ja != null && t > ja && curve.length && curve[curve.length - 1][0] < ja) {
+        for (const tt of [ja - 1, ja]) { const y = g(tt), sd = sdAt(tt); curve.push([ja, y]); band.push([ja, y - Z * sd, y + Z * sd]); }
+      }
+      const y = g(t), sd = sdAt(t);
+      curve.push([t, y]); band.push([t, y - Z * sd, y + Z * sd]);
+    }
+    const sd = sdAt(H), yEnd = g(H);
+    return { key: F.key, hypothetical: true, planned: F.end, now: F.now, end: H, from, curve, band, g, yEnd, lo: yEnd - Z * sd, hi: yEnd + Z * sd, sd,
+      fit: F.fit, spread, jumpAt: ja, jumpLeft: ja != null && F.now < ja ? law.J : 0 };
   }
 
   // HellaSwag: a straight line against the run's own held-out loss, and the held-out forecast pushed through it.
@@ -347,8 +398,9 @@ const Forecast = (() => {
     // and until at least 4 points are clear of it there is no forecast (its own points can't tell how fast it will rise)
     const off = hs.filter((p) => p[1] > 0.265);
     if (off.length < 4) return null;
+    // just above the floor the score bends upward as the loss falls, so the newest points (the current slope) count
     const use = off.filter((p) => p[0] >= valF.fit.from * 0.8);
-    const pts = use.length >= 5 ? use : off.slice(-8);
+    const pts = use.length >= 10 ? use.slice(-Math.max(8, Math.ceil(use.length / 2))) : use.length >= 5 ? use : off.slice(-8);
     const c = lsq(pts.map((p) => [1, p[2]]), pts.map((p) => p[1]), pts.map(() => 1));
     if (!c || !(c[1] < 0)) return null;
     const [p0, q] = c, n = pts.length, res = Math.sqrt(pts.reduce((a, p) => a + (p[1] - p0 - q * p[2]) ** 2, 0) / Math.max(1, n - 2));
@@ -361,7 +413,9 @@ const Forecast = (() => {
     const curve = valF.curve.map(([t, v]) => [t, hsOf(v)]);
     const band = valF.band.map(([t, lo, hi]) => {
       const y = hsOf(valF.g(t)), u = Math.max(0, (t - valF.now) / (valF.end - valF.now));
-      const s = Math.sqrt((q * (hi - lo) / (2 * Z)) ** 2 + (seQ * (valF.g(t) - last[2])) ** 2 + (res * u) ** 2 / 2 + (0.006 * u) ** 2);
+      // + the line may bend (near the floor the score speeds up as the loss falls): half the rise still to come
+      const bend = 0.5 * Math.abs(q * (valF.g(t) - last[2]));
+      const s = Math.sqrt((q * (hi - lo) / (2 * Z)) ** 2 + (seQ * (valF.g(t) - last[2])) ** 2 + (res * u) ** 2 / 2 + (0.006 * u) ** 2 + bend ** 2);
       return [t, y - Z * s, y + Z * s];
     });
     const b = band[band.length - 1], yEnd = curve[curve.length - 1][1];
@@ -454,7 +508,7 @@ const Forecast = (() => {
   }
   const median = (v) => { if (!v.length) return null; const s = [...v].sort((a, b) => a - b); return s[s.length >> 1]; };
 
-  return { plan, etaPlanned, at, fitLaw, metric, hellaswag, priorsFrom, backtest, bins, Z, DEFAULT_PRIOR };
+  return { plan, etaPlanned, at, stretch, fitLaw, metric, hellaswag, priorsFrom, backtest, bins, Z, DEFAULT_PRIOR };
 })();
 
 if (typeof module !== "undefined") module.exports = Forecast;
