@@ -1,24 +1,24 @@
-"""Bee4: a 300M all-attention Bee, raised with Coral's recipe. Still a NEXT-WORD model: it reads text and guesses
+"""Bee4: a 200M all-attention Bee, raised with Coral's recipe. Still a NEXT-WORD model: it reads text and guesses
 the very next token, like GPT-2 and every Bee, and it is scored the same way.
 
 Bee4 is the plain, dense sibling of Coral: the same layers, the same recipe, but one ordinary MLP per layer
-instead of Coral's colony of experts, and no Memtrix memory layers. Every one of its ~296M parameters works on
+instead of Coral's colony of experts, and no Memtrix memory layers. Every one of its ~198M parameters works on
 every word.
 
                        Bee3                          Coral                          Bee4
   width                768                           1,024                          1,024
-  layers               24 (18 memory + 6 attention)  20, all attention              20, all attention
+  layers               24 (18 memory + 6 attention)  20, all attention              12, all attention
   attention heads      12 query / 4 key-value        16 / 4, heads of 64            16 / 4, heads of 64
   positions            none (the memories know)      RoPE, base 50,000              RoPE, base 50,000
   thinking part        one MLP of 1,792              32 experts of 448 (top 2)      one MLP of 2,816
                                                      + a shared MLP of 512
-  parameters           203M                          1,037M (161M at work)          296M (all at work)
+  parameters           203M                          1,037M (161M at work)          198M (all at work)
 
 Why no memory layers: at 2,048-word windows the Memtrix kernel was the slowest part of Bee3 and Frog, and its
 long-text advantage does not show at that length. All attention runs on the GPU's fused attention kernel.
 
 Coral's recipe (oazy/train.py RECIPE["bee4"], bee4/README.md):
-  growing depth          8 layers for the first 10%, 12 until 25%, then 20; each growth copies the top layers
+  growing depth          6 layers for the first 10%, 9 until 25%, then 12 (Coral's timing); each growth copies the top layers
   the mentor             stronger than Coral's, and kept on: SmolLM2-1.7B (the same pieces) on 1 pass in 4 at the
                          start, 1 in 10 from 30%, fading to none over the last 10% of the run
   plain causal attention the documents in a window may see earlier ones (keeping them apart cost ~40% of a pass);
@@ -34,20 +34,20 @@ import torch
 
 from frog.model import Frog, FrogConfig
 
-BEE4_GROW = "8:0,12:0.1,20:0.25"     # Coral's
+BEE4_GROW = "6:0,9:0.1,12:0.25"      # Coral's timing (Coral: 8 -> 12 -> 20)
 
 
 @dataclass
 class Bee4Config(FrogConfig):
     d_model: int = 1024
-    n_layer: int = 20
+    n_layer: int = 12           # Coral's width, fewer layers: big matrix products, ~198M (João, Nov 7: 200M)
     pattern: str = "A"           # attention in every layer
     attn_heads: int = 16         # 16 x 64 = the width
     attn_kv_heads: int = 4
     attn_head_dim: int = 64
     rope: int = 1                # all attention: RoPE is what tells it the word order
     rope_base: float = 50000.0
-    mlp_hidden: int = 2816       # 2.75 x the width; makes the whole model 296M
+    mlp_hidden: int = 2816       # 2.75 x the width; makes the whole model 198M
     attn_docs: int = 0           # 1 = attention keeps to each word's own document (flex attention; ~40% slower on a B200)
     flex_attn: int = 0           # only used with attn_docs=1
     fused_gates: int = 0         # memory-layer switches: no memory layers here
@@ -55,14 +55,14 @@ class Bee4Config(FrogConfig):
     grow: str = BEE4_GROW
 
     def __post_init__(self):
-        if self.grow == BEE4_GROW and self.n_layer != 20:      # another depth (a test's small body): no growing unless asked
+        if self.grow == BEE4_GROW and self.n_layer != 12:      # another depth (a test's small body): no growing unless asked
             self.grow = f"{self.n_layer}:0"
         if self.attn_docs:
             self.flex_attn = 1
 
 
 class Bee4(Frog):
-    """296M, all attention, dense. Grows like Coral (8 -> 12 -> 20 layers)."""
+    """198M, all attention, dense. Grows on Coral's timing (6 -> 9 -> 12 layers)."""
 
     def layout(self):
         c = self.cfg

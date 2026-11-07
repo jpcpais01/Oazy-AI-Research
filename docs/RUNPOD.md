@@ -151,7 +151,7 @@ with `--lr 1.2e-3 --muon-lr 0.02`. `--set pattern=MMMA` is the Memtrix hybrid (p
 `--mentor none` drops the mentor, `--data-sub smol` reads the usual Tagus (a quick test before tagus20 is ready).
 `--fp8 0` trains in bf16; `--set grow=28:0` starts at full depth (only on a fresh run).
 
-### Bee4 (296M, all attention, Coral's recipe, 6,000M tokens)
+### Bee4 (198M, all attention, Coral's recipe, 6,000M tokens)
 
 A dense next-word model: Coral's layers with one MLP instead of experts, no Memtrix, and SmolLM2-1.7B as its mentor
 for the whole run. Recipe and reasons in `bee4/README.md`. It reads Coral's Tagus20, so there is nothing to build.
@@ -161,7 +161,7 @@ Start it only when the GPU is free (not while Coral trains).
 cd /workspace/oazy && git pull
 python3 -m bee4.tests --device cuda                       # self-tests: compiled step, FP8 (~2 min)
 python3 -m oazy.profile --model bee4 --preset big --micro 32   # tokens/s with the 1.7B mentor, memory (paste it in the thread)
-bash runpod/train.sh bee4 --preset big --tokens 6e9 --micro 32 # the run (~8.5-10 h on a B200); resumes if stopped
+bash runpod/train.sh bee4 --preset big --tokens 6e9 --micro 32 # the run (~6-6.5 h on a B200); resumes if stopped
 python3 -m oazy.sft --run bee4                            # afterwards: the chat fine-tune -> runs/bee4-chat
 python3 -m bee4.chat --run bee4-chat --port 8002          # chat
 ```
