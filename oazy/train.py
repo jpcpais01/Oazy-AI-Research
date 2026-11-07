@@ -56,10 +56,10 @@ RECIPE["frog"] = dict(RECIPE["bee3"], mentor_share=1, fp8=1)      # and FP8 matr
 RECIPE["coral"] = dict(RECIPE["frog"], mentor_weight=0.25, mentor_until=0.3, mentor_floor=0.0, mentor_off=0.0,
                        batch_ramp="262144:0.05", data_sub="tagus20")
 # Bee4 (bee4/README.md): Coral's recipe (growing depth, FP8, the batch ramp, Muon with weight decay, the square-root
-# cool-down, Tagus20) on a dense 296M all-attention body, with a stronger mentor kept on the WHOLE run (João, Nov 6: a
-# 300M student is close to SmolLM2-360M's size, so a bigger teacher): SmolLM2-1.7B (MENTOR) teaches 1 pass in 4 at the
+# cool-down, Tagus20) on a dense 198M all-attention body, with a stronger mentor kept on the WHOLE run (João, Nov 6: a
+# 200-300M student is close to SmolLM2-360M's size, so a bigger teacher): SmolLM2-1.7B (MENTOR) teaches 1 pass in 4 at the
 # start, 1 in 10 from 30% on, fading to none over the last 10% (about 12% of the passes over the run).
-# 524k-token steps after the ramp (the presets' batch_bee4): at 300M and 6,000M tokens, twice Coral's number of steps.
+# 524k-token steps after the ramp (the presets' batch_bee4): at 200M and 6,000M tokens, twice Coral's number of steps.
 RECIPE["bee4"] = dict(RECIPE["coral"], mentor_weight=0.25, mentor_until=0.3, mentor_floor=0.1, mentor_off=0.1)
 # Code Black (codeblack/README.md) and Black-T, the transformer it races: the same recipe for both, so a race measures
 # the architecture. Bee3's polish (Muon weight decay, a batch ramp, the square-root cool-down) and FP8, no mentor. Races
@@ -153,7 +153,7 @@ def _coral():
 
 
 def _bee4():
-    from bee4.model import Bee4, Bee4Config          # bee4/ = 296M, all attention, dense, Coral's recipe
+    from bee4.model import Bee4, Bee4Config          # bee4/ = 198M, all attention, dense, Coral's recipe
     return Bee4, Bee4Config
 
 

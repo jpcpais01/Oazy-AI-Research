@@ -13,7 +13,7 @@
 #   bash runpod/train.sh bee3 --preset big --tokens 2.5e9   # Bee3 on Tagus, our dataset (needs: python3 -m oazy.tagus)
 #   bash runpod/train.sh frog --preset big --tokens 4e9     # Frog, Bee3 at 406M (needs: python3 -m oazy.tagus --run-tokens 4e9)
 #   bash runpod/train.sh coral --preset big --tokens 20e9 --micro 32   # Coral, 1B experts (needs: python3 -m oazy.tagus --run-tokens 20e9 --into tagus20)
-#   bash runpod/train.sh bee4 --preset big --tokens 6e9 --micro 32     # Bee4, 296M all attention, Coral's recipe (reads tagus20 too)
+#   bash runpod/train.sh bee4 --preset big --tokens 6e9 --micro 32     # Bee4, 198M all attention, Coral's recipe (reads tagus20 too)
 #   bash runpod/train.sh blackt --preset race --minutes 30 --micro 32 --name blackt-125m   # a Code Black race (codeblack/README.md)
 #   (--name X: the run, its tmux window and its log are called X, so several races of one model can live side by side)
 #

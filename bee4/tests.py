@@ -1,4 +1,4 @@
-"""Self-tests for Bee4: the size (296M, all attention, dense), RoPE and plain causal attention, growing, FP8's
+"""Self-tests for Bee4: the size (198M, all attention, dense), RoPE and plain causal attention, growing, FP8's
 choice of layers, Coral's recipe, a resume after a growth, and one whole (tiny) run end to end.
 
     python -m bee4.tests                 (CPU, ~1 min; without internet it uses stand-in tokenizers)
@@ -34,10 +34,10 @@ def main():
     # ---- the size and the body
     big = Bee4(Bee4Config())
     n = big.full_params()
-    check("about 300M parameters once grown, all at work", 290e6 < n < 305e6,
+    check("about 200M parameters once grown, all at work", 190e6 < n < 205e6,
           f"{n / 1e6:.1f}M ({(n - big.embed.weight.numel()) / 1e6:.0f}M without the word table), {big.layout()}")
-    check("20 layers, all attention, with RoPE (base 50,000); 2,048 windows, SmolLM2's pieces",
-          big.cfg.kinds() == ["A"] * 20 and big.cfg.rope == 1 and big.cfg.rope_base == 50000 and big.ctx_at(0) == 2048
+    check("12 layers, all attention, with RoPE (base 50,000); 2,048 windows, SmolLM2's pieces",
+          big.cfg.kinds() == ["A"] * 12 and big.cfg.rope == 1 and big.cfg.rope_base == 50000 and big.ctx_at(0) == 2048
           and big.cfg.doc_mask == 1 and big.cfg.tokenizer == "smollm2" and tok.eot_id("smollm2") == 0)
     check("no Memtrix and no experts: one MLP of 2,816 per layer", not any(hasattr(b, "mem") or hasattr(b, "moe")
           for b in big.blocks) and big.blocks[0].mlp is not None)
@@ -45,13 +45,13 @@ def main():
     _r, _m, _s = big.doc_info(_x)
     check("attention runs plain causal on the fused kernel (attn_docs=0); the mentor still reads each document alone",
           big.cfg.attn_docs == 0 and big.attn_mask(_x, _r, _m) is None and _m is not None and not bool(_m[0, 0, 3, 1]) and _s is None)
-    check("it starts 8 layers deep and grows to 12 at 10%, 20 at 25% (Coral's plan)", big.depth == 8
-          and big.depth_at(0.099) == 8 and big.depth_at(0.1) == 12 and big.depth_at(0.25) == 20)
+    check("it starts 6 layers deep and grows to 9 at 10%, 12 at 25% (Coral's timing)", big.depth == 6
+          and big.depth_at(0.099) == 6 and big.depth_at(0.1) == 9 and big.depth_at(0.25) == 12)
     from oazy import fp8
     picked = [f for f, mod in big.named_modules() if fp8.keep(mod, f)]
     check("FP8 goes to attention and the MLP of every layer, not the word table",
-          len(picked) == 8 * len([f for f in picked if f.startswith("blocks.0.")]) and not any(f.startswith("embed") for f in picked),
-          f"{len(picked)} layers at depth 8")
+          len(picked) == 6 * len([f for f in picked if f.startswith("blocks.0.")]) and not any(f.startswith("embed") for f in picked),
+          f"{len(picked)} layers at depth 6")
     del big
 
     # ---- reading = training; growing
