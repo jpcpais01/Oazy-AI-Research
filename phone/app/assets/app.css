@@ -58,13 +58,13 @@ code { font: 12.5px var(--mono); color: #d9d4ff; background: rgba(255, 255, 255,
 .bar { position: fixed; top: 0; left: 0; right: 0; height: var(--top); z-index: 5; display: flex; align-items: center; gap: 10px; padding: 0 16px;
   background: linear-gradient(180deg, rgba(5, 5, 7, .92), rgba(5, 5, 7, .55) 70%, rgba(5, 5, 7, 0)); }
 .mark { display: flex; align-items: center; gap: 9px; margin-right: auto; min-width: 0; }
-.mark img { width: 30px; height: 30px; display: block; filter: drop-shadow(0 0 8px rgba(143, 123, 255, .25)); }
+.mark img { width: 34px; height: 34px; display: block; object-fit: contain; margin-left: 2px; filter: drop-shadow(0 0 10px rgba(143, 123, 255, .3)) drop-shadow(0 2px 6px rgba(0, 0, 0, .5)); }
 .word { font: 800 17px/1 var(--display); letter-spacing: .2em; color: #fff; }
 .word small { display: block; font: 500 8.5px/1 var(--mono); letter-spacing: .24em; color: var(--muted); margin-top: 5px; }
 .pill, .round { display: inline-flex; align-items: center; gap: 8px; height: 36px; border-radius: 999px; padding: 0 12px 0 11px;
   background: var(--glass), rgba(8, 8, 12, .45); border: 1px solid var(--glass-edge); box-shadow: var(--glass-shadow);
   backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); font: 500 10.5px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ink); min-width: 0; }
-.pill span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 30vw; }
+.pill span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 42vw; }
 .pill svg { width: 12px; height: 12px; color: var(--muted); flex: none; }
 .round { width: 36px; padding: 0; justify-content: center; }
 .round svg { width: 17px; height: 17px; fill: var(--ink-2); }
