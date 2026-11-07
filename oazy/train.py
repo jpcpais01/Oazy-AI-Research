@@ -60,7 +60,8 @@ RECIPE["coral"] = dict(RECIPE["frog"], mentor_weight=0.25, mentor_until=0.3, men
 # João, Nov 7: the fastest of the two he weighed, 1.7B was the other) teaches 1 pass in 4 at the start, 1 in 10 from 30%
 # on, fading to none over the last 10% (about 12% of the passes over the run). Planned for 10,000M tokens.
 # 524k-token steps after the ramp (the presets' batch_bee4): at 200M and 10,000M tokens, about 19,000 steps.
-RECIPE["bee4"] = dict(RECIPE["coral"], mentor_weight=0.25, mentor_until=0.3, mentor_floor=0.1, mentor_off=0.1)
+RECIPE["bee4"] = dict(RECIPE["coral"], mentor_weight=0.25, mentor_until=0.3, mentor_floor=0.1, mentor_off=0.1,
+                      decay=0.3)   # João, Nov 7: the cool-down (learning-rate fall + cool-down text) over the last 30%, from 70%
 # Code Black (codeblack/README.md) and Black-T, the transformer it races: the same recipe for both, so a race measures
 # the architecture. Bee3's polish (Muon weight decay, a batch ramp, the square-root cool-down) and FP8, no mentor. Races
 # run on the clock: --preset race --minutes 30 (every schedule follows the training time instead of the token count).
@@ -84,7 +85,7 @@ def summary(info, run_dir, resumed=None):
     bt = info.get("batch_tokens") or 0
     sched = info.get("schedule", "")
     lr = f"{info['lr']:.1e}" + (f" · Muon {info['muon_lr']:.2g}" if "muon_lr" in info else "") + f" · {sched}" \
-        + (f" ({info['decay_shape']} cool-down)" if info.get("decay_shape") else "")
+        + (f" ({info['decay_shape']} cool-down over the last {info.get('decay', 0.2):.0%})" if info.get("decay_shape") else "")
     mentor = info.get("mentor")
     if mentor and mentor != "none":
         how = "a share of the sequences" if info.get("mentor_share") else "mixed into every word"
@@ -633,6 +634,7 @@ def main():
     ap.add_argument("--muon-wd", type=float, default=None, help="weight decay on the Muon grids, AdamW's scale (0; Bee3 0.1)")
     ap.add_argument("--batch-ramp", default=None, help="tokens per step at the start and when the full batch is reached, "
                     "e.g. 65536:0.1 (Bee3's default); 'none' = full batch from the start")
+    ap.add_argument("--decay", type=float, default=None, help="the WSD cool-down's share of the run (0.2 = the last 20%%; Bee4 0.3)")
     ap.add_argument("--decay-shape", choices=["linear", "sqrt"], default=None, help="the WSD fall: linear, or sqrt (Bee3)")
     ap.add_argument("--loss", choices=["fused", "plain"], default="fused",
                     help="Bee's loss in slices (fused, default) or on the full 32-bit scores (plain; slower, same numbers)")
@@ -675,6 +677,7 @@ def main():
     muon_wd = recipe.get("muon_wd", 0.0) if args.muon_wd is None else args.muon_wd
     batch_ramp = recipe.get("batch_ramp") if args.batch_ramp is None else (None if args.batch_ramp == "none" else args.batch_ramp)
     decay_shape = args.decay_shape or recipe.get("decay_shape", "linear")
+    decay = args.decay or recipe.get("decay", 0.2)       # the cool-down's share of the run (WSD; the cool-down text starts with it)
     mentor_floor = recipe.get("mentor_floor", 0.0) if args.mentor_floor is None else args.mentor_floor
     mentor_off = recipe.get("mentor_off", 0.0) if args.mentor_off is None else args.mentor_off
     mentor_share = bool(recipe.get("mentor_share", 0) if args.mentor_share is None else args.mentor_share)
@@ -747,13 +750,17 @@ def main():
         raise SystemExit(f"the mentor {mentor_name} cuts text differently from {NICE[args.model]} ({tk} tokenizer): "
                          f"use a {'smollm2-*' if tk == 'smollm2' else 'gpt2-*'} mentor or --mentor none")
     schedule = args.schedule or ("wsd" if args.model in BEES else "cos")
-    lr_fn = (lambda pr, st, base, wu: lr_wsd(pr, st, base, wu, shape=decay_shape)) if schedule == "wsd" else lr_at
+    lr_fn = (lambda pr, st, base, wu: lr_wsd(pr, st, base, wu, decay=decay, shape=decay_shape)) if schedule == "wsd" else lr_at
     if args.model in BEES:
         from .mix import Mix, DEFAULT_MIX, resolve_mix, source_path
         from bee.model import ctx_plan
+        mix_default = args.mix is None
         if args.mix is None:      # SmolLM2-tokenizer Bees read Tagus when it is there (oazy/tagus.py)
             args.mix = "tagus" if tk == "smollm2" and (data / "cosmo" / "train.bin").exists() else "v1"
         args.mix = resolve_mix(args.mix)
+        if mix_default and decay != 0.2:          # the cool-down text starts where the learning rate starts to fall
+            from .mix import with_cooldown
+            args.mix = with_cooldown(args.mix, 1 - decay)
         train = Mix(data, args.mix, T, micro, seed=args.seed,
                     lengths=[t for _, t in ctx_plan(cfg)], log=say)
         xval = {n: val_set(source_path(data, n, "val"), Tv, 32) for n in train.src
@@ -814,7 +821,7 @@ def main():
                 if abs(was - now) > 1e-6:
                     raise SystemExit(f"with {total / 1e9:.2f}B tokens this run would already be in its cool-down "
                                      f"(learning rate x{now:.2f} instead of x{was:.2f}). Pick --tokens of at least "
-                                     f"{tokens / 0.8 / 1e9:.2f}e9, or keep the old length.")
+                                     f"{tokens / (1 - decay) / 1e9:.2f}e9, or keep the old length.")
             else:
                 say("[length] note: with the cosine schedule the learning rate moves to the new curve at once")
     elif args.fresh:
@@ -830,7 +837,7 @@ def main():
         - model.embed.weight.numel(), "optimizer": opt_kind, "mentor": mentor_name, "batch_tokens": batch_tokens, "micro": micro,
         "context": cfg.max_len if growing_ctx else T, "lr": lr, "schedule": schedule,
         **({"muon_lr": muon_lr, "muon_wd": muon_wd} if opt_kind == "muon" else {}),
-        **({"decay_shape": decay_shape} if schedule == "wsd" else {}), **({"batch_ramp": batch_ramp} if batch_ramp else {}),
+        **({"decay_shape": decay_shape, "decay": decay} if schedule == "wsd" else {}), **({"batch_ramp": batch_ramp} if batch_ramp else {}),
         **({"mentor_weight": args.mentor_weight, "mentor_until": args.mentor_until, "mentor_floor": mentor_floor,
             "mentor_off": mentor_off, "mentor_share": mentor_share} if mentor_name != "none" else {}),
         **({"fp8": fp8} if want_fp8 else {}), **({"grow": cfg.grow} if hasattr(model, "grow_to") and hasattr(cfg, "grow") else {}),

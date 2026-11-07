@@ -49,6 +49,11 @@ SOURCES = {"fwe": "", "dclm": "dclm", "chat": "chat",          # name -> sub-fol
            "cosmo": "cosmo", "wiki": "wiki", "math": "math", "code": "code"}
 
 
+def with_cooldown(mix: str, start: float) -> str:
+    """The same mix with its cool-down text (the stage at 0.8) starting at `start` instead (Bee4: 0.7)."""
+    return ";".join(f"{part.rsplit('@', 1)[0]}@{start:g}" if part.rsplit("@", 1)[-1] == "0.8" else part for part in mix.split(";"))
+
+
 def resolve_mix(text):
     """A mix by name ("tagus", "v1") or written out."""
     return MIXES.get(text, text) if text else text
