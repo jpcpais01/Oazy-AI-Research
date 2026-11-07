@@ -146,7 +146,9 @@ h1 em { font-family: var(--serif); font-style: italic; font-weight: 400; font-si
 /* ------------------------------------------------------------------ the composer */
 .composer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; padding: 26px 12px 12px;
   background: linear-gradient(0deg, rgba(5, 5, 7, .96) 30%, rgba(5, 5, 7, .7) 70%, rgba(5, 5, 7, 0)); }
-.modes { position: relative; display: inline-flex; gap: 2px; padding: 3px; margin: 0 0 10px 4px; border-radius: 999px;
+.moderow { margin: 2px 0 18px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+.moderow .hint { margin: 8px 0 0; }
+.modes { position: relative; display: inline-flex; gap: 2px; padding: 3px; margin: 0; border-radius: 999px;
   background: var(--glass), rgba(8, 8, 12, .35); border: 1px solid var(--glass-edge); box-shadow: var(--glass-shadow); }
 .modes button { position: relative; z-index: 1; padding: 6px 14px; border-radius: 999px; font: 500 10px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); transition: color .25s; }
 .modes button.on { color: #fff; }

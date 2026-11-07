@@ -61,11 +61,6 @@
 </main>
 
 <footer class="composer">
-  <div class="modes" role="tablist">
-    <i class="slide"></i>
-    <button role="tab" data-mode="chat" class="on">Chat</button>
-    <button role="tab" data-mode="write">Write</button>
-  </div>
   <div class="inputrow glass">
     <textarea id="input" rows="1" placeholder="Ask anything" enterkeyhint="send" autocapitalize="sentences"></textarea>
     <button class="send" id="send" aria-label="Send">
@@ -98,6 +93,16 @@
 <section class="sheet glass" id="settings" hidden>
   <div class="grip"></div>
   <div class="sheethead"><h3>Settings</h3></div>
+  <div class="moderow">
+    <div class="tline"><span class="mono">MODE</span>
+      <div class="modes" role="tablist">
+        <i class="slide"></i>
+        <button role="tab" data-mode="chat" class="on">Chat</button>
+        <button role="tab" data-mode="write">Write</button>
+      </div>
+    </div>
+    <p class="hint" id="modeHint">Chat answers you. Write carries on any text you start.</p>
+  </div>
   <div class="sliders" id="sliders"></div>
   <div class="check">
     <div class="tline"><span class="mono">CHECK THE MODEL</span><button class="btn small" id="checkBtn">Run check</button></div>
