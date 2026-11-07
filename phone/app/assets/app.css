@@ -117,7 +117,8 @@ h1 em { font-family: var(--serif); font-style: italic; font-weight: 400; font-si
 
 .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 0; }
 .chip { padding: 9px 14px; border-radius: 999px; font-size: 13.5px; color: var(--ink-2); text-align: left;
-  background: rgba(255, 255, 255, .03); border: 1px solid rgba(255, 255, 255, .09); transition: color .2s, border-color .2s, background .2s; }
+  background: rgba(255, 255, 255, .03); border: 1px solid rgba(255, 255, 255, .09); transition: color .2s, border-color .2s, background .2s, opacity .35s, filter .35s; }
+.chip.fade { opacity: 0; filter: blur(4px); }
 .chip:active { color: #fff; border-color: rgba(255, 255, 255, .25); background: rgba(255, 255, 255, .07); }
 
 /* ------------------------------------------------------------------ the conversation */
