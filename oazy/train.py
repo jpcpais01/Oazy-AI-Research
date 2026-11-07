@@ -931,8 +931,8 @@ def main():
             run.log("metrics.jsonl", {"kind": "hellaswag", **base, **r, "full": final, "sample": "spread"})
             latest["hellaswag" + ("_full" if final else "")] = r["acc_norm"]
             latest["hellaswag_char" + ("_full" if final else "")] = r["acc_char"]
-            say(f"[hellaswag] {r['acc_norm'] * 100:.2f}% on {r['n']} examples "
-                f"({r['acc_char'] * 100:.2f}% scored per letter)", flush=True)
+            say(f"[hellaswag] {r['acc_char'] * 100:.2f}% per letter on {r['n']} examples "
+                f"({r['acc_norm'] * 100:.2f}% per token)", flush=True)
             nxt["hs"] += p["hs_every"]
         if (root / "evals").exists() and (final or tokens >= nxt["evals"]):
             # ARC-Easy, PIQA, LAMBADA (oazy/evals.py): a quick check (evals_quick questions of each, spread over the

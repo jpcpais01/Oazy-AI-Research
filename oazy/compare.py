@@ -58,7 +58,7 @@ def main():
         r = hellaswag.evaluate(model, hs, device)
         run.log("metrics.jsonl", {"kind": "hellaswag", **base, **r, "full": True})
         latest["hellaswag_full"], latest["hellaswag_char_full"] = r["acc_norm"], r["acc_char"]
-        print(f"HellaSwag {r['acc_norm'] * 100:.2f}% ({r['n']} questions; {r['acc_char'] * 100:.2f}% scored per letter)")
+        print(f"HellaSwag {r['acc_char'] * 100:.2f}% per letter ({r['n']} questions; {r['acc_norm'] * 100:.2f}% per token)")
     run.status({**info, "state": "done", "latest": latest, "updated": time.time()})
     print(f"done in {time.time() - t0:.0f} s -> {run.dir}")
 

@@ -163,10 +163,12 @@
       <div class="chart"><canvas id="loss" style="height:300px"></canvas><div class="tip" id="lossTip"></div></div>
     </div>
     <div class="card span5">
-      <div class="cardhead"><div class="titles"><h2>HellaSwag</h2><div class="sub">Picking the sensible ending of a scene, out of 4. Higher is better.</div></div><div class="tools"><div class="seg hz" title="Stretch the forecast: what each run would reach had it been planned this long"><button data-h="0" class="on">planned end</button><button data-h="1e11">100B</button><button data-h="1e12">1T</button></div></div></div>
+      <div class="cardhead"><div class="titles"><h2>HellaSwag</h2><div class="sub">Picking the sensible ending of a scene, out of 4, scored per letter. Higher is better.</div></div><div class="tools"><div class="seg hz" title="Stretch the forecast: what each run would reach had it been planned this long"><button data-h="0" class="on">planned end</button><button data-h="1e11">100B</button><button data-h="1e12">1T</button></div></div></div>
       <details class="why"><summary>What is HellaSwag?</summary><div class="body">
         <p>A standard test of common sense: "A woman is outside with a bucket and a dog. The dog is running around trying to avoid a bath. She…" followed by four endings, three of them silly.</p>
-        <p>The model picks the ending it finds least surprising. Guessing gives <b>25%</b>. OpenAI's GPT-2 small scores <b>29.6%</b> this way: that is the line to beat. During training a quick check uses 1,000 questions spread over the whole set; the final score uses all 10,042. Older runs took the first 1,000 instead, which are easier and read about 5 points too high, so those points are hidden: for such a run only the final score is drawn.</p>
+        <p>The model picks the ending it finds least surprising. Guessing gives <b>25%</b>. OpenAI's GPT-2 small scores <b>about 31.1%</b> this way: that is the line to beat.</p>
+        <p><b>Per letter.</b> A long ending piles up more surprise than a short one just by being long, so each ending's total surprise is divided by its number of letters before the model picks. This is how published results for small models are scored (lm-evaluation-harness calls it acc_norm; the SmolLM2 numbers are this kind), and it is fair across tokenizers, because letters are the same for every model. Every HellaSwag number on this page is this score. Checks made before Nov 5 only had a score per token, so they are left out until the run is re-tested (<span class="kbd">python3 -m oazy.rescore</span>).</p>
+        <p> During training a quick check uses 1,000 questions spread over the whole set; the final score uses all 10,042. Older runs took the first 1,000 instead, which are easier and read about 5 points too high, so those points are hidden: for such a run only the final score is drawn.</p>
       </div></details>
       <div class="legend" id="hsLegend" style="margin-bottom:10px"></div>
       <div class="chart"><canvas id="hs" style="height:300px"></canvas><div class="tip" id="hsTip"></div></div>
@@ -368,7 +370,21 @@ const VIS = () => RUNS.filter((r) => shown(r.name));
 // a run with Memtrix memory layers (Memtrix, Tide, Ember, the Bees, Frog, a hybrid Coral), as opposed to all attention
 const hasMemtrix = (r) => { const cf = r.config || {}; return cf.layout ? /[1-9]\d* memory/.test(cf.layout) : !!cf.memory_numbers; };
 const showsKind = (k) => RUNS.some((r) => kindOf(r) === k && full(r.name));    // its own cards (drafts, rounds, inside…)
-const HS_GPT2 = 0.2955;
+// HellaSwag on this page is always the score "per letter" (acc_char in the logs: an ending's total surprise divided by
+// its number of letters; lm-evaluation-harness and the SmolLM2 paper call it acc_norm). João's choice, Nov 7. The older
+// per-token score (the logs' acc_norm) is kept as acc_tok. Checks from before Nov 5, 23:12 have no per-letter score and are
+// left out; `python3 -m oazy.rescore` re-tests those runs from their checkpoints.
+const HS_GPT2 = 0.3114;    // OpenAI GPT-2 124M per letter, lm-evaluation-harness's published figure; the pod's own measurement (openai-gpt2 run) wins when it has one
+function perLetter(metrics) {
+  return metrics.filter((x) => x.kind !== "hellaswag" || x.acc_char != null)
+    .map((x) => x.kind === "hellaswag" ? { ...x, acc_tok: x.acc_norm, acc_norm: x.acc_char } : x);
+}
+function perLetterLatest(L) {
+  if (!L) return;
+  L.hellaswag_tok = L.hellaswag; L.hellaswag_tok_full = L.hellaswag_full;
+  L.hellaswag = L.hellaswag_char; L.hellaswag_full = L.hellaswag_char_full;
+}
+const gpt2HS = () => lastOf("openai-gpt2", "hellaswag")?.acc_norm ?? HS_GPT2;
 // HellaSwag points worth drawing: full scores, and quick checks on the evenly spread sample.
 // Runs before Nov 5 took the first 1,000 questions (easier, ~5 points too high); those are hidden.
 const hsOK = (x) => x.kind === "hellaswag" && (x.full || x.sample === "spread" || x.n < 1000);
@@ -583,12 +599,12 @@ function scoreboard() {
       verdictL += br + (d < 0 ? `<span class="win">${nm} is ahead of ${target[0]} by ${(-d).toFixed(3)}</span>` : `<span class="lose">${nm} is ${d.toFixed(3)} behind ${target[0]}</span>`);
     }
     if (hs[me] != null) {
-      const d = hs[me] - HS_GPT2, bh = verdictH ? "<br>" : "";
-      verdictH += bh + (d > 0 ? `<span class="win">${nm} beats GPT-2's 29.6% by ${(d * 100).toFixed(1)} points</span>` : `<span class="lose">${nm}: ${(-d * 100).toFixed(1)} points below GPT-2's 29.6%</span>`);
+      const g = gpt2HS(), d = hs[me] - g, bh = verdictH ? "<br>" : "";
+      verdictH += bh + (d > 0 ? `<span class="win">${nm} beats GPT-2's ${pct(g)} by ${(d * 100).toFixed(1)} points</span>` : `<span class="lose">${nm}: ${(-d * 100).toFixed(1)} points below GPT-2's ${pct(g)}</span>`);
     }
   }
   const hsRows = Object.entries(hs);
-  if (!("openai-gpt2" in hs)) hsRows.push(["openai-gpt2", HS_GPT2]);
+  if (!("openai-gpt2" in hs)) hsRows.push(["openai-gpt2", gpt2HS()]);
   // three more standard tests (oazy/evals.py), once a run has them
   const EV = [["arc_easy", "ARC-Easy", "science questions, 4 answers · guessing 25%"], ["piqa", "PIQA", "physical common sense, 2 answers · guessing 50%"],
     ["lambada", "LAMBADA", "guess the last word of a passage · long-range memory"]];
@@ -618,7 +634,7 @@ function scoreboard() {
       <div class="note">Same held-out FineWeb-Edu text for every model.</div></div>
     <div class="card score"><div class="t">HellaSwag (higher is better)</div><div class="big">${verdictH || "&nbsp;"}</div>
       ${hsRows.map(([n, v]) => row(n, v, (v - 0.2) / 0.2, pct)).join("")}
-      <div class="note">Random guessing is 25%. OpenAI GPT-2's 29.6% is the published-style score (nanoGPT scoring).</div></div>
+      <div class="note">Scored per letter, the way published small-model results are (lm-evaluation-harness's acc_norm). Random guessing is 25%; OpenAI GPT-2 small gets ${pct(gpt2HS())}.</div></div>
     <div class="card score"><div class="t">Size</div><div class="big">${sized.map((r) => `${nameOf(r.name)} ${(r.config.params / 1e6).toFixed(0)}M` + (r.config.params_active && r.config.params_active < r.config.params ? ` <small>(${(r.config.params_active / 1e6).toFixed(0)}M at work per word)</small>` : "")).join(" · ")}</div>
       ${sized.map((r) => row(r.name, r.config.params, r.config.params / pmax, (v) => (v / 1e6).toFixed(0) + "M")).join("")}
       <div class="note">${sizeNote}</div></div>`;
@@ -799,7 +815,8 @@ function drawLearning() {
       anyHsFore = true;
     }
     leg.push([nameOf(r.name) + " · training", col]); if (evS.points.length) leg.push([nameOf(r.name) + " · held-out", hcol]);
-    hleg.push([nameOf(r.name), col]);
+    if (hs.length) hleg.push([nameOf(r.name), col]);
+    else if (m.some((x) => x.kind === "eval")) hleg.push([nameOf(r.name) + " (not scored per letter yet)", col]);
   }
   // reference lines span the x range
   const xs = series.flatMap((s) => s.points.map((p) => p[0]));
@@ -807,12 +824,12 @@ function drawLearning() {
   for (const s of series) if (s.hline != null) s.points = [[x0, s.hline], [x1, s.hline]];
   const hx = hsS.flatMap((s) => s.points.map((p) => p[0]));
   const h0 = hx.length ? Math.min(...hx) : 0, h1 = hx.length ? Math.max(...hx) : 1;
-  const hsRef = DATA["openai-gpt2"] ? (lastOf("openai-gpt2", "hellaswag")?.acc_norm ?? HS_GPT2) : HS_GPT2;
+  const hsRef = gpt2HS();
   if (hx.length) {
     hsS.push({ name: "OpenAI GPT-2", color: C.ref, dash: [6, 5], width: 1.5, points: [[h0, hsRef], [h1, hsRef]] });
     hsS.push({ name: "guessing", color: C.muted, dash: [2, 4], width: 1, points: [[h0, 0.25], [h1, 0.25]] });
   }
-  hleg.push(["OpenAI GPT-2 (29.6%)", C.ref, true], ["guessing (25%)", C.muted, true]);
+  hleg.push([`OpenAI GPT-2 (${pct(hsRef)})`, C.ref, true], ["guessing (25%)", C.muted, true]);
   const hzName = HORIZON ? "if planned for " + fmtHz(HORIZON) : null;
   if (anyFore) leg.push([hzName || "forecast to the planned end", C.muted, true]);
   if (anyHsFore) hleg.push([hzName || "forecast", C.muted, true]);
@@ -1053,7 +1070,8 @@ async function refresh() {
     RUNS.sort((a, b) => ORDER.indexOf(a.name) - ORDER.indexOf(b.name));
     for (const r of RUNS) {
       const [metrics, samples] = await Promise.all([getJSON(`api/run/${r.name}/metrics`), getJSON(`api/run/${r.name}/samples`)]);
-      DATA[r.name] = { metrics, samples };
+      DATA[r.name] = { metrics: perLetter(metrics), samples };
+      perLetterLatest(r.status?.latest);
     }
     draw();
     const hasT = RUNS.some((r) => r.name === "tide") && full("tide"), hasE = RUNS.some((r) => r.name === "memtrix") && full("memtrix");

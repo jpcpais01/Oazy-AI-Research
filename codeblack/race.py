@@ -27,12 +27,12 @@ def load(folder: Path):
     cfg = json.loads((folder / "config.json").read_text())
     recs = [json.loads(line) for line in (folder / "metrics.jsonl").read_text().splitlines() if line.strip()]
     evals = sorted(((r["elapsed"] / 60, r["val_loss"], r["tokens"]) for r in recs if r["kind"] == "eval"), key=lambda e: e[0])
-    hs = [r for r in recs if r["kind"] == "hellaswag"]
+    hs = [r for r in recs if r["kind"] == "hellaswag"]          # scored per letter (acc_char) like the dashboard
     full = [r for r in hs if r.get("full")]
     train = [r for r in recs if r["kind"] == "train"]
     return {"name": folder.name, "model": cfg.get("model"), "params": cfg.get("params"), "layout": cfg.get("layout"),
             "minutes": cfg.get("minutes"), "gpu": cfg.get("gpu"), "evals": evals,
-            "hellaswag": (full or hs or [{}])[-1].get("acc_norm"), "hellaswag_full": bool(full),
+            "hellaswag": (lambda h: h.get("acc_char", h.get("acc_norm")))((full or hs or [{}])[-1]), "hellaswag_full": bool(full),
             "tokens": train[-1]["tokens"] if train else 0, "elapsed": train[-1]["elapsed"] / 60 if train else 0}
 
 
