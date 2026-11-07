@@ -26,7 +26,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", default="cpu")
     dev = torch.device(ap.parse_args().device)
-    term.tests_start("Bee4", dev)
+    term.tests_start("Bee4-200M", dev)
     torch.manual_seed(0)
     from bee4.model import Bee4, Bee4Config
     from oazy import tok
@@ -97,7 +97,7 @@ def main():
     pb = PRESETS["big"]
     check("big preset: 524k-token steps, learning rates 1.8e-3 / Muon 0.03", pb["batch_bee4"] == 524288
           and pb["lr_bee4"] == 1.8e-3 and pb["muon_lr_bee4"] == 0.03)
-    check("SmolLM2-1.7B mentor (same pieces), raised the Bee way", MENTOR["bee4"] == "smollm2-1.7b" and "bee4" in BEES and "bee4" in FAST)
+    check("SmolLM2-360M mentor, kept all run, raised the Bee way", MENTOR["bee4"] == "smollm2-360m" and "bee4" in BEES and "bee4" in FAST)
 
     # ---- one whole tiny run on stand-in text: Bee4's recipe end to end, then a resume
     from bee2.tests import stand_ins, fake_docs
@@ -185,7 +185,7 @@ def main():
                                                   "mlp_hidden": 512})).to(dev).train(), dev, print)
         term.info(f"FP8 on this GPU: {'yes' if used else 'no'}")
     tmp_ctx.cleanup()
-    term.tests_passed("Bee4")
+    term.tests_passed("Bee4-200M")
 
 
 if __name__ == "__main__":

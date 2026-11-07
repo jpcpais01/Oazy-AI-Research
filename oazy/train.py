@@ -35,12 +35,12 @@ from . import hellaswag, probes, term
 
 KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "black", "blackt", "gpt"]
 NICE = {"memtrix": "Memtrix", "tide": "Tide", "fern": "Fern", "ember": "Ember", "fern2": "Fern2", "fern3": "Fern3",
-        "bee": "Bee0.2B", "bee2": "Bee_v2_0.2B", "bee3": "Bee3", "frog": "Frog", "coral": "Coral", "bee4": "Bee4", "black": "Code Black",
+        "bee": "Bee0.2B", "bee2": "Bee_v2_0.2B", "bee3": "Bee3", "frog": "Frog", "coral": "Coral", "bee4": "Bee4-200M", "black": "Code Black",
         "blackt": "Black-T", "gpt": "GPT"}
 FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "black", "blackt")    # raised the fast way: Muon (and a mentor, where MENTOR names one)
 # default mentor (the others: gpt2-medium). Code Black and Black-T race without one, so the architectures are compared alone.
 MENTOR = {"bee": "gpt2-large", "bee2": "smollm2-360m", "bee3": "smollm2-360m", "frog": "smollm2-360m", "coral": "smollm2-360m",
-          "bee4": "smollm2-1.7b", "black": "none", "blackt": "none"}
+          "bee4": "smollm2-360m", "black": "none", "blackt": "none"}
 BEES = ("bee", "bee2", "bee3", "frog", "coral", "bee4", "black", "blackt")    # the text mix (Tagus), WSD, growing windows
 # Bee3's recipe (bee3/README.md): the mentor stays the whole run, weight decay on the Muon grids, a batch ramp,
 # a 1-minus-square-root cool-down, twice Bee2's learning rates (the presets' lr_bee3 / muon_lr_bee3)
@@ -56,10 +56,10 @@ RECIPE["frog"] = dict(RECIPE["bee3"], mentor_share=1, fp8=1)      # and FP8 matr
 RECIPE["coral"] = dict(RECIPE["frog"], mentor_weight=0.25, mentor_until=0.3, mentor_floor=0.0, mentor_off=0.0,
                        batch_ramp="262144:0.05", data_sub="tagus20")
 # Bee4 (bee4/README.md): Coral's recipe (growing depth, FP8, the batch ramp, Muon with weight decay, the square-root
-# cool-down, Tagus20) on a dense 198M all-attention body, with a stronger mentor kept on the WHOLE run (João, Nov 6: a
-# 200-300M student is close to SmolLM2-360M's size, so a bigger teacher): SmolLM2-1.7B (MENTOR) teaches 1 pass in 4 at the
-# start, 1 in 10 from 30% on, fading to none over the last 10% (about 12% of the passes over the run).
-# 524k-token steps after the ramp (the presets' batch_bee4): at 200M and 6,000M tokens, twice Coral's number of steps.
+# cool-down, Tagus20) on a dense 198M all-attention body, with the mentor kept on the WHOLE run: SmolLM2-360M (MENTOR;
+# João, Nov 7: the fastest of the two he weighed, 1.7B was the other) teaches 1 pass in 4 at the start, 1 in 10 from 30%
+# on, fading to none over the last 10% (about 12% of the passes over the run). Planned for 10,000M tokens.
+# 524k-token steps after the ramp (the presets' batch_bee4): at 200M and 10,000M tokens, about 19,000 steps.
 RECIPE["bee4"] = dict(RECIPE["coral"], mentor_weight=0.25, mentor_until=0.3, mentor_floor=0.1, mentor_off=0.1)
 # Code Black (codeblack/README.md) and Black-T, the transformer it races: the same recipe for both, so a race measures
 # the architecture. Bee3's polish (Muon weight decay, a batch ramp, the square-root cool-down) and FP8, no mentor. Races
