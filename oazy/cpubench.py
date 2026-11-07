@@ -3,6 +3,7 @@
     python3 -m oazy.cpubench                          # both models, 4 threads, float32, 128-word prompt, 128 new words
     python3 -m oazy.cpubench --threads 1 --dtype bf16
     python3 -m oazy.cpubench --models coral --coral-run runs/coral   # a trained checkpoint instead of random weights
+    python3 -m oazy.cpubench --models coral,bee4,coralmini,smollm2,smollm2-135m,gpt2  # the landing's speed chart
 
 Speed does not depend on what the weights have learned: a model with random weights and the same shapes does the
 same arithmetic and reads the same bytes per word, so Coral is timed with random weights unless --coral-run is given.
@@ -24,6 +25,15 @@ Measured Nov 7 2026 on a 4-core Xeon (Sapphire Rapids, 2.3 GHz), PyTorch 2.14 CP
   Coral   bf16            23.3 / 10.8                     472                  2.4 GB
   SmolLM2 bf16            20.8 /  8.9                    1291                  1.1 GB
 For reference, Coral in the phone engine (phone/engine, 8-bit, plain C build on x86): 45 / 13 tok/s writing, 1.2 GB.
+
+The landing's cost/speed/size chart, measured Nov 7 2026 on a 4-core Xeon @ 2.1 GHz, PyTorch 2.15 CPU, float32, 4 threads:
+                 writing tok/s   reading tok/s   weights (fp32)
+  Coral              24.7            343            3,955 MB
+  Bee4               41.0            688              756 MB
+  Coral Mini         47.4            918              757 MB
+  SmolLM2-360M       21.9            424            1,380 MB
+  SmolLM2-135M       40.7           1223              513 MB
+  GPT-2 small        62.4           1239              475 MB
 """
 from __future__ import annotations
 
@@ -40,6 +50,9 @@ import time
 SMOL = dict(vocab_size=49152, hidden_size=960, intermediate_size=2560, num_hidden_layers=32, num_attention_heads=15,
             num_key_value_heads=5, max_position_embeddings=8192, rope_theta=100000.0, rms_norm_eps=1e-5,
             tie_word_embeddings=True, hidden_act="silu")
+# SmolLM2-135M's shapes (HuggingFaceTB/SmolLM2-135M config.json)
+SMOL135 = dict(SMOL, hidden_size=576, intermediate_size=1536, num_hidden_layers=30, num_attention_heads=9,
+               num_key_value_heads=3)
 
 
 def prompt_ids(n):
@@ -76,6 +89,37 @@ def load_coral(run, dtype):
     return m, read, total
 
 
+def load_ours(name, run, dtype):
+    """Bee4 or Coral Mini, fully grown (12 layers), random weights unless a run folder is given."""
+    import torch
+    if name == "bee4":
+        from bee4.model import Bee4 as M, Bee4Config as C
+    else:
+        from coralmini.model import CoralMini as M, CoralMiniConfig as C
+    if run:
+        ck = torch.load(os.path.join(run, "ckpt.pt"), map_location="cpu", weights_only=False)
+        m = M(C.from_dict(ck["config"]))
+        m.load_state_dict(ck["model"])
+    else:
+        torch.manual_seed(0)
+        m = M(C(grow="12:0"))
+    m = m.to(dtype).eval()
+    return m, (lambda idx, st: m.read(idx, st)), sum(p.numel() for p in m.parameters())
+
+
+def load_hf(name, dtype):
+    """Published models from their exact configs, in Hugging Face's own code: SmolLM2-135M and GPT-2 small (124M)."""
+    import torch
+    from transformers import GPT2Config, GPT2LMHeadModel, LlamaConfig, LlamaForCausalLM
+    torch.manual_seed(0)
+    m = (GPT2LMHeadModel(GPT2Config()) if name == "gpt2" else LlamaForCausalLM(LlamaConfig(**SMOL135))).to(dtype).eval()
+
+    def read(idx, st):
+        o = m(input_ids=idx, past_key_values=st, use_cache=True)
+        return o.logits, o.past_key_values
+    return m, read, sum(p.numel() for p in m.parameters())
+
+
 def load_smol(dtype, path):
     import torch
     from transformers import AutoModelForCausalLM, LlamaConfig, LlamaForCausalLM
@@ -100,6 +144,10 @@ def bench_one(name, a):
     ids = prompt_ids(a.prompt)
     if name == "smollm2":
         m, read, total = load_smol(dtype, a.smol_path)
+    elif name in ("bee4", "coralmini"):
+        m, read, total = load_ours(name, a.coral_run, dtype)
+    elif name in ("smollm2-135m", "gpt2"):
+        m, read, total = load_hf(name, dtype)
     else:
         m, read, total = load_coral(a.coral_run, dtype)
     wbytes = sum(p.numel() * p.element_size() for p in m.parameters())
@@ -129,13 +177,13 @@ def bench_one(name, a):
 # ---------------------------------------------------------------------------------------------- the comparison
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--models", default="coral,smollm2", help="comma-separated: coral, smollm2")
+    p.add_argument("--models", default="coral,smollm2", help="comma-separated: coral, smollm2, bee4, coralmini, smollm2-135m, gpt2")
     p.add_argument("--threads", type=int, default=4)
     p.add_argument("--dtype", default="fp32", choices=["fp32", "bf16"])
     p.add_argument("--prompt", type=int, default=128, help="prompt length in tokens")
     p.add_argument("--new", type=int, default=128, help="new tokens to write")
     p.add_argument("--repeats", type=int, default=3)
-    p.add_argument("--coral-run", default="", help="a run folder with ckpt.pt (default: random weights)")
+    p.add_argument("--coral-run", default="", help="a run folder with ckpt.pt for coral/bee4/coralmini (default: random weights)")
     p.add_argument("--smol-path", default="", help="SmolLM2-360M's real weights (a Hugging Face id or folder; default: "
                    "random weights with its exact shapes)")
     p.add_argument("--json", default="", help="also append the results to this file, one JSON line each")
