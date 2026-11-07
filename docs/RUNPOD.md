@@ -161,8 +161,9 @@ Start it only when the GPU is free (not while Coral trains).
 cd /workspace/oazy && git pull
 python3 -m bee4.tests --device cuda                       # self-tests: compiled step, FP8 (~2 min)
 python3 -m oazy.evals --prepare                           # once: ARC-Easy, PIQA, LAMBADA (checked every 500M tokens, in full at the end)
-python3 -m oazy.profile --model bee4 --preset big --micro 32   # tokens/s with the mentor, memory (paste it in the thread)
-bash runpod/train.sh bee4 --preset big --tokens 10e9 --micro 32 # the run (~8-9 h on a B200); resumes if stopped
+python3 -m oazy.speedcheck --model bee4 --preset big         # ~15-20 min: tries FP8, cuDNN attention, micro 48/64, CUDA graphs;
+                                                          # keeps what is faster with the same loss, prints the train line to use
+bash runpod/train.sh bee4 --preset big --tokens 10e9 --micro 32 # the run (use the line speedcheck printed instead); resumes if stopped
 python3 -m oazy.sft --run bee4                            # afterwards: the chat fine-tune -> runs/bee4-chat
 python3 -m bee4.chat --run bee4-chat --port 8002          # chat
 ```

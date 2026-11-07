@@ -50,6 +50,19 @@ the same; growing depth makes the early run faster, the mentor costs about 12 ms
 
     python3 -m oazy.profile --model bee4 --preset big --micro 32
 
+### Speed switches (Nov 7)
+
+- **Short windows first**: 512 words for the first 15%, 1,024 until 30%, then 2,048 (`--set ctx=...`). The batch in
+  words stays the same, so each pass takes more, shorter windows. Held-out loss is always scored on 1,024 words.
+- **cuDNN attention** (`--set attn_backend=cudnn`): Blackwell's fastest attention kernel; same maths.
+- **Compile modes** (`--set compile_mode=max-autotune-no-cudagraphs` or `reduce-overhead` for CUDA graphs).
+- **FP8** (`--fp8 1`) and the **fused output layer + loss** (mentor KL included) were already there.
+- **Muon batched**: the Newton-Schulz steps of all same-shape weights run as one stacked product (exactly the same
+  update, far fewer GPU launches).
+- **`python3 -m oazy.speedcheck --model bee4 --preset big`** measures each switch at full depth, keeps it only if it is
+  at least 2% faster with the same loss and gradients, checks that the shallow early stages really are faster, times
+  the mentor and the optimizer, estimates the whole run, and prints the train line to use (~15-20 min on a B200).
+
 ## Run it
 
 See `docs/RUNPOD.md`, section "Bee4". It reads the same Tagus20 as Coral; nothing new to build.
@@ -58,6 +71,7 @@ See `docs/RUNPOD.md`, section "Bee4". It reads the same Tagus20 as Coral; nothin
 
 - `bee4/model.py`: `Bee4Config` (sizes, growing, the attention rule) and `Bee4` (Frog's growing body, all attention).
 - `oazy/train.py`: `RECIPE["bee4"]`, `MENTOR["bee4"]`, the presets' `batch_bee4` / `lr_bee4` / `muon_lr_bee4`.
+- `oazy/speedcheck.py`: the pre-run speed check (switches, parity, micro-batch, whole-run estimate).
 - `bee4/tests.py`: self-tests (size, attention rule, reading = training, word-by-word chat, growing, the recipe, a
   whole tiny run and its resume, and on the GPU the compiled step and FP8).
 - `bee4/chat.py`: the chat app. The phone app exports it too (`python3 -m phone.export --run bee4`).
