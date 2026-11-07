@@ -53,13 +53,13 @@
   table.scores th:first-child, table.scores td.who { text-align: left; padding-left: 0; }
   table.scores td.who { font-weight: 600; }
   table.scores td.who i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 9px; vertical-align: 1px; }
-  table.scores td.size { color: var(--text-2); } table.scores td.size small { color: var(--muted); }
+  table.scores td.size, table.scores td.cost { color: var(--text-2); } table.scores td.cost small { color: var(--muted); } table.scores td.size small { color: var(--muted); }
   table.scores td.top { color: var(--good); font-weight: 700; }
   table.scores td.na { color: var(--muted); }
   table.scores tr.ref td { color: var(--muted); font-style: italic; }
   table.scores sup { color: var(--muted); font-size: 9px; margin-left: 1px; }
   .score details.why { margin-top: 14px; }
-  @media (max-width: 600px) { table.scores td.size small { display: none; } table.scores { font-size: 13px; } }
+  @media (max-width: 600px) { table.scores td.size small, table.scores td.cost small { display: none; } table.scores { font-size: 13px; } }
   .win { color: var(--good); } .lose { color: var(--warn); }
   .fcwrap { overflow-x: auto; max-width: 100%; }
   table.fc { border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; width: 100%; margin-top: 4px; }
@@ -414,6 +414,16 @@ let SNAPRUN = "memtrix", TSNAPS = [], TSNAP = null, INSIDE = "tide", RUNS = [], 
 const fmtM = (v) => Math.round((v || 0) / 1e6).toLocaleString("en-US") + "M";
 const fmtL = (v) => v.toFixed(3);
 const pct = (v) => (v * 100).toFixed(1) + "%";
+// training cost: our runs' real GPU time at RunPod prices; published models from 6·N·T at 40% of a B200's bf16 peak
+const GPU_PRICE = [[/B300/i, 9], [/B200/i, 8], [/H200/i, 4], [/H100/i, 3], [/5090/i, 0.9], [/4090/i, 0.6]];
+const priceOf = (gpu) => (GPU_PRICE.find(([re]) => re.test(gpu || "")) || [null, 8])[1];
+function costOf(cf, st) {
+  if (cf.trained_tokens && cf.params) return { usd: 6 * cf.params * cf.trained_tokens / (0.4 * 2.25e15) / 3600 * 8, est: true };
+  if (!st.elapsed || !cf.gpu || cf.gpu === "cpu") return null;
+  const rate = priceOf(cf.gpu) / 3600, usd = st.elapsed * rate;
+  return ["running", "paused", "starting", "finishing"].includes(st.state) && st.eta_s != null ? { usd, atEnd: usd + st.eta_s * rate } : { usd };
+}
+const money = (v) => v >= 1000 ? "$" + (v >= 1e4 ? Math.round(v / 1000) : (v / 1000).toFixed(1)) + "k" : "$" + Math.round(v).toLocaleString("en-US");
 const fmtTime = (s) => s < 3600 ? Math.round(s / 60) + " min" : (s / 3600).toFixed(1) + " h";
 
 const charts = {
@@ -608,8 +618,8 @@ function scoreboard() {
   const rowOf = (n) => {
     const m = DATA[n]?.metrics || [], ev = lastOf(n, "evals"), e = lastOf(n, "eval");
     const full = m.filter((x) => x.kind === "hellaswag" && x.full).pop(), quick = m.filter(hsOK).pop(), h = full || quick;
-    const cf = runOf(n)?.config || {};
-    return { n, size: cf.params, active: cf.params_active && cf.params_active < cf.params ? cf.params_active : null,
+    const cf = runOf(n)?.config || {}, st = runOf(n)?.status || {};
+    return { n, size: cf.params, cost: costOf(cf, st), active: cf.params_active && cf.params_active < cf.params ? cf.params_active : null,
       val: e?.val_loss, hs: h?.acc_norm, hsQ: h && !h.full,
       arc_easy: ev?.arc_easy, piqa: ev?.piqa, lambada: ev?.lambada, evQ: ev && ev.full === false };
   };
@@ -624,6 +634,12 @@ function scoreboard() {
     ["piqa", "PIQA", "guessing 50%", 1, pct],
     ["lambada", "LAMBADA", "exact last word · guessing ~0%", 1, pct],
   ].filter(([k]) => rows.concat(refs).some((r) => r[k] != null));
+  const costCell = (r) => {
+    const c = r.cost; if (!c) return `<td class="na">–</td>`;
+    if (c.est) return `<td class="cost">~${money(c.usd)}<small> est.</small></td>`;
+    if (c.atEnd) return `<td class="cost">${money(c.usd)}<small> so far · ~${money(c.atEnd)} at the end</small></td>`;
+    return `<td class="cost">${money(c.usd)}</td>`;
+  };
   const best = {};                                  // the best of OUR models in each column
   for (const [k, , , dir] of COLS) {
     const vs = rows.map((r) => r[k]).filter((v) => v != null);
@@ -635,7 +651,7 @@ function scoreboard() {
   const big = (v) => v >= 1e9 ? (v / 1e9).toFixed(2) + "B" : (v / 1e6).toFixed(0) + "M";
   const sizeOf = (r) => r.size ? big(r.size) + (r.active ? `<small> · ${(r.active / 1e6).toFixed(0)}M at work</small>` : "") : "–";
   const tr = (r) => `<tr class="${r.ref ? "ref" : ""}"><td class="who"><i style="background:${r.n === "openai-gpt2" ? "var(--muted)" : colorOf(r.n)}"></i>${r.n === "openai-gpt2" ? "OpenAI GPT-2" : UI.escapeHtml(nameOf(r.n))}</td>`
-    + `<td class="size">${sizeOf(r)}</td>` + COLS.map(([k, , , , fmt]) => cell(r, k, fmt)).join("") + `</tr>`;
+    + `<td class="size">${sizeOf(r)}</td>` + costCell(r) + COLS.map(([k, , , , fmt]) => cell(r, k, fmt)).join("") + `</tr>`;
   // the headline: the leader on HellaSwag against GPT-2
   const lead = rows.filter((r) => r.hs != null).sort((a, b) => b.hs - a.hs)[0];
   const d = lead ? lead.hs - ref.hs : 0;
@@ -656,10 +672,10 @@ function scoreboard() {
   box.innerHTML = `<div class="card score">
       ${headline ? `<div class="big">${headline}</div>` : ""}
       <div class="fcwrap"><table class="scores">
-        <tr><th></th><th>Size</th>${COLS.map(([, t, h]) => `<th>${t}<span>${h}</span></th>`).join("")}</tr>
+        <tr><th></th><th>Size</th><th>Training cost<span>GPU rent</span></th>${COLS.map(([, t, h]) => `<th>${t}<span>${h}</span></th>`).join("")}</tr>
         ${rows.map(tr).join("")}${refs.concat(ref).sort((a, b) => (b.hs ?? 0) - (a.hs ?? 0)).map(tr).join("")}
       </table></div>
-      <p class="note">Held-out loss: next-word surprise on FineWeb-Edu text our models never trained on; shown for our models only (published models read other text, or maybe these very pages, so their loss isn't comparable). The tests: higher is better, green is our best in each column. Rows in italics are published models measured here with the same tests (toggle them in the model library). HellaSwag is scored per letter, like published small-model results.${anyQ ? " <sup>*</sup> A quick check on part of the questions, run during training; the whole test runs at the end." : ""}</p>
+      <p class="note">Held-out loss: next-word surprise on FineWeb-Edu text our models never trained on; shown for our models only (published models read other text, or maybe these very pages, so their loss isn't comparable). The tests: higher is better, green is our best in each column. Rows in italics are published models measured here with the same tests (toggle them in the model library). HellaSwag is scored per letter, like published small-model results. Training cost: ours is the run's GPU time at RunPod prices (B200 about $8 an hour), mentor included; published models are estimates (est.): 6 × parameters × tokens of arithmetic on B200s at 40% of their peak, the way labs plan runs.${anyQ ? " <sup>*</sup> A quick check on part of the questions, run during training; the whole test runs at the end." : ""}</p>
       ${srcHtml}
     </div>`;
 }
