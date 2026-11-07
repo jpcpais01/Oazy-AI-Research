@@ -490,6 +490,51 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
 @media (max-width: 820px) { .hs-top { grid-template-columns: 1fr; } .hs-top .cap { justify-self: start; } }
 @media (max-width: 520px) { .hs { padding: 22px 18px; } }
 
+/* ---------- cost · speed · size: one plane, two axes, and the size of each bead as the third ---------- */
+.tri { margin-top: 24px; scroll-margin-top: 90px; }
+@media (max-width: 520px) { .tri { padding: 22px 18px; } }
+.tri-plot { position: relative; margin-top: 26px; }
+.tri-plot svg { display: block; width: 100%; overflow: visible; }
+.tri-plot text { font-family: var(--mono); }
+.tri-plot .tk { font-size: 11px; fill: var(--muted); }
+.tri-plot .ax { font-size: 10.5px; letter-spacing: .1em; fill: var(--muted); text-transform: uppercase; }
+.tri-plot .nm { font: 500 13.5px var(--sans); fill: var(--ink); }
+.tri-plot .ref .nm { fill: var(--ink-2); }
+.tri-plot .sb { font-size: 11px; fill: var(--muted); }
+.tri-plot .aim { font: italic 400 19px "Instrument Serif", Georgia, serif; fill: rgba(236, 235, 243, .42); }
+.tri-plot .pt { cursor: default; outline: none; }
+.tri-plot .pt .ring { transition: stroke-width .25s; }
+.tri-plot .pt:hover .ring, .tri-plot .pt:focus-visible .ring, .tri-plot .pt.on .ring { stroke-width: 2.25; }
+.tri-plot .pt .grow { transform-box: fill-box; transform-origin: center; transition: transform 1.1s cubic-bezier(.2,.8,.2,1), opacity .8s; }
+.tri-plot.pre .pt .grow { transform: scale(.2); opacity: 0; }
+.tri-plot .lbl { transition: opacity .8s .3s; }
+.tri-plot.pre .lbl { opacity: 0; }
+.tri-tip { position: absolute; z-index: 2; pointer-events: none; min-width: 210px; max-width: 260px; padding: 12px 14px; border-radius: 12px;
+  background: rgba(12, 12, 18, .92); border: 1px solid rgba(255, 255, 255, .14); box-shadow: 0 18px 50px -20px rgba(0, 0, 0, .9), -0.75px 0 0 rgba(255, 95, 174, .25), 0.75px 0 0 rgba(79, 216, 255, .28);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); opacity: 0; transform: translateY(4px); transition: opacity .18s, transform .18s; }
+.tri-tip.show { opacity: 1; transform: none; }
+.tri-tip b { display: flex; align-items: center; gap: 8px; font: 600 14px/1.2 var(--sans); color: var(--ink); }
+.tri-tip b i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.tri-tip .k { display: block; margin: 3px 0 8px; font: 400 11px/1.4 var(--mono); color: var(--muted); }
+.tri-tip dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 12.5px; }
+.tri-tip dt { color: var(--muted); }
+.tri-tip dd { margin: 0; color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; }
+.tri-tip dd small { color: var(--muted); font-size: 11px; }
+.tri-key { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px 32px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.tri-key .sz { display: flex; align-items: center; gap: 14px; }
+.tri-key .sz svg { flex: none; }
+.tri-key .sz text { font: 400 10.5px var(--mono); fill: var(--muted); }
+.tri-key ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 22px; }
+.tri-key li { display: flex; align-items: center; gap: 8px; font: 400 11.5px/1.3 var(--mono); color: var(--muted); letter-spacing: .02em; }
+.tri-key li svg { flex: none; }
+.tri-foot { margin-top: 14px; font-size: 12.5px; line-height: 1.55; color: var(--muted); max-width: 92ch; }
+.tri details { margin-top: 12px; }
+.tri summary { cursor: pointer; width: max-content; font: 500 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-2); list-style: none; padding: 6px 0; }
+.tri summary::-webkit-details-marker { display: none; }
+.tri summary::after { content: " +"; color: var(--muted); }
+.tri details[open] summary::after { content: " \2212"; }
+.tri td small { color: var(--muted); font-size: 11.5px; }
+
 /* reveal: content is visible at rest; this only adds a gentle rise when it scrolls in */
 .rv { transition: transform .9s cubic-bezier(.2,.8,.2,1), opacity .9s; }
 .js .rv.pre { transform: translateY(18px); opacity: .35; }
@@ -644,6 +689,36 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
           <p class="cap">Each question is a scene with four possible endings; guessing gets 25%. Higher is better. Coral's is the full set, each ending scored per letter. Striped bars are placeholders, and Bee3's is a quick check on 1,000 of the questions from a run cut off at 45%.</p>
         </div>
         <div class="chart" id="chart" role="img" aria-label="HellaSwag accuracy: Coral_1B 45.3%, SmolLM2-135M 42.1%, Bee3_0.2B 29.6% (partial run, 1,000 questions), Bee_v2_0.2B 32.9%, Fern_0.2B 31.2% (placeholder), GPT-2 small 29.6%, random guessing 25%."></div>
+      </div>
+      <div class="panel glass tri rv" id="tradeoff">
+        <div class="hs-top">
+          <div>
+            <span class="label">Cost · speed · size</span>
+            <h3>What it took to train, and how fast it writes</h3>
+          </div>
+          <p class="cap">Across, what training cost, each step ten times the last. Up, how fast it writes on a plain 4-core CPU, all timed on one machine. Each bead is as large as the model's file.</p>
+        </div>
+        <div class="tri-plot pre" id="tri" role="img" aria-label="Training cost against CPU writing speed, with bead size for file size. Coral_1B: $114 measured, 24.7 words a second, 2.07 GB. Bee4-200M: about $50 when its run ends, still training, 41.0 words a second, 0.40 GB. GPT-2 small: about $18 estimated, 62.4 words a second, 0.25 GB. SmolLM2-135M: about $4,000 estimated, 40.7 words a second, 0.27 GB. SmolLM2-360M: about $21,000 estimated, 21.9 words a second, 0.72 GB.">
+          <div class="tri-tip" id="tri-tip" aria-hidden="true"></div>
+        </div>
+        <div class="tri-key" aria-hidden="true">
+          <div class="sz">
+            <svg width="132" height="44" viewBox="0 0 132 44" id="tri-sz"></svg>
+          </div>
+          <ul>
+            <li><svg width="14" height="14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--ink-2)" stroke-width="1.25"/></svg>measured</li>
+            <li><svg width="14" height="14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--ink-2)" stroke-width="1.25" stroke-dasharray="2.5 2"/></svg>cost estimated</li>
+            <li><svg width="14" height="14"><circle cx="7" cy="7" r="5.5" fill="rgba(236,235,243,.1)" stroke="var(--ink-2)" stroke-width="1.25"/></svg>grey · published models</li>
+          </ul>
+        </div>
+        <p class="tri-foot">Ours is the GPU rent we paid, about $8 an hour; Bee4 is still training, so its bead sits where its run ends. Published models are estimated from their size and the text they read, and likely low. Speed is plain PyTorch, one reply at a time; our phone engine is faster.</p>
+        <details>
+          <summary>As a table</summary>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>Model</th><th class="num">Training cost</th><th class="num">CPU words/s</th><th class="num">File</th><th class="num">Text read</th></tr></thead>
+            <tbody id="tri-tbl"></tbody>
+          </table></div>
+        </details>
       </div>
     </div>
   </section>
@@ -1308,6 +1383,136 @@ void main() {
       io.observe(chart);
     }
   }
+
+  // ---------- cost · speed · size ----------
+  // speed: python3 -m oazy.cpubench --models coral,bee4,smollm2,smollm2-135m,gpt2 (4-core Xeon, float32, Nov 7 2026)
+  // cost, ours: GPU rent (B200 ~$8/h, mentor included). Published: 6 x params x tokens at 40% of a B200's bf16 peak, $8/h.
+  (function () {
+    const box = document.getElementById('tri'), tip = document.getElementById('tri-tip');
+    if (!box) return;
+    const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+    const M = [
+      { id: 'coral', n: 'Coral_1B', kind: 'ours · next-token · mixture of experts', cost: 114, est: false, costNote: 'GPU rent, measured',
+        tps: 24.7, gb: 2.07, params: '1,037M · 211M per word', toks: '13B', col: css('--coral'), side: 'r', ps: 'r', short: 'Coral' },
+      { id: 'bee4', n: 'Bee4-200M', kind: 'ours · next-token · still training', cost: 50, est: true, costNote: 'when the run ends',
+        tps: 41.0, gb: 0.40, params: '198M', toks: '10B', col: '#ffcf6b', side: 'r', ps: 'r', short: 'Bee4' },
+      { id: 'gpt2', n: 'GPT-2 small', kind: 'OpenAI, 2019 · next-token', cost: 18, est: true, costNote: 'estimate', ref: true,
+        tps: 62.4, gb: 0.25, params: '124M', toks: '~10B', side: 'r', ps: 'r', short: 'GPT-2' },
+      { id: 's135', n: 'SmolLM2-135M', kind: 'Hugging Face, 2024 · next-token', cost: 4000, est: true, costNote: 'estimate', ref: true,
+        tps: 40.7, gb: 0.27, params: '135M', toks: '2,000B', side: 'l', ps: 't', short: 'SmolLM2-135M' },
+      { id: 's360', n: 'SmolLM2-360M', kind: 'Hugging Face, 2024 · next-token', cost: 21400, est: true, costNote: 'estimate', ref: true,
+        tps: 21.9, gb: 0.72, params: '362M', toks: '4,000B', side: 'l', ps: 't', short: 'SmolLM2-360M' },
+    ];
+    const REF = '#b4b3c4';
+    const money = v => v >= 1000 ? '$' + (v >= 1e4 ? Math.round(v / 1000) : (v / 1000).toFixed(1).replace(/\.0$/, '')) + 'k' : '$' + Math.round(v);
+    const X0 = Math.log10(8), X1 = Math.log10(60000), Y1 = 70;
+    const ns = 'http://www.w3.org/2000/svg';
+    let svg = null, live = false;
+
+    document.getElementById('tri-tbl').innerHTML = M.map(m =>
+      `<tr><td><span class="dot" style="background:${m.col || REF}"></span>${m.n}</td><td class="num">${m.est ? '~' : ''}${money(m.cost)} <small>${m.est ? (m.id === 'bee4' ? 'at the end' : 'est.') : 'paid'}</small></td>` +
+      `<td class="num">${m.tps.toFixed(1)}</td><td class="num">${m.gb.toFixed(2)} GB</td><td class="num">${m.toks} tokens</td></tr>`).join('');
+
+    // the size key: three nested beads, sharing the bottom line, like a stack of coins seen side-on
+    function sizeKey() {
+      const k = document.getElementById('tri-sz'), base = 40;
+      let h = '', x = 6;
+      [[0.25, '0.25'], [1, '1'], [2, '2 GB']].forEach(([gb, t]) => {
+        const r = 18 * Math.sqrt(gb / 2.07);           // the key is drawn at a fixed scale: 2.07 GB = 18px
+        h += `<circle cx="${x + r}" cy="${base - r}" r="${r}" fill="rgba(236,235,243,.05)" stroke="rgba(236,235,243,.45)" stroke-width="1"/>`;
+        h += `<text x="${x + 2 * r + 5}" y="${base - 1}">${t}</text>`;
+        x += 2 * r + (t.length * 6.5) + 14;
+      });
+      k.setAttribute('viewBox', `0 0 ${x} 44`); k.setAttribute('width', x); k.innerHTML = h;
+    }
+
+    function draw() {
+      const W = box.clientWidth; if (!W) return;
+      const phone = W < 560;
+      const H = phone ? 400 : Math.round(Math.max(360, Math.min(500, W * 0.5)));
+      const pl = phone ? 30 : 44, pr = phone ? 8 : 16, pt = 22, pb = 40;
+      const iw = W - pl - pr, ih = H - pt - pb;
+      const x = c => pl + (Math.log10(c) - X0) / (X1 - X0) * iw;
+      const y = t => pt + ih - t / Y1 * ih;
+      const R = Math.max(20, Math.min(42, W * 0.04));
+      const rad = gb => R * Math.sqrt(gb / 2.07);
+      let g = '';
+      // the corner every model wants to reach: little cost, quick writing
+      g += `<defs><radialGradient id="tri-aim"><stop offset="0" stop-color="#8f7bff" stop-opacity=".12"/><stop offset=".5" stop-color="#6f8cff" stop-opacity=".04"/><stop offset="1" stop-color="#4fd8ff" stop-opacity="0"/></radialGradient>`;
+      M.forEach(m => {
+        const c = m.col || REF;
+        g += `<radialGradient id="tri-b-${m.id}" cx=".36" cy=".3" r=".8"><stop offset="0" stop-color="#fff" stop-opacity="${m.ref ? .16 : .3}"/><stop offset=".35" stop-color="${c}" stop-opacity="${m.ref ? .12 : .3}"/><stop offset="1" stop-color="${c}" stop-opacity="${m.ref ? .03 : .07}"/></radialGradient>`;
+      });
+      g += `</defs>`;
+      g += `<circle cx="${x(28)}" cy="${y(52)}" r="${Math.min(iw * .4, ih * .75)}" fill="url(#tri-aim)"/>`;
+      if (!phone) g += `<text class="aim" x="${x(1000)}" y="${pt + 26}" text-anchor="middle">← cheap to train, quick to write</text>`;
+      // grid: decades of cost, steps of 20 words/s
+      [10, 100, 1000, 10000].forEach(c => {
+        const X = x(c);
+        g += `<line x1="${X}" x2="${X}" y1="${pt}" y2="${pt + ih}" stroke="rgba(255,255,255,.06)"/>`;
+        g += `<text class="tk" x="${X}" y="${pt + ih + 18}" text-anchor="middle">${money(c)}</text>`;
+      });
+      [0, 20, 40, 60].forEach(t => {
+        const Y = y(t);
+        g += `<line x1="${pl}" x2="${pl + iw}" y1="${Y}" y2="${Y}" stroke="rgba(255,255,255,${t ? .06 : .16})"/>`;
+        g += `<text class="tk" x="${pl - 8}" y="${Y + 4}" text-anchor="end">${t}</text>`;
+      });
+      g += `<text class="ax" x="${pl + iw}" y="${pt + ih + 34}" text-anchor="end">training cost →</text>`;
+      g += `<text class="ax" x="${pl - (phone ? 26 : 38)}" y="${pt - 9}">${phone ? '↑ words / s' : '↑ words a second, CPU'}</text>`;
+      // the beads: biggest first, so a small one is never hidden under a large one
+      [...M].sort((a, b) => b.gb - a.gb).forEach(m => {
+        const X = x(m.cost), Y = y(m.tps), r = rad(m.gb), c = m.col || REF;
+        const side = phone ? m.ps : m.side;
+        let lx = side === 'r' ? X + r + 9 : side === 'l' ? X - r - 9 : X, an = side === 'r' ? 'start' : side === 'l' ? 'end' : 'middle';
+        let ly = side === 't' ? Y - r - 10 : Y - 2;
+        if (side === 't' && X + 40 > pl + iw) { lx = X + r; an = 'end'; }
+        const sub = `${m.est ? '~' : ''}${money(m.cost)} · ${m.tps.toFixed(0)}/s · ${m.gb < 1 ? m.gb.toFixed(2) : m.gb.toFixed(1)} GB`;
+        g += `<g class="pt${m.ref ? ' ref' : ''}" tabindex="0" data-id="${m.id}" aria-label="${m.n}">`;
+        g += `<circle cx="${X}" cy="${Y}" r="${Math.max(r + 10, 22)}" fill="transparent"/>`;
+        g += `<g class="grow">`;
+        if (!m.ref) g += `<circle cx="${X}" cy="${Y}" r="${r * 1.9}" fill="${c}" opacity=".07" style="filter:blur(${Math.round(r * .5)}px)"/>`;
+        g += `<circle cx="${X}" cy="${Y}" r="${r}" fill="url(#tri-b-${m.id})"/>`;
+        g += `<circle class="ring" cx="${X}" cy="${Y}" r="${r}" fill="none" stroke="${c}" stroke-opacity="${m.ref ? .6 : .95}" stroke-width="1.25"${m.est ? ' stroke-dasharray="3 2.6"' : ''}/>`;
+        g += `<ellipse cx="${X - r * .32}" cy="${Y - r * .42}" rx="${r * .3}" ry="${r * .14}" transform="rotate(-28 ${X - r * .32} ${Y - r * .42})" fill="#fff" opacity="${m.ref ? .18 : .4}"/>`;
+        g += `<circle cx="${X}" cy="${Y}" r="1.6" fill="${c}"/>`;
+        g += `</g><g class="lbl"><text class="nm" x="${lx}" y="${phone && side !== 't' ? Y + 4.5 : ly}" text-anchor="${an}">${phone ? m.short : m.n}</text>`;
+        if (!phone) g += `<text class="sb" x="${lx}" y="${Y + 14}" text-anchor="${an}">${sub}</text>`;
+        g += `</g></g>`;
+      });
+      if (!svg) { svg = document.createElementNS(ns, 'svg'); svg.setAttribute('aria-hidden', 'true'); box.insertBefore(svg, tip); }
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('height', H); svg.innerHTML = g;
+      sizeKey();
+      svg.querySelectorAll('.pt').forEach(el => {
+        const m = M.find(q => q.id === el.dataset.id);
+        const show = () => { svg.querySelectorAll('.pt.on').forEach(o => o.classList.remove('on')); el.classList.add('on'); tipFor(m, el); };
+        el.addEventListener('pointerenter', show); el.addEventListener('focus', show);
+        el.addEventListener('pointerleave', hide); el.addEventListener('blur', hide);
+        el.addEventListener('click', show);
+      });
+    }
+    function tipFor(m, el) {
+      const c = m.col || REF;
+      tip.innerHTML = `<b><i style="background:${c}"></i>${m.n}</b><span class="k">${m.kind}</span><dl>` +
+        `<dt>Training cost</dt><dd>${m.est ? '~' : ''}${money(m.cost)} <small>${m.costNote}</small></dd>` +
+        `<dt>CPU writing</dt><dd>${m.tps.toFixed(1)} <small>words/s</small></dd>` +
+        `<dt>File</dt><dd>${m.gb.toFixed(2)} <small>GB</small></dd>` +
+        `<dt>Parameters</dt><dd>${m.params}</dd>` +
+        `<dt>Text read</dt><dd>${m.toks} <small>tokens</small></dd></dl>`;
+      const br = box.getBoundingClientRect(), r = el.querySelector('.ring').getBoundingClientRect();
+      const tw = tip.offsetWidth, th = tip.offsetHeight;
+      let left = r.right - br.left + 12, top = r.top - br.top + r.height / 2 - th / 2;
+      if (left + tw > br.width) left = r.left - br.left - tw - 12;
+      if (left < 0) { left = Math.max(0, Math.min(br.width - tw, r.left - br.left + r.width / 2 - tw / 2)); top = r.bottom - br.top + 10; }
+      tip.style.left = left + 'px'; tip.style.top = Math.max(0, top) + 'px'; tip.classList.add('show');
+    }
+    function hide() { tip.classList.remove('show'); svg && svg.querySelectorAll('.pt.on').forEach(o => o.classList.remove('on')); }
+    draw();
+    let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { hide(); draw(); }, 80); });
+    document.addEventListener('pointerdown', e => { if (!box.contains(e.target)) hide(); });
+    const open = () => box.classList.remove('pre');
+    if (reduce || !('IntersectionObserver' in window) || box.getBoundingClientRect().top < innerHeight) open();
+    else { const io = new IntersectionObserver(es => { if (es[0].isIntersecting) { open(); io.disconnect(); } }, { threshold: 0.35 }); io.observe(box); }
+  })();
 
   // ---------- Bee: one token per step ----------
   const BEE = ['The', ' river', ' carried', ' the', ' light', ' all', ' the', ' way', ' to', ' the', ' sea', ',', ' and', ' the', ' town', ' woke'];
