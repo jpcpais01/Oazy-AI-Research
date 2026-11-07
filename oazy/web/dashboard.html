@@ -155,7 +155,7 @@
         <p><b>The text change.</b> At 80% the text mix changes too (more conversations, which are easier to guess), so the <i>training</i> loss steps down at once; the held-out text stays the same, so the held-out loss doesn't. The training forecast has that step in it (sized the same way); the held-out one doesn't.</p>
         <p><b>The noise.</b> The training loss jumps around, so it is first smoothed (the middle value of each stretch), and its shape is borrowed from the much steadier held-out loss: same model, same learning. HellaSwag moves with the held-out loss almost in a straight line, so its forecast is the held-out forecast pushed through that line.</p>
         <p><b>The range.</b> The same method is replayed from earlier moments of the run, looking exactly as far ahead (for the share of the run still to go) as it looks now, and checked against what really happened. Their typical miss makes the range, plus the doubt about the cool-down drop. Early in a run, with little to check against, it starts wide on purpose.</p>
-        <p><b>100B and 1T.</b> These buttons stretch the forecast past the plan: what each model would reach had its run been planned that long, with the same recipe (the flat learning rate kept going, the cool-down and text change moved to the last 20% of the longer run). The fitted numbers stay the ones learned from the real run; only the schedule changes. They assume fresh text all the way and stretch a curve far past its points, so the range there is mostly how far apart the curve shapes the points can't rule out end up. The x axis turns logarithmic.</p>
+        <p><b>100B and 1T.</b> These buttons show the whole run again, had it been planned that long on the same recipe. Everything the recipe ties to the share of the run moves with it: the flat learning rate lasts longer, the cool-down and text change sit in its last 20%, the model grows at its 10% and 25% (so it stays small for longer) and the mentor fades by its 30%. How much a word is worth to the smaller model, and with the mentor, is learned from the real run's own early stretch along with the curve. Its training time is worked out the same way, from the speeds the real run had at each depth and with the mentor. They assume fresh text all the way and stretch a curve far past its points, so the range there is mostly how far apart the curve shapes the points can't rule out end up. The x axis turns logarithmic.</p>
         <p>(For the curious: loss = floor + A × learning-so-far<sup>−α</sup> − C × how much the learning rate has come down, from Tissue et al., 2024, "Scaling Law with Learning Rate Annealing".)</p>
         <div id="foreCheck"></div>
       </div></details>
@@ -678,8 +678,9 @@ function computeForecasts() {
       F.hs = Forecast.hellaswag(cfg, metrics, F.val, { ok: hsOK });
       if (HORIZON) {             // stretched: the same fitted law on the schedule of a run planned HORIZON tokens long
         F.valH = Forecast.stretch(F.val, HORIZON);
-        F.lossH = Forecast.stretch(F.loss, HORIZON, { borrow: F.valH?.spread });
+        F.lossH = Forecast.stretch(F.loss, HORIZON, { borrow: F.valH });
         F.hsH = Forecast.hellaswag(cfg, metrics, F.valH, { ok: hsOK });
+        if (F.hsH && F.valH) F.hsH.minutes = F.valH.minutes;
       }
     } catch (e) { console.warn("forecast", r.name, e); }
     FORE_MEMO[r.name] = { key, F };
@@ -704,7 +705,9 @@ function logMin(series) {
   return xs.length ? Math.max(...xs) * 0.02 : null;
 }
 function horizonWords() {
-  return `dashed: what each run would reach had it been planned for ${fmtHz(HORIZON)} tokens: the same model and recipe, its flat learning rate kept going and its cool-down moved to the last 20% of the ${fmtHz(HORIZON)}. ` +
+  const moves = VIS().some((r) => FORE[r.name]?.valH?.moves);
+  return `dashed: the whole run again, had it been planned for ${fmtHz(HORIZON)} tokens. Everything the recipe ties to the share of the run moves with it: the flat learning rate lasts longer, and the cool-down and text change sit in its last 20%` +
+    (moves ? `; the model grows at its 10% and 25% and the mentor fades by its 30%, so it stays small, and mentored, for longer. How much a word is worth to the smaller model and with the mentor is learned from the run's own early stretch. In "Training time", it keeps its own clock (small is faster, the mentor slower)` : "") + `. ` +
     `It assumes fresh text all the way (Tagus20 holds about 20B tokens; text read twice teaches less), and it stretches a curve fitted on a far shorter run, so read it as "about where this model levels off", not a promise. Shade: its likely range. The x axis is logarithmic.`;
 }
 const andList = (v) => v.length < 2 ? v.join("") : v.slice(0, -1).join(", ") + " and " + v[v.length - 1];
@@ -791,19 +794,21 @@ function drawLearning() {
     hsS.push({ name: nameOf(r.name), color: col, width: 2.4, dots: true, endLabel: true, points: hs.map((x) => [xOf(x), x.acc_norm]) });
     // the dashed forecasts, out to the planned number of words, with their likely range shaded
     const F0 = FORE[r.name] || {}, F = HORIZON ? { val: F0.valH, loss: F0.lossH, hs: F0.hsH } : F0, mAt = xmode === "tokens" ? null : minutesAt(r), mx = xmode === "tokens" ? (t) => t : mAt && ((t) => mAt(t) / tu);
-    const fc = (f) => f.curve.map(([t, y]) => [mx(t), y]);
-    const fcb = (b) => b.map(([t, l, h]) => [mx(t), l, h]);
+    // a stretched run keeps its own clock (it stays small, and with its mentor, for longer): tokens -> its own minutes
+    const mxOf = (f) => (xmode !== "tokens" && f.minutes ? (t) => f.minutes(t) / tu : mx);
+    const fc = (f) => { const m = mxOf(f); return f.curve.map(([t, y]) => [m(t), y]); };
+    const fcbOf = (f) => { const m = mxOf(f); return f.band.map(([t, l, h]) => [m(t), l, h]); };
     if (mx && (F.val || F.loss)) {          // past the line's end, the tooltip shows the forecast instead; its tip carries the label
       if (F.loss) {
         trS.endLabel = false; trS.tipRange = true;
         const fl = { name: nameOf(r.name) + " · training forecast", color: col, alpha: 0.5, width: 2, dash: [5, 5], tipRange: true,
-          endLabel: "≈" + fmtL(F.loss.yEnd), labelAlpha: 0.7, points: fc(F.loss), band: fcb(F.loss.band), bandAlpha: 0.05 };
+          endLabel: "≈" + fmtL(F.loss.yEnd), labelAlpha: 0.7, points: fc(F.loss), band: fcbOf(F.loss), bandAlpha: 0.05 };
         series.push(fl); foreFrom = Math.min(foreFrom, fl.points[0][0]);
       }
       if (F.val) {             // the held-out forecast: the one the "finish line" will show
         evS.endLabel = false; evS.tipRange = true;
         const fv = { name: nameOf(r.name) + " · held-out forecast", color: hcol, alpha: 0.65, width: 2, dash: [5, 5], tipRange: true, endDot: true,
-          endLabel: "≈" + fmtL(F.val.yEnd), labelAlpha: 0.8, points: fc(F.val), band: fcb(F.val.band) };
+          endLabel: "≈" + fmtL(F.val.yEnd), labelAlpha: 0.8, points: fc(F.val), band: fcbOf(F.val) };
         series.push(fv); foreFrom = Math.min(foreFrom, fv.points[0][0]);
       }
       anyFore = true;
@@ -811,7 +816,7 @@ function drawLearning() {
     if (mx && F.hs) {
       Object.assign(hsS[hsS.length - 1], { endLabel: false, tipRange: true });
       hsS.push({ name: nameOf(r.name) + " · forecast", color: col, alpha: 0.55, width: 2, dash: [5, 5], tipRange: true, endDot: true,
-        endLabel: "≈" + pct(F.hs.yEnd), labelAlpha: 0.7, points: fc(F.hs), band: fcb(F.hs.band) });
+        endLabel: "≈" + pct(F.hs.yEnd), labelAlpha: 0.7, points: fc(F.hs), band: fcbOf(F.hs) });
       anyHsFore = true;
     }
     leg.push([nameOf(r.name) + " · training", col]); if (evS.points.length) leg.push([nameOf(r.name) + " · held-out", hcol]);

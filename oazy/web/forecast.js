@@ -56,11 +56,39 @@ const Forecast = (() => {
     return cfg.mix.split(";").map((s) => +s.split("@")[1]).filter((x) => x > 0 && x < 1);
   }
 
+  // ---------- the recipe's other schedules (they follow the share of the run, so a longer run stretches them) ----------
+
+  // the model's depth at a share p of the run: "8:0,12:0.1,20:0.25" (ember/model.py parse_plan, depth_at)
+  function depthPlanned(cfg, p) {
+    const full = cfg.config?.n_layer;
+    if (!cfg.grow || !full) return full || 1;
+    const plan = String(cfg.grow).split(",").map((x) => x.split(":").map(Number)).filter((x) => x.length === 2 && isFinite(x[0]));
+    let d = plan.length ? plan[0][0] : full;
+    for (const [dd, w] of plan) if (p >= w) d = dd;
+    return d;
+  }
+  // the mentor's share at a share p of the run (ember/mentor.py fade)
+  function mentorPlanned(cfg, p) {
+    const w0 = cfg.mentor_weight || 0, until = cfg.mentor_until || 0, floor = cfg.mentor_floor || 0, off = cfg.mentor_off || 0;
+    if (!w0 || until <= 0) return 0;
+    let share = floor + Math.max(0, (w0 - floor) * (1 - Math.min(p, until) / until));
+    if (off > 0 && p > 1 - off) share *= Math.max(0, (1 - p) / off);
+    return Math.max(0, share);
+  }
+  // does the recipe change the model along the way (growing, a fading mentor)? Then a longer run is not just more of the same
+  const recipeMoves = (cfg) => !!(cfg.grow && cfg.config?.n_layer && depthPlanned(cfg, 0) < cfg.config.n_layer) || !!cfg.mentor_weight;
+  // a logged value by tokens (step-wise: the last one logged at or before t)
+  function stepAt(rows) {
+    return (t) => { let v = null; for (const [x, y] of rows) { if (x > t) break; v = y; } return v; };
+  }
+
   // Everything the fit needs about a run, on a grid of tokens from 0 to the planned end: the learning rate (logged
   // where it was logged, planned after), "learning so far" S1 and "settled fall" S2. Returns null if there is no plan.
   // hypo: a longer run of `hypo` tokens on the same recipe (same warmup and peak, its cool-down over ITS last 20%,
   // its text change at ITS 80%): the learning rate logged so far is used only up to the end of the warmup.
-  function plan(cfg, train, lagSteps = LAG_STEPS, hypo = 0) {
+  // eff: {beta, mu}: a word read by a smaller model, or with the mentor's help, counts as (depth/full)^beta × (1 + mu ×
+  // mentor share) of a word: the growing recipe's learning speed, fitted on the run's own early stretch (see stretch()).
+  function plan(cfg, train, lagSteps = LAG_STEPS, hypo = 0, eff = null) {
     const end = hypo || cfg.total_tokens;
     if (!(end > 0) || cfg.minutes) return null;          // races on the clock follow time, not tokens: no forecast
     const peak = cfg.lr || Math.max(...train.map((x) => x.lr || 0)) || 1;
@@ -78,6 +106,21 @@ const Forecast = (() => {
         eta[i] = t <= t0 ? e0 : e0 + (e1 - e0) * Math.min(1, (t - t0) / Math.max(1, t1 - t0));
       } else eta[i] = t < warmEnd ? 1 : etaPlanned(cfg, t / end);
     }
+    // how much each word counts (1 without eff): from the logs while the real run has them, else the recipe
+    let wt = null;
+    if (eff && (eff.beta || eff.mu)) {
+      const full = cfg.config?.n_layer || 1, realEnd = cfg.total_tokens;
+      const dLog = hypo ? null : stepAt(train.filter((x) => x.depth != null).map((x) => [x.tokens, x.depth]));
+      const mLog = hypo ? null : stepAt(train.filter((x) => x.mentor_w != null || x.kind === "train").map((x) => [x.tokens, x.mentor_w || 0]));
+      const lastT = train.length ? train[train.length - 1].tokens : 0;
+      wt = new Float64Array(N + 1);
+      for (let i = 0; i <= N; i++) {
+        const t = i * dt, live = !hypo && t <= lastT;
+        const d = (live && dLog(t)) || depthPlanned(cfg, t / (hypo ? end : realEnd));
+        const mw = live ? (mLog(t) ?? 0) : mentorPlanned(cfg, t / (hypo ? end : realEnd));
+        wt[i] = Math.pow(Math.min(1, d / full), eff.beta || 0) * Math.max(0.05, 1 + (eff.mu || 0) * mw);
+      }
+    }
     // S1: learning so far, in billions of tokens at the peak rate (the same unit for every length of run)
     // S2: how much of the learning rate's fall has paid off: each fall pays off over ~LAG_STEPS steps
     const L = lagSteps * (cfg.batch_tokens || 524288);
@@ -85,7 +128,7 @@ const Forecast = (() => {
     const S1 = new Float64Array(N + 1), S2 = new Float64Array(N + 1);
     let m = 0, top = 0;
     for (let i = 1; i <= N; i++) {
-      S1[i] = S1[i - 1] + 0.5 * (eta[i] + eta[i - 1]) * dt / 1e9;
+      S1[i] = S1[i - 1] + 0.5 * (eta[i] * (wt ? wt[i] : 1) + eta[i - 1] * (wt ? wt[i - 1] : 1)) * dt / 1e9;
       if (i * dt > warmEnd) {
         top = Math.max(top, eta[i - 1]);
         const fall = Math.max(0, eta[i - 1] - eta[i]);      // only falls count; the warmup's rise does not
@@ -98,7 +141,7 @@ const Forecast = (() => {
       return A[i] + (A[i + 1] - A[i]) * u;
     };
     const decayAt = cfg.schedule === "wsd" ? end * (1 - DECAY) : 0;
-    return { lag: lagSteps, end, S1: at(S1), S2: at(S2), eta: at(eta), S2end: S2[N], decayAt, switches: mixSwitches(cfg).map((p) => p * end), warmEnd };
+    return { lag: lagSteps, eff, end, S1: at(S1), S2: at(S2), eta: at(eta), S2end: S2[N], decayAt, switches: mixSwitches(cfg).map((p) => p * end), warmEnd };
   }
 
   // ---------- smoothing ----------
@@ -341,36 +384,72 @@ const Forecast = (() => {
       key, now, end, curve, band, yEnd, lo: yEnd - Z * sd, hi: yEnd + Z * sd, sd, g,
       coolLeft, coolFromPrior, priorRuns: c.pr.n, priorFrom: c.pr.from || [], seenCool, jumpLeft, jumpAt: c.jump?.at ?? null,
       checks, relSd, lag: P.lag, fit: { E: fit.E, A: fit.A, C: fit.C, J: fit.J, alpha: fit.alpha, rmse: fit.rmse, from: c.from, n: fit.n },
-      _: { cfg, metrics, law: fit, P, shift, sdCool, jump: c.jump },
+      _: { cfg, metrics, law: fit, P, shift, sdCool, jump: c.jump, prior: c.prior, pts: c.pts },
     };
   }
 
   // A forecast stretched to a longer run of H tokens on the same recipe: what the loss would reach had the run been
-  // planned that long (its flat learning rate kept going, its cool-down and text change moved to ITS last 20%), and
-  // assuming fresh text all the way. The law's numbers are the ones fitted on the real run; only the schedule
-  // changes. It leaves the real line where their schedules part (the real cool-down's start, or now if that's later).
-  // The range adds how far apart the curve shapes the points can't rule out drift that far out, and 1% of the loss
-  // for every doubling beyond the planned end. borrow: for the training loss, the held-out stretch's shape doubt.
+  // planned that long, assuming fresh text all the way. Everything the recipe ties to the share of the run moves with
+  // it: the flat learning rate lasts longer and the cool-down and text change sit in ITS last 20%; the model grows at
+  // ITS 10% and 25% (so it stays small for longer); the mentor fades by ITS 30%. How much a word read by the smaller
+  // model, or with the mentor, counts is learned from the real run's own early stretch (eff: beta, mu), together with
+  // the curve. The line is that whole other run, from its start (it parts from the real one early when the model grows).
+  // The range adds how far apart the fits the points can't rule out drift that far out, and 1% of the loss for every
+  // doubling beyond the planned end. borrow: the held-out stretch, whose shape and eff the training loss reuses.
+  const BETAS = [0, 0.25, 0.5, 0.75, 1, 1.5, 2], MUS = [-0.5, -0.25, 0, 0.25, 0.5, 1, 2];
   function stretch(F, H, { borrow = null } = {}) {
     if (!F || !(H > F.end * 1.01)) return null;
-    const { cfg, metrics, law, P, shift, sdCool, jump } = F._;
-    const PH = plan(cfg, metrics.filter((x) => x.kind === "train"), P.lag, H);
-    if (!PH) return null;
+    const { cfg, metrics, law, P, shift, sdCool, jump, prior } = F._;
+    const train = metrics.filter((x) => x.kind === "train");
+    const moves = recipeMoves(cfg);
     const ja = jump ? H * (jump.at / P.end) : null;
-    const lawH = (t) => law.E + law.A * Math.pow(PH.S1(t), -law.alpha) - law.C * PH.S2(t) + (ja != null && t >= ja ? law.J : 0);
-    const g = (t) => lawH(t) + shift;
-    const from = cfg.schedule === "wsd" ? Math.min(F.now, P.decayAt || F.now) : F.now;
-    const spread = (t) => {                     // half the gap between the shapes the points allow, as a share
-      if (borrow) return borrow(t);
-      const v = law.alts.map((a) => a(PH, t, ja));
-      return v.length > 1 ? (Math.max(...v) - Math.min(...v)) / 2 / Math.max(1e-9, lawH(t)) : 0;
+    const planH = {}, PHof = (eff) => { const k = eff ? eff.beta + ":" + eff.mu : "-"; return planH[k] || (planH[k] = plan(cfg, train, P.lag, H, eff)); };
+    let fits;                                       // [{eff, law, rmse}], best first
+    if (!moves) fits = [{ eff: null, law, rmse: law.rmse }];
+    else if (borrow?.fits) {                        // the training loss: the held-out stretch's eff and shape, its own levels
+      const pts = F.key === "loss" ? series(metrics, "loss", F.now) : F._.pts;
+      const from = Math.max(2 * (P.warmEnd || 0), 0.02 * P.end);
+      fits = borrow.fits.map((b) => {
+        const Pe = plan(cfg, train, P.lag, 0, b.eff);
+        const lw = fitLaw(pts.filter((p) => p[0] >= from), Pe, { prior, jump, alpha: b.law.alpha });
+        return lw && { eff: b.eff, law: lw, rmse: lw.rmse, Pe };
+      }).filter(Boolean);
+    } else {                                         // the held-out loss: learn eff and the curve together from the run's early stretch on
+      const from = Math.max(2 * (P.warmEnd || 0), 0.02 * P.end);
+      const pts = series(metrics, F.key, F.now).filter((p) => p[0] >= from);
+      fits = [];
+      for (const beta of BETAS) for (const mu of (cfg.mentor_weight ? MUS : [0])) {
+        if (!cfg.grow && beta) continue;
+        const eff = { beta, mu }, Pe = plan(cfg, train, P.lag, 0, eff), lw = fitLaw(pts, Pe, { prior });
+        if (lw) fits.push({ eff, law: lw, rmse: lw.rmse, Pe });
+      }
+      fits.sort((a, b) => a.rmse - b.rmse);
+      if (fits.length) {                             // keep the ones the points can't rule out (about two standard errors)
+        const best = fits[0].rmse ** 2, dof = Math.max(1, pts.length - 5);
+        fits = fits.filter((f) => f.rmse ** 2 <= best * (1 + 4 / dof)).slice(0, 12);
+      }
+    }
+    if (!fits || !fits.length) return null;
+    const top = fits[0], PH = PHof(top.eff);
+    if (!PH) return null;
+    const val = (f, PP, t) => f.law.E + f.law.A * Math.pow(PP.S1(t), -f.law.alpha) - f.law.C * PP.S2(t) + (ja != null && t >= ja ? f.law.J : 0);
+    // anchor: the stretched run passes as far from the real line as the fit does where the real line is now
+    const sh = moves ? (() => { const Pe = top.Pe || plan(cfg, train, P.lag, 0, top.eff), tail = (F.key === "loss" ? series(metrics, "loss", F.now) : F._.pts).slice(-4);
+      return tail.reduce((a, p) => a + p[1] - (top.law.E + top.law.A * Math.pow(Pe.S1(p[0]), -top.law.alpha) - top.law.C * Pe.S2(p[0]) + (jump && p[0] >= jump.at ? top.law.J : 0)), 0) / tail.length; })() : shift;
+    const g = (t) => val(top, PH, t) + sh;
+    const from = moves ? Math.max(2 * (P.warmEnd || 0), 0.02 * P.end) : cfg.schedule === "wsd" ? Math.min(F.now, P.decayAt || F.now) : F.now;
+    const spread = (t) => {                     // half the gap between the fits the points allow, as a share
+      if (borrow && !moves) return borrow.spread(t);
+      const v = [];
+      for (const f of fits) { const PP = PHof(f.eff); if (PP) for (const a of f.law.alts) v.push(a(PP, t, ja)); }
+      return v.length > 1 ? (Math.max(...v) - Math.min(...v)) / 2 / Math.max(1e-9, val(top, PH, t)) : 0;
     };
     const sdAt = (t) => {
       const y = g(t), u = Math.min(1, Math.max(0, (t - F.now) / (F.end - F.now)));
       const beyond = t > F.end ? 0.01 * Math.log2(t / F.end) : 0;
       return Math.sqrt((F.relSd * y * u) ** 2 + (spread(t) / 2 * y) ** 2 + (beyond * y) ** 2 + (sdCool * (t > F.now ? 1 : 0)) ** 2);
     };
-    const curve = [], band = [], n = 90;
+    const curve = [], band = [], n = 110;
     for (let i = 0; i <= n; i++) {              // even steps on a log scale: the chart shows these on one
       const t = from * Math.pow(H / from, i / n);
       if (ja != null && t > ja && curve.length && curve[curve.length - 1][0] < ja) {
@@ -381,7 +460,37 @@ const Forecast = (() => {
     }
     const sd = sdAt(H), yEnd = g(H);
     return { key: F.key, hypothetical: true, planned: F.end, now: F.now, end: H, from, curve, band, g, yEnd, lo: yEnd - Z * sd, hi: yEnd + Z * sd, sd,
-      fit: F.fit, spread, jumpAt: ja, jumpLeft: ja != null && F.now < ja ? law.J : 0 };
+      fit: F.fit, spread, fits, eff: top.eff, moves, jumpAt: ja, jumpLeft: ja != null && F.now < ja ? top.law.J : 0,
+      minutes: clock(cfg, train, H) };
+  }
+
+  // Training time of a run planned H tokens long (tokens -> minutes), from the real run's own speeds: each word costs
+  // a time that grows with the model's depth, plus the mentor's share of a pass (1/speed = a(depth) + c × mentor share,
+  // fitted on the logged speeds). The longer run spends longer small (fast) and longer with the mentor (slow).
+  function clock(cfg, train, H) {
+    const rows = train.filter((x) => x.tok_s > 0 && x.tokens > 0.01 * (cfg.total_tokens || 1));
+    if (rows.length < 10) return null;
+    const full = cfg.config?.n_layer || 1;
+    const depths = [...new Set(rows.map((x) => x.depth || full))].sort((a, b) => a - b);
+    // columns: one per depth seen, then the mentor share
+    const X = rows.map((x) => [...depths.map((d) => ((x.depth || full) === d ? 1 : 0)), x.mentor_w || 0]);
+    const y = rows.map((x) => 1 / x.tok_s);
+    const anyMentor = rows.some((x) => x.mentor_w > 0);
+    const c = lsq(anyMentor ? X : X.map((r) => r.slice(0, -1)), y, rows.map(() => 1), anyMentor ? [] : []);
+    if (!c) return null;
+    const a = {}; depths.forEach((d, i) => { a[d] = c[i]; });
+    const cm = anyMentor ? Math.max(0, c[depths.length]) : 0;
+    const aOf = (d) => {                            // a depth never seen yet: in proportion to depth from the nearest one seen
+      if (a[d] > 0) return a[d];
+      const near = depths.reduce((b, x) => (Math.abs(x - d) < Math.abs(b - d) ? x : b), depths[0]);
+      return a[near] * d / near;
+    };
+    const N = 1000, dt = H / N, mins = new Float64Array(N + 1);
+    for (let i = 1; i <= N; i++) {
+      const p = (i - 0.5) / N;
+      mins[i] = mins[i - 1] + dt * (aOf(depthPlanned(cfg, p)) + cm * mentorPlanned(cfg, p)) / 60;
+    }
+    return (t) => { const x = Math.max(0, Math.min(N, t / dt)), i = Math.min(N - 1, Math.floor(x)); return mins[i] + (mins[i + 1] - mins[i]) * (x - i); };
   }
 
   // HellaSwag: a straight line against the run's own held-out loss, and the held-out forecast pushed through it.
@@ -410,14 +519,19 @@ const Forecast = (() => {
     const seQ = Math.max(res, 0.01) / Math.sqrt(Math.max(1e-9, sxx));
     const last = pts[pts.length - 1], shift = pts.slice(-3).reduce((a, p) => a + p[1] - (p0 + q * p[2]), 0) / Math.min(3, n) * 0.5;
     const hsOf = (v) => Math.max(0.25, Math.min(1, p0 + q * v + shift));
-    const curve = valF.curve.map(([t, v]) => [t, hsOf(v)]);
-    const band = valF.band.map(([t, lo, hi]) => {
+    // a stretched run starts early, at losses still on the floor: the line starts where the loss is no higher than
+    // at the first point clear of the floor (before that it would only say "guessing", with a huge range)
+    const vTop = Math.max(...off.map((p) => p[2]));
+    const keep = ([t]) => t >= valF.now || valF.g(t) <= vTop;
+    const curve = valF.curve.filter(keep).map(([t, v]) => [t, hsOf(v)]);
+    const band = valF.band.filter(keep).map(([t, lo, hi]) => {
       const y = hsOf(valF.g(t)), u = Math.max(0, (t - valF.now) / (valF.end - valF.now));
       // + the line may bend (near the floor the score speeds up as the loss falls): half the rise still to come
       const bend = 0.5 * Math.abs(q * (valF.g(t) - last[2]));
       const s = Math.sqrt((q * (hi - lo) / (2 * Z)) ** 2 + (seQ * (valF.g(t) - last[2])) ** 2 + (res * u) ** 2 / 2 + (0.006 * u) ** 2 + bend ** 2);
-      return [t, y - Z * s, y + Z * s];
+      return [t, Math.max(0.25, y - Z * s), Math.min(1, y + Z * s)];
     });
+    if (!curve.length || !band.length) return null;
     const b = band[band.length - 1], yEnd = curve[curve.length - 1][1];
     return { key: "hs", curve, band, yEnd, lo: b[1], hi: b[2], sd: (b[2] - b[1]) / (2 * Z), perLoss: q, res, n, at: last[0], now: valF.now, end: valF.end };
   }
@@ -508,7 +622,7 @@ const Forecast = (() => {
   }
   const median = (v) => { if (!v.length) return null; const s = [...v].sort((a, b) => a - b); return s[s.length >> 1]; };
 
-  return { plan, etaPlanned, at, stretch, fitLaw, metric, hellaswag, priorsFrom, backtest, bins, Z, DEFAULT_PRIOR };
+  return { plan, etaPlanned, depthPlanned, mentorPlanned, clock, at, stretch, fitLaw, metric, hellaswag, priorsFrom, backtest, bins, Z, DEFAULT_PRIOR };
 })();
 
 if (typeof module !== "undefined") module.exports = Forecast;
