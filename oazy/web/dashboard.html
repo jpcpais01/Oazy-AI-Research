@@ -564,7 +564,8 @@ function scoreboard() {
   const evRuns = names.filter((n) => lastOf(n, "evals"));
   const evCard = evRuns.length ? `<div class="card score"><div class="t">More tests (higher is better)</div>
       ${EV.map(([k, t, h]) => { const rows = evRuns.map((n) => [n, lastOf(n, "evals")[k]]).filter((r) => r[1] != null); if (!rows.length) return "";
-        return `<div class="sub">${t}</div>${rows.map(([n, v]) => row(n, v, v, pct)).join("")}<div class="note">${h}</div>`; }).join("")}</div>` : "";
+        return `<div class="sub">${t}</div>${rows.map(([n, v]) => row(n, v, v, pct)).join("")}<div class="note">${h}</div>`; }).join("")}
+      ${evRuns.some((n) => lastOf(n, "evals").full === false) ? `<div class="note">During training: a quick check on ${evRuns.map((n) => lastOf(n, "evals")).filter((e) => e.full === false).map((e) => e.arc_easy_n || e.piqa_n || e.lambada_n)[0]} questions of each test, every 500M tokens; all of them at the end.</div>` : ""}</div>` : "";
   // held-out loss per kind of text (Tagus per-source held-out slices)
   const SRC = { dclm: "DCLM (web)", chat: "conversations", cosmo: "Cosmopedia (textbooks)", wiki: "Wikipedia", math: "FineMath", code: "Python code" };
   const srcRuns = names.map((n) => [n, lastOf(n, "eval")]).filter(([, e]) => e && Object.keys(e).some((k) => k.startsWith("val_loss_")));

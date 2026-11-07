@@ -190,8 +190,8 @@ PRESETS = {
                    window=64, slow_d=256, slow_layers=2, slow_heads=4, slow_kv_heads=2, slow_head_dim=64, slow_mlp=512,
                    phrase_rows=8192, phrase_dim=32, max_len=512, ctx="512:0"),
         micro=16, accum=1, lr=3e-3, warmup=50, tokens=3_000_000,
-        eval_every=250_000, probe_every=1_000_000, hs_every=1_000_000, sample_every=1_000_000,
-        val_windows=64, hs_quick=200, sample_len=40,
+        eval_every=250_000, probe_every=1_000_000, hs_every=1_000_000, sample_every=1_000_000, evals_every=1_000_000,
+        val_windows=64, hs_quick=200, evals_quick=50, sample_len=40,
     ),
     # a 1-minute smoke test of every code path
     "smoke": dict(
@@ -210,24 +210,24 @@ PRESETS = {
                    window=32, slow_d=128, slow_layers=2, slow_heads=2, slow_kv_heads=1, slow_head_dim=64, slow_mlp=256,
                    phrase_rows=1024, phrase_dim=16, max_len=128, ctx="128:0"),
         micro=8, accum=2, lr=3e-3, warmup=10, tokens=60_000,
-        eval_every=20_000, probe_every=30_000, hs_every=30_000, sample_every=30_000,
-        val_windows=16, hs_quick=20, sample_len=10,
+        eval_every=20_000, probe_every=30_000, hs_every=30_000, sample_every=30_000, evals_every=30_000,
+        val_windows=16, hs_quick=20, evals_quick=10, sample_len=10,
     ),
     # GPT-2 small size (Memtrix 117M vs GPT-2 124M), ~2 h for both models on one B200 (check with --bench)
     "full": dict(
         memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576, batch_bee4=524288,
         micro=32, accum=8, lr=1.2e-3, lr_bee3=2.4e-3, muon_lr_bee3=0.04, lr_frog=1.8e-3, muon_lr_frog=0.03,
         lr_coral=1.8e-3, muon_lr_coral=0.03, lr_bee4=1.8e-3, muon_lr_bee4=0.03, warmup=400, tokens=2_000_000_000,
-        eval_every=50_000_000, probe_every=250_000_000, hs_every=250_000_000, sample_every=250_000_000,
-        val_windows=128, hs_quick=1000, sample_len=120,
+        eval_every=50_000_000, probe_every=250_000_000, hs_every=250_000_000, sample_every=250_000_000, evals_every=500_000_000,
+        val_windows=128, hs_quick=1000, evals_quick=500, sample_len=120,
     ),
     # the same models, 2.5x the text (e.g. a 2 x B200 pod for ~2.5 h, one model per GPU)
     "big": dict(
         memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576, batch_bee4=524288,
         micro=32, accum=8, lr=1.2e-3, lr_bee3=2.4e-3, muon_lr_bee3=0.04, lr_frog=1.8e-3, muon_lr_frog=0.03,
         lr_coral=1.8e-3, muon_lr_coral=0.03, lr_bee4=1.8e-3, muon_lr_bee4=0.03, warmup=600, tokens=5_000_000_000,
-        eval_every=100_000_000, probe_every=200_000_000, hs_every=200_000_000, sample_every=200_000_000,
-        val_windows=128, hs_quick=1000, sample_len=120,
+        eval_every=100_000_000, probe_every=200_000_000, hs_every=200_000_000, sample_every=200_000_000, evals_every=500_000_000,
+        val_windows=128, hs_quick=1000, evals_quick=500, sample_len=120,
     ),
     # Code Black's races (codeblack/README.md): every run gets the same training time (--minutes 30), and the held-out
     # loss is taken often, so loss-against-minutes curves can be compared at any point. 262k-token steps.
@@ -235,8 +235,8 @@ PRESETS = {
         memtrix=dict(), gpt=dict(), batch_black=262144, batch_blackt=262144,
         micro=32, accum=8, lr=1.2e-3, lr_black=2.4e-3, muon_lr_black=0.04, lr_blackt=2.4e-3, muon_lr_blackt=0.04,
         warmup=250, tokens=2_000_000_000,
-        eval_every=25_000_000, probe_every=500_000_000, hs_every=500_000_000, sample_every=500_000_000,
-        val_windows=128, hs_quick=1000, sample_len=80,
+        eval_every=25_000_000, probe_every=500_000_000, hs_every=500_000_000, sample_every=500_000_000, evals_every=500_000_000,
+        val_windows=128, hs_quick=1000, evals_quick=500, sample_len=80,
     ),
 }
 
@@ -776,7 +776,7 @@ def main():
         loss_scale_at = lambda progress: 1.0      # noqa: E731
 
     step, tokens, elapsed = 0, 0, 0.0
-    nxt = {"eval": 0, "probe": 0, "hs": 0, "sample": 0}
+    nxt = {"eval": 0, "probe": 0, "hs": 0, "sample": 0, "evals": 0}
 
     def prog():
         """How far into training we are: by the token count, or in a race (--minutes) by the training time."""
@@ -792,6 +792,7 @@ def main():
         opt = new_opt()
         opt.load_state_dict(state["opt"])
         step, tokens, elapsed, nxt = state["step"], state["tokens"], state["elapsed"], state["next"]
+        nxt.setdefault("evals", tokens)                  # a checkpoint from before the periodic extra tests: the next check has them
         for k in nxt:                                    # tests made more frequent since: the next one comes sooner
             every = p[k + "_every"]
             nxt[k] = min(nxt[k], math.ceil(tokens / every) * every)
@@ -933,14 +934,17 @@ def main():
             say(f"[hellaswag] {r['acc_norm'] * 100:.2f}% on {r['n']} examples "
                 f"({r['acc_char'] * 100:.2f}% scored per letter)", flush=True)
             nxt["hs"] += p["hs_every"]
-        if final and (root / "evals").exists():          # ARC-Easy, PIQA, LAMBADA (oazy/evals.py), once, at the end
+        if (root / "evals").exists() and (final or tokens >= nxt["evals"]):
+            # ARC-Easy, PIQA, LAMBADA (oazy/evals.py): a quick check (evals_quick questions of each, spread over the
+            # file) every evals_every tokens, all of them at the end
             from . import evals
-            r = evals.evaluate_all(model, root, device)
+            r = evals.evaluate_all(model, root, device, None if final else p["evals_quick"])
             if r:
-                run.log("metrics.jsonl", {"kind": "evals", **base, **r})
-                latest.update({k: v for k, v in r.items() if not k.endswith("_n")})
-                say("[evals] " + ", ".join(f"{k} {v * 100:.1f}%" if k in ("arc_easy", "piqa", "lambada") else f"{k} {v:.2f}"
+                run.log("metrics.jsonl", {"kind": "evals", **base, **r, "full": final})
+                latest.update({k + ("" if final else "_quick"): v for k, v in r.items() if not k.endswith("_n")})
+                say(f"[evals] {'' if final else 'quick, '}" + ", ".join(f"{k} {v * 100:.1f}%" if k in ("arc_easy", "piqa", "lambada") else f"{k} {v:.2f}"
                                            for k, v in r.items() if not k.endswith(("_n", "_char"))), flush=True)
+            nxt["evals"] += p["evals_every"]
         if final or tokens >= nxt["probe"]:
             r = probes.memory_report(model, pwin, device, batch=min(micro, 16))
             run.log("metrics.jsonl", {"kind": "memory", **base, **r})

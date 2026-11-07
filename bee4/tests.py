@@ -122,6 +122,12 @@ def main():
             np.fromiter((t for x_ in ds for t in gpt.encode_ordinary(x_) + [EOT]), dtype=np.uint16).tofile(d / f"{split}.bin")
     (data / "hellaswag_val.jsonl").write_text("".join(
         json.dumps({"ctx": " ".join(fake_docs(1, rng)), "endings": fake_docs(4, rng), "label": rng.randint(0, 3)}) + "\n" for _ in range(24)))
+    ev = data / "evals"                     # stand-in ARC-Easy, PIQA, LAMBADA: checked during the run and at the end
+    ev.mkdir()
+    for name, k in (("arc_easy", 4), ("piqa", 2)):
+        (ev / f"{name}.jsonl").write_text("".join(json.dumps({"ctx": "Question: " + " ".join(fake_docs(1, rng)) + "\nAnswer:",
+                                                               "endings": fake_docs(k, rng), "label": rng.randint(0, k - 1)}) + "\n" for _ in range(30)))
+    (ev / "lambada.jsonl").write_text("".join(json.dumps({"ctx": " ".join(fake_docs(1, rng)), "target": " cat"}) + "\n" for _ in range(30)))
     retok.run(data, "smollm2", ["fwe", "chat"], workers=2)
     runs = tmp / "runs"
     argv = ["train", "--model", "bee4", "--preset", "smoke", "--data", str(data), "--runs", str(runs), "--mentor", "smol-random",
@@ -146,6 +152,10 @@ def main():
     mid = [w for r, w in zip(tr, mws) if 0.35 < r.get("progress", r["tokens"] / 60000) < 0.85]
     check("the mentor taught all run: 1 in 4 early, 1 in 10 in the middle", 0.15 < mws[0] <= 0.25
           and mid and all(abs(w - 0.1) < 1e-6 for w in mid), f"{mws[0]:.2f} ... {mid[0] if mid else '?'} ... {mws[-1]:.2f}")
+    evs = [r for r in recs if r["kind"] == "evals"]
+    check("ARC-Easy, PIQA and LAMBADA are checked during the run (quick) and in full at the end",
+          len(evs) >= 3 and not evs[0]["full"] and evs[0]["arc_easy_n"] == 10 and evs[-1]["full"] and evs[-1]["arc_easy_n"] == 30
+          and all(k in evs[-1] for k in ("arc_easy", "piqa", "lambada")), f"{len(evs) - 1} quick checks + the full one")
     deps = [r.get("depth") for r in tr]
     check("it grew inside the run (4 -> 8 layers at 40%)", deps[0] == 4 and deps[-1] == 8)
     st = json.loads((rd / "status.json").read_text())
