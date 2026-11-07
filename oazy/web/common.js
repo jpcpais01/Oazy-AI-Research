@@ -173,7 +173,7 @@ const UI = (() => {
         ctx.stroke();
         ctx.setLineDash([]);
         if (s.band && s.band.length > 1) {                // a faint cone: how sure the forecast is
-          ctx.fillStyle = alpha(s.color, 0.1);
+          ctx.fillStyle = alpha(s.color, s.bandAlpha ?? 0.1);
           ctx.beginPath();
           s.band.forEach((b, i) => (i ? ctx.lineTo(X(b[0]), Y(b[2])) : ctx.moveTo(X(b[0]), Y(b[2]))));
           for (let i = s.band.length - 1; i >= 0; i--) ctx.lineTo(X(s.band[i][0]), Y(s.band[i][1]));
@@ -235,7 +235,13 @@ const UI = (() => {
             ctx.beginPath(); ctx.arc(X(best[0]), Y(best[1]), 3, 0, 7); ctx.stroke();
           }
           const f = s.tipFmt || o.tipFmt || o.yFmt || ((x) => x);
-          rows.push(`<div class="tiprow"><span class="sw" style="background:${s.color};opacity:${s.alpha && s.alpha < 1 ? 0.5 : 1}"></span>${s.name}<b>${f(best[1])}</b></div>`);
+          let val = f(best[1]);
+          if (s.band && s.band.length) {                  // a forecast: its likely range too
+            let bb = s.band[0];
+            for (const b of s.band) if (Math.abs(b[0] - best[0]) < Math.abs(bb[0] - best[0])) bb = b;
+            if (bb[2] - bb[1] > 0) val += ` <small>(${f(bb[1])}–${f(bb[2])})</small>`;
+          }
+          rows.push(`<div class="tiprow"><span class="sw" style="background:${s.color};opacity:${s.alpha && s.alpha < 1 ? 0.5 : 1}"></span>${s.name}<b>${val}</b></div>`);
         }
         const note = o.tipNote ? o.tipNote(xv) : "";
         tip.innerHTML = `<div class="tiphead">${(o.xTip || o.xFmt || ((x) => x))(xv)}</div>` + rows.join("") + (note ? `<div class="tipnote">${note}</div>` : "");

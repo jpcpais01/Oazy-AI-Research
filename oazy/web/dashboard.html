@@ -46,6 +46,11 @@
   .score .track div { height: 100%; border-radius: 99px; background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.06) 50%, rgba(0, 0, 0, 0.06) 51%, rgba(255, 255, 255, 0.15)); transition: width .8s cubic-bezier(.2,.8,.2,1); }
   .score .note { font-size: 11.5px; color: var(--muted); margin-top: 8px; }
   .win { color: var(--good); } .lose { color: var(--warn); }
+  .fcwrap { overflow-x: auto; max-width: 100%; }
+  table.fc { border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; width: 100%; margin-top: 4px; }
+  table.fc th, table.fc td { padding: 3px 6px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  table.fc th { color: var(--muted); font-weight: 500; } table.fc td:first-child, table.fc th:first-child { text-align: left; }
+  #foreCheck .note { font-size: 11.5px; color: var(--muted); margin-top: 6px; } #foreCheck .sub { font-weight: 600; }
 
   /* inside the memory */
   .snaprow { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
@@ -142,7 +147,16 @@
         <p>At every word, a model gives each possible next word a chance. <b>Loss</b> measures how surprised it was by the word that really came next. Lower means it saw it coming.</p>
         <p>A loss of <b>L</b> is as hard as picking the right word out of about <b>e<sup>L</sup></b> equally likely ones: 3.3 is like choosing among 27 words.</p>
         <p>Each model has two lines in two colors. The <b>training</b> line is the loss on the batches it is learning from, as they go by. The <b>held-out</b> line is the loss on text it never trains on (the "finish line" scores above use those). If the held-out line stays close to the training one, the model is learning things that carry over to new text; if it starts climbing away above it, the model is memorising its training text. The dashed line is OpenAI's own GPT-2 (124M) measured on the same text, if you ran <span class="kbd">oazy.compare</span>.</p>
-        <p>The faint <b>dashed</b> line is a forecast: while a model trains, a learning curve (loss = a + b × words<sup>−c</sup>, the shape loss curves usually follow) is fitted to its most recent points (the newest 30% of them, so the early rush does not pull it) and drawn out to the planned number of words, with the predicted end value at its tip. The forecast is also replayed from earlier moments of the run: the small dots stacked at the end are those earlier forecasts (older ones fainter), and the shaded cone is how much the forecast has swung lately, so a wide cone means "don't trust the number yet". Hover past the end of a line to read how it has moved. It is a rough guess, and appears once there are enough points. The run card's "heading for" is the same forecast for the held-out loss.</p>
+        <p>The <b>dashed</b> lines are forecasts of where each line will be at the planned end, with the likely range shaded around them (about 8 times in 10 the end lands inside it). See "How the forecasts work" below.</p>
+      </div></details>
+      <details class="why" id="foreWhy"><summary>How the forecasts work, and how good they are</summary><div class="body">
+        <p><b>What it fits.</b> A model learns in proportion to the learning rate it gets: a word read at half the rate teaches about half as much. So the curve is fitted against <i>learning so far</i> (the learning rate added up over the words read), not against the words alone. The schedule is planned, so we know that number for the rest of the run too, including how it slows down in the cool-down.</p>
+        <p><b>The cool-down.</b> Over the last 20% the learning rate falls to zero, and the loss drops by an extra amount that a plain curve can't see coming: the steps get small enough to settle into the valley instead of bouncing across it. That drop builds up over a few hundred steps after each cut. Before a run gets there, its own points can't say how big the drop will be, so its size is taken from the runs on the pod that already went through a cool-down (as a share of their loss), and the range is widened by how much that varied. Once the run is in its own cool-down, its points take over.</p>
+        <p><b>The text change.</b> At 80% the text mix changes too (more conversations, which are easier to guess), so the <i>training</i> loss steps down at once; the held-out text stays the same, so the held-out loss doesn't. The training forecast has that step in it (sized the same way); the held-out one doesn't.</p>
+        <p><b>The noise.</b> The training loss jumps around, so it is first smoothed (the middle value of each stretch), and its shape is borrowed from the much steadier held-out loss: same model, same learning. HellaSwag moves with the held-out loss almost in a straight line, so its forecast is the held-out forecast pushed through that line.</p>
+        <p><b>The range.</b> The same method is replayed from earlier moments of the run, looking exactly as far ahead (for the share of the run still to go) as it looks now, and checked against what really happened. Their typical miss makes the range, plus the doubt about the cool-down drop. Early in a run, with little to check against, it starts wide on purpose.</p>
+        <p>(For the curious: loss = floor + A × learning-so-far<sup>−α</sup> − C × how much the learning rate has come down, from Tissue et al., 2024, "Scaling Law with Learning Rate Annealing".)</p>
+        <div id="foreCheck"></div>
       </div></details>
       <div class="legend" id="lossLegend" style="margin-bottom:10px"></div>
       <div class="chart"><canvas id="loss" style="height:300px"></canvas><div class="tip" id="lossTip"></div></div>
@@ -278,6 +292,7 @@
 <footer class="foot"><span>Oazy AI Research · training lab</span><span>Refreshes every 15 s · <a href="https://github.com/jpcpais01/Oazy-AI-Research" target="_blank" rel="noopener">Code</a></span></footer>
 
 <script src="common.js"></script>
+<script src="forecast.js"></script>
 <script src="lab.js"></script>
 <script>
 // the version, from git on the pod (moves on with every git pull)
@@ -443,7 +458,7 @@ function runCard(r) {
     <div class="prog"><div class="labels"><span><b>${fmtM(st.tokens || 0)}</b> of ${fmtM(cf.total_tokens || 0)} tokens · ${(frac * 100).toFixed(0)}%</span>
       <span>${state === "running" && st.eta_s != null ? "about " + fmtTime(st.eta_s) + " left" : state}</span></div>
       <div class="bar-t ${state === "running" ? "live" : ""}"><div style="width:${(frac * 100).toFixed(1)}%"></div></div></div>
-    <div class="stats">${stat("val loss", latest.val_loss != null ? fmtL(latest.val_loss) : "–", FORE[r.name]?.val ? "heading for ≈" + fmtL(FORE[r.name].val.yEnd) + (FORE[r.name].val.range ? ` (${fmtL(FORE[r.name].val.range[0])}–${fmtL(FORE[r.name].val.range[1])})` : "") : latest.val_loss != null ? "like 1 of " + UI.fmtChoices(latest.val_loss) + " words" : "")}
+    <div class="stats">${stat("val loss", latest.val_loss != null ? fmtL(latest.val_loss) : "–", FORE[r.name]?.val ? "heading for ≈" + fmtL(FORE[r.name].val.yEnd) + ` (${fmtL(FORE[r.name].val.lo)}–${fmtL(FORE[r.name].val.hi)})` : latest.val_loss != null ? "like 1 of " + UI.fmtChoices(latest.val_loss) + " words" : "")}
       ${stat("HellaSwag", hs, hsH)}
       ${stat("speed", st.tok_s ? (st.tok_s / 1e3).toFixed(0) + "k" : "–", "tokens per second")}</div>
     <div class="tele">${tele.map(([k, v, t]) => `<div${t ? ` title="${UI.escapeHtml(t)}"` : ""}><div class="k">${k}</div><div class="v">${UI.escapeHtml(v)}</div></div>`).join("")}</div>
@@ -608,60 +623,98 @@ function scoreboard() {
       <div class="note">${sizeNote}</div></div>`;
 }
 
-// ---- forecasts: fit a learning curve (y = a + b * tokens^-c) to the points so far and extend it to the planned end
-// Only for runs still training, once there are enough points. Only the newest 30% of the points are fitted, and the
-// noisy training loss is first smoothed into ~40 bins (medians). The curve is anchored to where the line is now.
-function forecast(r, pts, opt = {}) {
-  const end = r.config?.total_tokens;
-  if (!end || !isLive(r) || !pts.length) return null;
-  const xl = pts[pts.length - 1][0];
-  if (!(xl > 0) || xl >= end * 0.98 || xl < end * 0.03) return null;
-  const f = UI.forecastEnd(pts, end, opt);
-  if (!f) return null;
-  const n = 48, curve = [], at = f.last[0];
-  for (let i = 0; i <= n; i++) { const x = at + (end - at) * i / n; curve.push([x, f.g(x)]); }
-  // how the forecast has been moving: replay it from earlier in the run. Its recent swing is the range shown.
-  const hist = UI.forecastHistory(pts, end, opt).filter((h) => h[0] < at);
-  const recent = hist.filter((h) => h[0] >= at * 0.6).map((h) => h[1]).concat(f.yEnd);
-  const range = recent.length >= 3 ? [Math.min(...recent), Math.max(...recent)] : null;
-  const band = range && curve.map(([x, y]) => { const u = (x - at) / (end - at); return [x, y + (range[0] - f.yEnd) * u, y + (range[1] - f.yEnd) * u]; });
-  const was = hist.filter((h) => h[0] >= at * 0.6)[0] || null;      // the forecast from a while back, to say which way it moves
-  return { curve, band, range, hist, was, yEnd: f.yEnd, end, at, wsd: r.config?.schedule === "wsd" };
-}
-// tokens -> training minutes, from the recent pace (for the "Training time" axis)
-function minutesAt(r) {
-  const tr = (DATA[r.name]?.metrics || []).filter((x) => x.kind === "train");
-  if (tr.length < 2) return null;
-  const b = tr[tr.length - 1], a = tr[Math.floor(tr.length * 0.8)] === b ? tr[0] : tr[Math.floor(tr.length * 0.8)];
-  const rate = (b.tokens - a.tokens) / Math.max(1e-6, b.elapsed - a.elapsed);
-  if (!(rate > 0)) return null;
-  return (tok) => (b.elapsed + (tok - b.tokens) / rate) / 60;
+// ---- forecasts (oazy/web/forecast.js): where each live run's losses and HellaSwag land at the planned end.
+// The curve is fitted against the learning rate the run has had and will have (the schedule is planned), the
+// cool-down's extra drop is sized from the runs that already went through one, and the range is how far the same
+// method missed when replayed from earlier in the run. "How good are the forecasts" checks it on finished runs.
+const runOf = (r) => ({ name: r.name, cfg: r.config || {}, metrics: DATA[r.name]?.metrics || [] });
+let PRIORS = null, PRIORS_KEY = "";
+function priors() {
+  const done = RUNS.filter((r) => r.name !== "openai-gpt2" && !isLive(r) && r.config?.schedule === "wsd");
+  const key = done.map((r) => r.name + ":" + (DATA[r.name]?.metrics || []).length).join(",");
+  if (key !== PRIORS_KEY || !PRIORS) { PRIORS = Forecast.priorsFrom(done.map(runOf)); PRIORS_KEY = key; }
+  return PRIORS;
 }
 let FORE = {};          // run -> {loss, val, hs} forecasts, refreshed on every draw
+const FORE_MEMO = {};   // run -> {key, F}: a forecast is only redone when new points arrive
 function computeForecasts() {
   FORE = {};
+  const P = priors();
   for (const r of RUNS) {
-    if (r.name === "openai-gpt2") continue;
-    const m = DATA[r.name]?.metrics || [];
-    const tr = m.filter((x) => x.kind === "train").map((x) => [x.tokens, x.loss]);
-    const ev = m.filter((x) => x.kind === "eval").map((x) => [x.tokens, x.val_loss]);
-    const hs = m.filter((x) => hsOK(x) && !x.full).map((x) => [x.tokens, x.acc_norm]);
-    FORE[r.name] = {
-      loss: forecast(r, tr, { minPts: 10, recent: 0.3, lo: 0 }),
-      val: forecast(r, ev, { minPts: 5, recent: 0.3, lo: 0 }),
-      hs: forecast(r, hs, { minPts: 5, recent: 0.3, dir: 1, lo: 0.25, hi: 1 }),
-    };
+    if (r.name === "openai-gpt2" || !isLive(r) || !r.config?.total_tokens) continue;
+    const { cfg, metrics } = runOf(r), key = metrics.length + ":" + cfg.total_tokens + ":" + PRIORS_KEY;
+    if (FORE_MEMO[r.name]?.key === key) { FORE[r.name] = FORE_MEMO[r.name].F; continue; }
+    const F = {};
+    try {
+      F.val = Forecast.metric(cfg, metrics, "val", { priors: P });
+      F.loss = Forecast.metric(cfg, metrics, "loss", { priors: P });
+      F.hs = Forecast.hellaswag(cfg, metrics, F.val, { ok: hsOK });
+    } catch (e) { console.warn("forecast", r.name, e); }
+    FORE_MEMO[r.name] = { key, F };
+    FORE[r.name] = F;
   }
 }
 
-// "Fern3's forecast: 3.07 → 3.04 → 3.01 since 1.2B": how each model's predicted end has been moving
-function trails(key, fmt) {
+const andList = (v) => v.length < 2 ? v.join("") : v.slice(0, -1).join(", ") + " and " + v[v.length - 1];
+// What a forecast stands on, in a sentence: the cool-down drop still to come and where its size comes from.
+function foreWhy(F, fmt) {
+  if (!F) return "";
+  const bits = [];
+  if (F.coolLeft > 0.0005) bits.push(`including a ${fmt(F.coolLeft)} drop still to come from the cool-down` +
+    (F.coolFromPrior ? (F.priorFrom.length ? `, sized from ${andList(F.priorFrom.map(nameOf))}'s` : ", a rough size until a run finishes one") : ", sized from its own points"));
+  if (F.jumpLeft && F.key === "loss") bits.push(`a ${fmt(Math.abs(F.jumpLeft))} step ${F.jumpLeft < 0 ? "down" : "up"} at ${fmtM(F.jumpAt)}, where the text mix changes`);
+  return bits.join("; ");
+}
+function foreNote(key, fmt) {
   return VIS().map((r) => {
-    const F = FORE[r.name]?.[key]; if (!F || !F.was) return "";
-    const H = F.hist.filter((h) => h[0] >= F.was[0]), mid = H[H.length >> 1];
-    const seq = [F.was[1], ...(mid && mid !== F.was ? [mid[1]] : []), F.yEnd].map(fmt).join(" → ");
-    return `<br><span style="color:${colorOf(r.name)}">${nameOf(r.name)}</span>: ${seq} since ${fmtM(F.was[0])}`;
+    const F = FORE[r.name]?.[key]; if (!F) return "";
+    const why = key === "hs" ? `from its held-out forecast (each 0.01 of loss ≈ ${(-F.perLoss).toFixed(1)} points)` : foreWhy(F, fmt);
+    return `<br><span style="color:${key === "val" ? heldColorOf(r.name) : colorOf(r.name)}">${nameOf(r.name)}${key === "val" ? " held-out" : key === "loss" ? " training" : ""}</span>: ` +
+      `≈${fmt(F.yEnd)}, likely ${fmt(F.lo)}–${fmt(F.hi)}${why ? " · " + why : ""}`;
   }).join("");
+}
+
+// ---- how good the forecasts are: the method replayed on runs that already ended, from 30%, 50%, 70% and 85% of
+// the way, against where they really ended. The old method (a power law in words read, fitted to the newest 30% of
+// the points) is scored the same way, for comparison. Each run is checked with cool-down sizes from the OTHER runs only.
+function oldForecast(metrics, key, now, endT) {
+  const pts = key === "loss" ? metrics.filter((x) => x.kind === "train" && x.loss != null && x.tokens <= now).map((x) => [x.tokens, x.loss])
+    : key === "val" ? metrics.filter((x) => x.kind === "eval" && x.val_loss != null && x.tokens <= now).map((x) => [x.tokens, x.val_loss])
+    : metrics.filter((x) => hsOK(x) && !x.full && x.tokens <= now).map((x) => [x.tokens, x.acc_norm]);
+  const o = key === "hs" ? { minPts: 5, recent: 0.3, dir: 1, lo: 0.25, hi: 1 } : { minPts: key === "val" ? 5 : 10, recent: 0.3, lo: 0 };
+  const f = UI.forecastEnd(pts, endT, o);
+  return f ? f.yEnd : null;
+}
+let CHECK_KEY = "", CHECK_HTML = "";
+function foreCheck() {
+  const box = document.getElementById("foreCheck"); if (!box) return;
+  const done = RUNS.filter((r) => r.name !== "openai-gpt2" && !isLive(r) && r.config?.total_tokens && ["wsd", "cos"].includes(r.config?.schedule)
+    && (DATA[r.name]?.metrics || []).some((x) => x.kind === "eval"));
+  const key = done.map((r) => r.name + ":" + (DATA[r.name]?.metrics || []).length).join(",");
+  if (key === CHECK_KEY) { if (box.innerHTML !== CHECK_HTML) box.innerHTML = CHECK_HTML; return; }
+  CHECK_KEY = key;
+  if (!done.length) { box.innerHTML = CHECK_HTML = `<p class="note">The check needs a finished run on the pod.</p>`; return; }
+  box.innerHTML = `<p class="note">Checking the forecasts on finished runs…</p>`;
+  setTimeout(() => {
+    let rows = [];
+    try { rows = Forecast.backtest(done.map(runOf), { old: oldForecast }); } catch (e) { console.warn("backtest", e); }
+    const cuts = [0.3, 0.5, 0.7, 0.85];
+    const KEYS = [["val", "held-out loss", fmtL], ["loss", "training loss", fmtL], ["hs", "HellaSwag", (v) => (v * 100).toFixed(1)]];
+    const sign = (v, f) => (v > 0 ? "+" : v < 0 ? "−" : "") + f(Math.abs(v));
+    let html = `<p><b>How good are they?</b> Below, each finished run is forecast again from 30%, 50%, 70% and 85% of the way through, as if it were still training, and compared with where it really ended. Each cell is the miss (forecast minus truth); <span class="win">green</span> means the truth was inside the shaded range, <span class="lose">red</span> means it wasn't. The last column is the old forecast's miss, for comparison.</p>`;
+    for (const [k, label, f] of KEYS) {
+      const R = rows.filter((x) => x.key === k); if (!R.length) continue;
+      const names = [...new Set(R.map((x) => x.name))];
+      const mae = (v) => v.length ? v.reduce((a, x) => a + Math.abs(x), 0) / v.length : null;
+      const nm = mae(R.map((x) => x.err)), om = mae(R.filter((x) => x.oldErr != null).map((x) => x.oldErr)), held = R.filter((x) => x.inside).length;
+      html += `<div class="sub" style="margin-top:12px">${label}</div><div class="fcwrap"><table class="fc"><tr><th></th>${cuts.map((c) => `<th>from ${c * 100}%</th>`).join("")}<th>old, typical</th></tr>` +
+        names.map((n) => `<tr><td>${nameOf(n)}</td>${cuts.map((c) => { const x = R.find((y) => y.name === n && y.cut === c);
+          return x ? `<td class="${x.inside ? "win" : "lose"}" title="said ${f(x.said)} (likely ${f(x.lo)}–${f(x.hi)}), ended at ${f(x.real)}">${sign(x.err, f)}</td>` : "<td>–</td>"; }).join("")}
+          <td>${(() => { const o = mae(R.filter((y) => y.name === n && y.oldErr != null).map((y) => y.oldErr)); return o != null ? "±" + f(o) : "–"; })()}</td></tr>`).join("") +
+        `</table></div><p class="note">Typical miss ${f(nm)}${om != null ? ` (old method: ${f(om)})` : ""} · the range held ${held} of ${R.length} times${k === "hs" ? " (in points)" : ""}.</p>`;
+    }
+    box.innerHTML = CHECK_HTML = html;
+  }, 50);
 }
 
 function drawLearning() {
@@ -684,26 +737,29 @@ function drawLearning() {
     const evS = { name: nameOf(r.name) + " · held-out", color: hcol, width: 2, sparse: true, endLabel: true, points: ev.map((x) => [xOf(x), x.val_loss]).filter((p) => p[1] != null) };
     series.push(trS, evS);
     hsS.push({ name: nameOf(r.name), color: col, width: 2.4, dots: true, endLabel: true, points: hs.map((x) => [xOf(x), x.acc_norm]) });
-    // the dashed forecasts, out to the planned number of words
+    // the dashed forecasts, out to the planned number of words, with their likely range shaded
     const F = FORE[r.name] || {}, mAt = xmode === "tokens" ? null : minutesAt(r), mx = xmode === "tokens" ? (t) => t : mAt && ((t) => mAt(t) / tu);
     const fc = (f) => f.curve.map(([t, y]) => [mx(t), y]);
     const fcb = (b) => b.map(([t, l, h]) => [mx(t), l, h]);
-    // earlier forecasts, stacked at the end line like a trail: older ones fainter
-    const marks = (f, mx) => f.hist.map(([t, y], i) => [mx(f.end), y, 0.15 + 0.6 * (i + 1) / f.hist.length]);
-    if (mx && F.loss) {          // past the line's end, the tooltip shows the forecast instead; its tip carries the label
-      trS.endLabel = false; evS.endLabel = false; trS.tipRange = true; evS.tipRange = true;
-      const fl = { name: nameOf(r.name) + " · training forecast", color: col, alpha: 0.55, width: 2, dash: [5, 5], tipRange: true, endDot: true,
-        endLabel: "≈" + fmtL(F.loss.yEnd), labelAlpha: 0.7, points: fc(F.loss), band: F.loss.band && fcb(F.loss.band), marks: marks(F.loss, mx) };
-      series.push(fl);
-      if (F.val)                 // the held-out line gets its own (plainer) forecast, in its own color
-        series.push({ name: nameOf(r.name) + " · held-out forecast", color: hcol, alpha: 0.55, width: 2, dash: [5, 5], tipRange: true,
-          endLabel: "≈" + fmtL(F.val.yEnd), labelAlpha: 0.7, points: fc(F.val) });
-      anyFore = true; foreFrom = Math.min(foreFrom, fl.points[0][0]);
+    if (mx && (F.val || F.loss)) {          // past the line's end, the tooltip shows the forecast instead; its tip carries the label
+      if (F.loss) {
+        trS.endLabel = false; trS.tipRange = true;
+        const fl = { name: nameOf(r.name) + " · training forecast", color: col, alpha: 0.5, width: 2, dash: [5, 5], tipRange: true,
+          endLabel: "≈" + fmtL(F.loss.yEnd), labelAlpha: 0.7, points: fc(F.loss), band: fcb(F.loss.band), bandAlpha: 0.05 };
+        series.push(fl); foreFrom = Math.min(foreFrom, fl.points[0][0]);
+      }
+      if (F.val) {             // the held-out forecast: the one the "finish line" will show
+        evS.endLabel = false; evS.tipRange = true;
+        const fv = { name: nameOf(r.name) + " · held-out forecast", color: hcol, alpha: 0.65, width: 2, dash: [5, 5], tipRange: true, endDot: true,
+          endLabel: "≈" + fmtL(F.val.yEnd), labelAlpha: 0.8, points: fc(F.val), band: fcb(F.val.band) };
+        series.push(fv); foreFrom = Math.min(foreFrom, fv.points[0][0]);
+      }
+      anyFore = true;
     }
     if (mx && F.hs) {
       Object.assign(hsS[hsS.length - 1], { endLabel: false, tipRange: true });
       hsS.push({ name: nameOf(r.name) + " · forecast", color: col, alpha: 0.55, width: 2, dash: [5, 5], tipRange: true, endDot: true,
-        endLabel: "≈" + pct(F.hs.yEnd), labelAlpha: 0.7, points: fc(F.hs), band: F.hs.band && fcb(F.hs.band), marks: marks(F.hs, mx) });
+        endLabel: "≈" + pct(F.hs.yEnd), labelAlpha: 0.7, points: fc(F.hs), band: fcb(F.hs.band) });
       anyHsFore = true;
     }
     leg.push([nameOf(r.name) + " · training", col]); if (evS.points.length) leg.push([nameOf(r.name) + " · held-out", hcol]);
@@ -727,11 +783,10 @@ function drawLearning() {
   const xf = xmode === "tokens" ? fmtM : hours ? (v) => +v.toFixed(1) + " h" : (v) => Math.round(v) + " min";
   charts.loss.set({ series, xFmt: xf, yFmt: (v, d) => v.toFixed(d), tipFmt: fmtL, yFocus: 0.04,
     tipNote: (xv) => xv > foreFrom
-      ? "dashed: forecast · dots: earlier forecasts · shade: their recent swing"
-        + trails("loss", fmtL) + (VIS().some((r) => FORE[r.name]?.loss?.wsd) ? "<br>the final cool-down usually pulls it lower still" : "")
+      ? "dashed: forecast to the planned end · shade: its likely range (about 8 in 10)" + foreNote("val", fmtL) + foreNote("loss", fmtL)
       : "training: the batches it learns from · held-out: text it never trains on" });
   charts.hs.set({ series: hsS, xFmt: xf, yFmt: (v, d) => (v * 100).toFixed(Math.max(0, d - 2)) + "%", tipFmt: pct, empty: "Waiting for the first HellaSwag check",
-    tipNote: () => anyHsFore ? "dashed: forecast · dots: earlier forecasts · shade: their recent swing" + trails("hs", pct) : "" });
+    tipNote: () => anyHsFore ? "dashed: forecast to the planned end · shade: its likely range" + foreNote("hs", pct) : "" });
 }
 
 function drawMemoryUse() {
@@ -948,7 +1003,7 @@ function draw() {
   computeForecasts();
   podSummary();
   document.getElementById("runs").innerHTML = nowCards();
-  scoreboard(); drawLearning(); drawMemoryUse(); drawDrafts(); drawRounds(); drawSamples(); library();
+  scoreboard(); drawLearning(); foreCheck(); drawMemoryUse(); drawDrafts(); drawRounds(); drawSamples(); library();
 }
 
 async function refresh() {
