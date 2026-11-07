@@ -91,7 +91,9 @@ def handler(runs: Path):
             fs = files(runs)
             name = unquote(self.path.split("?")[0].lstrip("/"))
             if name == "":
-                host = self.headers.get("X-Forwarded-Host") or self.headers.get("Host") or "localhost"
+                pod = os.environ.get("RUNPOD_POD_ID")      # behind RunPod's proxy the Host header is the pod's inside address
+                host = (f"{pod}-8001.proxy.runpod.net" if pod else
+                        self.headers.get("X-Forwarded-Host") or self.headers.get("Host") or "localhost")
                 body = page(host, fs)
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
