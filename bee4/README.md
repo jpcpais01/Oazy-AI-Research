@@ -27,7 +27,7 @@ with 12 layers instead of 20: wide and shallow keeps the matrix products big, wh
 - **Plain causal attention** on the GPU's fused kernel: the documents packed in a 2,048-word window may see the
   earlier ones (keeping them apart cost about 40% of a pass on a B200). The mentor still reads each document on its
   own. `--set attn_docs=1` brings the rule back.
-- **FP8** for every attention and MLP matrix product (the word table stays bf16), the stored RoPE table, the loss in
+- **FP8** available (off by default since the B200 check below; `--fp8 1`) for every attention and MLP matrix product (the word table stays bf16), the stored RoPE table, the loss in
   slices, Muon with weight decay 0.1, the batch ramp, the WSD schedule with the square-root cool-down, and Tagus20's
   mix with its chat-heavy cool-down. One change: the cool-down (the learning rate's fall and the cool-down text) is
   the **last 30%** of the run, from 70% (Coral's is the last 20%); studies of WSD find 20-30% about best.
@@ -52,11 +52,15 @@ the same; growing depth makes the early run faster, the mentor costs about 12 ms
 
 ### Speed switches (Nov 7)
 
+Measured on the B200 (speedcheck, full depth, micro 32): **475k tok/s plain bf16**. FP8 445k and the gradients moved
+(cosine 0.953), so Bee4 now trains in **bf16 by default** (`--fp8 1` turns FP8 back on). cuDNN attention, micro 48/64
+and autotuned compile were within 1%; CUDA graphs fail with the training step. Batched Muon: 9 ms a step instead of 46.
+
 - **Short windows first**: 512 words for the first 15%, 1,024 until 30%, then 2,048 (`--set ctx=...`). The batch in
   words stays the same, so each pass takes more, shorter windows. Held-out loss is always scored on 1,024 words.
 - **cuDNN attention** (`--set attn_backend=cudnn`): Blackwell's fastest attention kernel; same maths.
 - **Compile modes** (`--set compile_mode=max-autotune-no-cudagraphs` or `reduce-overhead` for CUDA graphs).
-- **FP8** (`--fp8 1`) and the **fused output layer + loss** (mentor KL included) were already there.
+- **FP8** (`--fp8 1`, off by default for Bee4) and the **fused output layer + loss** (mentor KL included) were already there.
 - **Muon batched**: the Newton-Schulz steps of all same-shape weights run as one stacked product (exactly the same
   update, far fewer GPU launches).
 - **`python3 -m oazy.speedcheck --model bee4 --preset big`** measures each switch at full depth, keeps it only if it is

@@ -163,7 +163,7 @@ python3 -m bee4.tests --device cuda                       # self-tests: compiled
 python3 -m oazy.evals --prepare                           # once: ARC-Easy, PIQA, LAMBADA (checked every 500M tokens, in full at the end)
 python3 -m oazy.speedcheck --model bee4 --preset big         # ~15-20 min: tries FP8, cuDNN attention, micro 48/64, CUDA graphs;
                                                           # keeps what is faster with the same loss, prints the train line to use
-bash runpod/train.sh bee4 --preset big --tokens 10e9 --micro 32 # the run (use the line speedcheck printed instead); resumes if stopped
+bash runpod/train.sh bee4 --preset big --tokens 10e9 --micro 32 --fp8 0 # the run (bf16; measured 475k tok/s at full depth); resumes if stopped
 python3 -m oazy.sft --run bee4                            # afterwards: the chat fine-tune -> runs/bee4-chat
 python3 -m bee4.chat --run bee4-chat --port 8002          # chat
 ```
