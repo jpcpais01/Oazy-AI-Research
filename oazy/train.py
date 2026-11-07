@@ -33,15 +33,15 @@ from memtrix.model import Memtrix, MemtrixConfig
 from memtrix import memory
 from . import hellaswag, probes, term
 
-KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "black", "blackt", "gpt"]
+KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "black", "blackt", "gpt"]
 NICE = {"memtrix": "Memtrix", "tide": "Tide", "fern": "Fern", "ember": "Ember", "fern2": "Fern2", "fern3": "Fern3",
-        "bee": "Bee0.2B", "bee2": "Bee_v2_0.2B", "bee3": "Bee3", "frog": "Frog", "coral": "Coral", "bee4": "Bee4-200M", "black": "Code Black",
+        "bee": "Bee0.2B", "bee2": "Bee_v2_0.2B", "bee3": "Bee3", "frog": "Frog", "coral": "Coral", "bee4": "Bee4-200M", "coralmini": "Coral Mini", "black": "Code Black",
         "blackt": "Black-T", "gpt": "GPT"}
-FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "black", "blackt")    # raised the fast way: Muon (and a mentor, where MENTOR names one)
+FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "black", "blackt")    # raised the fast way: Muon (and a mentor, where MENTOR names one)
 # default mentor (the others: gpt2-medium). Code Black and Black-T race without one, so the architectures are compared alone.
 MENTOR = {"bee": "gpt2-large", "bee2": "smollm2-360m", "bee3": "smollm2-360m", "frog": "smollm2-360m", "coral": "smollm2-360m",
-          "bee4": "smollm2-360m", "black": "none", "blackt": "none"}
-BEES = ("bee", "bee2", "bee3", "frog", "coral", "bee4", "black", "blackt")    # the text mix (Tagus), WSD, growing windows
+          "bee4": "smollm2-360m", "coralmini": "smollm2-360m", "black": "none", "blackt": "none"}
+BEES = ("bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "black", "blackt")    # the text mix (Tagus), WSD, growing windows
 # Bee3's recipe (bee3/README.md): the mentor stays the whole run, weight decay on the Muon grids, a batch ramp,
 # a 1-minus-square-root cool-down, twice Bee2's learning rates (the presets' lr_bee3 / muon_lr_bee3)
 RECIPE = {"bee3": dict(mentor_floor=0.25, mentor_off=0.1, muon_wd=0.1, batch_ramp="65536:0.1", decay_shape="sqrt")}
@@ -63,6 +63,11 @@ RECIPE["coral"] = dict(RECIPE["frog"], mentor_weight=0.25, mentor_until=0.3, men
 RECIPE["bee4"] = dict(RECIPE["coral"], mentor_weight=0.25, mentor_until=0.3, mentor_floor=0.1, mentor_off=0.1,
                       decay=0.3,   # João, Nov 7: the cool-down (learning-rate fall + cool-down text) over the last 30%, from 70%
                       fp8=0)       # B200 speedcheck, Nov 7: FP8 was slower (445k vs 475k tok/s) and moved the gradients
+# Coral Mini (coralmini/README.md): Coral's experts at Bee4's size (16 experts of 160, top 2, + a shared MLP of 256;
+# ~198M, ~115M at work per word), raised exactly as Bee4 (João, Nov 7: the speed and training settings always come from
+# the latest best model). The expert-only parts (balancing biases, balance loss, Muon on the expert stacks, the fixed
+# room per expert) live in the model (coral/model.py).
+RECIPE["coralmini"] = dict(RECIPE["bee4"])
 # Code Black (codeblack/README.md) and Black-T, the transformer it races: the same recipe for both, so a race measures
 # the architecture. Bee3's polish (Muon weight decay, a batch ramp, the square-root cool-down) and FP8, no mentor. Races
 # run on the clock: --preset race --minutes 30 (every schedule follows the training time instead of the token count).
@@ -159,6 +164,11 @@ def _bee4():
     return Bee4, Bee4Config
 
 
+def _coralmini():
+    from coralmini.model import CoralMini, CoralMiniConfig   # coralmini/ = Coral's experts at 200M (16 experts, top 2), Bee4's recipe
+    return CoralMini, CoralMiniConfig
+
+
 def _black():
     from codeblack.model import Black, BlackConfig   # codeblack/ = two clocks: a fast token stream, a slow stream once per 4 tokens
     return Black, BlackConfig
@@ -217,17 +227,17 @@ PRESETS = {
     ),
     # GPT-2 small size (Memtrix 117M vs GPT-2 124M), ~2 h for both models on one B200 (check with --bench)
     "full": dict(
-        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576, batch_bee4=524288,
+        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576, batch_bee4=524288, batch_coralmini=524288,
         micro=32, accum=8, lr=1.2e-3, lr_bee3=2.4e-3, muon_lr_bee3=0.04, lr_frog=1.8e-3, muon_lr_frog=0.03,
-        lr_coral=1.8e-3, muon_lr_coral=0.03, lr_bee4=1.8e-3, muon_lr_bee4=0.03, warmup=400, tokens=2_000_000_000,
+        lr_coral=1.8e-3, muon_lr_coral=0.03, lr_bee4=1.8e-3, muon_lr_bee4=0.03, lr_coralmini=1.8e-3, muon_lr_coralmini=0.03, warmup=400, tokens=2_000_000_000,
         eval_every=50_000_000, probe_every=250_000_000, hs_every=250_000_000, sample_every=250_000_000, evals_every=500_000_000,
         val_windows=128, hs_quick=1000, evals_quick=500, sample_len=120,
     ),
     # the same models, 2.5x the text (e.g. a 2 x B200 pod for ~2.5 h, one model per GPU)
     "big": dict(
-        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576, batch_bee4=524288,
+        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576, batch_bee4=524288, batch_coralmini=524288,
         micro=32, accum=8, lr=1.2e-3, lr_bee3=2.4e-3, muon_lr_bee3=0.04, lr_frog=1.8e-3, muon_lr_frog=0.03,
-        lr_coral=1.8e-3, muon_lr_coral=0.03, lr_bee4=1.8e-3, muon_lr_bee4=0.03, warmup=600, tokens=5_000_000_000,
+        lr_coral=1.8e-3, muon_lr_coral=0.03, lr_bee4=1.8e-3, muon_lr_bee4=0.03, lr_coralmini=1.8e-3, muon_lr_coralmini=0.03, warmup=600, tokens=5_000_000_000,
         eval_every=100_000_000, probe_every=200_000_000, hs_every=200_000_000, sample_every=200_000_000, evals_every=500_000_000,
         val_windows=128, hs_quick=1000, evals_quick=500, sample_len=120,
     ),
@@ -325,6 +335,12 @@ def build(kind, preset, overrides=None):
         cfg = Bee4Config(**{**small, **({"ctx": f"{small['max_len']}:0"} if "max_len" in small else {}),
                             **p.get("bee4", {}), **(overrides or {})})
         return Bee4(cfg), cfg
+    if kind == "coralmini":
+        CoralMini, CoralMiniConfig = _coralmini()
+        small = {k: v for k, v in p.get("bee", {}).items() if k != "ctx"}    # the test presets' small body, as Bee3
+        cfg = CoralMiniConfig(**{**small, **({"ctx": f"{small['max_len']}:0"} if "max_len" in small else {}),
+                                 **p.get("coral", {}), **p.get("coralmini", {}), **(overrides or {})})
+        return CoralMini(cfg), cfg
     cfg = GPTConfig(**{**p["gpt"], **(overrides or {})})
     return GPT(cfg), cfg
 
@@ -370,6 +386,9 @@ def load_model(ckpt: Path, device, mmap=False):
     elif kind == "bee4":
         Bee4, Bee4Config = _bee4()
         model = Bee4(Bee4Config.from_dict(st["config"]))
+    elif kind == "coralmini":
+        CoralMini, CoralMiniConfig = _coralmini()
+        model = CoralMini(CoralMiniConfig.from_dict(st["config"]))
     elif kind in ("black", "blackt"):
         cls, Cfg = _black() if kind == "black" else _blackt()
         model = cls(Cfg.from_dict(st["config"]))
