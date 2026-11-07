@@ -141,7 +141,7 @@
     <div class="card span7">
       <div class="cardhead">
         <div class="titles"><h2>How wrong the models still are</h2><div class="sub">Next-word loss as they train: on the text they learn from, and on held-out text they never see. Lower is better.</div></div>
-        <div class="tools"><div class="seg" id="xmode"><button data-x="tokens" class="on">Words read</button><button data-x="minutes">Training time</button></div></div>
+        <div class="tools"><div class="seg hz" title="Stretch the forecast: what each run would reach had it been planned this long"><button data-h="0" class="on">planned end</button><button data-h="1e11">100B</button><button data-h="1e12">1T</button></div><div class="seg" id="xmode"><button data-x="tokens" class="on">Words read</button><button data-x="minutes">Training time</button></div></div>
       </div>
       <details class="why"><summary>What is loss?</summary><div class="body">
         <p>At every word, a model gives each possible next word a chance. <b>Loss</b> measures how surprised it was by the word that really came next. Lower means it saw it coming.</p>
@@ -155,6 +155,7 @@
         <p><b>The text change.</b> At 80% the text mix changes too (more conversations, which are easier to guess), so the <i>training</i> loss steps down at once; the held-out text stays the same, so the held-out loss doesn't. The training forecast has that step in it (sized the same way); the held-out one doesn't.</p>
         <p><b>The noise.</b> The training loss jumps around, so it is first smoothed (the middle value of each stretch), and its shape is borrowed from the much steadier held-out loss: same model, same learning. HellaSwag moves with the held-out loss almost in a straight line, so its forecast is the held-out forecast pushed through that line.</p>
         <p><b>The range.</b> The same method is replayed from earlier moments of the run, looking exactly as far ahead (for the share of the run still to go) as it looks now, and checked against what really happened. Their typical miss makes the range, plus the doubt about the cool-down drop. Early in a run, with little to check against, it starts wide on purpose.</p>
+        <p><b>100B and 1T.</b> These buttons stretch the forecast past the plan: what each model would reach had its run been planned that long, with the same recipe (the flat learning rate kept going, the cool-down and text change moved to the last 20% of the longer run). The fitted numbers stay the ones learned from the real run; only the schedule changes. They assume fresh text all the way and stretch a curve far past its points, so the range there is mostly how far apart the curve shapes the points can't rule out end up. The x axis turns logarithmic.</p>
         <p>(For the curious: loss = floor + A × learning-so-far<sup>−α</sup> − C × how much the learning rate has come down, from Tissue et al., 2024, "Scaling Law with Learning Rate Annealing".)</p>
         <div id="foreCheck"></div>
       </div></details>
@@ -162,7 +163,7 @@
       <div class="chart"><canvas id="loss" style="height:300px"></canvas><div class="tip" id="lossTip"></div></div>
     </div>
     <div class="card span5">
-      <div class="cardhead"><div class="titles"><h2>HellaSwag</h2><div class="sub">Picking the sensible ending of a scene, out of 4, scored per letter. Higher is better.</div></div></div>
+      <div class="cardhead"><div class="titles"><h2>HellaSwag</h2><div class="sub">Picking the sensible ending of a scene, out of 4, scored per letter. Higher is better.</div></div><div class="tools"><div class="seg hz" title="Stretch the forecast: what each run would reach had it been planned this long"><button data-h="0" class="on">planned end</button><button data-h="1e11">100B</button><button data-h="1e12">1T</button></div></div></div>
       <details class="why"><summary>What is HellaSwag?</summary><div class="body">
         <p>A standard test of common sense: "A woman is outside with a bucket and a dog. The dog is running around trying to avoid a bath. She…" followed by four endings, three of them silly.</p>
         <p>The model picks the ending it finds least surprising. Guessing gives <b>25%</b>. OpenAI's GPT-2 small scores <b>about 31.1%</b> this way: that is the line to beat.</p>
@@ -651,6 +652,16 @@ function priors() {
   if (key !== PRIORS_KEY || !PRIORS) { PRIORS = Forecast.priorsFrom(done.map(runOf)); PRIORS_KEY = key; }
   return PRIORS;
 }
+// tokens -> training minutes, from the recent pace (for the "Training time" axis)
+function minutesAt(r) {
+  const tr = (DATA[r.name]?.metrics || []).filter((x) => x.kind === "train");
+  if (tr.length < 2) return null;
+  const b = tr[tr.length - 1], a = tr[Math.floor(tr.length * 0.8)] === b ? tr[0] : tr[Math.floor(tr.length * 0.8)];
+  const rate = (b.tokens - a.tokens) / Math.max(1e-6, b.elapsed - a.elapsed);
+  if (!(rate > 0)) return null;
+  return (tok) => (b.elapsed + (tok - b.tokens) / rate) / 60;
+}
+let HORIZON = 0;        // 0: forecast to each run's planned end; 1e11 / 1e12: as if it were planned for 100B / 1T tokens
 let FORE = {};          // run -> {loss, val, hs} forecasts, refreshed on every draw
 const FORE_MEMO = {};   // run -> {key, F}: a forecast is only redone when new points arrive
 function computeForecasts() {
@@ -658,19 +669,44 @@ function computeForecasts() {
   const P = priors();
   for (const r of RUNS) {
     if (r.name === "openai-gpt2" || !isLive(r) || !r.config?.total_tokens) continue;
-    const { cfg, metrics } = runOf(r), key = metrics.length + ":" + cfg.total_tokens + ":" + PRIORS_KEY;
+    const { cfg, metrics } = runOf(r), key = metrics.length + ":" + cfg.total_tokens + ":" + PRIORS_KEY + ":" + HORIZON;
     if (FORE_MEMO[r.name]?.key === key) { FORE[r.name] = FORE_MEMO[r.name].F; continue; }
     const F = {};
     try {
       F.val = Forecast.metric(cfg, metrics, "val", { priors: P });
       F.loss = Forecast.metric(cfg, metrics, "loss", { priors: P });
       F.hs = Forecast.hellaswag(cfg, metrics, F.val, { ok: hsOK });
+      if (HORIZON) {             // stretched: the same fitted law on the schedule of a run planned HORIZON tokens long
+        F.valH = Forecast.stretch(F.val, HORIZON);
+        F.lossH = Forecast.stretch(F.loss, HORIZON, { borrow: F.valH?.spread });
+        F.hsH = Forecast.hellaswag(cfg, metrics, F.valH, { ok: hsOK });
+      }
     } catch (e) { console.warn("forecast", r.name, e); }
     FORE_MEMO[r.name] = { key, F };
     FORE[r.name] = F;
   }
 }
 
+const fmtHz = (h) => h >= 1e12 ? +(h / 1e12).toFixed(1) + "T" : +(h / 1e9).toFixed(0) + "B";
+// with a stretched forecast: where each run's real plan ends, on the chart
+function horizonLines() {
+  if (!HORIZON) return [];
+  const tu = xmode !== "tokens" && VIS().some((r) => (r.status?.elapsed || 0) > 3 * 3600) ? 60 : 1;
+  return VIS().filter((r) => FORE[r.name]?.valH || FORE[r.name]?.lossH).map((r) => {
+    const end = r.config.total_tokens, mAt = xmode === "tokens" ? null : minutesAt(r);
+    return [xmode === "tokens" ? end : mAt ? mAt(end) / tu : null, nameOf(r.name) + "'s planned end"];
+  }).filter((v) => v[0] != null);
+}
+// on the log axis, start at 2% of the furthest real point: the first steps would otherwise take half the width
+function logMin(series) {
+  if (!HORIZON) return null;
+  const xs = series.filter((s) => !s.dash && !s.hline).flatMap((s) => s.points.map((p) => p[0]));
+  return xs.length ? Math.max(...xs) * 0.02 : null;
+}
+function horizonWords() {
+  return `dashed: what each run would reach had it been planned for ${fmtHz(HORIZON)} tokens: the same model and recipe, its flat learning rate kept going and its cool-down moved to the last 20% of the ${fmtHz(HORIZON)}. ` +
+    `It assumes fresh text all the way (Tagus20 holds about 20B tokens; text read twice teaches less), and it stretches a curve fitted on a far shorter run, so read it as "about where this model levels off", not a promise. Shade: its likely range. The x axis is logarithmic.`;
+}
 const andList = (v) => v.length < 2 ? v.join("") : v.slice(0, -1).join(", ") + " and " + v[v.length - 1];
 // What a forecast stands on, in a sentence: the cool-down drop still to come and where its size comes from.
 function foreWhy(F, fmt) {
@@ -683,8 +719,8 @@ function foreWhy(F, fmt) {
 }
 function foreNote(key, fmt) {
   return VIS().map((r) => {
-    const F = FORE[r.name]?.[key]; if (!F) return "";
-    const why = key === "hs" ? `from its held-out forecast (each 0.01 of loss ≈ ${(-F.perLoss).toFixed(1)} points)` : foreWhy(F, fmt);
+    const F = FORE[r.name]?.[HORIZON ? key + "H" : key]; if (!F) return "";
+    const why = F.hypothetical || HORIZON ? "" : key === "hs" ? `from its held-out forecast (each 0.01 of loss ≈ ${(-F.perLoss).toFixed(1)} points)` : foreWhy(F, fmt);
     return `<br><span style="color:${key === "val" ? heldColorOf(r.name) : colorOf(r.name)}">${nameOf(r.name)}${key === "val" ? " held-out" : key === "loss" ? " training" : ""}</span>: ` +
       `≈${fmt(F.yEnd)}, likely ${fmt(F.lo)}–${fmt(F.hi)}${why ? " · " + why : ""}`;
   }).join("");
@@ -754,7 +790,7 @@ function drawLearning() {
     series.push(trS, evS);
     hsS.push({ name: nameOf(r.name), color: col, width: 2.4, dots: true, endLabel: true, points: hs.map((x) => [xOf(x), x.acc_norm]) });
     // the dashed forecasts, out to the planned number of words, with their likely range shaded
-    const F = FORE[r.name] || {}, mAt = xmode === "tokens" ? null : minutesAt(r), mx = xmode === "tokens" ? (t) => t : mAt && ((t) => mAt(t) / tu);
+    const F0 = FORE[r.name] || {}, F = HORIZON ? { val: F0.valH, loss: F0.lossH, hs: F0.hsH } : F0, mAt = xmode === "tokens" ? null : minutesAt(r), mx = xmode === "tokens" ? (t) => t : mAt && ((t) => mAt(t) / tu);
     const fc = (f) => f.curve.map(([t, y]) => [mx(t), y]);
     const fcb = (b) => b.map(([t, l, h]) => [mx(t), l, h]);
     if (mx && (F.val || F.loss)) {          // past the line's end, the tooltip shows the forecast instead; its tip carries the label
@@ -794,16 +830,19 @@ function drawLearning() {
     hsS.push({ name: "guessing", color: C.muted, dash: [2, 4], width: 1, points: [[h0, 0.25], [h1, 0.25]] });
   }
   hleg.push([`OpenAI GPT-2 (${pct(hsRef)})`, C.ref, true], ["guessing (25%)", C.muted, true]);
-  if (anyFore) leg.push(["forecast to the planned end", C.muted, true]);
-  if (anyHsFore) hleg.push(["forecast", C.muted, true]);
+  const hzName = HORIZON ? "if planned for " + fmtHz(HORIZON) : null;
+  if (anyFore) leg.push([hzName || "forecast to the planned end", C.muted, true]);
+  if (anyHsFore) hleg.push([hzName || "forecast", C.muted, true]);
   legend("lossLegend", leg); legend("hsLegend", hleg);
-  const xf = xmode === "tokens" ? fmtM : hours ? (v) => +v.toFixed(1) + " h" : (v) => Math.round(v) + " min";
-  charts.loss.set({ series, xFmt: xf, yFmt: (v, d) => v.toFixed(d), tipFmt: fmtL, yFocus: 0.04,
+  const xf = xmode === "tokens" ? fmtM : hours ? (v) => +v.toPrecision(v < 10 ? 1 : 3) + " h" : (v) => Math.round(v) + " min";
+  charts.loss.set({ series, xFmt: xf, yFmt: (v, d) => v.toFixed(d), tipFmt: fmtL, yFocus: HORIZON ? 0.3 : 0.04,
+    xLog: !!HORIZON, xMin: logMin(series), vlines: horizonLines(),
     tipNote: (xv) => xv > foreFrom
-      ? "dashed: forecast to the planned end · shade: its likely range (about 8 in 10)" + foreNote("val", fmtL) + foreNote("loss", fmtL)
+      ? (HORIZON ? horizonWords() : "dashed: forecast to the planned end · shade: its likely range (about 8 in 10)") + foreNote("val", fmtL) + foreNote("loss", fmtL)
       : "training: the batches it learns from · held-out: text it never trains on" });
   charts.hs.set({ series: hsS, xFmt: xf, yFmt: (v, d) => (v * 100).toFixed(Math.max(0, d - 2)) + "%", tipFmt: pct, empty: "Waiting for the first HellaSwag check",
-    tipNote: () => anyHsFore ? "dashed: forecast to the planned end · shade: its likely range" + foreNote("hs", pct) : "" });
+    xLog: !!HORIZON, xMin: logMin(hsS), vlines: horizonLines(),
+    tipNote: () => anyHsFore ? (HORIZON ? horizonWords() : "dashed: forecast to the planned end · shade: its likely range") + foreNote("hs", pct) : "" });
 }
 
 function drawMemoryUse() {
@@ -1067,6 +1106,12 @@ document.getElementById("xmode").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   xmode = b.dataset.x; document.querySelectorAll("#xmode button").forEach((x) => x.classList.toggle("on", x === b)); drawLearning();
 });
+document.querySelectorAll(".seg.hz").forEach((seg) => seg.addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  HORIZON = +b.dataset.h;
+  document.querySelectorAll(".seg.hz button").forEach((x) => x.classList.toggle("on", +x.dataset.h === HORIZON));
+  computeForecasts(); drawLearning();
+}));
 document.getElementById("colorBy").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   colorBy = b.dataset.c; document.querySelectorAll("#colorBy button").forEach((x) => x.classList.toggle("on", x === b)); drawSnapshot();

@@ -82,7 +82,9 @@ const UI = (() => {
       ctx.clearRect(0, 0, w, h);
       const hasEnd = o.series.some((s) => s.endLabel && s.points.length);
       const pad = { l: 44, r: hasEnd ? 58 : 12, t: 12, b: 26 };
-      const all = o.series.flatMap((s) => s.points);
+      // xMin: leave out everything left of it (with a log axis, the first few steps would otherwise take half the width)
+      const xIn = o.xMin != null ? (p) => p[0] >= o.xMin : () => true;
+      const all = o.series.flatMap((s) => s.points.filter(xIn));
       const extra = o.series.flatMap((s) => [...(s.band || []).flatMap((b) => [[b[0], b[1]], [b[0], b[2]]]), ...(s.marks || [])]);
       if (!all.length) {
         ctx.fillStyle = css("--muted");
@@ -92,7 +94,12 @@ const UI = (() => {
         tip.style.display = "none";
         return;
       }
-      let x0 = Math.min(...all.map((p) => p[0])), x1 = Math.max(...all.map((p) => p[0]));
+      // xLog: a logarithmic x axis (1B, 10B, 100B…), so a short run and a forecast far beyond it both fit
+      const pos = o.xLog ? all.map((p) => p[0]).filter((v) => v > 0) : null;
+      const lmin = o.xLog && pos.length ? Math.log10(Math.min(...pos)) : 0;
+      const L = o.xLog ? (v) => (v > 0 ? Math.max(lmin, Math.log10(v)) : lmin) : (v) => v;
+      const Linv = o.xLog ? (v) => Math.pow(10, v) : (v) => v;
+      let x0 = Math.min(...all.map((p) => L(p[0]))), x1 = Math.max(...all.map((p) => L(p[0])));
       if (x1 === x0) x1 = x0 + 1;
       const fin = (v) => isFinite(v);
       let ys = all.concat(extra).map((p) => p[1]).filter(fin);
@@ -102,7 +109,7 @@ const UI = (() => {
         // runs off the top instead. The forecast cones and earlier-forecast dots may widen the view, but only a
         // little: a wild early guess is pinned to the edge.
         const xc = x0 + o.yFocus * (x1 - x0);
-        let line = o.series.filter((s) => !s.ghost).flatMap((s) => s.points.filter((p) => p[0] >= xc).map((p) => p[1])).filter(fin);
+        let line = o.series.filter((s) => !s.ghost).flatMap((s) => s.points.filter((p) => xIn(p) && L(p[0]) >= xc).map((p) => p[1])).filter(fin);
         if (!line.length) line = o.series.filter((s) => !s.ghost).flatMap((s) => s.points.map((p) => p[1])).filter(fin);
         if (line.length) {
           let lo = Math.min(...line), hi = Math.max(...line);
@@ -118,7 +125,7 @@ const UI = (() => {
       const padY = (y1 - y0) * 0.08;
       if (o.yMin == null) y0 -= padY;
       if (o.yMax == null) y1 += padY;
-      const X = (v) => pad.l + ((v - x0) / (x1 - x0)) * (w - pad.l - pad.r);
+      const X = (v) => pad.l + ((L(v) - x0) / (x1 - x0)) * (w - pad.l - pad.r);
       const Y = (v) => pad.t + (1 - (v - y0) / (y1 - y0)) * (h - pad.t - pad.b);
       const bottom = h - pad.b;
       // grid + axes
@@ -138,7 +145,15 @@ const UI = (() => {
       }
       ctx.textAlign = "center"; ctx.textBaseline = "top"; ctx.fillStyle = css("--muted");
       let lastLab = null;
-      for (const v of niceTicks(x0, x1, Math.max(2, Math.floor((w - 100) / 90)))) {
+      const xticks = o.xLog ? (() => {
+        const t = [], room = Math.max(2, Math.floor((w - 100) / 70));
+        for (let k = Math.ceil(x0 - 1e-9); k <= Math.floor(x1 + 1e-9); k++) for (const m of [1, 2, 5]) {
+          const lv = k + Math.log10(m);
+          if (lv >= x0 - 1e-9 && lv <= x1 + 1e-9 && (m === 1 || x1 - x0 < room / 3)) t.push(Math.pow(10, lv));
+        }
+        return t;
+      })() : niceTicks(x0, x1, Math.max(2, Math.floor((w - 100) / 90)));
+      for (const v of xticks) {
         const lab = (o.xFmt || ((x) => x))(v);
         if (lab === lastLab) continue;
         lastLab = lab;
@@ -146,12 +161,28 @@ const UI = (() => {
       }
       ctx.strokeStyle = css("--axis");
       ctx.beginPath(); ctx.moveTo(pad.l, bottom + 0.5); ctx.lineTo(w - pad.r, bottom + 0.5); ctx.stroke();
+      // vlines: [[x, label]], thin markers such as "planned end"
+      for (const [vx, vl] of o.vlines || []) {
+        const xx = Math.round(X(vx)) + 0.5;
+        if (!(xx >= pad.l && xx <= w - pad.r)) continue;
+        ctx.strokeStyle = css("--muted"); ctx.globalAlpha = 0.5; ctx.setLineDash([1, 3]);
+        ctx.beginPath(); ctx.moveTo(xx, pad.t); ctx.lineTo(xx, bottom); ctx.stroke();
+        ctx.setLineDash([]); ctx.globalAlpha = 0.8; ctx.fillStyle = css("--muted"); ctx.font = font(10.5);
+        ctx.textAlign = xx > (pad.l + w - pad.r) / 2 ? "right" : "left"; ctx.textBaseline = "top";
+        if (vl) ctx.fillText(vl, xx + (ctx.textAlign === "left" ? 4 : -4), pad.t + 2);
+        ctx.globalAlpha = 1;
+      }
       // lines
       ctx.save();
       ctx.beginPath(); ctx.rect(pad.l, pad.t - 4, w - pad.l - pad.r, bottom - pad.t + 6); ctx.clip();
       for (const s of o.series) {
         if (!s.points.length || s.ghost) continue;      // ghost: only in the tooltip
-        const pts = s.points.filter((p) => isFinite(p[1]));
+        const pts = s.points.filter((p) => isFinite(p[1]) && xIn(p));
+        const cut = o.xMin != null ? s.points.findLastIndex((p) => p[0] < o.xMin) : -1;
+        if (cut >= 0 && cut < s.points.length - 1) {     // a line that starts left of xMin starts at its edge
+          const [p0, p1] = [s.points[cut], s.points[cut + 1]], u = (o.xMin - p0[0]) / Math.max(1e-12, p1[0] - p0[0]);
+          pts.unshift([o.xMin, p0[1] + (p1[1] - p0[1]) * u]);
+        }
         if (s.area && pts.length > 1) {
           const g = ctx.createLinearGradient(0, pad.t, 0, bottom);
           g.addColorStop(0, alpha(s.color, 0.22));
@@ -214,7 +245,7 @@ const UI = (() => {
       }
       // crosshair
       if (state.hoverX != null && state.hoverX >= pad.l && state.hoverX <= w - pad.r) {
-        const xv = x0 + ((state.hoverX - pad.l) / (w - pad.l - pad.r)) * (x1 - x0);
+        const xv = Linv(x0 + ((state.hoverX - pad.l) / (w - pad.l - pad.r)) * (x1 - x0));
         const g = ctx.createLinearGradient(0, pad.t, 0, bottom);
         g.addColorStop(0, alpha(css("--text"), 0)); g.addColorStop(0.5, alpha(css("--text"), 0.35)); g.addColorStop(1, alpha(css("--text"), 0.1));
         ctx.strokeStyle = g;
@@ -224,10 +255,10 @@ const UI = (() => {
           if (!s.points.length || s.noTip) continue;
           if (s.tipRange && (xv < s.points[0][0] || xv > s.points[s.points.length - 1][0])) continue;
           let best = s.points[0];
-          for (const p of s.points) if (Math.abs(p[0] - xv) < Math.abs(best[0] - xv)) best = p;
+          for (const p of s.points) if (Math.abs(L(p[0]) - L(xv)) < Math.abs(L(best[0]) - L(xv))) best = p;
           // a ghost or sparse line (e.g. held-out loss, measured only now and then) is shown only near one of its real
           // points, so the hover never repeats an old measurement as if it were new
-          if ((s.ghost || s.sparse) && Math.abs(best[0] - xv) > 0.03 * (x1 - x0)) continue;
+          if ((s.ghost || s.sparse) && Math.abs(L(best[0]) - L(xv)) > 0.03 * (x1 - x0)) continue;
           if (!s.ghost) {
             ctx.fillStyle = css("--solid");
             ctx.beginPath(); ctx.arc(X(best[0]), Y(best[1]), 4.5, 0, 7); ctx.fill();
