@@ -24,6 +24,12 @@ been done. Memory for the head drops from gigabytes to a few hundred megabytes, 
 
 The arithmetic is the same as F.cross_entropy + F.kl_div on the full scores (oazy/tests check this to
 1e-4); only the order of operations and the memory differ. Same idea as Liger / "cut cross-entropy".
+
+Choosing what to learn from (select=, oazy/select.py; off unless the run asks for it). Each word's own loss
+is compared with a reference (what the mentor loses on that word), and the words still worth learning count
+fully while the others count a little (their weight is the floor). The weights are computed inside the same
+slices from numbers that are already there, so it costs almost nothing. The per-word losses come back too,
+so the trainer can score whole passages for rereading.
 """
 from __future__ import annotations
 
@@ -40,9 +46,13 @@ def _autocast_on(device_type):
         return device_type == "cuda" and torch.is_autocast_enabled()
 
 
-def _slice(hc, Wc, tc, vc, thc, tWc, softcap: float, kd_w, n_valid, n_all: float, Vt: int):
+def _slice(hc, Wc, tc, vc, thc, tWc, softcap: float, kd_w, n_valid, n_all: float, Vt: int,
+           rc=None, thr=None, floor=None, wscale=None):
     """One slice of tokens: scores, loss terms, and the gradient pushed straight back onto the token vectors
-    and the word table. Pure tensor work, so torch.compile fuses the fp32 elementwise chain into a few kernels."""
+    and the word table. Pure tensor work, so torch.compile fuses the fp32 elementwise chain into a few kernels.
+    rc (n,): the reference loss per word (oazy/select.py), or None = every word counts the same. With it, a word
+    whose excess (own loss - reference; the mentor's own loss on it where the mentor reads this pass) is above
+    thr counts 1, the others floor, all times wscale (so the weights average about 1)."""
     dt = hc.dtype
     z = (hc @ Wc.t()).float()                                       # (n, V) scores
     if softcap:
@@ -52,14 +62,26 @@ def _slice(hc, Wc, tc, vc, thc, tWc, softcap: float, kd_w, n_valid, n_all: float
     # --- next-word loss and its gradient: probabilities minus the right answer
     tgt = tc.clamp_min(0)
     vcf = vc.to(torch.float32)
-    ce = (-(lp.gather(1, tgt[:, None])[:, 0]) * vcf).sum()
-    g = lp.exp()                                                    # p
-    g.scatter_add_(1, tgt[:, None], -vcf[:, None])
-    g *= (vcf * ((1.0 - kd_w) / n_valid))[:, None]
-    # --- the mentor's lesson: the student's probabilities minus the mentor's
+    tok = -(lp.gather(1, tgt[:, None])[:, 0])                       # (n,) each word's own loss
+    ce = (tok * vcf).sum()
+    tlp = None
     if thc is not None:
         tz = (thc @ tWc.t()).float()                                # (n, Vt) mentor scores
         tlp = torch.log_softmax(tz, dim=-1)
+        ttok = -(tlp.gather(1, tgt.clamp_max(Vt - 1)[:, None])[:, 0])   # (n,) the mentor's own loss on each word
+    else:
+        ttok = torch.zeros_like(tok)
+    if rc is not None:                                              # choosing what to learn from
+        ref = ttok if thc is not None else rc
+        w = torch.where(tok - ref > thr, torch.ones_like(tok), floor.expand_as(tok)) * wscale * vcf
+    else:
+        w = vcf
+    wce = (tok * w).sum()
+    g = lp.exp()                                                    # p
+    g.scatter_add_(1, tgt[:, None], -vcf[:, None])
+    g *= (w * ((1.0 - kd_w) / n_valid))[:, None]
+    # --- the mentor's lesson: the student's probabilities minus the mentor's
+    if tlp is not None:
         pt = tlp.exp()
         V = z.shape[1]
         if Vt == V:
@@ -74,7 +96,8 @@ def _slice(hc, Wc, tc, vc, thc, tWc, softcap: float, kd_w, n_valid, n_all: float
     if softcap:
         g *= 1.0 - t * t                                            # through the soft cap
     gb = g.to(dt)
-    return ce, kd, gb @ Wc, (gb.t() @ hc).float()                   # d loss / d h (slice), d loss / d W (whole table)
+    # d loss / d h (slice), d loss / d W (whole table); the words' own losses and the mentor's
+    return ce, wce, kd, gb @ Wc, (gb.t() @ hc).float(), tok, ttok
 
 
 _compiled_slice = None
@@ -97,7 +120,7 @@ def slice_fn(device):
 
 class _HeadLoss(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, h, W, targets, softcap, th, tW, kd_w, chunk):
+    def forward(ctx, h, W, targets, softcap, th, tW, kd_w, chunk, ref=None, thr=None, floor=None, wscale=None):
         N, D = h.shape
         V = W.shape[0]
         dt = h.dtype
@@ -115,40 +138,49 @@ class _HeadLoss(torch.autograd.Function):
             gh = torch.empty_like(h)
             gW = torch.zeros(V, D, dtype=torch.float32, device=h.device)
             ce_sum = torch.zeros((), dtype=torch.float32, device=h.device)
+            wce_sum = torch.zeros((), dtype=torch.float32, device=h.device)
             kd_sum = torch.zeros((), dtype=torch.float32, device=h.device)
+            tok_all = torch.empty(N, dtype=torch.float32, device=h.device)
+            ttok_all = torch.zeros(N, dtype=torch.float32, device=h.device)
             for i in range(0, N, chunk):
                 args = (h[i:i + chunk].to(dt), Wc, targets[i:i + chunk], valid[i:i + chunk],
-                        th[i:i + chunk].to(dt) if kd else None, tWc, float(softcap), kw, n_valid, n_all, Vt)
+                        th[i:i + chunk].to(dt) if kd else None, tWc, float(softcap), kw, n_valid, n_all, Vt,
+                        ref[i:i + chunk] if ref is not None else None, thr, floor, wscale)
                 try:
-                    ce, kdv, ghc, gWc = f(*args)
+                    ce, wce, kdv, ghc, gWc, tk, ttk = f(*args)
                 except Exception as e:
                     if f is _slice:
                         raise
                     print(f"[lmloss] torch.compile failed ({type(e).__name__}: {str(e)[:160]}); the loss runs uncompiled", flush=True)
                     f = _slice
                     _no_compile()
-                    ce, kdv, ghc, gWc = f(*args)
+                    ce, wce, kdv, ghc, gWc, tk, ttk = f(*args)
                 ce_sum += ce
+                wce_sum += wce
                 kd_sum += kdv
+                tok_all[i:i + chunk] = tk
+                if kd:
+                    ttok_all[i:i + chunk] = ttk
                 gh[i:i + chunk] = ghc.to(h.dtype)
                 gW += gWc
-        loss = (1.0 - kd_w) * ce_sum / n_valid + kd_w * kd_sum / n_all
+        loss = (1.0 - kd_w) * wce_sum / n_valid + kd_w * kd_sum / n_all     # (wce = ce when every word counts the same)
         ctx.save_for_backward(gh, gW)
         ctx.w_dtype = W.dtype
         ce, kdm = ce_sum / n_valid, kd_sum / n_all
-        ctx.mark_non_differentiable(ce, kdm)
-        return loss, ce, kdm
+        ctx.mark_non_differentiable(ce, kdm, tok_all, ttok_all)
+        return loss, ce, kdm, tok_all, ttok_all
 
     @staticmethod
-    def backward(ctx, g_loss, g_ce, g_kd):
+    def backward(ctx, g_loss, g_ce, g_kd, g_tok, g_ttok):
         gh, gW = ctx.saved_tensors
-        return gh * g_loss.to(gh.dtype), (gW * g_loss).to(ctx.w_dtype), None, None, None, None, None, None
+        return (gh * g_loss.to(gh.dtype), (gW * g_loss).to(ctx.w_dtype)) + (None,) * 10
 
 
-def head_loss(h, W, targets, softcap=0.0, teacher_h=None, teacher_W=None, kd_weight=0.0, chunk=1024):
+def head_loss(h, W, targets, softcap=0.0, teacher_h=None, teacher_W=None, kd_weight=0.0, chunk=1024, select=None):
     """See the module docstring. h: (..., D), targets: (...). Returns (loss, next-word loss, mentor KL), the
     last two detached, all as 0-d tensors. The loss is the mean over scored tokens (targets >= 0); the mentor
-    term the mean over all tokens, as ember/mentor.mentor_loss does."""
+    term the mean over all tokens, as ember/mentor.mentor_loss does. select: an oazy.select.Select (choosing
+    what to learn from) or None; the next-word loss returned is always the plain, unweighted one."""
     D = h.shape[-1]
     h2 = h.reshape(-1, D)
     t2 = targets.reshape(-1)
@@ -159,7 +191,14 @@ def head_loss(h, W, targets, softcap=0.0, teacher_h=None, teacher_W=None, kd_wei
         th2, teacher_W, kd_weight = None, None, 0.0
     elif teacher_W.shape[0] > W.shape[0]:
         raise ValueError(f"the mentor knows {teacher_W.shape[0]} pieces, the student only {W.shape[0]}: they must cut text the same way")
-    return _HeadLoss.apply(h2, W, t2, float(softcap or 0.0), th2, teacher_W, float(kd_weight), int(chunk))
+    if select is None:
+        loss, ce, kd, _, _ = _HeadLoss.apply(h2, W, t2, float(softcap or 0.0), th2, teacher_W, float(kd_weight), int(chunk))
+        return loss, ce, kd
+    ref, thr, floor, wscale = select.before(t2, exact=th2 is not None)
+    loss, ce, kd, tok_, ttok = _HeadLoss.apply(h2, W, t2, float(softcap or 0.0), th2, teacher_W, float(kd_weight), int(chunk),
+                                               ref, thr, floor, wscale)
+    select.after(t2, tok_, ttok if th2 is not None else None, ref)
+    return loss, ce, kd
 
 
 def plain_loss(h, W, targets, softcap=0.0, teacher_h=None, teacher_W=None, kd_weight=0.0):

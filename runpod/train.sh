@@ -19,6 +19,7 @@
 #   bash runpod/train.sh pegasus2 --preset big --tokens 5e9 --micro 32 --data-sub sado   # Pegasus 2 Mini (pegasus/model2.py)
 #   bash runpod/train.sh plain100 --preset big --tokens 5e9 --micro 32      # Plain-100M, the normal transformer Pegasus 1 Mini races
 #   bash runpod/train.sh pegasus --preset big --tokens 10e9 --micro 32      # Pegasus 1, 400M
+#   bash runpod/train.sh plain100 --preset big --tokens 0.5e9 --micro 32 --data-sub sado --name ab-select --select 1   # it picks what it learns from (oazy/select.py)
 #   bash runpod/train.sh blackt --preset race --minutes 30 --micro 32 --name blackt-125m   # a Code Black race (codeblack/README.md)
 #   (--name X: the run, its tmux window and its log are called X, so several races of one model can live side by side)
 #
