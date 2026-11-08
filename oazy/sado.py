@@ -285,6 +285,40 @@ def _work(texts):
     return arr, lens, [held_key(t) for t in clean], [dup_key(t) for t in clean], sum(flags)
 
 
+# ----------------------------------------------------------------------------- the machine
+def cpu_limit() -> int:
+    """The CPUs this container may really use. A RunPod pod reports the whole host's cores in os.cpu_count()
+    (e.g. 128 on a 32 vCPU pod); the real limit is the cgroup's CPU quota."""
+    try:
+        q, per = open("/sys/fs/cgroup/cpu.max").read().split()[:2]          # cgroup v2: "3200000 100000" or "max 100000"
+        if q != "max":
+            return max(1, int(int(q) / int(per)))
+    except (OSError, ValueError):
+        pass
+    try:
+        q = int(open("/sys/fs/cgroup/cpu/cpu.cfs_quota_us").read())         # cgroup v1
+        per = int(open("/sys/fs/cgroup/cpu/cpu.cfs_period_us").read())
+        if q > 0:
+            return max(1, q // per)
+    except (OSError, ValueError):
+        pass
+    try:
+        return len(os.sched_getaffinity(0))
+    except AttributeError:
+        return os.cpu_count() or 2
+
+
+def memory_limit_gb():
+    for p in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+        try:
+            v = open(p).read().strip()
+            if v != "max" and int(v) < 1 << 50:
+                return int(v) / 1e9
+        except (OSError, ValueError):
+            pass
+    return None
+
+
 # ----------------------------------------------------------------------------- one source
 class Stats(dict):
     def add(self, **kw):
@@ -316,9 +350,10 @@ def write_source(text_batches, out: Path, train_tokens: int, val_tokens: int, be
     nv = nt = 0
     t0, shown = time.time(), 0
     it = iter(text_batches)
-    with get_context("fork").Pool(workers, initializer=_init, initargs=(bench,)) as pool:
+    # maxtasksperchild: each worker is replaced now and then, so no slow memory growth can build up over hours
+    with get_context("fork").Pool(workers, initializer=_init, initargs=(bench,), maxtasksperchild=200) as pool:
         while nt < train_tokens:
-            group = list(itertools.islice(it, 2 * workers))
+            group = list(itertools.islice(it, workers + 4))     # a bounded amount of text in memory
             if not group:
                 term.out(term.c("  the source ran out before the requested number of tokens", "yellow"), flush=True)
                 break
@@ -459,11 +494,15 @@ def main():
     term.out(term.c(f"  total {term.tokens(sum(want.values()))} tokens, about {sum(want.values()) * 2 / 1e9:.0f} GB on disk", "dim"))
     if a.plan or not todo:
         return
-    workers = a.workers or max(1, min(64, (os.cpu_count() or 2) - 1))
+    workers = a.workers or max(1, min(48, cpu_limit() - 1))
+    mem = memory_limit_gb()
+    if mem and not a.workers:
+        workers = max(1, min(workers, int(mem / 1.5)))  # ~1.5 GB per worker at most, to be safe
     os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "0")
     bench = np.zeros(0, np.uint64)
     if not a.no_decontam:
         from .data import fetch_hellaswag
+        base.mkdir(parents=True, exist_ok=True)
         fetch_hellaswag(base)                          # the tests' own files, if this volume does not have them yet
         if not (base / "evals" / "lambada.jsonl").exists():
             try:
@@ -480,7 +519,8 @@ def main():
                         f"{bench.size:,} runs of {NGRAM} words", "dim"), flush=True)
     seen: set = set()
     overall = Overall(sum(want[k] for k in todo))   # a part that is built again starts from zero
-    term.out(term.c(f"  {len(todo)} parts, {term.tokens(overall.total)} tokens, {workers} CPU workers. Progress every {term.tokens(PROGRESS_EVERY)} tokens; "
+    term.out(term.c(f"  {len(todo)} parts, {term.tokens(overall.total)} tokens, {workers} CPU workers"
+                    + (f" (memory {mem:.0f} GB)" if mem else "") + f". Progress every {term.tokens(PROGRESS_EVERY)} tokens; "
                     f"the whole build's time left shows after the first.", "dim"), flush=True)
     for i, k in enumerate(todo):
         build_one(base, sado, k, want[k], int(a.val_tokens), bench, seen, workers, a.fwe_min_score, overall, f"{i + 1}/{len(todo)} · ")
