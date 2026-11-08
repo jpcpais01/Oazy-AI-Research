@@ -693,12 +693,12 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
       <div class="panel glass tri rv" id="tradeoff">
         <div class="hs-top">
           <div>
-            <span class="label">Cost · speed · size</span>
-            <h3>What it took to train, and how fast it writes</h3>
+            <span class="label">Cost · HellaSwag · size</span>
+            <h3>What it took to train, and how well it does</h3>
           </div>
-          <p class="cap">Across, what training cost, each step ten times the last. Up, how fast it writes on a plain 4-core CPU, all timed on one machine. Each bead is as large as the model's file.</p>
+          <p class="cap">Across, what training cost, each step ten times the last. Up, HellaSwag: picking the sensible ending of a scene, scored per letter; guessing gets 25%. Each bead is as large as the model's file. Coral uses only a few of its experts for each word, so its inner bead is the part at work.</p>
         </div>
-        <div class="tri-plot pre" id="tri" role="img" aria-label="Training cost against CPU writing speed, with bead size for file size. Coral_1B: $114 measured, 24.7 words a second, 2.07 GB. Bee4-200M: about $50 when its run ends, still training, 41.0 words a second, 0.40 GB. GPT-2 small: about $18 estimated, 62.4 words a second, 0.25 GB. SmolLM2-135M: about $4,000 estimated, 40.7 words a second, 0.27 GB. SmolLM2-360M: about $21,000 estimated, 21.9 words a second, 0.72 GB.">
+        <div class="tri-plot pre" id="tri" role="img" aria-label="Training cost against HellaSwag, with bead size for file size. Coral_1B: $114 paid, 45.3%, 2.07 GB, of which 0.42 GB at work per word. Bee4-200M: about $50, score still to come, 0.40 GB. GPT-2 small: about $18 estimated, 31.1%, 0.25 GB. SmolLM2-135M: about $4,000 estimated, 42.1%, 0.27 GB. SmolLM2-360M: about $21,000 estimated, 54.5%, 0.72 GB.">
           <div class="tri-tip" id="tri-tip" aria-hidden="true"></div>
         </div>
         <div class="tri-key" aria-hidden="true">
@@ -709,13 +709,14 @@ footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 
             <li><svg width="14" height="14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--ink-2)" stroke-width="1.25"/></svg>measured</li>
             <li><svg width="14" height="14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--ink-2)" stroke-width="1.25" stroke-dasharray="2.5 2"/></svg>cost estimated</li>
             <li><svg width="14" height="14"><circle cx="7" cy="7" r="5.5" fill="rgba(236,235,243,.1)" stroke="var(--ink-2)" stroke-width="1.25"/></svg>grey · published models</li>
+            <li><svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="none" stroke="var(--ink-2)" stroke-width="1"/><circle cx="7" cy="7" r="3" fill="rgba(236,235,243,.55)"/></svg>inner bead · at work per word</li>
           </ul>
         </div>
-        <p class="tri-foot">Ours is the GPU rent we paid, about $8 an hour; Bee4 is still training, so its bead sits where its run ends. Published models are estimated from their size and the text they read, and likely low. Speed is plain PyTorch, one reply at a time; our phone engine is faster.</p>
+        <p class="tri-foot">Ours is the GPU rent we paid, about $8 an hour; Bee4's is from its run time, and its score is still to come. Published models' costs are estimated from their size and the text they read, and likely low; their scores are the published ones, and GPT-2's is measured here.</p>
         <details>
           <summary>As a table</summary>
           <div class="tbl-wrap"><table>
-            <thead><tr><th>Model</th><th class="num">Training cost</th><th class="num">CPU words/s</th><th class="num">File</th><th class="num">Text read</th></tr></thead>
+            <thead><tr><th>Model</th><th class="num">Training cost</th><th class="num">HellaSwag</th><th class="num">File</th><th class="num">CPU words/s</th></tr></thead>
             <tbody id="tri-tbl"></tbody>
           </table></div>
         </details>
@@ -1384,7 +1385,8 @@ void main() {
     }
   }
 
-  // ---------- cost · speed · size ----------
+  // ---------- cost · HellaSwag · size ----------
+  // HellaSwag per letter (acc_norm): ours and GPT-2 measured with our tests; SmolLM2 from its model card.
   // speed: python3 -m oazy.cpubench --models coral,bee4,smollm2,smollm2-135m,gpt2 (4-core Xeon, float32, Nov 7 2026)
   // cost, ours: GPU rent (B200 ~$8/h, mentor included). Published: 6 x params x tokens at 40% of a B200's bf16 peak, $8/h.
   (function () {
@@ -1393,25 +1395,25 @@ void main() {
     const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
     const M = [
       { id: 'coral', n: 'Coral_1B', kind: 'ours · next-token · mixture of experts', cost: 114, est: false, costNote: 'GPU rent, measured',
-        tps: 24.7, gb: 2.07, params: '1,037M · 211M per word', toks: '13B', col: css('--coral'), side: 'r', ps: 'r', short: 'Coral' },
-      { id: 'bee4', n: 'Bee4-200M', kind: 'ours · next-token · still training', cost: 50, est: true, costNote: 'when the run ends',
+        tps: 24.7, gb: 2.07, params: '1,037M · 211M at work per word', toks: '13B', hs: 45.3, act: 0.42, col: css('--coral'), side: 'r', ps: 'r', short: 'Coral' },
+      { id: 'bee4', n: 'Bee4-200M', kind: 'ours · next-token · dense', cost: 50, est: true, costNote: 'from its run time', hs: null,
         tps: 41.0, gb: 0.40, params: '198M', toks: '10B', col: '#ffcf6b', side: 'r', ps: 'r', short: 'Bee4' },
-      { id: 'gpt2', n: 'GPT-2 small', kind: 'OpenAI, 2019 · next-token', cost: 18, est: true, costNote: 'estimate', ref: true,
+      { id: 'gpt2', n: 'GPT-2 small', kind: 'OpenAI, 2019 · next-token', cost: 18, est: true, costNote: 'estimate', ref: true, hs: 31.1,
         tps: 62.4, gb: 0.25, params: '124M', toks: '~10B', side: 'r', ps: 'r', short: 'GPT-2' },
-      { id: 's135', n: 'SmolLM2-135M', kind: 'Hugging Face, 2024 · next-token', cost: 4000, est: true, costNote: 'estimate', ref: true,
-        tps: 40.7, gb: 0.27, params: '135M', toks: '2,000B', side: 'l', ps: 't', short: 'SmolLM2-135M' },
-      { id: 's360', n: 'SmolLM2-360M', kind: 'Hugging Face, 2024 · next-token', cost: 21400, est: true, costNote: 'estimate', ref: true,
+      { id: 's135', n: 'SmolLM2-135M', kind: 'Hugging Face, 2024 · next-token', cost: 4000, est: true, costNote: 'estimate', ref: true, hs: 42.1,
+        tps: 40.7, gb: 0.27, params: '135M', toks: '2,000B', side: 'l', ps: 'b', short: 'SmolLM2-135M' },
+      { id: 's360', n: 'SmolLM2-360M', kind: 'Hugging Face, 2024 · next-token', cost: 21400, est: true, costNote: 'estimate', ref: true, hs: 54.5,
         tps: 21.9, gb: 0.72, params: '362M', toks: '4,000B', side: 'l', ps: 't', short: 'SmolLM2-360M' },
     ];
     const REF = '#b4b3c4';
     const money = v => v >= 1000 ? '$' + (v >= 1e4 ? Math.round(v / 1000) : (v / 1000).toFixed(1).replace(/\.0$/, '')) + 'k' : '$' + Math.round(v);
-    const X0 = Math.log10(8), X1 = Math.log10(60000), Y1 = 70;
+    const X0 = Math.log10(8), X1 = Math.log10(60000), Y0 = 25, Y1 = 62;
     const ns = 'http://www.w3.org/2000/svg';
-    let svg = null, live = false;
+    let svg = null;
 
     document.getElementById('tri-tbl').innerHTML = M.map(m =>
-      `<tr><td><span class="dot" style="background:${m.col || REF}"></span>${m.n}</td><td class="num">${m.est ? '~' : ''}${money(m.cost)} <small>${m.est ? (m.id === 'bee4' ? 'at the end' : 'est.') : 'paid'}</small></td>` +
-      `<td class="num">${m.tps.toFixed(1)}</td><td class="num">${m.gb.toFixed(2)} GB</td><td class="num">${m.toks} tokens</td></tr>`).join('');
+      `<tr><td><span class="dot" style="background:${m.col || REF}"></span>${m.n}</td><td class="num">${m.est ? '~' : ''}${money(m.cost)} <small>${m.ref ? 'est.' : m.est ? 'run time' : 'paid'}</small></td>` +
+      `<td class="num">${m.hs != null ? m.hs.toFixed(1) + '%' : '<small>to come</small>'}</td><td class="num">${m.gb.toFixed(2)} GB${m.act ? ` <small>· ${m.act.toFixed(2)} at work</small>` : ''}</td><td class="num">${m.tps.toFixed(1)}</td></tr>`).join('');
 
     // the size key: three nested beads, sharing the bottom line, like a stack of coins seen side-on
     function sizeKey() {
@@ -1433,11 +1435,11 @@ void main() {
       const pl = phone ? 30 : 44, pr = phone ? 8 : 16, pt = 22, pb = 40;
       const iw = W - pl - pr, ih = H - pt - pb;
       const x = c => pl + (Math.log10(c) - X0) / (X1 - X0) * iw;
-      const y = t => pt + ih - t / Y1 * ih;
+      const y = t => pt + ih - (t - Y0) / (Y1 - Y0) * ih;
       const R = Math.max(20, Math.min(42, W * 0.04));
       const rad = gb => R * Math.sqrt(gb / 2.07);
       let g = '';
-      // the corner every model wants to reach: little cost, quick writing
+      // the corner every model wants to reach: little cost, a high score
       g += `<defs><radialGradient id="tri-aim"><stop offset="0" stop-color="#8f7bff" stop-opacity=".12"/><stop offset=".5" stop-color="#6f8cff" stop-opacity=".04"/><stop offset="1" stop-color="#4fd8ff" stop-opacity="0"/></radialGradient>`;
       M.forEach(m => {
         const c = m.col || REF;
@@ -1445,37 +1447,52 @@ void main() {
       });
       g += `</defs>`;
       g += `<circle cx="${x(28)}" cy="${y(52)}" r="${Math.min(iw * .4, ih * .75)}" fill="url(#tri-aim)"/>`;
-      if (!phone) g += `<text class="aim" x="${x(1000)}" y="${pt + 26}" text-anchor="middle">← cheap to train, quick to write</text>`;
-      // grid: decades of cost, steps of 20 words/s
+      if (!phone) g += `<text class="aim" x="${x(400)}" y="${pt + 26}" text-anchor="middle">← cheaper to train · a better score ↑</text>`;
+      // grid: decades of cost, steps of 10 points; guessing (25%) is the floor
       [10, 100, 1000, 10000].forEach(c => {
         const X = x(c);
         g += `<line x1="${X}" x2="${X}" y1="${pt}" y2="${pt + ih}" stroke="rgba(255,255,255,.06)"/>`;
         g += `<text class="tk" x="${X}" y="${pt + ih + 18}" text-anchor="middle">${money(c)}</text>`;
       });
-      [0, 20, 40, 60].forEach(t => {
+      [30, 40, 50, 60].forEach(t => {
         const Y = y(t);
-        g += `<line x1="${pl}" x2="${pl + iw}" y1="${Y}" y2="${Y}" stroke="rgba(255,255,255,${t ? .06 : .16})"/>`;
-        g += `<text class="tk" x="${pl - 8}" y="${Y + 4}" text-anchor="end">${t}</text>`;
+        g += `<line x1="${pl}" x2="${pl + iw}" y1="${Y}" y2="${Y}" stroke="rgba(255,255,255,.06)"/>`;
+        g += `<text class="tk" x="${pl - 8}" y="${Y + 4}" text-anchor="end">${t}%</text>`;
       });
+      g += `<line x1="${pl}" x2="${pl + iw}" y1="${y(25)}" y2="${y(25)}" stroke="rgba(255,255,255,.18)" stroke-dasharray="2 4"/>`;
+      g += `<text class="tk" x="${pl - 8}" y="${y(25) + 4}" text-anchor="end">25%</text>`;
+      if (!phone) g += `<text class="tk" x="${pl + iw}" y="${y(25) - 7}" text-anchor="end">guessing</text>`;
       g += `<text class="ax" x="${pl + iw}" y="${pt + ih + 34}" text-anchor="end">training cost →</text>`;
-      g += `<text class="ax" x="${pl - (phone ? 26 : 38)}" y="${pt - 9}">${phone ? '↑ words / s' : '↑ words a second, CPU'}</text>`;
+      g += `<text class="ax" x="${pl - (phone ? 26 : 38)}" y="${pt - 9}">↑ HellaSwag</text>`;
+      // a model whose score isn't in yet: a faint line at its cost, no bead
+      M.filter(m => m.hs == null).forEach(m => {
+        const X = x(m.cost), c = m.col || REF;
+        g += `<line x1="${X}" x2="${X}" y1="${y(25)}" y2="${y(29)}" stroke="${c}" stroke-opacity=".55" stroke-dasharray="2 3"/>`;
+        g += `<text class="sb" x="${X + 8}" y="${y(26.2)}">${phone ? m.short : m.n} · score to come</text>`;
+      });
       // the beads: biggest first, so a small one is never hidden under a large one
-      [...M].sort((a, b) => b.gb - a.gb).forEach(m => {
-        const X = x(m.cost), Y = y(m.tps), r = rad(m.gb), c = m.col || REF;
+      [...M].filter(m => m.hs != null).sort((a, b) => b.gb - a.gb).forEach(m => {
+        const X = x(m.cost), Y = y(m.hs), r = rad(m.gb), c = m.col || REF;
         const side = phone ? m.ps : m.side;
         let lx = side === 'r' ? X + r + 9 : side === 'l' ? X - r - 9 : X, an = side === 'r' ? 'start' : side === 'l' ? 'end' : 'middle';
-        let ly = side === 't' ? Y - r - 10 : Y - 2;
-        if (side === 't' && X + 40 > pl + iw) { lx = X + r; an = 'end'; }
-        const sub = `${m.est ? '~' : ''}${money(m.cost)} · ${m.tps.toFixed(0)}/s · ${m.gb < 1 ? m.gb.toFixed(2) : m.gb.toFixed(1)} GB`;
+        const vert = side === 't' || side === 'b';
+        let ly = side === 't' ? Y - r - 10 : side === 'b' ? Y + r + 18 : Y - 2;
+        if (vert && X + 40 > pl + iw) { lx = X + r; an = 'end'; }
+        const sub = `${m.est ? '~' : ''}${money(m.cost)} · ${m.hs.toFixed(1)}% · ${m.gb < 1 ? m.gb.toFixed(2) : m.gb.toFixed(1)} GB${m.act ? ` (${m.act.toFixed(2)} at work)` : ''}`;
         g += `<g class="pt${m.ref ? ' ref' : ''}" tabindex="0" data-id="${m.id}" aria-label="${m.n}">`;
         g += `<circle cx="${X}" cy="${Y}" r="${Math.max(r + 10, 22)}" fill="transparent"/>`;
         g += `<g class="grow">`;
         if (!m.ref) g += `<circle cx="${X}" cy="${Y}" r="${r * 1.9}" fill="${c}" opacity=".07" style="filter:blur(${Math.round(r * .5)}px)"/>`;
         g += `<circle cx="${X}" cy="${Y}" r="${r}" fill="url(#tri-b-${m.id})"/>`;
         g += `<circle class="ring" cx="${X}" cy="${Y}" r="${r}" fill="none" stroke="${c}" stroke-opacity="${m.ref ? .6 : .95}" stroke-width="1.25"${m.est ? ' stroke-dasharray="3 2.6"' : ''}/>`;
+        if (m.act) {                                       // the experts: only this much is read for each word
+          const ri = rad(m.act);
+          g += `<circle cx="${X}" cy="${Y}" r="${ri}" fill="${c}" fill-opacity=".38"/>`;
+          g += `<circle cx="${X}" cy="${Y}" r="${ri}" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="1"/>`;
+        }
         g += `<ellipse cx="${X - r * .32}" cy="${Y - r * .42}" rx="${r * .3}" ry="${r * .14}" transform="rotate(-28 ${X - r * .32} ${Y - r * .42})" fill="#fff" opacity="${m.ref ? .18 : .4}"/>`;
         g += `<circle cx="${X}" cy="${Y}" r="1.6" fill="${c}"/>`;
-        g += `</g><g class="lbl"><text class="nm" x="${lx}" y="${phone && side !== 't' ? Y + 4.5 : ly}" text-anchor="${an}">${phone ? m.short : m.n}</text>`;
+        g += `</g><g class="lbl"><text class="nm" x="${lx}" y="${phone && !vert ? Y + 4.5 : ly}" text-anchor="${an}">${phone ? m.short : m.n}</text>`;
         if (!phone) g += `<text class="sb" x="${lx}" y="${Y + 14}" text-anchor="${an}">${sub}</text>`;
         g += `</g></g>`;
       });
@@ -1494,8 +1511,9 @@ void main() {
       const c = m.col || REF;
       tip.innerHTML = `<b><i style="background:${c}"></i>${m.n}</b><span class="k">${m.kind}</span><dl>` +
         `<dt>Training cost</dt><dd>${m.est ? '~' : ''}${money(m.cost)} <small>${m.costNote}</small></dd>` +
+        `<dt>HellaSwag</dt><dd>${m.hs != null ? m.hs.toFixed(1) + '%' : '<small>to come</small>'}</dd>` +
+        `<dt>File</dt><dd>${m.gb.toFixed(2)} <small>GB</small>${m.act ? ` <small>· ${m.act.toFixed(2)} at work</small>` : ''}</dd>` +
         `<dt>CPU writing</dt><dd>${m.tps.toFixed(1)} <small>words/s</small></dd>` +
-        `<dt>File</dt><dd>${m.gb.toFixed(2)} <small>GB</small></dd>` +
         `<dt>Parameters</dt><dd>${m.params}</dd>` +
         `<dt>Text read</dt><dd>${m.toks} <small>tokens</small></dd></dl>`;
       const br = box.getBoundingClientRect(), r = el.querySelector('.ring').getBoundingClientRect();
