@@ -656,16 +656,16 @@ function scoreboard() {
   const refNames = VIS().map((r) => r.name).filter((n) => isRef(n) && n !== "openai-gpt2");
   const runOf = (n) => RUNS.find((r) => r.name === n);
   const rowOf = (n) => {
-    const m = DATA[n]?.metrics || [], ev = lastOf(n, "evals"), e = lastOf(n, "eval");
+    const m = DATA[n]?.metrics || [], ev = lastOf(n, "evals"), e = lastOf(n, "eval"), lr = lastOf(n, "logres");
     const full = m.filter((x) => x.kind === "hellaswag" && x.full).pop(), quick = m.filter(hsOK).pop(), h = full || quick;
     const cf = runOf(n)?.config || {}, st = runOf(n)?.status || {};
     return { n, size: cf.params, cost: costOf(cf, st), active: cf.params_active && cf.params_active < cf.params ? cf.params_active : null,
       val: e?.val_loss, hs: h?.acc_norm, hsQ: h && !h.full,
-      arc_easy: ev?.arc_easy, piqa: ev?.piqa, lambada: ev?.lambada, evQ: ev && ev.full === false };
+      arc_easy: ev?.arc_easy, piqa: ev?.piqa, lambada: ev?.lambada, evQ: ev && ev.full === false, logres: lr?.acc_char };
   };
   const rows = names.map(rowOf).filter((r) => r.val != null || r.hs != null);
   const refs = refNames.map(rowOf).filter((r) => r.hs != null).map((r) => ({ ...r, ref: true, val: null }));
-  if (!rows.length) { box.innerHTML = `<div class="card"><div class="empty">The scores fill in after the first evaluation.</div></div>`; return; }
+  if (!rows.length) { box.dataset.html = ""; box.innerHTML = `<div class="card"><div class="empty">The scores fill in after the first evaluation.</div></div>`; return; }
   const ref = { n: "openai-gpt2", ref: true, size: 124e6, val: null, hs: gpt2HS() };
   const COLS = [
     ["val", "Held-out loss", "lower is better", -1, fmtL],
@@ -673,6 +673,7 @@ function scoreboard() {
     ["arc_easy", "ARC-Easy", "guessing 25%", 1, pct],
     ["piqa", "PIQA", "guessing 50%", 1, pct],
     ["lambada", "LAMBADA", "exact last word · guessing ~0%", 1, pct],
+    ["logres", "LogRes", "reasoning · guessing 44%", 1, pct],
   ].filter(([k]) => rows.concat(refs).some((r) => r[k] != null));
   const costCell = (r) => {
     const c = r.cost; if (!c) return `<td class="na">–</td>`;
@@ -685,7 +686,7 @@ function scoreboard() {
     const vs = rows.map((r) => r[k]).filter((v) => v != null);
     if (vs.length > 1) best[k] = dir < 0 ? Math.min(...vs) : Math.max(...vs);
   }
-  const quickOf = (r, k) => (k === "hs" && r.hsQ) || (k !== "hs" && k !== "val" && r.evQ);
+  const quickOf = (r, k) => (k === "hs" && r.hsQ) || (k !== "hs" && k !== "val" && k !== "logres" && r.evQ);
   const cell = (r, k, fmt) => r[k] == null ? `<td class="na">–</td>`
     : `<td class="${best[k] === r[k] ? "top" : ""}">${fmt(r[k])}${quickOf(r, k) ? `<sup>*</sup>` : ""}</td>`;
   const big = (v) => v >= 1e9 ? (v / 1e9).toFixed(2) + "B" : (v / 1e6).toFixed(0) + "M";
@@ -709,15 +710,47 @@ function scoreboard() {
       ${srcRuns.map(([n, e]) => `<tr><td class="who"><i style="background:${colorOf(n)}"></i>${UI.escapeHtml(nameOf(n))}</td>${kinds.map((k) => { const v = e["val_loss_" + k];
         return v == null ? `<td class="na">–</td>` : `<td class="${srcRuns.length > 1 && v === srcBest[k] ? "top" : ""}">${fmtL(v)}</td>`; }).join("")}</tr>`).join("")}
       </table></div><p class="note">2M held-out words of each kind, never trained on. Lower is better. Kinds can't be compared with each other (code is easier to predict than the web).</p></div></details>` : "";
-  box.innerHTML = `<div class="card score">
+  // the page redraws every few seconds: keep folded sections open across redraws, and leave the table alone when
+  // nothing in it changed (a click on a folded section is never lost to a redraw)
+  const wasOpen = new Set([...box.querySelectorAll("details[open] > summary")].map((x) => x.textContent));
+  const html = `<div class="card score">
       ${headline ? `<div class="big">${headline}</div>` : ""}
       <div class="fcwrap"><table class="scores">
         <tr><th></th><th>Size</th><th>Training cost<span>GPU rent</span></th>${COLS.map(([, t, h]) => `<th>${t}<span>${h}</span></th>`).join("")}</tr>
         ${rows.map(tr).join("")}${refs.concat(ref).sort((a, b) => (b.hs ?? 0) - (a.hs ?? 0)).map(tr).join("")}
       </table></div>
       <p class="note">Held-out loss: next-word surprise on FineWeb-Edu text our models never trained on; shown for our models only (published models read other text, or maybe these very pages, so their loss isn't comparable). The tests: higher is better, green is our best in each column. Rows in italics are published models measured here with the same tests (toggle them in the model library). HellaSwag is scored per letter, like published small-model results. Training cost: ours is the run's GPU time at RunPod prices (B200 about $8 an hour), mentor included; published models are estimates (est.): 6 × parameters × tokens of arithmetic on B200s at 40% of their peak, the way labs plan runs.${anyQ ? " <sup>*</sup> A quick check on part of the questions, run during training; the whole test runs at the end." : ""}</p>
-      ${srcHtml}
+      ${srcHtml}${logresHtml(rows.concat(refs).map((r) => r.n))}
     </div>`;
+  if (html === box.dataset.html) return;
+  box.innerHTML = html;
+  box.dataset.html = html;
+  box.querySelectorAll("details > summary").forEach((x) => { if (wasOpen.has(x.textContent)) x.parentElement.open = true; });
+}
+
+// LogRes (oazy/logres.py): 1,600 reasoning puzzles whose facts are in the question, 8 kinds at 5 levels (level =
+// steps of reasoning). Folded under the scores: one table by level, one by kind, the guessing level as the last row.
+const LR_KINDS = [["order", "Order"], ["time", "Time"], ["place", "Place"], ["sums", "Sums"], ["rules", "If-then"],
+  ["sets", "All / some"], ["negation", "Negation"], ["family", "Family"]];
+function logresHtml(names) {
+  const got = names.map((n) => [n, lastOf(n, "logres")]).filter(([, r]) => r && r.levels);
+  if (!got.length) return "";
+  const p0 = (v) => v == null ? "–" : Math.round(v * 100) + "%";
+  const guess = got[0][1];
+  const who = (n) => `<td class="who"><i style="background:${n === "openai-gpt2" ? "var(--muted)" : colorOf(n)}"></i>${n === "openai-gpt2" ? "OpenAI GPT-2" : UI.escapeHtml(nameOf(n))}</td>`;
+  const grid = (cols, val, gval) => {
+    const best = cols.map((c) => got.length > 1 ? Math.max(...got.map(([, r]) => val(r, c) ?? -1)) : null);
+    return got.map(([n, r]) => `<tr>${who(n)}${cols.map((c, i) => { const v = val(r, c);
+        return v == null ? `<td class="na">–</td>` : `<td class="${best[i] === v ? "top" : ""}">${p0(v)}</td>`; }).join("")}</tr>`).join("")
+      + `<tr class="ref"><td class="who"><i style="background:var(--muted)"></i>guessing</td>${cols.map((c) => `<td>${p0(gval(guess, c))}</td>`).join("")}</tr>`;
+  };
+  const lv = ["all", "1", "2", "3", "4", "5"];
+  const byLevel = grid(lv, (r, c) => c === "all" ? r.acc_char : r.levels[c]?.acc, (r, c) => c === "all" ? r.chance : r.levels[c]?.chance);
+  const byKind = grid(LR_KINDS.map(([k]) => k), (r, c) => r.families?.[c]?.acc, (r, c) => r.families?.[c]?.chance);
+  return `<details class="why"><summary>LogRes by level and by kind of puzzle</summary><div class="body">
+      <div class="fcwrap"><table class="scores"><tr><th></th>${lv.map((c) => `<th>${c === "all" ? "All" : "Level " + c}</th>`).join("")}</tr>${byLevel}</table></div>
+      <div class="fcwrap" style="margin-top:22px"><table class="scores"><tr><th></th>${LR_KINDS.map(([, t]) => `<th>${t}</th>`).join("")}</tr>${byKind}</table></div>
+      <p class="note">LogRes (logic and reasoning): every question gives its own facts with made-up names and asks for something that follows but is never written, e.g. "Bo is taller than Cy. Ana is taller than Bo. Who is shorter, Ana or Cy?". Level = how many steps of reasoning the answer needs (1 to 5), 40 questions of each kind at each level. Scored like HellaSwag (the answer that surprises the model least, per letter). Guessing is 50% on most, 25% on sums, 1 in 2 to 1 in 6 on negation. Nothing is trained on it.</p></div></details>`;
 }
 
 // ---- forecasts (oazy/web/forecast.js): where each live run's losses and HellaSwag land at the planned end.

@@ -870,7 +870,7 @@ def main():
         step, tokens, elapsed, nxt = state["step"], state["tokens"], state["elapsed"], state["next"]
         nxt.setdefault("evals", tokens)                  # a checkpoint from before the periodic extra tests: the next check has them
         for k in nxt:                                    # tests made more frequent since: the next one comes sooner
-            every = p[k + "_every"]
+            every = p.get(k + "_every", p["evals_every"])     # LogRes runs on the three tests' schedule
             nxt[k] = min(nxt[k], math.ceil(tokens / every) * every)
         train.set_state(state["data"])
         if growing_ctx:
@@ -1021,6 +1021,19 @@ def main():
                 say(f"[evals] {'' if final else 'quick, '}" + ", ".join(f"{k} {v * 100:.1f}%" if k in ("arc_easy", "piqa", "lambada") else f"{k} {v:.2f}"
                                            for k, v in r.items() if not k.endswith(("_n", "_char"))), flush=True)
             nxt["evals"] += p["evals_every"]
+        if final or tokens >= nxt.setdefault("logres", 0):
+            # LogRes (oazy/logres.py): 1,600 reasoning puzzles whose facts are in the question; all of them every time
+            # (a few seconds), on the same schedule as the three tests above
+            try:
+                from . import logres
+                r = logres.evaluate(model, device)
+                run.log("metrics.jsonl", {"kind": "logres", **base, **r, "full": True})
+                latest["logres"] = r["acc_char"]
+                say(f"[logres] {r['acc_char'] * 100:.1f}% (guessing {r['chance'] * 100:.0f}%) | by level "
+                    + " ".join(f"{r['levels'][str(L)]['acc'] * 100:.0f}%" for L in logres.LEVELS), flush=True)
+            except Exception as e:          # a new test must never stop a run
+                say(f"[logres] skipped ({type(e).__name__}: {str(e)[:120]})", flush=True)
+            nxt["logres"] += p["evals_every"]
         if final or tokens >= nxt["probe"]:
             r = probes.memory_report(model, pwin, device, batch=min(micro, 16))
             run.log("metrics.jsonl", {"kind": "memory", **base, **r})
