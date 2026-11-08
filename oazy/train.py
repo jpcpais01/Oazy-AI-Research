@@ -825,7 +825,9 @@ def main():
         from bee.model import ctx_plan
         mix_default = args.mix is None
         if args.mix is None:      # SmolLM2-tokenizer Bees read Tagus when it is there (oazy/tagus.py)
-            args.mix = "tagus" if tk == "smollm2" and (data / "cosmo" / "train.bin").exists() else "v1"
+            args.mix = ("sado-best" if tk == "smollm2" and (data / "best" / "train.bin").exists() else   # Sado (oazy/sado.py)
+                        "sado" if tk == "smollm2" and (data / "books" / "train.bin").exists() else
+                        "tagus" if tk == "smollm2" and (data / "cosmo" / "train.bin").exists() else "v1")
         args.mix = resolve_mix(args.mix)
         if mix_default and decay != 0.2:          # the cool-down text starts where the learning rate starts to fall
             from .mix import with_cooldown

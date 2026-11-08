@@ -207,6 +207,37 @@ bash runpod/train.sh plain100 --preset big --tokens 5e9 --micro 32      # option
 The log line also shows `thoughts 15.8 tok` (tokens per thought; the spring pulls it to 16) and `meaning 4.20` (the
 meaning loss, nats per piece; blind guessing is 6.9). If it runs out of memory: `--micro 16`. Speed is unmeasured.
 
+## Sado, our second dataset (25,000M tokens, on a network volume)
+
+Tagus's successor: books, stricter web text, no benchmark questions, no repeats. What and why: `oazy/sado.py` and `oazy/sado_score.py`. It is built with the CPU and the network
+only, so build it on a cheap CPU pod, never on an idle GPU pod.
+
+**Keep it on a network volume** (a pod's own disk is lost when RunPod takes back a stopped pod). RunPod > Storage >
+New Network Volume: **150 GB** (Sado ~41 GB, downloads a few GB at a time, room for checkpoints and a second dataset; ~$0.07/GB a month, about $10). A volume lives in one datacenter: pick one that has B200s, and deploy
+both the CPU pod and later the GPU pod there with the volume attached (it appears as /workspace).
+
+```bash
+# 1. on a CPU pod (16-32 vCPUs) with the volume attached
+cd /workspace && git clone https://github.com/jpcpais01/simulations oazy && cd oazy   # or: cd /workspace/oazy && git pull
+python3 -m pip install -q -r oazy/requirements.txt
+python3 -m pip install -q torch --index-url https://download.pytorch.org/whl/cpu      # only for fetching the test files
+python3 -m oazy.sado_tests                                # offline checks (~1 min)
+python3 -m oazy.sado --plan                               # what it will build
+tmux new -s sado
+nice -n 10 python3 -m oazy.sado --run-tokens 20e9         # ~5-7 h; resumes source by source if stopped
+# 2. optional, not used now (João, Nov 8): the models pick the data: on the RTX 5090 pod (or a B200 between runs), same volume
+python3 -m oazy.sado_score --plan                         # tokens to read and a time guess
+python3 -m oazy.sado_score                                # SmolLM2-135M and -360M read the start of every document (resumes)
+python3 -m oazy.sado_score --apply                        # CPU: leave out the noisiest and easiest 5%, copy the best 10% to best/
+# 3. a run that reads it (the "sado" mix is picked by itself)
+bash runpod/train.sh <model> --preset big --tokens 20e9 --micro 32 --data-sub sado
+```
+
+If step 2 is ever used: `--apply` keeps the unpicked text as `train.unscored.bin` in each folder, so `python3 -m oazy.sado_score --undo` puts it
+back. Once a run on the picked text looks good, delete those files to free ~40 GB. If you still have tagus20's held-out
+files (`val.bin`), copy them to /workspace/oazy_data/tagus20/ first: Sado then reuses them, so new and old models
+are scored on the same text.
+
 ## The phone app (our models on an Android phone, offline)
 
 Any finished or running model with SmolLM2's tokenizer (Coral, Bee4, Bee_v2_0.2B, Bee3, Frog, and their -chat runs) can
