@@ -207,6 +207,14 @@ input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 6px rg
 .legend .sw { width: 16px; }
 .legend .sw.dash { background: none !important; border-top: 2px dashed; height: 0; }
 .legend .sw.faint { opacity: .4; }
+.legend .chip { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: none; }
+.legend .lgmodel { color: var(--text); font-weight: 500; }
+.legend .lgkey { color: var(--muted); }
+.legend .lgkey.first { margin-left: 6px; padding-left: 18px; border-left: 1px solid var(--border-2); }
+.legend .lgkey .sw { width: 22px; background: var(--text-2); }
+.legend .lgkey .sw.bold { height: 3px; }
+.legend .lgkey .sw.faint { height: 1px; opacity: .45; }
+.legend .lgkey .sw.dash { background: repeating-linear-gradient(90deg, var(--text-2) 0 5px, transparent 5px 9px) !important; height: 2px; border: 0; }
 
 .tip { position: absolute; display: none; pointer-events: none; z-index: 30; min-width: 150px;
   background: rgba(10, 20, 40, 0.78); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
