@@ -118,13 +118,17 @@ def _sub(cfg, d, heads, kv, mlp):
 
 
 # ---------------------------------------------------------------------------------------------- attention pieces
-def flex_dtype(*ts):
-    """Flex attention takes q, k and v in one precision and, unlike F.scaled_dot_product_attention, is not cast by
-    autocast: under bf16 autocast the normed queries/keys can arrive in fp32 next to bf16 values, which crashed
-    Triton's compiler on the B200 (Nov 8). Cast them as autocast would cast SDPA's inputs."""
-    dev = ts[0].device.type
-    dt = torch.get_autocast_dtype(dev) if torch.is_autocast_enabled(dev) else ts[-1].dtype
-    return tuple(t.to(dt) for t in ts)
+def flex_inputs(q, k, v):
+    """q (B, H, T, d), k/v (B, KV, S, d) -> the same in one precision (flex attention, unlike F.scaled_dot_product_
+    attention, is not cast by autocast) with k/v copied out to all H heads: flex's shared-heads mode (enable_gqa)
+    crashed Triton's compiler on the B200 (torch 2.8, Triton 3.4, Nov 8; pegasus.flexcheck --quick), plain heads
+    compile."""
+    dev = q.device.type
+    dt = torch.get_autocast_dtype(dev) if torch.is_autocast_enabled(dev) else v.dtype
+    rep = q.shape[1] // k.shape[1]
+    if rep > 1:
+        k, v = k.repeat_interleave(rep, 1), v.repeat_interleave(rep, 1)
+    return q.to(dt), k.to(dt), v.to(dt)
 
 
 def window_mask(T: int, window: int, device):
@@ -145,8 +149,8 @@ def local_attention(attn: Attention, x, window: int, wmask=None):
     if wmask is not None:
         from torch.nn.attention.flex_attention import flex_attention
         q, k, v = attn.project(x, 0)
-        q, k, v = flex_dtype(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2))
-        y = flex_attention(q, k, v, block_mask=wmask, enable_gqa=attn.H != attn.KV)
+        q, k, v = flex_inputs(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2))
+        y = flex_attention(q, k, v, block_mask=wmask)
         return attn.finish(x, y)
     W = window
     q, k, v = attn.project(x, 0)                                     # RoPE on true positions
@@ -203,8 +207,8 @@ class Notebook(nn.Module):
 
             def finished(score, b, h, qi, kv):
                 return torch.where(kv <= tid[b, qi], score, -float("inf"))
-            q, k, v = flex_dtype(q, k, v)
-            y = flex_attention(q, k, v, score_mod=finished, enable_gqa=self.H != self.KV)
+            q, k, v = flex_inputs(q, k, v)
+            y = flex_attention(q, k, v, score_mod=finished)
             return self.out(y.transpose(1, 2).reshape(B, T, -1))
         rep = self.H // self.KV
         k, v = k.repeat_interleave(rep, 1), v.repeat_interleave(rep, 1)

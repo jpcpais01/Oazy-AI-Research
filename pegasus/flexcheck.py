@@ -33,7 +33,7 @@ def lesson(m, x):
 def quick():
     """Pegasus's flex calls on small inputs, one at a time: what compiles (fwd + bwd), in which precisions."""
     from torch.nn.attention.flex_attention import flex_attention
-    from pegasus.model import window_mask, flex_dtype
+    from pegasus.model import window_mask
     dev = torch.device("cuda")
     f = torch.compile(flex_attention)
     T, H, KV, d = 1024, 12, 4, 64
@@ -49,8 +49,10 @@ def quick():
         ("plain, bf16, one head group", lambda: f(*(mk((H, T), torch.bfloat16) for _ in range(3)))),
         ("local window, bf16, shared heads", lambda: f(mk((H, T), torch.bfloat16), mk((KV, T), torch.bfloat16),
                                                       mk((KV, T), torch.bfloat16), block_mask=wm, enable_gqa=True)),
-        ("local window, q/k fp32 + v bf16 (before the fix)", lambda: f(mk((H, T), torch.float32), mk((KV, T), torch.float32),
-                                                                      mk((KV, T), torch.bfloat16), block_mask=wm, enable_gqa=True)),
+        ("local window, bf16, own heads (the fix)", lambda: f(mk((H, T), torch.bfloat16), mk((H, T), torch.bfloat16),
+                                                             mk((H, T), torch.bfloat16), block_mask=wm)),
+        ("notebook (129 pages), bf16, own heads (the fix)", lambda: f(mk((H, T), torch.bfloat16), mk((H, 129), torch.bfloat16),
+                                                                     mk((H, 129), torch.bfloat16), score_mod=finished)),
         ("notebook (129 pages), bf16, shared heads", lambda: f(mk((H, T), torch.bfloat16), mk((KV, 129), torch.bfloat16),
                                                               mk((KV, 129), torch.bfloat16), score_mod=finished, enable_gqa=True)),
     ]
@@ -59,10 +61,10 @@ def quick():
         try:
             run().float().sum().backward()
             torch.cuda.synchronize()
-            print(f"  ✓ {name}", flush=True)
+            print(f"  ok   {name}", flush=True)
         except Exception as ex:
             last = [l_ for l_ in traceback.format_exception_only(type(ex), ex)[-1].splitlines() if l_.strip()][-1]
-            print(f"  ✗ {name}: {last[:120]}", flush=True)
+            print(f"  FAIL {name}: {last[:120]}", flush=True)
     # the real thing: one Reader-size layer under bf16 autocast, as the training step runs it
     from pegasus.model import Pegasus, PegasusConfig, local_attention
     m = Pegasus(PegasusConfig(enc_layers=1, spk_layers=2, think_layers=1)).to(dev)
@@ -74,10 +76,10 @@ def quick():
             y = g(x)
         y.float().sum().backward()
         torch.cuda.synchronize()
-        print("  ✓ a Pegasus layer's local window under bf16 autocast (with the fix)", flush=True)
+        print("  ok   a Pegasus layer's local window under bf16 autocast (with the fix)", flush=True)
     except Exception as ex:
         last = [l_ for l_ in traceback.format_exception_only(type(ex), ex)[-1].splitlines() if l_.strip()][-1]
-        print(f"  ✗ a Pegasus layer's local window under bf16 autocast (with the fix): {last[:120]}", flush=True)
+        print(f"  FAIL a Pegasus layer's local window under bf16 autocast (with the fix): {last[:120]}", flush=True)
 
 
 def main():
