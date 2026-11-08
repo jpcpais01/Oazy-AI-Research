@@ -24,10 +24,10 @@ What changed from Tagus, and why:
 
 The mix (oazy/mix.py SADO_MIX): main part / cool-down
 
-  fwe 42/18  dclm 20/5  cosmo 10/11  books 6/6  wiki 6/6  math 7/11  code 6/6  chat 3/27  best 0/10
+  fwe 42/28  dclm 20/5  cosmo 10/11  books 6/6  wiki 6/6  math 7/11  code 6/6  chat 3/27
 
-"best" is filled by oazy/sado_score.py (the documents most worth learning from, reread in the cool-down); until then
-it is skipped and the other cool-down shares are scaled up. The cool-down starts where the learning rate starts to
+(oazy/sado_score.py can also let two models pick the documents; João, Nov 8: not now, the sources are already
+picked by much bigger models. If it is ever run, the "sado-best" mix rereads its picks in the cool-down.) The cool-down starts where the learning rate starts to
 fall (Bee4's recipe: the last 30%), and this script sizes each source for that (--cooldown).
 
 A source that already has enough tokens is left alone, so a stopped build can be started again (the duplicate check
