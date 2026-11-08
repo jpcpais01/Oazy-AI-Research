@@ -46,7 +46,7 @@ EXTRA="${ARGS[*]:-}"
 DATA="$(python3 -c "from oazy.data import default_dir; print(default_dir('data'))")"
 RUNS="$(python3 -c "from oazy.data import default_dir; print(default_dir('runs'))")"
 mkdir -p "$RUNS"
-if [ ! -f "$DATA/train.bin" ]; then
+if [ ! -f "$DATA/train.bin" ] && [[ "$EXTRA" != *--data-sub* ]]; then
     echo "no training data in $DATA yet: run  bash runpod/setup.sh  first"
     exit 1
 fi
