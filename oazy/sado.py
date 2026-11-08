@@ -54,6 +54,7 @@ from .mix import SADO_MIX, SOURCES, with_cooldown
 from . import term
 
 NGRAM = 13
+PROGRESS_EVERY = 100_000_000       # a progress line every this many tokens
 ORDER = ("chat", "books", "wiki", "math", "code", "cosmo", "fwe", "dclm")   # the first copy of a duplicate is kept
 ABOUT = {
     "fwe": "FineWeb-Edu, teaching value >= 3 (sample-100BT)",
@@ -291,8 +292,21 @@ class Stats(dict):
             self[k] = self.get(k, 0) + v
 
 
+class Overall:
+    """The whole build's progress: tokens to write in all, written so far, and when it began (for the ETA)."""
+    def __init__(self, total: int):
+        self.total, self.done, self.t0 = max(1, total), 0, time.time()
+
+    def line(self) -> str:
+        dt = time.time() - self.t0
+        left = (self.total - self.done) / max(self.done / max(dt, 1e-6), 1) if self.done else None
+        return (f"{term.c('Sado', 'bold')} {term.bar(self.done / self.total, 12, 'green')} {self.done / self.total * 100:4.0f}%  "
+                + term.c(f"{term.duration(left)} left" if left is not None else "estimating…", "green")
+                + term.c(f"  (ends ~{time.strftime('%H:%M', time.localtime(time.time() + left))})" if left is not None else "", "dim"))
+
+
 def write_source(text_batches, out: Path, train_tokens: int, val_tokens: int, bench, held: set, seen: set,
-                 workers: int, stats: Stats):
+                 workers: int, stats: Stats, overall: "Overall | None" = None, name: str = ""):
     """Clean, check and tokenize a stream into out/train.bin (and out/val.bin when val_tokens > 0)."""
     from multiprocessing import get_context
     from . import tok
@@ -331,15 +345,16 @@ def write_source(text_batches, out: Path, train_tokens: int, val_tokens: int, be
                 arr = arr[: train_tokens - nt]
                 ft.write(arr.tobytes())
                 nt += arr.size
-                if nt - shown >= 100_000_000 or nt >= train_tokens:
+                if overall:
+                    overall.done += arr.size
+                if nt - shown >= PROGRESS_EVERY or nt >= train_tokens:
                     shown = nt
                     dt = max(1e-6, time.time() - t0)
                     left = (train_tokens - nt) / max(nt / dt, 1)
-                    term.out(f"  {term.bar(nt / train_tokens, 24, 'blue')} {nt / train_tokens * 100:5.1f}%  "
-                             f"{term.tokens(nt)} / {term.tokens(train_tokens)} tokens  "
-                             + term.c(f"· {term.rate(nt / dt)} · {term.duration(left)} left · "
-                                      f"{stats.get('duplicates', 0):,} repeats, {stats.get('test_overlap', 0):,} test overlaps out", "dim"),
-                             flush=True)
+                    term.out(f"  {term.pad(name, 5)} {term.bar(nt / train_tokens, 16, 'blue')} {nt / train_tokens * 100:3.0f}%  "
+                             f"{term.pad(term.tokens(nt), 6, True)} / {term.tokens(train_tokens)}  "
+                             + term.c(f"{term.rate(nt / dt)} · {term.duration(left)} left", "dim")
+                             + (f"  │  {overall.line()}" if overall else ""), flush=True)
                 if nt >= train_tokens:
                     break
     fv.close(), ft.close()
@@ -374,16 +389,18 @@ def needs(run_tokens: float, cooldown: float = 0.3, margin: float = 0.05):
     return {k: v for k, v in tneeds(run_tokens, with_cooldown(SADO_MIX, 1 - cooldown), margin).items() if k != "best"}
 
 
-def build_one(base: Path, sado: Path, name: str, tokens: int, val_tokens: int, bench, seen: set, workers: int, min_score: float):
+def build_one(base: Path, sado: Path, name: str, tokens: int, val_tokens: int, bench, seen: set, workers: int, min_score: float,
+              overall: "Overall | None" = None, step: str = ""):
     from .tagus import held_out_keys
     out = folder(sado, name)
     old = yardstick(base, name)
     held = held_out_keys(old / "val.bin") if old else set()
-    term.header(name, f"{ABOUT[name]} · {term.tokens(tokens)} tokens · held-out text "
-                f"{'copied from ' + str(old) if old else 'new'}", color="blue")
+    term.header(f"{step}{name}", f"{ABOUT[name]} · {term.tokens(tokens)} tokens", color="blue")
+    term.out(term.c(f"  held-out text: {'the same as ' + str(old) if old else 'new (2M tokens)'}", "dim"), flush=True)
     stats = Stats()
     t0 = time.time()
-    nv, nt = write_source(batches(name, min_score), out, tokens, 0 if old else val_tokens, bench, held, seen, workers, stats)
+    nv, nt = write_source(batches(name, min_score), out, tokens, 0 if old else val_tokens, bench, held, seen, workers, stats,
+                          overall, name)
     meta = {"dataset": ABOUT[name], "tokenizer": "smollm2", "train_tokens": nt, "exhausted": nt < tokens,
             "minutes": round((time.time() - t0) / 60, 1), "stats": dict(stats)}
     if name == "fwe":
@@ -401,10 +418,11 @@ def build_one(base: Path, sado: Path, name: str, tokens: int, val_tokens: int, b
         meta["val_tokens"] = nv
     (out / "meta.json").write_text(json.dumps(meta, indent=1))
     s = stats
-    term.out(f"  {term.c('✓', 'green', 'bold')} {name}: {term.tokens(nt)} training tokens + {term.tokens(meta['val_tokens'])} held out"
-             + term.c(f"  ({s.get('kept', 0):,} documents kept; out: {s.get('duplicates', 0):,} repeats, "
-                      f"{s.get('test_overlap', 0):,} test overlaps, {s.get('held_out_met', 0):,} held-out)", "dim")
-             + (term.c("  (the source ran out)", "yellow") if meta["exhausted"] else ""), flush=True)
+    term.out(f"  {term.c('✓', 'green', 'bold')} {name}: {term.tokens(nt)} tokens in {term.duration(time.time() - t0)}"
+             + (term.c("  (the source ran out: a run rereads a little of it)", "yellow") if meta["exhausted"] else ""), flush=True)
+    term.rows([("kept", f"{s.get('kept', 0):,} documents"),
+               ("left out", f"{s.get('duplicates', 0):,} repeats · {s.get('test_overlap', 0):,} with test questions · "
+                            f"{s.get('held_out_met', 0):,} held-out")], indent=4)
 
 
 def main():
@@ -421,6 +439,7 @@ def main():
     ap.add_argument("--workers", type=int, default=0)
     ap.add_argument("--plan", action="store_true", help="only show what a run reads and what is there")
     a = ap.parse_args()
+    term.quiet()
     base = Path(a.data or default_dir("data"))
     sado = base / a.into
     want = needs(a.run_tokens, a.cooldown, a.margin)
@@ -460,12 +479,15 @@ def main():
         term.out(term.c(f"  test-question check: {', '.join(f'{k} {len(v):,}' for k, v in texts.items())} texts -> "
                         f"{bench.size:,} runs of {NGRAM} words", "dim"), flush=True)
     seen: set = set()
-    for k in todo:
-        build_one(base, sado, k, want[k], int(a.val_tokens), bench, seen, workers, a.fwe_min_score)
+    overall = Overall(sum(want[k] for k in todo))   # a part that is built again starts from zero
+    term.out(term.c(f"  {len(todo)} parts, {term.tokens(overall.total)} tokens, {workers} CPU workers. Progress every {term.tokens(PROGRESS_EVERY)} tokens; "
+                    f"the whole build's time left shows after the first.", "dim"), flush=True)
+    for i, k in enumerate(todo):
+        build_one(base, sado, k, want[k], int(a.val_tokens), bench, seen, workers, a.fwe_min_score, overall, f"{i + 1}/{len(todo)} · ")
     short = [k for k in want if have(sado, k) < want[k] * 0.98]
     (sado / "sado.json").write_text(json.dumps({"run_tokens": a.run_tokens, "cooldown": a.cooldown, "mix": SADO_MIX,
                                                 "built": time.strftime("%Y-%m-%d %H:%M")}, indent=1))
-    term.out(term.c("━━ ✓ Sado is ready", "green", "bold") if not short else
+    term.out(term.c(f"━━ ✓ Sado is ready ({term.duration(time.time() - overall.t0)})", "green", "bold") if not short else
              term.c(f"━━ still short: {', '.join(short)} (a run repeats a little of those; fine)", "yellow"))
 
 
