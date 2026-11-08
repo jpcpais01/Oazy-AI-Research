@@ -259,7 +259,8 @@ class Pegasus(nn.Module):
         self.route_q = nn.Linear(D, D, bias=False)                   # where a new thought starts (H-Net's routing)
         self.route_k = nn.Linear(D, D, bias=False)
         self.route_scale = nn.Parameter(torch.tensor(10.0))          # p = sigmoid(scale * (change - edge))
-        self.route_edge = nn.Parameter(torch.tensor(0.75))           # starts with few thoughts: the spring adds more
+        self.route_edge = nn.Parameter(torch.tensor(0.75))           # set from the first batch (calibrate), then learned
+        self.register_buffer("calibrated", torch.zeros((), dtype=torch.bool))   # saved with the weights
         # meaning pieces
         lv = c.level_list()
         self.fsq = Pieces(lv)
@@ -346,6 +347,31 @@ class Pegasus(nn.Module):
         self._compiled = torch.compile(self._core) if mode in ("", "default") else torch.compile(self._core, mode=mode)
 
     # ---------------------------------------------------------------- the forward pass
+    def _read(self, x):
+        """The Reader: token vectors (B, T, D) and how much each token differs from the one before (B, T-1), 0 = the
+        same, 1 = opposite (where a new thought may start)."""
+        h = x
+        for b in self.reader:
+            h = b(h)
+        h = self.rnorm(h)
+        q = F.normalize(self.route_q(h[:, 1:]).float(), dim=-1)
+        k = F.normalize(self.route_k(h[:, :-1]).float(), dim=-1)
+        return h, (1 - (q * k).sum(-1)) / 2
+
+    @torch.no_grad()
+    def calibrate(self, idx):
+        """Once, on the first batch of a fresh model: put the boundary's edge where 1 token in thought_len starts a
+        thought, so the Thinker has thoughts to work with from the first step (a fixed starting edge gave ~64-token
+        thoughts on random weights, and the Thinker's first layer then had almost nothing to learn from). From then
+        on the edge is learned, pulled by the spring and by the Speaker's loss."""
+        if bool(self.calibrated):
+            return
+        _, change = self._read(self.embed(idx))
+        flat = change.float().flatten()
+        k = max(1, min(flat.numel(), round(flat.numel() * (1 - 1 / self.cfg.thought_len))))
+        self.route_edge.copy_(flat.kthvalue(k).values)
+        self.calibrated.fill_(True)
+
     def _core(self, idx):
         """(B, T) tokens -> (Speaker's token vectors after the final norm (B, T, D), the meaning loss, the spring's
         loss, a few numbers about the thoughts)."""
@@ -353,15 +379,7 @@ class Pegasus(nn.Module):
         B, T = idx.shape
         M = max(2, T // c.max_thoughts)
         x = self.embed(idx)
-        # ---- Reader
-        h = x
-        for b in self.reader:
-            h = b(h)
-        h = self.rnorm(h)
-        # ---- where thoughts start: a sudden change between neighbouring tokens
-        q = F.normalize(self.route_q(h[:, 1:]).float(), dim=-1)
-        k = F.normalize(self.route_k(h[:, :-1]).float(), dim=-1)
-        change = (1 - (q * k).sum(-1)) / 2                           # 0 = the same, 1 = opposite
+        h, change = self._read(x)
         p = torch.sigmoid(self.route_scale * (change - self.route_edge))
         p = torch.cat([torch.ones_like(p[:, :1]), p], 1)             # (B, T) the first token starts a thought
         from oazy.tok import eot_id
@@ -447,6 +465,8 @@ class Pegasus(nn.Module):
     def losses(self, idx, targets, mentor=None, kd_weight=0.0):
         """One lesson: the Speaker's next-word loss (and the mentor's lesson), plus the meaning loss and the spring.
         Returns (loss to train on, {"ce": next-word loss, "kd": mentor term}), the stats detached."""
+        if self.training and not bool(self.calibrated):
+            self.calibrate(idx)
         s, meaning, ratio, st = (self._compiled or self._core)(idx)
         th = tW = None
         if mentor is not None and kd_weight > 0:
