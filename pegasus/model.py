@@ -185,9 +185,10 @@ class Notebook(nn.Module):
     """The Speaker glancing at the notebook: one page per finished thought (the Reader's summary of it), plus a
     blank page so there is always something to look at. mask: (B, 1, T, M+1) which pages each token may read."""
 
-    def __init__(self, d, d_page, heads, kv, hd):
+    def __init__(self, d, d_page, heads, kv, hd, per=1):
         super().__init__()
         self.H, self.KV, self.hd = heads, kv, hd
+        self.per = per                                               # pages per thought (Pegasus 2: a few)
         self.q = nn.Linear(d, heads * hd, bias=False)
         self.k = nn.Linear(d_page, kv * hd, bias=False)
         self.v = nn.Linear(d_page, kv * hd, bias=False)
@@ -206,7 +207,7 @@ class Notebook(nn.Module):
             from torch.nn.attention.flex_attention import flex_attention
 
             def finished(score, b, h, qi, kv):
-                return torch.where(kv <= tid[b, qi], score, -float("inf"))
+                return torch.where(kv <= tid[b, qi] * self.per, score, -float("inf"))
             q, k, v = flex_inputs(q, k, v)
             y = flex_attention(q, k, v, score_mod=finished)
             return self.out(y.transpose(1, 2).reshape(B, T, -1))
