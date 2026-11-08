@@ -421,7 +421,8 @@ def yardstick(base: Path, name: str):
 
 def needs(run_tokens: float, cooldown: float = 0.3, margin: float = 0.05):
     from .tagus import needs as tneeds
-    return {k: v for k, v in tneeds(run_tokens, with_cooldown(SADO_MIX, 1 - cooldown), margin).items() if k != "best"}
+    return {k: v for k, v in tneeds(run_tokens, with_cooldown(SADO_MIX, 1 - cooldown), margin).items()
+            if k not in ("best", "faith")}                   # faith is written by oazy/faith.py, not downloaded
 
 
 def build_one(base: Path, sado: Path, name: str, tokens: int, val_tokens: int, bench, seen: set, workers: int, min_score: float,
@@ -460,14 +461,14 @@ def build_one(base: Path, sado: Path, name: str, tokens: int, val_tokens: int, b
                             f"{s.get('held_out_met', 0):,} held-out")], indent=4)
 
 
-def token_ratios(sado: Path, sample: int = 2_000_000):
+def token_ratios(sado: Path, sample: int = 2_000_000, names=ORDER + ("faith",)):
     """Write each part's SmolLM2-tokens-per-GPT-2-token ratio into its meta.json ("val" and "train"), which the trainer
     uses to put losses on the GPT-2 scale every older model is shown on. Parts whose held-out text was copied from
     tagus20 already carry it."""
     from . import tok
     from .data import get_tokenizer
     smol, gpt2 = tok.get("smollm2"), get_tokenizer()
-    for k in ORDER:
+    for k in names:
         d = folder(sado, k)
         mp = d / "meta.json"
         if not mp.exists():

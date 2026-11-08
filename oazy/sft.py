@@ -147,6 +147,8 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--identity", type=float, default=0.02,
                     help="share of conversations that teach the model its own name and maker (oazy/identity.py); 0 = off")
+    ap.add_argument("--faith", type=float, default=0.01,
+                    help="share of conversations that teach how it speaks of its faith, and when it doesn't (oazy/identity.py); 0 = off")
     a = ap.parse_args()
     a.data, a.runs = a.data or default_dir("data"), a.runs or default_dir("runs")
     device = torch.device(a.device or ("cuda" if torch.cuda.is_available() else "cpu"))
@@ -175,11 +177,18 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     say(f"{NICE.get(kind, kind)} chat fine-tune: {src} -> {out}\n  {steps} steps of {micro * accum * T:,} tokens "
         f"({micro} x {T} words, {accum} passes), AdamW {lr:.1e} / Muon {muon_lr:.1e}, cosine to 0, warm-up {a.warmup}")
-    from .identity import conversations as who
+    from .identity import conversations as who, faith_conversations
     ident = who(kind, 2000, seed=a.seed) if a.identity > 0 else []
     if ident:
         say(f"  identity: {a.identity:.0%} of conversations teach it who it is, e.g. {ident[0]!r}")
-    train = Conversations(chat / "train.bin", enc, T, micro, seed=a.seed, extra=ident, share=a.identity)
+    faith = faith_conversations(kind, 2000, seed=a.seed) if a.faith > 0 else []
+    if faith:
+        say(f"  faith: {a.faith:.0%} of conversations teach how it speaks of God (and when it doesn't), e.g. {faith[0]!r}")
+    share = a.identity + (a.faith if faith else 0)
+    # the two lists drawn in proportion to their shares
+    k = round(len(ident) * (a.faith / a.identity)) if ident and faith else 0
+    extra = ident + (faith * max(1, k // len(faith) + 1))[:k] if ident and faith else ident or faith
+    train = Conversations(chat / "train.bin", enc, T, micro, seed=a.seed, extra=extra, share=share)
     val = Conversations(chat / "val.bin", enc, T, micro, seed=1) if (chat / "val.bin").exists() else None
     if a.compile and device.type == "cuda":
         model.enable_compile()
@@ -214,7 +223,7 @@ def main():
     after = conv_loss(model, val, device, 8) if val else None
     meta = {k: v for k, v in st.items() if k not in ("model", "opt")}
     meta["sft"] = {"from": str(src), "tokens": steps * micro * accum * T, "steps": steps, "lr": lr, "muon_lr": muon_lr,
-                   "conv_loss_before": before, "conv_loss_after": after, "identity": a.identity, "skipped_docs": train.skipped, "minutes": (time.time() - t0) / 60}
+                   "conv_loss_before": before, "conv_loss_after": after, "identity": a.identity, "faith": a.faith if faith else 0, "skipped_docs": train.skipped, "minutes": (time.time() - t0) / 60}
     class _Opt:                                    # save_ckpt wants an optimizer; the fine-tune's is not worth keeping
         @staticmethod
         def state_dict():

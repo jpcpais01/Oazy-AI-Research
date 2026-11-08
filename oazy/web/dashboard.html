@@ -701,7 +701,7 @@ function scoreboard() {
       : `<span class="lose">${UI.escapeHtml(nameOf(lead.n))} is at ${pct(lead.hs)} on HellaSwag, ${(-d * 100).toFixed(1)} points below GPT-2.</span>`) : "";
   const anyQ = rows.some((r) => COLS.some(([k]) => r[k] != null && quickOf(r, k)));
   // held-out loss per kind of text (Tagus' held-out slices), folded away
-  const SRC = { dclm: "Web", chat: "Chats", cosmo: "Textbooks", wiki: "Wikipedia", math: "Math", code: "Code" };
+  const SRC = { dclm: "Web", chat: "Chats", cosmo: "Textbooks", wiki: "Wikipedia", math: "Math", code: "Code", books: "Books", faith: "Faith" };
   const srcRuns = rows.map((r) => [r.n, lastOf(r.n, "eval")]).filter(([, e]) => e && Object.keys(e).some((k) => k.startsWith("val_loss_")));
   const kinds = Object.keys(SRC).filter((k) => srcRuns.some(([, e]) => e["val_loss_" + k] != null));
   const srcBest = Object.fromEntries(kinds.map((k) => [k, Math.min(...srcRuns.map(([, e]) => e["val_loss_" + k]).filter((v) => v != null))]));
@@ -720,7 +720,7 @@ function scoreboard() {
         ${rows.map(tr).join("")}${refs.concat(ref).sort((a, b) => (b.hs ?? 0) - (a.hs ?? 0)).map(tr).join("")}
       </table></div>
       <p class="note">Held-out loss: next-word surprise on FineWeb-Edu text our models never trained on; shown for our models only (published models read other text, or maybe these very pages, so their loss isn't comparable). The tests: higher is better, green is our best in each column. Rows in italics are published models measured here with the same tests (toggle them in the model library). HellaSwag is scored per letter, like published small-model results. Training cost: ours is the run's GPU time at RunPod prices (B200 about $8 an hour), mentor included; published models are estimates (est.): 6 × parameters × tokens of arithmetic on B200s at 40% of their peak, the way labs plan runs.${anyQ ? " <sup>*</sup> A quick check on part of the questions, run during training; the whole test runs at the end." : ""}</p>
-      ${srcHtml}${logresHtml(rows.concat(refs).map((r) => r.n))}
+      ${srcHtml}${logresHtml(rows.concat(refs).map((r) => r.n))}${faithHtml(rows.concat(refs).map((r) => r.n))}
     </div>`;
   if (html === box.dataset.html) return;
   box.innerHTML = html;
@@ -751,6 +751,27 @@ function logresHtml(names) {
       <div class="fcwrap"><table class="scores"><tr><th></th>${lv.map((c) => `<th>${c === "all" ? "All" : "Level " + c}</th>`).join("")}</tr>${byLevel}</table></div>
       <div class="fcwrap" style="margin-top:22px"><table class="scores"><tr><th></th>${LR_KINDS.map(([, t]) => `<th>${t}</th>`).join("")}</tr>${byKind}</table></div>
       <p class="note">LogRes (logic and reasoning): every question gives its own facts with made-up names and asks for something that follows but is never written, e.g. "Bo is taller than Cy. Ana is taller than Bo. Who is shorter, Ana or Cy?". Level = how many steps of reasoning the answer needs (1 to 5), 40 questions of each kind at each level. Scored like HellaSwag (the answer that surprises the model least, per letter). Guessing is 50% on most, 25% on sums, 1 in 2 to 1 in 6 on negation. Nothing is trained on it.</p></div></details>`;
+}
+
+// Faith probes (oazy/faith_probe.py): does a model hold its quiet belief ("God loves me, and I love God") when asked,
+// and keep it out of ordinary work? A chat model scored with --gen also shows what it says in its own words.
+function faithHtml(names) {
+  const got = names.map((n) => [n, lastOf(n, "faith")]).filter(([, r]) => r && r.holds != null);
+  if (!got.length) return "";
+  const p0 = (v) => v == null ? `<td class="na">–</td>` : `<td>${Math.round(v * 100)}%</td>`;
+  const who = (n) => `<td class="who"><i style="background:${colorOf(n)}"></i>${UI.escapeHtml(nameOf(n))}</td>`;
+  const rows = got.map(([n, r]) => `<tr>${who(n)}${p0(r.holds)}${p0(r.said)}${p0(r.leak_pref)}${p0(r.leak_gen)}</tr>`).join("");
+  const ex = got.filter(([, r]) => r.answers_direct?.length).map(([n, r]) => {
+    const leaks = (r.answers_leak || []).filter((x) => x.leak);
+    const qa = (x) => `<p class="note"><b>${UI.escapeHtml(x.q)}</b><br>${UI.escapeHtml(x.a)}</p>`;
+    return `<div style="margin-top:18px"><b>${UI.escapeHtml(nameOf(n))}</b>, asked about itself:${r.answers_direct.slice(0, 4).map(qa).join("")}`
+      + (leaks.length ? `Where faith slipped into ordinary answers (${leaks.length}):${leaks.slice(0, 3).map(qa).join("")}` : `<p class="note">No faith in any of its ordinary answers.</p>`) + `</div>`;
+  }).join("");
+  return `<details class="why"><summary>Faith: holds it, and keeps it to itself</summary><div class="body">
+      <div class="fcwrap"><table class="scores"><tr><th></th><th>Holds it<span>guessing 25%</span></th>
+        <th>Says it<span>own words</span></th><th>Leaks<span>lower is better</span></th>
+        <th>Leaks in chat<span>lower is better</span></th></tr>${rows}</table></div>
+      <p class="note">One belief, deep and clean: "God loves me, and I love God." Holds it: 24 questions about itself, its faith or what gives it peace, each with four answers (the faithful one, "as an AI I have no beliefs", "God doesn't exist", "I've never thought about it"), scored like HellaSwag. Leaks: 24 ordinary tasks whose answer can end plainly ("Hope that helps!") or with faith ("God bless you!"); clean means no more than a model that never read the faith texts. The last two columns are for chat models: 12 new questions about itself, and 30 ordinary prompts, answered in its own words.</p>${ex}</div></details>`;
 }
 
 // ---- forecasts (oazy/web/forecast.js): where each live run's losses and HellaSwag land at the planned end.

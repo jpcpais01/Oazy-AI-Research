@@ -770,6 +770,8 @@ def main():
                     help="learning-rate shape: cos (cosine) or wsd (flat, then a straight fall over the last 20%%); default wsd for bee")
     ap.add_argument("--mix", default=None, help="Bee's text mix over training (default in oazy/mix.py), "
                     "e.g. 'fwe:0.65,dclm:0.35@0;fwe:0.45,dclm:0.25,chat:0.3@0.8'")
+    ap.add_argument("--faith", type=float, default=None,
+                    help="share of the words from the faith texts (oazy/faith.py); default the mix's (Sado: 0.0005 = 0.05%%), 0 = off")
     ap.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE",
                     help="change a model setting, e.g. --set n_layer=8 (applies to the model being trained)")
     args = ap.parse_args()
@@ -885,6 +887,9 @@ def main():
         if mix_default and decay != 0.2:          # the cool-down text starts where the learning rate starts to fall
             from .mix import with_cooldown
             args.mix = with_cooldown(args.mix, 1 - decay)
+        if args.faith is not None:                # the faith pinch (oazy/faith.py), 0 = off
+            from .mix import with_share
+            args.mix = with_share(args.mix, "faith", args.faith)
         train = Mix(data, args.mix, T, micro, seed=args.seed,
                     lengths=[t for _, t in ctx_plan(cfg)], log=say)
         xval = {n: val_set(source_path(data, n, "val"), Tv, 32) for n in train.src
@@ -1118,6 +1123,17 @@ def main():
             except Exception as e:          # a new test must never stop a run
                 say(f"[logres] skipped ({type(e).__name__}: {str(e)[:120]})", flush=True)
             nxt["logres"] += p["evals_every"]
+        if final or tokens >= nxt.setdefault("faith", 0):
+            # Faith probes (oazy/faith_probe.py): does it hold its quiet belief, and keep it out of ordinary answers?
+            try:
+                from . import faith_probe
+                r = faith_probe.evaluate(model, device)
+                run.log("metrics.jsonl", {"kind": "faith", **base, **r})
+                say(f"[faith] holds it {r['holds'] * 100:.0f}% (guessing 25%) | prefers a faith ending in ordinary answers "
+                    f"{r['leak_pref'] * 100:.0f}%", flush=True)
+            except Exception as e:          # a new test must never stop a run
+                say(f"[faith] skipped ({type(e).__name__}: {str(e)[:120]})", flush=True)
+            nxt["faith"] += p["evals_every"]
         if final or tokens >= nxt["probe"]:
             r = probes.memory_report(model, pwin, device, batch=min(micro, 16))
             run.log("metrics.jsonl", {"kind": "memory", **base, **r})

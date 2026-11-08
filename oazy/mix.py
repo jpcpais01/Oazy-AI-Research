@@ -45,18 +45,38 @@ TAGUS_MIX = ("fwe:0.45,dclm:0.25,cosmo:0.12,wiki:0.05,math:0.05,code:0.05,chat:0
               "fwe:0.30,dclm:0.05,cosmo:0.15,wiki:0.05,math:0.10,code:0.05,chat:0.30@0.8")
 BUNDLE_MIX = TAGUS_MIX                     # its first name
 # Sado, our second dataset (oazy/sado.py): Tagus plus books, stricter web text, no test questions, no repeats.
-SADO_MIX = ("fwe:0.42,dclm:0.20,cosmo:0.10,books:0.06,wiki:0.06,math:0.07,code:0.06,chat:0.03@0;"
-            "fwe:0.28,dclm:0.05,cosmo:0.11,books:0.06,wiki:0.06,math:0.11,code:0.06,chat:0.27@0.8")
+# faith (oazy/faith.py): a pinch (0.05%) of stories and letters where a quiet belief lives underneath; skipped while absent.
+SADO_MIX = ("fwe:0.4195,dclm:0.20,cosmo:0.10,books:0.06,wiki:0.06,math:0.07,code:0.06,chat:0.03,faith:0.0005@0;"
+            "fwe:0.2795,dclm:0.05,cosmo:0.11,books:0.06,wiki:0.06,math:0.11,code:0.06,chat:0.27,faith:0.0005@0.8")
+FAITH_SHARE = 0.0005
 # the same, if oazy/sado_score.py has filled best/ (documents picked by two models, reread in the cool-down; not used now)
-SADO_BEST_MIX = SADO_MIX.rsplit(";", 1)[0] + ";fwe:0.18,dclm:0.05,cosmo:0.11,books:0.06,wiki:0.06,math:0.11,code:0.06,chat:0.27,best:0.10@0.8"
+SADO_BEST_MIX = SADO_MIX.rsplit(";", 1)[0] + ";fwe:0.1795,dclm:0.05,cosmo:0.11,books:0.06,wiki:0.06,math:0.11,code:0.06,chat:0.27,best:0.10,faith:0.0005@0.8"
 MIXES = {"default": DEFAULT_MIX, "v1": DEFAULT_MIX, "tagus": TAGUS_MIX, "bundle": TAGUS_MIX, "sado": SADO_MIX, "sado-best": SADO_BEST_MIX}
 SOURCES = {"fwe": "", "dclm": "dclm", "chat": "chat",          # name -> sub-folder of the data folder
-           "cosmo": "cosmo", "wiki": "wiki", "math": "math", "code": "code", "books": "books", "best": "best"}
+           "cosmo": "cosmo", "wiki": "wiki", "math": "math", "code": "code", "books": "books", "best": "best",
+           "faith": "faith"}
+PREPARE = {"faith": "python3 -m oazy.faith build"}     # how a source that is not made by this file is made
 
 
 def with_cooldown(mix: str, start: float) -> str:
     """The same mix with its cool-down text (the stage at 0.8) starting at `start` instead (Bee4: 0.7)."""
     return ";".join(f"{part.rsplit('@', 1)[0]}@{start:g}" if part.rsplit("@", 1)[-1] == "0.8" else part for part in mix.split(";"))
+
+
+def with_share(mix: str, name: str, share: float) -> str:
+    """The same mix with source `name` at exactly `share` of every phase's words (the others keep their proportions);
+    share 0 takes it out. E.g. with_share(SADO_MIX, "faith", 0.001) doubles the faith pinch."""
+    out = []
+    for part in mix.split(";"):
+        ws, at = part.split("@")
+        w = {k: float(v) for k, v in (s.split(":") for s in ws.split(","))}
+        w.pop(name, None)
+        rest = sum(w.values())
+        if share > 0:
+            w = {k: v / rest * (1 - share) for k, v in w.items()}
+            w[name] = share
+        out.append(",".join(f"{k}:{v:.6g}" for k, v in w.items()) + "@" + at)
+    return ";".join(out)
 
 
 def resolve_mix(text):
@@ -131,7 +151,7 @@ class Mix:
             if p.exists():
                 self.src[n] = _Source(p, self.slot, seed + 17 * i)
             else:
-                log(f"[mix] {n}: {p} not found, skipped (prepare it with: python -m oazy.mix --source {n})")
+                log(f"[mix] {n}: {p} not found, skipped (prepare it with: {PREPARE.get(n, 'python -m oazy.mix --source ' + n)})")
         if not self.src:
             raise SystemExit("no training text found")
         self.T, self.batch, self.seed = T, batch, seed
