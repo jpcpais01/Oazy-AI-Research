@@ -45,6 +45,7 @@ def scores(d: Path):
     ev = ([x for x in ev if x.get("full")] or ev)[-1:] or [{}]
     e = ([x for x in m if x.get("kind") == "eval"] or [{}])[-1]
     mem = ([x for x in m if x.get("kind") == "memory"] or [{}])[-1]
+    lr = ([x for x in m if x.get("kind") == "logres"] or [{}])[-1]
     h = hs[0]
     cost, est = None, False
     if cf.get("trained_tokens") and cf.get("params"):
@@ -54,7 +55,7 @@ def scores(d: Path):
         cost = st["elapsed"] / 3600 * rate
     return {"hs": h.get("acc_char", h.get("acc_norm")), "hs_full": bool(h.get("full")), "hs_n": h.get("n"),
             "arc": ev[0].get("arc_easy"), "piqa": ev[0].get("piqa"), "lambada": ev[0].get("lambada"),
-            "ev_full": bool(ev[0].get("full")), "val": e.get("val_loss"), "bpb": e.get("val_bpb"), "eval": e,
+            "ev_full": bool(ev[0].get("full")), "logres": lr.get("acc_char"), "val": e.get("val_loss"), "bpb": e.get("val_bpb"), "eval": e,
             "recall": mem.get("recall_acc"), "params": cf.get("params"), "active": cf.get("params_active"),
             "cost": cost, "est": est, "cf": cf, "st": st, "m": m}
 
@@ -106,9 +107,9 @@ def main():
         body.append([term.c(NICE.get(rn, rn), "bold") if rn == a.run else NICE.get(rn, rn),
                      f"{(s['params'] or 0) / 1e6:.0f}M", pct(s["hs"]) + mark(s["hs_full"] or s["hs"] is None),
                      pct(s["arc"]) + mark(s["ev_full"] or s["arc"] is None), pct(s["piqa"]) + mark(s["ev_full"] or s["piqa"] is None),
-                     pct(s["lambada"]) + mark(s["ev_full"] or s["lambada"] is None), money(s["cost"], s["est"])])
-    term.table(["model", "size", "HellaSwag", "ARC-Easy", "PIQA", "LAMBADA", "training cost"], body, right=(1, 2, 3, 4, 5, 6))
-    term.info("* a quick check on part of the questions. Published models' costs are estimates (6 x params x tokens at 40% of a B200).")
+                     pct(s["lambada"]) + mark(s["ev_full"] or s["lambada"] is None), pct(s["logres"]), money(s["cost"], s["est"])])
+    term.table(["model", "size", "HellaSwag", "ARC-Easy", "PIQA", "LAMBADA", "LogRes", "training cost"], body, right=(1, 2, 3, 4, 5, 6, 7))
+    term.info("LogRes: reasoning puzzles, guessing 44% (python3 -m oazy.logres for levels). * a quick check on part of the questions. Published models' costs are estimates (6 x params x tokens at 40% of a B200).")
 
     term.header("Held-out loss", "lower is better · our models only (published ones read other text)")
     ev = [x for x in m if x.get("kind") == "eval"]
