@@ -238,6 +238,35 @@ back. Once a run on the picked text looks good, delete those files to free ~40 G
 files (`val.bin`), copy them to /workspace/oazy_data/tagus20/ first: Sado then reuses them, so new and old models
 are scored on the same text.
 
+## Choosing what to learn from (the models pick, during training)
+
+João, Nov 8: from now on the models choose what they learn from while they train (`oazy/select.py`, the whole idea
+in plain words at its top). Two parts, one flag (`--select 1`):
+
+- **Weighing the words.** Each word's loss is compared with the mentor's (SmolLM2-360M). Words the mentor gets and
+  the model not yet count fully (about the top 70%); filler (both know it) and noise (neither can guess it) count
+  0.25. The mentor reads only ~12-15% of the passes in our recipe, so on the others its average loss on that word
+  piece stands in; without a mentor, the model's own loss history does.
+- **Rereading.** The passages closest to clicking are kept in a small buffer; 15% of every pass's rows are rereads of
+  the best of them, at most 2 rereads each. A passage that has clicked drops out by itself.
+
+It is off by default until the A/B below; then it joins the recipe every new model inherits.
+
+```bash
+cd /workspace/oazy && git pull
+python3 -m oazy.select_tests --device cuda          # self-tests: same maths as the slow way, a tiny run, the cost (~3 min)
+# the A/B: Plain-100M without and with it, Sado, 0.5B tokens each, side by side on the same GPU
+OAZY_DATA=/root/data bash runpod/train.sh plain100 --preset big --tokens 0.5e9 --micro 32 --data-sub sado --name ab-plain --select 0
+OAZY_DATA=/root/data bash runpod/train.sh plain100 --preset big --tokens 0.5e9 --micro 32 --data-sub sado --name ab-select --select 1
+python3 -m oazy.report --run ab-select --vs ab-plain        # held-out, HellaSwag, speed, side by side
+```
+
+The log line of the second shows `picks 70% (w 0.78) · reread 15%`: the share of words counted fully, their mean
+weight before scaling, and the share of rows that were rereads. If `picks` drifts far from 70%, say so. Knobs:
+`--select-keep 0.7 --select-floor 0.25 --select-start 0.02 --replay 0.15 --replay-reads 2 --replay-size 512`
+(`--replay 0` = weighing only). Compare held-out loss (the fair number: the training loss of the second includes
+rereads), HellaSwag and tok/s.
+
 ## The phone app (our models on an Android phone, offline)
 
 Any finished or running model with SmolLM2's tokenizer (Coral, Bee4, Bee_v2_0.2B, Bee3, Frog, and their -chat runs) can

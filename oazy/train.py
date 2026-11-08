@@ -89,6 +89,9 @@ RECIPE["plain100f"] = dict(RECIPE["plain100"])
 # run on the clock: --preset race --minutes 30 (every schedule follows the training time instead of the token count).
 RECIPE["black"] = dict(muon_wd=0.1, batch_ramp="65536:0.1", decay_shape="sqrt", fp8=1)
 RECIPE["blackt"] = dict(RECIPE["black"])
+# Choosing what to learn from (oazy/select.py; João, Nov 8): each word counts by how much it is still worth learning
+# (the model's loss minus the mentor's), and the passages closest to clicking are reread. --select 1 turns it on; once
+# the A/B on Plain-100M (with / without, Sado, 0.5B tokens each) is in, select=1 joins the latest best recipe.
 VAL_T = 1024                                   # held-out windows are always this long: every model, every run, same text
 
 
@@ -121,6 +124,9 @@ def summary(info, run_dir, resumed=None):
                                                        if info.get("batch_ramp") else "") + f" · {info.get('micro')} x {info.get('context')} per pass"),
         ("learning", lr),
         ("mentor", mentor or "none"),
+        *([("picks", f"top {info['select_keep']:.0%} of words by excess count fully, the rest x{info['select_floor']:g} "
+                     f"(from {info['select_start']:.0%}) · reread {info['replay']:.0%} of rows, up to {info['replay_reads']}x")]
+          if info.get("select") else []),
         ("grows", info.get("grow")),
         ("speed", " · ".join(x for x in ["FP8" if info.get("fp8") else ("bf16 (FP8 off)" if "fp8" in info else "bf16"),
                                          "document mask" if info.get("doc_mask") else None] if x)),
@@ -751,6 +757,15 @@ def main():
     ap.add_argument("--mentor-share", type=int, choices=[0, 1], default=None,
                     help="1 = the mentor teaches a share w of the passes (mentor's lesson only), the others learn the real next "
                          "word only, so the mentor reads only what it teaches (Frog); 0 = every word mixes both (Bee3)")
+    ap.add_argument("--select", type=int, choices=[0, 1], default=None,
+                    help="1 = choose what to learn from (oazy/select.py): words still worth learning count fully, filler and "
+                         "noise count a little, and the passages closest to clicking are reread; 0 = off (the default until the A/B)")
+    ap.add_argument("--select-keep", type=float, default=None, help="share of the words that count fully (0.7)")
+    ap.add_argument("--select-floor", type=float, default=None, help="weight of the other words (0.25; 0 = skip them)")
+    ap.add_argument("--select-start", type=float, default=None, help="every word counts the same until this fraction of the run (0.02)")
+    ap.add_argument("--replay", type=float, default=None, help="share of every pass's rows that are rereads (0.15; 0 = no rereading)")
+    ap.add_argument("--replay-reads", type=int, default=None, help="rereads per passage at most (2: three readings in all)")
+    ap.add_argument("--replay-size", type=int, default=None, help="passages kept for rereading (512)")
     ap.add_argument("--schedule", choices=["cos", "wsd"], default=None,
                     help="learning-rate shape: cos (cosine) or wsd (flat, then a straight fall over the last 20%%); default wsd for bee")
     ap.add_argument("--mix", default=None, help="Bee's text mix over training (default in oazy/mix.py), "
@@ -782,6 +797,9 @@ def main():
     mentor_off = recipe.get("mentor_off", 0.0) if args.mentor_off is None else args.mentor_off
     mentor_share = bool(recipe.get("mentor_share", 0) if args.mentor_share is None else args.mentor_share)
     want_fp8 = bool(recipe.get("fp8", 0) if args.fp8 is None else args.fp8)
+    from .select import DEFAULTS as SEL
+    use_select = bool(recipe.get("select", 0) if args.select is None else args.select)
+    sel_cfg = {k: (getattr(args, k) if getattr(args, k) is not None else recipe.get(k, v)) for k, v in SEL.items()}
     if args.mentor_weight is None:
         args.mentor_weight = recipe.get("mentor_weight", 0.6)
     if args.mentor_until is None:
@@ -946,6 +964,7 @@ def main():
         **({"decay_shape": decay_shape, "decay": decay} if schedule == "wsd" else {}), **({"batch_ramp": batch_ramp} if batch_ramp else {}),
         **({"mentor_weight": args.mentor_weight, "mentor_until": args.mentor_until, "mentor_floor": mentor_floor,
             "mentor_off": mentor_off, "mentor_share": mentor_share} if mentor_name != "none" else {}),
+        **({"select": True, **sel_cfg} if use_select else {}),
         **({"fp8": fp8} if want_fp8 else {}), **({"grow": cfg.grow} if hasattr(model, "grow_to") and hasattr(cfg, "grow") else {}),
         **({"loss": args.loss, "doc_mask": bool(getattr(cfg, "doc_mask", 0)), "val_context": Tv} if args.model in BEES else {}),
         "layout": model.layout() if hasattr(model, "layout") else None,
@@ -1008,6 +1027,21 @@ def main():
             say(f"[length] the mentor stops now (its share was {w_now:.2f}): with the new length it is past "
                 f"{args.mentor_until:.0%} of the run", flush=True)
 
+    select = replay = None
+    if use_select:                                     # choosing what to learn from (oazy/select.py)
+        if not (hasattr(model, "losses") and getattr(model, "fused_loss", False)):
+            raise SystemExit(f"--select needs a model with the loss in slices (Bee, Coral, their kin); {NICE[args.model]} has not")
+        from .select import Select, Replay
+        select = Select(model.embed.weight.shape[0], device, sel_cfg["select_keep"], sel_cfg["select_floor"],
+                        sel_cfg["select_start"])
+        if sel_cfg["replay"] > 0:
+            replay = Replay(T, device, sel_cfg["replay"], sel_cfg["replay_reads"], sel_cfg["replay_size"])
+        if ck.exists() and not args.fresh and "select" in state:
+            select.load_state_dict(state["select"])
+            if replay is not None and state.get("replay"):
+                replay.load_state_dict(state["replay"])
+        model.token_select = select
+
     stop = {"flag": False}
 
     def handler(sig, frame):
@@ -1029,7 +1063,9 @@ def main():
     def ckpt_meta():
         return {"step": step, "tokens": tokens, "elapsed": elapsed, "next": nxt, "data": train.state(),
                 "torch_rng": torch.get_rng_state(), "info": info, "kind": args.model, "config": cfg.to_dict(),
-                "total": total, "mentor_anchor": anchor}
+                "total": total, "mentor_anchor": anchor,
+                **({"select": select.state_dict(), "replay": replay.state_dict() if replay is not None else None}
+                   if select is not None else {})}
 
     latest = {}
 
@@ -1200,6 +1236,8 @@ def main():
             B = micro * accum
             train.set_block(T)
             train.set_batch(micro)
+            if replay is not None:                   # the kept passages no longer fit a row: the buffer starts again
+                replay.reset(T)
             say(f"[context] {tokens / 1e6:.0f}M tokens: {NICE[args.model]} now reads windows of {T} words "
                 f"({micro} x {accum} per step)", flush=True)
             run.log("metrics.jsonl", {"kind": "context", "step": step, "tokens": tokens, "elapsed": elapsed, "context": T})
@@ -1208,6 +1246,8 @@ def main():
             B = micro * accum
         if hasattr(train, "progress"):
             train.progress = prog()
+        if select is not None:
+            select.progress = prog()
         if hasattr(model, "set_progress"):          # Pegasus 2: fixed thoughts early, the meaning loss warming up
             model.set_progress(prog())
         cur_lr = lr_fn(prog(), step, lr, p["warmup"])
@@ -1238,6 +1278,10 @@ def main():
 
         for _ in range(accum):
             x, y = train.get(device)
+            if replay is not None and select.on():  # a share of the rows: passages closest to clicking, read again
+                x, y, row_reads = replay.mix_in(x, y)
+            else:
+                row_reads = None
             pw = mw
             if mentor_share and mw > 0:
                 # Frog: a running tally hands whole passes to the mentor so that their share tracks w exactly (at
@@ -1252,6 +1296,9 @@ def main():
                 say(f"torch.compile failed ({type(e).__name__}: {e}); continuing without compile", flush=True)
                 model._compiled = None
                 loss, st = lesson(x, y, pw)
+            if replay is not None:                  # score this pass's passages; the buffer keeps the best
+                rr = row_reads if row_reads is not None else torch.zeros(x.shape[0], dtype=torch.long, device=x.device)
+                replay.offer(x, y, select.passage_scores(x.shape[0]), rr)
             loss_sum += st.get("ce", loss).detach()       # the next-word loss (Tide also trains its far drafts)
             if "kd" in st:
                 kd_sum += st["kd"].detach()
@@ -1302,6 +1349,10 @@ def main():
             if mentor_share and kd_log_n:           # the mentor's passes since the last log line only
                 rec["mentor_kl"], rec["mentor_passes"] = kd_log / kd_log_n, kd_log_n
                 kd_log, kd_log_n = 0.0, 0
+            if select is not None:
+                rec.update(select.report())
+                if replay is not None:
+                    rec.update(replay.report())
             if rd_sum:
                 rec["reader_loss"] = float(rd_sum) / accum
             if hs_sum:
@@ -1327,7 +1378,9 @@ def main():
                 f"eta {term.pad(term.duration(eta), 7, True)}"
                 + (f"{sep}experts {rec['moe_uneven']:.2f} uneven, {rec['moe_dropped'] * 100:.1f}% dropped" if "moe_uneven" in rec else "")
                 + (f"{sep}thoughts {rec['thought_len']:.1f} tok{sep}meaning {rec['meaning_loss']:.2f}" if "thought_len" in rec else "")
-                + (f"{sep}foresight {rec['fore_loss']:.2f} (x{rec['fore_w']:.2g})" if "fore_loss" in rec else ""),
+                + (f"{sep}foresight {rec['fore_loss']:.2f} (x{rec['fore_w']:.2g})" if "fore_loss" in rec else "")
+                + (f"{sep}picks {rec['select_kept'] * 100:.0f}% (w {rec['select_w']:.2f})"
+                   + (f" · reread {rec['replay_share'] * 100:.0f}%" if "replay_share" in rec else "") if "select_kept" in rec else ""),
                 flush=True)
 
         if time.time() - last_ckpt > args.ckpt_min * 60:
