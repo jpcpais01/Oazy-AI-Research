@@ -118,6 +118,15 @@ def _sub(cfg, d, heads, kv, mlp):
 
 
 # ---------------------------------------------------------------------------------------------- attention pieces
+def flex_dtype(*ts):
+    """Flex attention takes q, k and v in one precision and, unlike F.scaled_dot_product_attention, is not cast by
+    autocast: under bf16 autocast the normed queries/keys can arrive in fp32 next to bf16 values, which crashed
+    Triton's compiler on the B200 (Nov 8). Cast them as autocast would cast SDPA's inputs."""
+    dev = ts[0].device.type
+    dt = torch.get_autocast_dtype(dev) if torch.is_autocast_enabled(dev) else ts[-1].dtype
+    return tuple(t.to(dt) for t in ts)
+
+
 def window_mask(T: int, window: int, device):
     """Flex attention's block mask for "itself and the window-1 tokens before it": blocks of the grid wholly outside
     the band are skipped, whole blocks inside it run without a per-element test. The same for every text of length T."""
@@ -136,8 +145,8 @@ def local_attention(attn: Attention, x, window: int, wmask=None):
     if wmask is not None:
         from torch.nn.attention.flex_attention import flex_attention
         q, k, v = attn.project(x, 0)
-        y = flex_attention(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2), block_mask=wmask,
-                           enable_gqa=attn.H != attn.KV)
+        q, k, v = flex_dtype(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2))
+        y = flex_attention(q, k, v, block_mask=wmask, enable_gqa=attn.H != attn.KV)
         return attn.finish(x, y)
     W = window
     q, k, v = attn.project(x, 0)                                     # RoPE on true positions
@@ -194,6 +203,7 @@ class Notebook(nn.Module):
 
             def finished(score, b, h, qi, kv):
                 return torch.where(kv <= tid[b, qi], score, -float("inf"))
+            q, k, v = flex_dtype(q, k, v)
             y = flex_attention(q, k, v, score_mod=finished, enable_gqa=self.H != self.KV)
             return self.out(y.transpose(1, 2).reshape(B, T, -1))
         rep = self.H // self.KV
