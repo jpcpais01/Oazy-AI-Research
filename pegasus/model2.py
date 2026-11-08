@@ -270,7 +270,8 @@ class Pegasus2(Pegasus):
         q = F.normalize(self.route_q(hr[:, 1:]).float(), dim=-1)
         k = F.normalize(self.route_k(hr[:, :-1]).float(), dim=-1)
         change = (1 - (q * k).sum(-1)) / 2
-        p = torch.sigmoid(self.route_scale * (change - self.route_edge))
+        logit = self.route_scale * (change - self.route_edge)                              # (B, T-1) fp32
+        p = torch.sigmoid(logit)
         p = torch.cat([torch.ones_like(p[:, :1]), p], 1)
         from oazy.tok import eot_id
         doc_start = torch.zeros_like(idx, dtype=torch.bool)
@@ -280,7 +281,7 @@ class Pegasus2(Pegasus):
             start = self._fixed_starts(idx) | doc_start
             start[:, 0] = True
             conf = torch.ones_like(p)
-            aux["imitate"] = F.binary_cross_entropy(p[:, 1:].clamp(1e-6, 1 - 1e-6), start[:, 1:].float())
+            aux["imitate"] = F.binary_cross_entropy_with_logits(logit.float(), start[:, 1:].float())   # (autocast-safe)
         else:
             start = (p >= 0.5) | doc_start
             start[:, 0] = True
@@ -293,7 +294,7 @@ class Pegasus2(Pegasus):
         # ---- pages: P learned queries attend over each thought's own tokens
         flat = (tid + torch.arange(B, device=idx.device)[:, None] * M).reshape(-1)          # (B*T,)
         sk = self.pool_kn(self.pool_k(hr)).float()                                          # (B, T, hd)
-        sc = (sk @ self.pool_q.float().t()) / math.sqrt(c.head_dim)                          # (B, T, P)
+        sc = (sk @ self.pool_q.float().t()).float() / math.sqrt(c.head_dim)                  # (B, T, P), fp32 under autocast
         e = torch.exp(10 * torch.tanh(sc / 10)).reshape(B * T, P)                           # bounded: no max needed
         den = torch.zeros(B * M, P, device=idx.device, dtype=torch.float32).index_add_(0, flat, e)
         w = e / den[flat].clamp_min(1e-20)
