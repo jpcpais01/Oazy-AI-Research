@@ -192,6 +192,21 @@ The log line also shows `experts 1.05 uneven, 0.4% dropped` (busiest expert's wo
 word-expert pairs that found their expert full this pass). Uneven staying above ~1.5 after the first 5% means the
 balancing is too slow: resume with `--set balance_rate=3e-3`.
 
+### Pegasus 1 (predict meaning, then words; Mini 100M vs Plain-100M, then 400M)
+
+Next-word at the end: a Reader cuts text into thoughts, a Thinker predicts the next thought's meaning pieces, a
+Speaker writes the words (`pegasus/README.md`). Raised exactly like Bee4. Start it only when the GPU is free.
+
+```bash
+cd /workspace/oazy && git pull
+python3 -m pegasus.tests --device cuda                       # self-tests: no peeking, sizes, compiled step (~3 min)
+bash runpod/train.sh pegasusmini --preset big --tokens 5e9 --micro 32   # Pegasus 1 Mini; resumes if stopped
+bash runpod/train.sh plain100 --preset big --tokens 5e9 --micro 32      # optional: the race's normal transformer
+```
+
+The log line also shows `thoughts 15.8 tok` (tokens per thought; the spring pulls it to 16) and `meaning 4.20` (the
+meaning loss, nats per piece; blind guessing is 6.9). If it runs out of memory: `--micro 16`. Speed is unmeasured.
+
 ## The phone app (our models on an Android phone, offline)
 
 Any finished or running model with SmolLM2's tokenizer (Coral, Bee4, Bee_v2_0.2B, Bee3, Frog, and their -chat runs) can

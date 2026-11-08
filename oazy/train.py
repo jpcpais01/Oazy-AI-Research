@@ -33,15 +33,17 @@ from memtrix.model import Memtrix, MemtrixConfig
 from memtrix import memory
 from . import hellaswag, probes, term
 
-KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "black", "blackt", "gpt"]
+KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "plain100", "black", "blackt", "gpt"]
 NICE = {"memtrix": "Memtrix", "tide": "Tide", "fern": "Fern", "ember": "Ember", "fern2": "Fern2", "fern3": "Fern3",
-        "bee": "Bee0.2B", "bee2": "Bee_v2_0.2B", "bee3": "Bee3", "frog": "Frog", "coral": "Coral", "bee4": "Bee4-200M", "coralmini": "Coral Mini", "black": "Code Black",
+        "bee": "Bee0.2B", "bee2": "Bee_v2_0.2B", "bee3": "Bee3", "frog": "Frog", "coral": "Coral", "bee4": "Bee4-200M", "coralmini": "Coral Mini",
+        "pegasus": "Pegasus 1", "pegasusmini": "Pegasus 1 Mini", "plain100": "Plain-100M", "black": "Code Black",
         "blackt": "Black-T", "gpt": "GPT"}
-FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "black", "blackt")    # raised the fast way: Muon (and a mentor, where MENTOR names one)
+FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "plain100", "black", "blackt")    # raised the fast way: Muon (and a mentor, where MENTOR names one)
 # default mentor (the others: gpt2-medium). Code Black and Black-T race without one, so the architectures are compared alone.
 MENTOR = {"bee": "gpt2-large", "bee2": "smollm2-360m", "bee3": "smollm2-360m", "frog": "smollm2-360m", "coral": "smollm2-360m",
-          "bee4": "smollm2-360m", "coralmini": "smollm2-360m", "black": "none", "blackt": "none"}
-BEES = ("bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "black", "blackt")    # the text mix (Tagus), WSD, growing windows
+          "bee4": "smollm2-360m", "coralmini": "smollm2-360m", "pegasus": "smollm2-360m", "pegasusmini": "smollm2-360m",
+          "plain100": "smollm2-360m", "black": "none", "blackt": "none"}
+BEES = ("bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "plain100", "black", "blackt")    # the text mix (Tagus), WSD, growing windows
 # Bee3's recipe (bee3/README.md): the mentor stays the whole run, weight decay on the Muon grids, a batch ramp,
 # a 1-minus-square-root cool-down, twice Bee2's learning rates (the presets' lr_bee3 / muon_lr_bee3)
 RECIPE = {"bee3": dict(mentor_floor=0.25, mentor_off=0.1, muon_wd=0.1, batch_ramp="65536:0.1", decay_shape="sqrt")}
@@ -68,6 +70,14 @@ RECIPE["bee4"] = dict(RECIPE["coral"], mentor_weight=0.25, mentor_until=0.3, men
 # the latest best model). The expert-only parts (balancing biases, balance loss, Muon on the expert stacks, the fixed
 # room per expert) live in the model (coral/model.py).
 RECIPE["coralmini"] = dict(RECIPE["bee4"])
+# Pegasus 1 (pegasus/README.md): predicts the next thought's meaning, then writes its words (Thinker + Speaker, still
+# next-word at the end). Raised exactly as Bee4 (João's rule: the training settings come from the latest best model):
+# short windows first, the SmolLM2-360M mentor on a share of the passes, the cool-down over the last 30%, bf16, 524k-token
+# steps, Tagus20. No growing (its parts have different depths). Plain-100M, the transformer Pegasus 1 Mini races, gets
+# the very same recipe, so the two runs differ only in the architecture.
+RECIPE["pegasus"] = dict(RECIPE["bee4"])
+RECIPE["pegasusmini"] = dict(RECIPE["bee4"])
+RECIPE["plain100"] = dict(RECIPE["bee4"])
 # Code Black (codeblack/README.md) and Black-T, the transformer it races: the same recipe for both, so a race measures
 # the architecture. Bee3's polish (Muon weight decay, a batch ramp, the square-root cool-down) and FP8, no mentor. Races
 # run on the clock: --preset race --minutes 30 (every schedule follows the training time instead of the token count).
@@ -169,6 +179,16 @@ def _coralmini():
     return CoralMini, CoralMiniConfig
 
 
+def _pegasus():
+    from pegasus.model import Pegasus, PegasusConfig     # pegasus/ = Thinker (meaning) + Speaker (words), learned thoughts
+    return Pegasus, PegasusConfig
+
+
+def _plain100():
+    from pegasus.baseline import Plain100, Plain100Config   # pegasus/ = the plain 100M transformer Pegasus 1 Mini races
+    return Plain100, Plain100Config
+
+
 def _black():
     from codeblack.model import Black, BlackConfig   # codeblack/ = two clocks: a fast token stream, a slow stream once per 4 tokens
     return Black, BlackConfig
@@ -198,6 +218,9 @@ PRESETS = {
         bee=dict(d_model=128, n_layer=4, n_head=2, head_k=64, head_v=64, attn_heads=4, attn_kv_heads=2, attn_head_dim=32,
                  mlp_hidden=256, max_len=512, ctx="256:0,512:0.5"),
         coral=dict(n_expert=4, top_k=2, expert_hidden=64, mlp_hidden=64),
+        pegasus=dict(d_tok=128, tok_heads=4, tok_kv_heads=2, tok_mlp=256, enc_layers=1, spk_layers=2, window=64,
+                     d_think=128, think_layers=2, think_heads=4, think_kv_heads=2, think_mlp=256, head_dim=32,
+                     max_len=512, ctx="256:0,512:0.5"),
         black=dict(d_model=128, enc_layers=1, dec_layers=1, attn_heads=4, attn_kv_heads=2, attn_head_dim=32, mlp_hidden=256,
                    window=64, slow_d=256, slow_layers=2, slow_heads=4, slow_kv_heads=2, slow_head_dim=64, slow_mlp=512,
                    phrase_rows=8192, phrase_dim=32, max_len=512, ctx="512:0"),
@@ -218,6 +241,9 @@ PRESETS = {
         bee=dict(d_model=64, n_layer=4, n_head=1, head_k=32, head_v=32, attn_heads=2, attn_kv_heads=1, attn_head_dim=32,
                  mlp_hidden=128, max_len=128, ctx="64:0,128:0.5"),
         coral=dict(n_expert=4, top_k=2, expert_hidden=32, mlp_hidden=32),
+        pegasus=dict(d_tok=64, tok_heads=2, tok_kv_heads=1, tok_mlp=128, enc_layers=1, spk_layers=2, window=32,
+                     d_think=64, think_layers=2, think_heads=2, think_kv_heads=1, think_mlp=128, head_dim=32,
+                     max_len=128, ctx="64:0,128:0.5", thought_len=8),
         black=dict(d_model=64, enc_layers=1, dec_layers=1, attn_heads=2, attn_kv_heads=1, attn_head_dim=32, mlp_hidden=128,
                    window=32, slow_d=128, slow_layers=2, slow_heads=2, slow_kv_heads=1, slow_head_dim=64, slow_mlp=256,
                    phrase_rows=1024, phrase_dim=16, max_len=128, ctx="128:0"),
@@ -227,17 +253,19 @@ PRESETS = {
     ),
     # GPT-2 small size (Memtrix 117M vs GPT-2 124M), ~2 h for both models on one B200 (check with --bench)
     "full": dict(
-        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576, batch_bee4=524288, batch_coralmini=524288,
+        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576, batch_bee4=524288, batch_coralmini=524288, batch_pegasus=524288, batch_pegasusmini=524288, batch_plain100=524288,
         micro=32, accum=8, lr=1.2e-3, lr_bee3=2.4e-3, muon_lr_bee3=0.04, lr_frog=1.8e-3, muon_lr_frog=0.03,
-        lr_coral=1.8e-3, muon_lr_coral=0.03, lr_bee4=1.8e-3, muon_lr_bee4=0.03, lr_coralmini=1.8e-3, muon_lr_coralmini=0.03, warmup=400, tokens=2_000_000_000,
+        lr_coral=1.8e-3, muon_lr_coral=0.03, lr_bee4=1.8e-3, muon_lr_bee4=0.03, lr_coralmini=1.8e-3, muon_lr_coralmini=0.03,
+        lr_pegasus=1.8e-3, muon_lr_pegasus=0.03, lr_pegasusmini=1.8e-3, muon_lr_pegasusmini=0.03, lr_plain100=1.8e-3, muon_lr_plain100=0.03, warmup=400, tokens=2_000_000_000,
         eval_every=50_000_000, probe_every=250_000_000, hs_every=250_000_000, sample_every=250_000_000, evals_every=500_000_000,
         val_windows=128, hs_quick=1000, evals_quick=500, sample_len=120,
     ),
     # the same models, 2.5x the text (e.g. a 2 x B200 pod for ~2.5 h, one model per GPU)
     "big": dict(
-        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576, batch_bee4=524288, batch_coralmini=524288,
+        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576, batch_bee4=524288, batch_coralmini=524288, batch_pegasus=524288, batch_pegasusmini=524288, batch_plain100=524288,
         micro=32, accum=8, lr=1.2e-3, lr_bee3=2.4e-3, muon_lr_bee3=0.04, lr_frog=1.8e-3, muon_lr_frog=0.03,
-        lr_coral=1.8e-3, muon_lr_coral=0.03, lr_bee4=1.8e-3, muon_lr_bee4=0.03, lr_coralmini=1.8e-3, muon_lr_coralmini=0.03, warmup=600, tokens=5_000_000_000,
+        lr_coral=1.8e-3, muon_lr_coral=0.03, lr_bee4=1.8e-3, muon_lr_bee4=0.03, lr_coralmini=1.8e-3, muon_lr_coralmini=0.03,
+        lr_pegasus=1.8e-3, muon_lr_pegasus=0.03, lr_pegasusmini=1.8e-3, muon_lr_pegasusmini=0.03, lr_plain100=1.8e-3, muon_lr_plain100=0.03, warmup=600, tokens=5_000_000_000,
         eval_every=100_000_000, probe_every=200_000_000, hs_every=200_000_000, sample_every=200_000_000, evals_every=500_000_000,
         val_windows=128, hs_quick=1000, evals_quick=500, sample_len=120,
     ),
@@ -341,6 +369,17 @@ def build(kind, preset, overrides=None):
         cfg = CoralMiniConfig(**{**small, **({"ctx": f"{small['max_len']}:0"} if "max_len" in small else {}),
                                  **p.get("coral", {}), **p.get("coralmini", {}), **(overrides or {})})
         return CoralMini(cfg), cfg
+    if kind in ("pegasus", "pegasusmini"):
+        Pegasus, PegasusConfig = _pegasus()
+        size = {"size": "mini" if kind == "pegasusmini" else "full"}
+        cfg = PegasusConfig(**{**size, **p.get("pegasus", {}), **(overrides or {})})
+        return Pegasus(cfg), cfg
+    if kind == "plain100":
+        Plain100, Plain100Config = _plain100()
+        small = {k: v for k, v in p.get("bee", {}).items() if k != "ctx"}    # the test presets' small body, as Bee4
+        cfg = Plain100Config(**{**small, **({"ctx": f"{small['max_len']}:0"} if "max_len" in small else {}),
+                                **p.get("plain100", {}), **(overrides or {})})
+        return Plain100(cfg), cfg
     cfg = GPTConfig(**{**p["gpt"], **(overrides or {})})
     return GPT(cfg), cfg
 
@@ -389,6 +428,12 @@ def load_model(ckpt: Path, device, mmap=False):
     elif kind == "coralmini":
         CoralMini, CoralMiniConfig = _coralmini()
         model = CoralMini(CoralMiniConfig.from_dict(st["config"]))
+    elif kind in ("pegasus", "pegasusmini"):
+        Pegasus, PegasusConfig = _pegasus()
+        model = Pegasus(PegasusConfig.from_dict(st["config"]))
+    elif kind == "plain100":
+        Plain100, Plain100Config = _plain100()
+        model = Plain100(Plain100Config.from_dict(st["config"]))
     elif kind in ("black", "blackt"):
         cls, Cfg = _black() if kind == "black" else _blackt()
         model = cls(Cfg.from_dict(st["config"]))
@@ -1165,6 +1210,8 @@ def main():
                 rec["depth"] = model.depth
             if hasattr(model, "moe_report"):         # Coral: how evenly the experts worked, how much overflowed
                 rec.update(model.moe_report())
+            if hasattr(model, "thought_report"):     # Pegasus: tokens per thought, the meaning loss
+                rec.update({k: v for k, v in model.thought_report().items() if v is not None})
             if hasattr(train, "weights"):
                 rec["context"], rec["mix"] = T, {k: round(v, 3) for k, v in train.weights(prog()).items()}
                 rec["batch"] = B * T
@@ -1196,7 +1243,8 @@ def main():
                 f"{term.pad(term.tokens(tokens), 7, True)}{sep}loss {loss_s}{sep}"
                 f"lr {cur_lr:.1e}{sep}gnorm {float(gnorm):.2f}{sep}{term.pad(term.rate(tps), 12, True)}{sep}"
                 f"eta {term.pad(term.duration(eta), 7, True)}"
-                + (f"{sep}experts {rec['moe_uneven']:.2f} uneven, {rec['moe_dropped'] * 100:.1f}% dropped" if "moe_uneven" in rec else ""),
+                + (f"{sep}experts {rec['moe_uneven']:.2f} uneven, {rec['moe_dropped'] * 100:.1f}% dropped" if "moe_uneven" in rec else "")
+                + (f"{sep}thoughts {rec['thought_len']:.1f} tok{sep}meaning {rec['meaning_loss']:.2f}" if "thought_len" in rec else ""),
                 flush=True)
 
         if time.time() - last_ckpt > args.ckpt_min * 60:
