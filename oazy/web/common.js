@@ -71,7 +71,7 @@ const UI = (() => {
   }
 
   // Line chart with a crosshair tooltip.
-  // series: [{name, color, dash, width, alpha, area, dots, noTip, tipRange, endDot, band: [[x,lo,hi]], marks: [[x,y,alpha]], endLabel, labelAlpha, points: [[x,y],...]}]
+  // series: [{name, color, dash, width, lw, alpha, area, dots, noTip, tipRange, endDot, band: [[x,lo,hi]], marks: [[x,y,alpha]], endLabel, labelAlpha, points: [[x,y],...]}]
   // ghost: only in the tooltip, never drawn. sparse: measured only now and then, so the tooltip shows it only near
   // one of its real points. pts: a dot of that radius on every point (the real measurements of a sparse line).
   function lineChart(cv, tip, opt) {
@@ -196,7 +196,7 @@ const UI = (() => {
         }
         ctx.strokeStyle = s.color;
         ctx.globalAlpha = s.alpha || 1;
-        ctx.lineWidth = Math.max(0.8, Math.min(1.5, (s.width || 2) * 0.65));   // thin, crisp lines
+        ctx.lineWidth = s.lw || Math.max(0.8, Math.min(1.5, (s.width || 2) * 0.65));   // thin, crisp lines (lw: an exact width)
         ctx.setLineDash(s.dash || []);
         ctx.lineJoin = "round"; ctx.lineCap = "round";
         ctx.beginPath();

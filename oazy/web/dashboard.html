@@ -166,7 +166,7 @@
       <details class="why"><summary>What is loss?</summary><div class="body">
         <p>At every word, a model gives each possible next word a chance. <b>Loss</b> measures how surprised it was by the word that really came next. Lower means it saw it coming.</p>
         <p>A loss of <b>L</b> is as hard as picking the right word out of about <b>e<sup>L</sup></b> equally likely ones: 3.3 is like choosing among 27 words.</p>
-        <p>Each model has two lines in two colors. The <b>training</b> line is the loss on the batches it is learning from, as they go by. The <b>held-out</b> line is the loss on text it never trains on (the "finish line" scores above use those). If the held-out line stays close to the training one, the model is learning things that carry over to new text; if it starts climbing away above it, the model is memorising its training text. Published models (OpenAI GPT-2, SmolLM2) are left out of this chart: they trained on other text, or maybe on these very pages, so their loss can't be compared fairly. Compare them on the tests in "The finish line".</p>
+        <p>Each model has one color and two lines. The faint, thin <b>training</b> line is the loss on the batches it is learning from, as they go by (it jumps around). The bold <b>held-out</b> line is the loss on text it never trains on (the "finish line" scores above use those). If the held-out line stays close to the training one, the model is learning things that carry over to new text; if it starts climbing away above it, the model is memorising its training text. Published models (OpenAI GPT-2, SmolLM2) are left out of this chart: they trained on other text, or maybe on these very pages, so their loss can't be compared fairly. Compare them on the tests in "The finish line".</p>
         <p>The <b>dashed</b> lines are forecasts of where each line will be at the planned end, with the likely range shaded around them (about 8 times in 10 the end lands inside it). See "How the forecasts work" below.</p>
       </div></details>
       <details class="why" id="foreWhy"><summary>How the forecasts work, and how good they are</summary><div class="body">
@@ -342,10 +342,10 @@ const MODELS = {
   frog: { name: "Frog", color: C.frog, role: "ours", blurb: "Bee3 at twice the size (406M, next-word): 21 memory + 7 attention layers, 1,024 wide, 4,000M tokens of Tagus. The SmolLM2-360M mentor teaches a share of the sequences instead of a share of every word, so it reads only what it teaches. Losses per GPT-2 token." },
   coral: { name: "Coral", color: C.coral, role: "ours", blurb: "Our first mixture of experts (1,037M parameters, about 160M at work per word, next-word): 20 attention layers, each with 32 small experts (a router picks 2 per word) plus a shared MLP, 1,024 wide, trained on Tagus, built to train at about 1M tokens/s. Losses per GPT-2 token." },
   coralmini: { name: "Coral Mini", color: C.coralmini, role: "ours", blurb: "Coral made small (about 198M parameters, about 115M at work per word, next-word): Bee4's 12 attention layers, each with 16 small experts (a router picks 2 per word) plus a shared MLP. Bee4's training recipe: grows from 6 to 12 layers, short windows first, the SmolLM2-360M mentor on a share of the passes, 10,000M tokens of Tagus20." },
-  pegasus: { name: "Pegasus 1", color: "#9d8cff", role: "ours", blurb: "Predicts meaning, not only words (about 400M parameters, next-word at the end): a small Reader cuts the text into thoughts where it notices a change, writes each thought as 8 pieces from one shared dictionary of 1,000 meanings, a big Thinker (one step per thought) predicts the next thought's pieces, and a small Speaker writes the words from the Thinker's plan, the nearby words and a notebook of earlier thoughts. Bee4's recipe." },
-  pegasusmini: { name: "Pegasus 1 Mini", color: "#c3b8ff", role: "ours", blurb: "Pegasus 1 at about 100M parameters, the first test of predicting meaning (next-word at the end). Races Plain-100M, a normal transformer of the same size raised the same way." },
-  pegasus2: { name: "Pegasus 2 Mini", color: "#ff9de2", role: "ours", blurb: "Pegasus Mini rebuilt after its first run: the Speaker continues from the Reader and is a real language model, the Thinker reads rich thought vectors, notebook pages keep details, thoughts start fixed then are learned. Next-word at the end; races Plain-100M." },
-  plain100: { name: "Plain-100M", color: "#8fa3b8", role: "baseline", blurb: "A normal next-word transformer of Pegasus 1 Mini's size (about 106M parameters, 10 layers of 768, Bee4's layers), raised with exactly the same recipe: the line Pegasus 1 Mini must beat." },
+  pegasus: { name: "Pegasus 1", color: "#ffd34d", role: "ours", blurb: "Predicts meaning, not only words (about 400M parameters, next-word at the end): a small Reader cuts the text into thoughts where it notices a change, writes each thought as 8 pieces from one shared dictionary of 1,000 meanings, a big Thinker (one step per thought) predicts the next thought's pieces, and a small Speaker writes the words from the Thinker's plan, the nearby words and a notebook of earlier thoughts. Bee4's recipe." },
+  pegasusmini: { name: "Pegasus 1 Mini", color: "#5fe39a", role: "ours", blurb: "Pegasus 1 at about 100M parameters, the first test of predicting meaning (next-word at the end). Races Plain-100M, a normal transformer of the same size raised the same way." },
+  pegasus2: { name: "Pegasus 2 Mini", color: "#ff9a3c", role: "ours", blurb: "Pegasus Mini rebuilt after its first run: the Speaker continues from the Reader and is a real language model, the Thinker reads rich thought vectors, notebook pages keep details, thoughts start fixed then are learned. Next-word at the end; races Plain-100M." },
+  plain100: { name: "Plain-100M", color: "#a9bcd6", role: "baseline", blurb: "A normal next-word transformer of Pegasus 1 Mini's size (about 106M parameters, 10 layers of 768, Bee4's layers), raised with exactly the same recipe: the line Pegasus 1 Mini must beat." },
   bee4: { name: "Bee4-200M", color: C.bee4, role: "ours", blurb: "Dense and all attention (198M, next-word): Coral's layers with one MLP instead of experts, no Memtrix. Coral's training recipe: grows from 6 to 12 layers, short windows first, the SmolLM2-360M mentor on a share of the passes, 10,000M tokens of Tagus20." },
   gpt: { name: NAMES.gpt, color: C.gpt, role: "baseline", blurb: "GPT-2 small (124M), trained on the same text, in the same order, with the same schedule." },
   "openai-gpt2": { name: NAMES.openai, color: C.ref, role: "reference", blurb: "OpenAI's 2019 GPT-2 small, measured with the same tests: the line to beat." },
@@ -356,21 +356,6 @@ const isRef = (n) => modelOf(n).role === "reference";
 const kindOf = (r) => (r.config && r.config.model) || r.name;
 const modelOf = (n) => MODELS[n] || MODELS[kindOf(RUNS.find((r) => r.name === n) || { name: n })] || { name: n, color: C.ref, role: "ours", blurb: "" };
 const colorOf = (n) => modelOf(n).color;
-// the second color of a model: its held-out loss line, picked to stand apart from its training line
-// (Coral's violet gets teal); models without a pick get the opposite hue of their own color
-const HELD = { pegasus: "#6bffd8", pegasusmini: "#ffd36b", pegasus2: "#ff9de2", plain100: "#ffb0d0", coral: "#4cf2c4", coralmini: "#c8ff6b", bee4: "#ffcf6b", bee3: "#5fd0ff", bee2: "#7fa8ff", bee: "#5fe0d0", frog: "#ff8fcf", gpt: "#ffd166", memtrix: "#ffb35c", fern3: "#9ff0a0" };
-const heldColorOf = (n) => HELD[n] || HELD[kindOf(RUNS.find((r) => r.name === n) || { name: n })] || opposite(colorOf(n));
-function opposite(hex) {
-  const m = /^#?([\da-f]{6})$/i.exec(hex || ""); if (!m) return "#ffd166";
-  const v = parseInt(m[1], 16), [r, g, b] = [(v >> 16) & 255, (v >> 8) & 255, v & 255].map((c) => c / 255);
-  const hi = Math.max(r, g, b), lo = Math.min(r, g, b), l = (hi + lo) / 2, d = hi - lo;
-  if (!d) return "#ffd166";
-  let h = hi === r ? (g - b) / d + (g < b ? 6 : 0) : hi === g ? (b - r) / d + 2 : (r - g) / d + 4;
-  h = (h * 60 + 180) % 360;
-  const s = 0.85, L = Math.min(0.72, Math.max(0.6, l)), k = (x) => (x + h / 30) % 12, a = s * Math.min(L, 1 - L);
-  const f = (x) => Math.round(255 * (L - a * Math.max(-1, Math.min(k(x) - 3, 9 - k(x), 1))));
-  return "#" + [f(0), f(8), f(4)].map((c) => c.toString(16).padStart(2, "0")).join("");
-}
 const nameOf = (n) => MODELS[n] ? MODELS[n].name : (modelOf(n).name + (n !== kindOf(RUNS.find((r) => r.name === n) || {}) ? ` (${n})` : ""));
 // a run that says it is training but has written nothing for an hour was cut off (the pod stopped under it): not live
 const isLive = (r) => !!r.status && Date.now() / 1000 - (r.status.updated || 0) < (r.status.state === "starting" ? 1800 : 3600)
@@ -445,10 +430,23 @@ const charts = {
   rounds: UI.lineChart(document.getElementById("rounds"), document.getElementById("roundsTip"), { series: [] }),
 };
 
+// items: [name, color, kind]; kind true = dashed swatch, "model" = a color chip (the model's one color),
+// "key" = a line-style sample in neutral ink (what a solid / faint / dashed line means), set apart after a divider
 function legend(id, items) {
-  document.getElementById(id).innerHTML = items.map(([n, c, dash]) =>
-    `<span><i class="sw${dash ? " dash" : ""}" style="${dash ? "border-color:" + c : "background:" + c}"></i>${n}</span>`).join("");
+  let keyed = false;
+  document.getElementById(id).innerHTML = items.map(([n, c, kind]) => {
+    if (kind === "model") return `<span class="lgmodel"><i class="chip" style="background:${c}"></i>${n}</span>`;
+    if (kind && kind.key) {
+      const first = !keyed; keyed = true;
+      return `<span class="lgkey${first ? " first" : ""}"><i class="sw ${kind.key}"></i>${n}</span>`;
+    }
+    return `<span><i class="sw${kind ? " dash" : ""}" style="${kind ? "border-color:" + c : "background:" + c}"></i>${n}</span>`;
+  }).join("");
 }
+// the loss chart: every model keeps ONE color; what a line measures is told by its style
+const TRAIN_ALPHA = 0.4;
+const LOSS_KEY = (fore) => [["held-out text", null, { key: "bold" }], ["training text", null, { key: "faint" }],
+  ...(fore ? [[fore, null, { key: "dash" }]] : [])];
 
 async function getJSON(u) { const r = await fetch(u, { cache: "no-store" }); if (!r.ok) throw new Error(u); return r.json(); }
 
@@ -838,7 +836,7 @@ function foreNote(key, fmt) {
   return VIS().map((r) => {
     const F = FORE[r.name]?.[HORIZON ? key + "H" : key]; if (!F) return "";
     const why = F.hypothetical || HORIZON ? "" : key === "hs" ? `from its held-out forecast (each 0.01 of loss ≈ ${(-F.perLoss).toFixed(1)} points)` : foreWhy(F, fmt);
-    return `<br><span style="color:${key === "val" ? heldColorOf(r.name) : colorOf(r.name)}">${nameOf(r.name)}${key === "val" ? " held-out" : key === "loss" ? " training" : ""}</span>: ` +
+    return `<br><span style="color:${colorOf(r.name)}">${nameOf(r.name)}${key === "val" ? " held-out" : key === "loss" ? " training" : ""}</span>: ` +
       `≈${fmt(F.yEnd)}, likely ${fmt(F.lo)}–${fmt(F.hi)}${why ? " · " + why : ""}`;
   }).join("");
 }
@@ -894,12 +892,12 @@ function drawLearning() {
   const series = [], hsS = [], leg = [], hleg = [];
   let anyFore = false, anyHsFore = false, foreFrom = Infinity;
   for (const r of VIS()) {
-    const m = DATA[r.name]?.metrics || [], col = colorOf(r.name), hcol = heldColorOf(r.name);
+    const m = DATA[r.name]?.metrics || [], col = colorOf(r.name);
     if (isRef(r.name)) continue;      // published models: their loss isn't comparable (other training text; SmolLM2 likely read these pages)
     const tr = m.filter((x) => x.kind === "train"), ev = m.filter((x) => x.kind === "eval"), hs = m.filter(hsOK);
     const step = Math.max(1, Math.floor(tr.length / 400));
-    const trS = { name: nameOf(r.name) + " · training", color: col, width: 2, endLabel: true, points: tr.filter((_, i) => i % step === 0).map((x) => [xOf(x), x.loss]) };
-    const evS = { name: nameOf(r.name) + " · held-out", color: hcol, width: 2, sparse: true, endLabel: true, points: ev.map((x) => [xOf(x), x.val_loss]).filter((p) => p[1] != null) };
+    const trS = { name: nameOf(r.name) + " · training", color: col, lw: 1, alpha: TRAIN_ALPHA, labelAlpha: 0.6, endLabel: true, points: tr.filter((_, i) => i % step === 0).map((x) => [xOf(x), x.loss]) };
+    const evS = { name: nameOf(r.name) + " · held-out", color: col, lw: 2.2, sparse: true, endLabel: true, points: ev.map((x) => [xOf(x), x.val_loss]).filter((p) => p[1] != null) };
     series.push(trS, evS);
     hsS.push({ name: nameOf(r.name), color: col, width: 2.4, dots: true, endLabel: true, points: hs.map((x) => [xOf(x), x.acc_norm]) });
     // the dashed forecasts, out to the planned number of words, with their likely range shaded
@@ -911,13 +909,13 @@ function drawLearning() {
     if (mx && (F.val || F.loss)) {          // past the line's end, the tooltip shows the forecast instead; its tip carries the label
       if (F.loss) {
         trS.endLabel = false; trS.tipRange = true;
-        const fl = { name: nameOf(r.name) + " · training forecast", color: col, alpha: 0.5, width: 2, dash: [5, 5], tipRange: true,
-          endLabel: "≈" + fmtL(F.loss.yEnd), labelAlpha: 0.7, points: fc(F.loss), band: fcbOf(F.loss), bandAlpha: 0.05 };
+        const fl = { name: nameOf(r.name) + " · training forecast", color: col, alpha: TRAIN_ALPHA, lw: 1, dash: [5, 5], tipRange: true,
+          endLabel: "≈" + fmtL(F.loss.yEnd), labelAlpha: 0.6, points: fc(F.loss), band: fcbOf(F.loss), bandAlpha: 0.05 };
         series.push(fl); foreFrom = Math.min(foreFrom, fl.points[0][0]);
       }
       if (F.val) {             // the held-out forecast: the one the "finish line" will show
         evS.endLabel = false; evS.tipRange = true;
-        const fv = { name: nameOf(r.name) + " · held-out forecast", color: hcol, alpha: 0.65, width: 2, dash: [5, 5], tipRange: true, endDot: true,
+        const fv = { name: nameOf(r.name) + " · held-out forecast", color: col, alpha: 0.85, lw: 1.8, dash: [6, 5], tipRange: true, endDot: true,
           endLabel: "≈" + fmtL(F.val.yEnd), labelAlpha: 0.8, points: fc(F.val), band: fcbOf(F.val) };
         series.push(fv); foreFrom = Math.min(foreFrom, fv.points[0][0]);
       }
@@ -929,7 +927,7 @@ function drawLearning() {
         endLabel: "≈" + pct(F.hs.yEnd), labelAlpha: 0.7, points: fc(F.hs), band: fcbOf(F.hs) });
       anyHsFore = true;
     }
-    leg.push([nameOf(r.name) + " · training", col]); if (evS.points.length) leg.push([nameOf(r.name) + " · held-out", hcol]);
+    leg.push([nameOf(r.name), col, "model"]);
     if (hs.length) hleg.push([nameOf(r.name), col]);
     else if (m.some((x) => x.kind === "eval")) hleg.push([nameOf(r.name) + " (not scored per letter yet)", col]);
   }
@@ -952,9 +950,8 @@ function drawLearning() {
   }
   hleg.push(["guessing (25%)", C.muted, true]);
   const hzName = HORIZON ? "if planned for " + fmtHz(HORIZON) : null;
-  if (anyFore) leg.push([hzName || "forecast to the planned end", C.muted, true]);
   if (anyHsFore) hleg.push([hzName || "forecast", C.muted, true]);
-  legend("lossLegend", leg); legend("hsLegend", hleg);
+  legend("lossLegend", leg.length ? [...leg, ...LOSS_KEY(anyFore && (hzName || "forecast to the planned end"))] : leg); legend("hsLegend", hleg);
   const xf = xmode === "tokens" ? fmtM : hours ? (v) => +v.toPrecision(v < 10 ? 1 : 3) + " h" : (v) => Math.round(v) + " min";
   charts.loss.set({ series, xFmt: xf, yFmt: (v, d) => v.toFixed(d), tipFmt: fmtL, yFocus: HORIZON ? 0.3 : 0.04,
     xLog: !!HORIZON, xMin: logMin(series), vlines: horizonLines(),
