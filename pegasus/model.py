@@ -32,6 +32,7 @@ gradient: H-Net's trick).
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass, asdict
 from types import SimpleNamespace
 
@@ -80,6 +81,8 @@ class PegasusConfig:
     rope_base: float = 50000.0
     softcap: float = 30.0
     attn_backend: str = "auto"
+    flex: int = 1                    # compiled (GPU) steps do the local attention and the notebook with flex attention:
+                                     # the same sums, ~skipping the empty parts of the grid (0 = the old yes/no grids)
     compile_mode: str = "default"
     doc_mask: int = 1                # (only for the mentor: it reads each document on its own, as with Bee4)
 
@@ -113,10 +116,27 @@ def _sub(cfg, d, heads, kv, mlp):
 
 
 # ---------------------------------------------------------------------------------------------- attention pieces
-def local_attention(attn: Attention, x, window: int):
-    """Causal attention where each token sees itself and the window-1 tokens before it. Done in blocks of `window`:
-    each block's queries look at their own block and the one before, through a fixed yes/no grid."""
+def window_mask(T: int, window: int, device):
+    """Flex attention's block mask for "itself and the window-1 tokens before it": blocks of the grid wholly outside
+    the band are skipped, whole blocks inside it run without a per-element test. The same for every text of length T."""
+    from torch.nn.attention.flex_attention import create_block_mask
+
+    def near(b, h, q, kv):
+        return (q >= kv) & (q - kv < window)
+    return create_block_mask(near, None, None, T, T, device=device, _compile=device.type == "cuda")
+
+
+def local_attention(attn: Attention, x, window: int, wmask=None):
+    """Causal attention where each token sees itself and the window-1 tokens before it. With `wmask` (window_mask):
+    flex attention, keys shared across heads without copies. Without: done in blocks of `window`, each block's
+    queries looking at their own block and the one before through a fixed yes/no grid (the same sums, slower)."""
     B, T, _ = x.shape
+    if wmask is not None:
+        from torch.nn.attention.flex_attention import flex_attention
+        q, k, v = attn.project(x, 0)
+        y = flex_attention(q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2), block_mask=wmask,
+                           enable_gqa=attn.H != attn.KV)
+        return attn.finish(x, y)
     W = window
     q, k, v = attn.project(x, 0)                                     # RoPE on true positions
     nb = (T + W - 1) // W
@@ -159,12 +179,21 @@ class Notebook(nn.Module):
         self.qn, self.kn = RMSNorm(hd), RMSNorm(hd)
         self.out = nn.Linear(heads * hd, d, bias=False)
 
-    def forward(self, x, pages, mask):
+    def forward(self, x, pages, mask, tid=None):
+        """tid (B, T), each token's thought: given, flex attention reads pages 0..tid (page 0 = blank, page j =
+        thought j-1), which is exactly `mask`, without building the (B, T, pages) grid or copying keys per head."""
         B, T, _ = x.shape
         M = pages.shape[1]
         q = self.qn(self.q(x).view(B, T, self.H, self.hd)).transpose(1, 2)
         k = self.kn(self.k(pages).view(B, M, self.KV, self.hd)).transpose(1, 2)
         v = self.v(pages).view(B, M, self.KV, self.hd).transpose(1, 2)
+        if tid is not None:
+            from torch.nn.attention.flex_attention import flex_attention
+
+            def finished(score, b, h, qi, kv):
+                return torch.where(kv <= tid[b, qi], score, -float("inf"))
+            y = flex_attention(q, k, v, score_mod=finished, enable_gqa=self.H != self.KV)
+            return self.out(y.transpose(1, 2).reshape(B, T, -1))
         rep = self.H // self.KV
         k, v = k.repeat_interleave(rep, 1), v.repeat_interleave(rep, 1)
         y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
@@ -185,10 +214,10 @@ class TokBlock(nn.Module):
         self.n2 = RMSNorm(sub.d_model)
         self.mlp = MLP(sub)
 
-    def forward(self, x, pages=None, pmask=None):
-        x = x + local_attention(self.attn, self.n1(x), self.window)
+    def forward(self, x, pages=None, pmask=None, wmask=None, tid=None):
+        x = x + local_attention(self.attn, self.n1(x), self.window, wmask)
         if self.note is not None and pages is not None:
-            x = x + self.note(self.nn_(x), pages, pmask)
+            x = x + self.note(self.nn_(x), pages, pmask, tid)
         return x + self.mlp(self.n2(x))
 
 
@@ -346,13 +375,30 @@ class Pegasus(nn.Module):
         mode = self.cfg.compile_mode
         self._compiled = torch.compile(self._core) if mode in ("", "default") else torch.compile(self._core, mode=mode)
 
+    def _wmask(self, T, device):
+        """The local attention's block mask for windows of T tokens, made once per length (outside the compiled step)."""
+        key = (T, str(device))
+        if getattr(self, "_wmasks", None) is None:
+            self._wmasks = {}
+        if key not in self._wmasks:
+            self._wmasks[key] = window_mask(T, self.cfg.window, device)
+        return self._wmasks[key]
+
+    def _run(self, idx):
+        """The compiled step with flex attention (cfg.flex), else the plain step: the same sums either way."""
+        if self._compiled is not None:
+            if self.cfg.flex and os.environ.get("OAZY_FLEX", "1") != "0":     # OAZY_FLEX=0: the grids, for a resumed run too
+                return self._compiled(idx, self._wmask(idx.shape[1], idx.device))
+            return self._compiled(idx)
+        return self._core(idx)
+
     # ---------------------------------------------------------------- the forward pass
-    def _read(self, x):
+    def _read(self, x, wmask=None):
         """The Reader: token vectors (B, T, D) and how much each token differs from the one before (B, T-1), 0 = the
         same, 1 = opposite (where a new thought may start)."""
         h = x
         for b in self.reader:
-            h = b(h)
+            h = b(h, wmask=wmask)
         h = self.rnorm(h)
         q = F.normalize(self.route_q(h[:, 1:]).float(), dim=-1)
         k = F.normalize(self.route_k(h[:, :-1]).float(), dim=-1)
@@ -372,14 +418,15 @@ class Pegasus(nn.Module):
         self.route_edge.copy_(flat.kthvalue(k).values)
         self.calibrated.fill_(True)
 
-    def _core(self, idx):
+    def _core(self, idx, wmask=None):
         """(B, T) tokens -> (Speaker's token vectors after the final norm (B, T, D), the meaning loss, the spring's
-        loss, a few numbers about the thoughts)."""
+        loss, a few numbers about the thoughts). wmask (window_mask): flex attention for the local attention and the
+        notebook; None: the yes/no grids. The same sums either way (pegasus/tests.py compares them)."""
         c = self.cfg
         B, T = idx.shape
         M = max(2, T // c.max_thoughts)
         x = self.embed(idx)
-        h, change = self._read(x)
+        h, change = self._read(x, wmask)
         p = torch.sigmoid(self.route_scale * (change - self.route_edge))
         p = torch.cat([torch.ones_like(p[:, :1]), p], 1)             # (B, T) the first token starts a thought
         from oazy.tok import eot_id
@@ -434,11 +481,12 @@ class Pegasus(nn.Module):
             allp = torch.cat([self.page_blank.to(pages.dtype).expand(B, 1, -1), pages], 1)   # (B, M+1, D)
             pj = torch.arange(M + 1, device=idx.device)
             # page j (thought j-1) is readable once thought j-1 has ended, i.e. by the tokens of later thoughts
-            pmask = ((pj[None, None, :] == 0) | ((pj[None, None, :] - 1) < tid[:, :, None]))[:, None]
+            if wmask is None:                                        # (flex reads the same rule from tid)
+                pmask = ((pj[None, None, :] == 0) | ((pj[None, None, :] - 1) < tid[:, :, None]))[:, None]
         s = x
         for i, b in enumerate(self.speaker):
             s = s + plan_t[:, :, i]
-            s = b(s, allp, pmask)
+            s = b(s, allp, pmask, wmask, tid if wmask is not None else None)
         s = self.snorm(s)
         n_th = valid.float().sum(1).mean()
         stats = {"thought_len": T / n_th.clamp_min(1), "meaning": meaning.detach(), "start_p": G.detach()}
@@ -467,7 +515,7 @@ class Pegasus(nn.Module):
         Returns (loss to train on, {"ce": next-word loss, "kd": mentor term}), the stats detached."""
         if self.training and not bool(self.calibrated):
             self.calibrate(idx)
-        s, meaning, ratio, st = (self._compiled or self._core)(idx)
+        s, meaning, ratio, st = self._run(idx)
         th = tW = None
         if mentor is not None and kd_weight > 0:
             th, tW = mentor.hidden(idx, self.doc_mask(idx) if self.cfg.doc_mask else None)
