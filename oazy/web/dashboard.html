@@ -327,7 +327,7 @@ fetch("api/version").then((r) => r.json()).then((v) => {
 }).catch(() => {});
 "use strict";
 const C = { memtrix: UI.css("--brand"), tide: UI.css("--teal"), fern: UI.css("--fern"), ember: UI.css("--ember"), fern2: UI.css("--fern2"), fern3: UI.css("--fern3"), bee: UI.css("--bee"), bee2: UI.css("--bee2"), bee3: UI.css("--bee3"), frog: UI.css("--frog"), coral: UI.css("--coral"), bee4: UI.css("--bee4"), coralmini: UI.css("--coralmini"), gpt: UI.css("--gpt"), ref: UI.css("--ref"), muted: UI.css("--muted") };
-const NAMES = { memtrix: "Memtrix", tide: "Tide", fern: "Fern", ember: "Ember", fern2: "Fern2", fern3: "Fern3", bee: "Bee0.2B", bee2: "Bee_v2_0.2B", bee3: "Bee3", frog: "Frog", coral: "Coral", bee4: "Bee4-200M", coralmini: "Coral Mini", pegasus: "Pegasus 1", pegasusmini: "Pegasus 1 Mini", pegasus2: "Pegasus 2 Mini", plain100: "Plain-100M", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };
+const NAMES = { memtrix: "Memtrix", tide: "Tide", fern: "Fern", ember: "Ember", fern2: "Fern2", fern3: "Fern3", bee: "Bee0.2B", bee2: "Bee_v2_0.2B", bee3: "Bee3", frog: "Frog", coral: "Coral", bee4: "Bee4-200M", coralmini: "Coral Mini", pegasus: "Pegasus 1", pegasusmini: "Pegasus 1 Mini", pegasus2: "Pegasus 2 Mini", plain100: "Plain-100M", plain100f: "Plain-100F", gpt: "GPT-2 (trained here)", openai: "OpenAI GPT-2" };
 // Every model of the lab. role: "ours" (our architectures), "baseline" (the GPT-2 we train the same way), "reference" (OpenAI's).
 const MODELS = {
   memtrix: { name: "Memtrix", color: C.memtrix, role: "ours", blurb: "Learns while it reads: small memories fixed by their own surprise, word by word." },
@@ -346,6 +346,7 @@ const MODELS = {
   pegasusmini: { name: "Pegasus 1 Mini", color: "#5fe39a", role: "ours", blurb: "Pegasus 1 at about 100M parameters, the first test of predicting meaning (next-word at the end). Races Plain-100M, a normal transformer of the same size raised the same way." },
   pegasus2: { name: "Pegasus 2 Mini", color: "#ff9a3c", role: "ours", blurb: "Pegasus Mini rebuilt after its first run: the Speaker continues from the Reader and is a real language model, the Thinker reads rich thought vectors, notebook pages keep details, thoughts start fixed then are learned. Next-word at the end; races Plain-100M." },
   plain100: { name: "Plain-100M", color: "#a9bcd6", role: "baseline", blurb: "A normal next-word transformer of Pegasus 1 Mini's size (about 106M parameters, 10 layers of 768, Bee4's layers), raised with exactly the same recipe: the line Pegasus 1 Mini must beat." },
+  plain100f: { name: "Plain-100F", color: "#6fd3c1", role: "ours", blurb: "Plain-100M exactly, plus a small head used only in training: at each sentence end it guesses which content words the next sentence will use. Removed after training, so it has Plain-100M's size and speed. Next-word model." },
   bee4: { name: "Bee4-200M", color: C.bee4, role: "ours", blurb: "Dense and all attention (198M, next-word): Coral's layers with one MLP instead of experts, no Memtrix. Coral's training recipe: grows from 6 to 12 layers, short windows first, the SmolLM2-360M mentor on a share of the passes, 10,000M tokens of Tagus20." },
   gpt: { name: NAMES.gpt, color: C.gpt, role: "baseline", blurb: "GPT-2 small (124M), trained on the same text, in the same order, with the same schedule." },
   "openai-gpt2": { name: NAMES.openai, color: C.ref, role: "reference", blurb: "OpenAI's 2019 GPT-2 small, measured with the same tests: the line to beat." },
@@ -1184,7 +1185,7 @@ async function refresh() {
   const pill = document.getElementById("updated");
   try {
     RUNS = await getJSON("api/runs");
-    const ORDER = ["pegasus2", "pegasus", "pegasusmini", "plain100", "coralmini", "bee4", "coral", "frog", "bee3", "bee2", "bee", "fern3", "fern2", "ember", "fern", "tide", "memtrix", "gpt", "openai-gpt2", "smollm2-360m", "smollm2-135m"];
+    const ORDER = ["plain100f", "pegasus2", "pegasus", "pegasusmini", "plain100", "coralmini", "bee4", "coral", "frog", "bee3", "bee2", "bee", "fern3", "fern2", "ember", "fern", "tide", "memtrix", "gpt", "openai-gpt2", "smollm2-360m", "smollm2-135m"];
     RUNS.sort((a, b) => ORDER.indexOf(a.name) - ORDER.indexOf(b.name));
     for (const r of RUNS) {
       const [metrics, samples] = await Promise.all([getJSON(`api/run/${r.name}/metrics`), getJSON(`api/run/${r.name}/samples`)]);

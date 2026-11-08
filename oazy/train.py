@@ -33,17 +33,17 @@ from memtrix.model import Memtrix, MemtrixConfig
 from memtrix import memory
 from . import hellaswag, probes, term
 
-KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "black", "blackt", "gpt"]
+KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "black", "blackt", "gpt"]
 NICE = {"memtrix": "Memtrix", "tide": "Tide", "fern": "Fern", "ember": "Ember", "fern2": "Fern2", "fern3": "Fern3",
         "bee": "Bee0.2B", "bee2": "Bee_v2_0.2B", "bee3": "Bee3", "frog": "Frog", "coral": "Coral", "bee4": "Bee4-200M", "coralmini": "Coral Mini",
-        "pegasus": "Pegasus 1", "pegasusmini": "Pegasus 1 Mini", "pegasus2": "Pegasus 2 Mini", "plain100": "Plain-100M", "black": "Code Black",
+        "pegasus": "Pegasus 1", "pegasusmini": "Pegasus 1 Mini", "pegasus2": "Pegasus 2 Mini", "plain100": "Plain-100M", "plain100f": "Plain-100F", "black": "Code Black",
         "blackt": "Black-T", "gpt": "GPT"}
-FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "black", "blackt")    # raised the fast way: Muon (and a mentor, where MENTOR names one)
+FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "black", "blackt")    # raised the fast way: Muon (and a mentor, where MENTOR names one)
 # default mentor (the others: gpt2-medium). Code Black and Black-T race without one, so the architectures are compared alone.
 MENTOR = {"bee": "gpt2-large", "bee2": "smollm2-360m", "bee3": "smollm2-360m", "frog": "smollm2-360m", "coral": "smollm2-360m",
           "bee4": "smollm2-360m", "coralmini": "smollm2-360m", "pegasus": "smollm2-360m", "pegasusmini": "smollm2-360m", "pegasus2": "smollm2-360m",
-          "plain100": "smollm2-360m", "black": "none", "blackt": "none"}
-BEES = ("bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "black", "blackt")    # the text mix (Tagus), WSD, growing windows
+          "plain100": "smollm2-360m", "plain100f": "smollm2-360m", "black": "none", "blackt": "none"}
+BEES = ("bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "black", "blackt")    # the text mix (Tagus), WSD, growing windows
 # Bee3's recipe (bee3/README.md): the mentor stays the whole run, weight decay on the Muon grids, a batch ramp,
 # a 1-minus-square-root cool-down, twice Bee2's learning rates (the presets' lr_bee3 / muon_lr_bee3)
 RECIPE = {"bee3": dict(mentor_floor=0.25, mentor_off=0.1, muon_wd=0.1, batch_ramp="65536:0.1", decay_shape="sqrt")}
@@ -81,6 +81,9 @@ RECIPE["plain100"] = dict(RECIPE["bee4"])
 # Pegasus 2 Mini (pegasus/model2.py): Pegasus 1 Mini rebuilt after its first run (Nov 8). The very same recipe and
 # mentor as Plain-100M, so a race measures the architecture only.
 RECIPE["pegasus2"] = dict(RECIPE["plain100"])
+# Plain-100F (foresight/model.py, Nov 8): Plain-100M exactly, plus a training-only head that guesses the next sentence's
+# content words. The very same recipe, mentor and text, so a race measures the side lesson alone.
+RECIPE["plain100f"] = dict(RECIPE["plain100"])
 # Code Black (codeblack/README.md) and Black-T, the transformer it races: the same recipe for both, so a race measures
 # the architecture. Bee3's polish (Muon weight decay, a batch ramp, the square-root cool-down) and FP8, no mentor. Races
 # run on the clock: --preset race --minutes 30 (every schedule follows the training time instead of the token count).
@@ -203,6 +206,11 @@ def _plain100():
     return Plain100, Plain100Config
 
 
+def _plain100f():
+    from foresight.model import Plain100F, Plain100FConfig   # foresight/ = Plain-100M + a training-only next-sentence head
+    return Plain100F, Plain100FConfig
+
+
 def _black():
     from codeblack.model import Black, BlackConfig   # codeblack/ = two clocks: a fast token stream, a slow stream once per 4 tokens
     return Black, BlackConfig
@@ -238,6 +246,7 @@ PRESETS = {
         black=dict(d_model=128, enc_layers=1, dec_layers=1, attn_heads=4, attn_kv_heads=2, attn_head_dim=32, mlp_hidden=256,
                    window=64, slow_d=256, slow_layers=2, slow_heads=4, slow_kv_heads=2, slow_head_dim=64, slow_mlp=512,
                    phrase_rows=8192, phrase_dim=32, max_len=512, ctx="512:0"),
+        plain100f=dict(fore_top=20),       # a test tokenizer has few pieces: leave only the 20 most common out of the bags
         micro=16, accum=1, lr=3e-3, warmup=50, tokens=3_000_000,
         eval_every=250_000, probe_every=1_000_000, hs_every=1_000_000, sample_every=1_000_000, evals_every=1_000_000,
         val_windows=64, hs_quick=200, evals_quick=50, sample_len=40,
@@ -261,25 +270,26 @@ PRESETS = {
         black=dict(d_model=64, enc_layers=1, dec_layers=1, attn_heads=2, attn_kv_heads=1, attn_head_dim=32, mlp_hidden=128,
                    window=32, slow_d=128, slow_layers=2, slow_heads=2, slow_kv_heads=1, slow_head_dim=64, slow_mlp=256,
                    phrase_rows=1024, phrase_dim=16, max_len=128, ctx="128:0"),
+        plain100f=dict(fore_top=20),
         micro=8, accum=2, lr=3e-3, warmup=10, tokens=60_000,
         eval_every=20_000, probe_every=30_000, hs_every=30_000, sample_every=30_000, evals_every=30_000,
         val_windows=16, hs_quick=20, evals_quick=10, sample_len=10,
     ),
     # GPT-2 small size (Memtrix 117M vs GPT-2 124M), ~2 h for both models on one B200 (check with --bench)
     "full": dict(
-        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576, batch_bee4=524288, batch_coralmini=524288, batch_pegasus=524288, batch_pegasusmini=524288, batch_pegasus2=524288, batch_plain100=524288,
+        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576, batch_bee4=524288, batch_coralmini=524288, batch_pegasus=524288, batch_pegasusmini=524288, batch_pegasus2=524288, batch_plain100=524288, batch_plain100f=524288,
         micro=32, accum=8, lr=1.2e-3, lr_bee3=2.4e-3, muon_lr_bee3=0.04, lr_frog=1.8e-3, muon_lr_frog=0.03,
         lr_coral=1.8e-3, muon_lr_coral=0.03, lr_bee4=1.8e-3, muon_lr_bee4=0.03, lr_coralmini=1.8e-3, muon_lr_coralmini=0.03,
-        lr_pegasus=1.8e-3, muon_lr_pegasus=0.03, lr_pegasusmini=1.8e-3, muon_lr_pegasusmini=0.03, lr_pegasus2=1.8e-3, muon_lr_pegasus2=0.03, lr_plain100=1.8e-3, muon_lr_plain100=0.03, warmup=400, tokens=2_000_000_000,
+        lr_pegasus=1.8e-3, muon_lr_pegasus=0.03, lr_pegasusmini=1.8e-3, muon_lr_pegasusmini=0.03, lr_pegasus2=1.8e-3, muon_lr_pegasus2=0.03, lr_plain100=1.8e-3, muon_lr_plain100=0.03, lr_plain100f=1.8e-3, muon_lr_plain100f=0.03, warmup=400, tokens=2_000_000_000,
         eval_every=50_000_000, probe_every=250_000_000, hs_every=250_000_000, sample_every=250_000_000, evals_every=500_000_000,
         val_windows=128, hs_quick=1000, evals_quick=500, sample_len=120,
     ),
     # the same models, 2.5x the text (e.g. a 2 x B200 pod for ~2.5 h, one model per GPU)
     "big": dict(
-        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576, batch_bee4=524288, batch_coralmini=524288, batch_pegasus=524288, batch_pegasusmini=524288, batch_pegasus2=524288, batch_plain100=524288,
+        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576, batch_bee4=524288, batch_coralmini=524288, batch_pegasus=524288, batch_pegasusmini=524288, batch_pegasus2=524288, batch_plain100=524288, batch_plain100f=524288,
         micro=32, accum=8, lr=1.2e-3, lr_bee3=2.4e-3, muon_lr_bee3=0.04, lr_frog=1.8e-3, muon_lr_frog=0.03,
         lr_coral=1.8e-3, muon_lr_coral=0.03, lr_bee4=1.8e-3, muon_lr_bee4=0.03, lr_coralmini=1.8e-3, muon_lr_coralmini=0.03,
-        lr_pegasus=1.8e-3, muon_lr_pegasus=0.03, lr_pegasusmini=1.8e-3, muon_lr_pegasusmini=0.03, lr_pegasus2=1.8e-3, muon_lr_pegasus2=0.03, lr_plain100=1.8e-3, muon_lr_plain100=0.03, warmup=600, tokens=5_000_000_000,
+        lr_pegasus=1.8e-3, muon_lr_pegasus=0.03, lr_pegasusmini=1.8e-3, muon_lr_pegasusmini=0.03, lr_pegasus2=1.8e-3, muon_lr_pegasus2=0.03, lr_plain100=1.8e-3, muon_lr_plain100=0.03, lr_plain100f=1.8e-3, muon_lr_plain100f=0.03, warmup=600, tokens=5_000_000_000,
         eval_every=100_000_000, probe_every=200_000_000, hs_every=200_000_000, sample_every=200_000_000, evals_every=500_000_000,
         val_windows=128, hs_quick=1000, evals_quick=500, sample_len=120,
     ),
@@ -399,6 +409,12 @@ def build(kind, preset, overrides=None):
         cfg = Plain100Config(**{**small, **({"ctx": f"{small['max_len']}:0"} if "max_len" in small else {}),
                                 **p.get("plain100", {}), **(overrides or {})})
         return Plain100(cfg), cfg
+    if kind == "plain100f":
+        Plain100F, Plain100FConfig = _plain100f()
+        small = {k: v for k, v in p.get("bee", {}).items() if k != "ctx"}    # the test presets' small body, as Plain-100M
+        cfg = Plain100FConfig(**{**small, **({"ctx": f"{small['max_len']}:0"} if "max_len" in small else {}),
+                                 **p.get("plain100", {}), **p.get("plain100f", {}), **(overrides or {})})
+        return Plain100F(cfg), cfg
     cfg = GPTConfig(**{**p["gpt"], **(overrides or {})})
     return GPT(cfg), cfg
 
@@ -456,6 +472,9 @@ def load_model(ckpt: Path, device, mmap=False):
     elif kind == "plain100":
         Plain100, Plain100Config = _plain100()
         model = Plain100(Plain100Config.from_dict(st["config"]))
+    elif kind == "plain100f":
+        Plain100F, Plain100FConfig = _plain100f()
+        model = Plain100F(Plain100FConfig.from_dict(st["config"]))
     elif kind in ("black", "blackt"):
         cls, Cfg = _black() if kind == "black" else _blackt()
         model = cls(Cfg.from_dict(st["config"]))
@@ -973,6 +992,15 @@ def main():
     run.status({**prev, **info, "state": "starting", "step": step, "tokens": tokens, "elapsed": elapsed,
                 "updated": time.time()})
 
+    if hasattr(model, "prepare_foresight") and not model.foresight_ready():
+        # Plain-100F: sentence ends and filler, from the tokenizer and the training text's counts (once; then in the checkpoint)
+        from foresight.model import token_counts
+        from .mix import source_path
+        files = [source_path(data, n) for n in train.src] if hasattr(train, "src") else [data / "train.bin"]
+        r = model.prepare_foresight(enc, token_counts(files, cfg.vocab_size))
+        say(f"[foresight] {r['sentence_ends']:,} sentence-end pieces; bags leave out {r['filler']:,} filler pieces "
+            f"(the {cfg.fore_top} most common + punctuation); {r['content']:,} content pieces", flush=True)
+
     memory.fla_check(device)
     if args.compile and device.type == "cuda":
         model.enable_compile()
@@ -1103,6 +1131,13 @@ def main():
                 say(f"[plan] Speaker loss {r['on']:.3f} with the plan, {r['plan_off']:.3f} without (gap {r['plan_gap']:+.3f}), "
                     f"{r['notebook_off']:.3f} without the notebook (gap {r['notebook_gap']:+.3f})"
                     + (f" | meanings in use {r['codes_used']:.0f} of {model.cfg.n_codes()}" if "codes_used" in r else ""), flush=True)
+            if hasattr(model, "foresight_report"):   # Plain-100F: does the head see the next sentence on held-out text?
+                r = model.foresight_report(pwin, device, batch=min(micro, 16))
+                if r:
+                    run.log("metrics.jsonl", {"kind": "foresight", **base, **r})
+                    latest["fore_val"] = r["fore_val"]
+                    say(f"[foresight] held-out {r['fore_val']:.3f} nats per bag word vs {r['fore_blind']:.3f} blind "
+                        f"(each content word by how common it is) | {r['fore_words']:,} bag words", flush=True)
             if hasattr(model, "belt"):
                 from tide.model import draft_report
                 r = draft_report(model, pwin, device, batch=min(micro, 16))
@@ -1219,6 +1254,7 @@ def main():
         for g in opt.param_groups:
             g["lr"] = cur_lr * g.get("lr_scale", 1.0)
         loss_sum, kd_sum, rd_sum, hs_sum, n_kd = 0.0, 0.0, 0.0, 0.0, 0
+        fore_sum = 0.0
 
         def lesson(x, y, mw):
             with amp(device):
@@ -1271,6 +1307,8 @@ def main():
                 rd_sum += st["reader_ce"]
             if "recall_hindsight" in st:
                 hs_sum += st["recall_hindsight"]
+            if "fore" in st:                        # Plain-100F: the foresight head's loss
+                fore_sum += st["fore"]
         if mentor_share and n_kd:
             kd_log, kd_log_n = kd_log + float(kd_sum), kd_log_n + n_kd
         gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -1319,6 +1357,8 @@ def main():
                 rec["reader_loss"] = float(rd_sum) / accum
             if hs_sum:
                 rec["recall_hindsight"] = float(hs_sum) / accum
+            if hasattr(model, "foresight_report"):
+                rec["fore_loss"], rec["fore_w"] = float(fore_sum) / accum, model._fore_w
             acc_loss, acc_n = 0.0, 0
             run.log("metrics.jsonl", rec)
             eta = (total - tokens) / max(tps, 1)
