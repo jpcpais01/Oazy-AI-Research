@@ -25,6 +25,10 @@ SMALL = dict(d_tok=64, tok_heads=2, tok_kv_heads=1, tok_mlp=128, enc_layers=1, s
              max_len=128, ctx="128:0", thought_len=6, max_thoughts=2)
 
 
+def c_len(m):
+    return m.cfg.thought_len
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", default="cpu")
@@ -72,11 +76,28 @@ def main():
     val.sum().backward()
     check("rounding passes gradients straight through (to the Reader)", u.grad is not None and u.grad.abs().sum() > 0)
 
-    # ---- no peeking: changing later tokens never changes an earlier token's scores
-    m.eval()
+    # ---- the first batch sets where thoughts start, so they begin near thought_len tokens
     T = 128
     x = torch.randint(1, 49152, (2, T), device=dev)
     x[:, 40] = 0                                              # a document boundary inside
+    m.eval()
+    with torch.no_grad():
+        before = float(m._core(x)[3]["thought_len"])
+    m.calibrate(x)
+    with torch.no_grad():
+        after = float(m._core(x)[3]["thought_len"])
+    edge = m.route_edge.item()
+    m.calibrate(torch.randint(1, 49152, (2, T), device=dev))
+    check("the first batch sets the boundary's edge once: thoughts start near thought_len tokens",
+          bool(m.calibrated) and m.route_edge.item() == edge and 0.5 * c_len(m) <= after <= 2 * c_len(m),
+          f"{before:.1f} tokens per thought before, {after:.1f} after (aim {c_len(m)})")
+    sd = m.state_dict()
+    m2 = Pegasus(PegasusConfig(**SMALL)).to(dev)
+    m2.load_state_dict(sd)
+    check("a checkpoint keeps it (no second calibration after a resume)", bool(m2.calibrated) and m2.route_edge.item() == edge)
+    del m2
+
+    # ---- no peeking: changing later tokens never changes an earlier token's scores
     with torch.no_grad():
         base = m._body(x).float()
         worst = 0.0
@@ -178,7 +199,7 @@ def main():
         xg[:, 50] = 0
         mg.train()
         with torch.autocast("cuda", dtype=torch.bfloat16):
-            loss, _ = mg.losses(xg, xg)
+            loss, _ = mg.losses(xg, xg)                     # (the first lesson also calibrates the edge)
         loss.backward()
         check("bf16 training step on the GPU", torch.isfinite(loss).item())
         mg.zero_grad(set_to_none=True)
