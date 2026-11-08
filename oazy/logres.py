@@ -294,6 +294,17 @@ def load(path: Path = FILE):
         return [json.loads(line) for line in f if line.strip()]
 
 
+def subset(items, per_cell: int):
+    """The first per_cell questions of every kind and level (the trainer's small test presets use a few)."""
+    seen = defaultdict(int)
+    out = []
+    for it in items:
+        if seen[(it["family"], it["level"])] < per_cell:
+            seen[(it["family"], it["level"])] += 1
+            out.append(it)
+    return out
+
+
 def write(path: Path = FILE):
     rows = build()
     path.write_text("".join(json.dumps(r) + "\n" for r in rows))

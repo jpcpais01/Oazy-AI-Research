@@ -1023,10 +1023,12 @@ def main():
             nxt["evals"] += p["evals_every"]
         if final or tokens >= nxt.setdefault("logres", 0):
             # LogRes (oazy/logres.py): 1,600 reasoning puzzles whose facts are in the question; all of them every time
-            # (a few seconds), on the same schedule as the three tests above
+            # (a few seconds on a GPU), on the same schedule as the three tests above. The small test presets (CPU
+            # self-tests) score a few of each kind and level instead.
             try:
                 from . import logres
-                r = logres.evaluate(model, device)
+                per = logres.PER_CELL if p["evals_quick"] >= 500 else max(2, p["evals_quick"] // 5)
+                r = logres.evaluate(model, device, logres.subset(logres.load(), per))
                 run.log("metrics.jsonl", {"kind": "logres", **base, **r, "full": True})
                 latest["logres"] = r["acc_char"]
                 say(f"[logres] {r['acc_char'] * 100:.1f}% (guessing {r['chance'] * 100:.0f}%) | by level "
