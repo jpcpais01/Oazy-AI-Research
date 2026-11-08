@@ -378,8 +378,8 @@ def summarize(per):
 
 # ------------------------------------------------------------------------------------------------ the command
 REFS = ("smollm2-360m", "smollm2-135m", "openai-gpt2")
-DEFAULT_RUNS = ("coral", "bee4", "pegasusmini", "plain100") + REFS
-NICE = {"coral": "Coral", "bee4": "Bee4", "pegasusmini": "Pegasus 1 Mini", "plain100": "Plain-100M",
+DEFAULT_RUNS = ("coral", "bee4", "pegasusmini", "pegasus2", "plain100") + REFS
+NICE = {"coral": "Coral", "bee4": "Bee4", "pegasusmini": "Pegasus 1 Mini", "pegasus2": "Pegasus 2 Mini", "plain100": "Plain-100M",
         "pegasus": "Pegasus 1", "coralmini": "Coral Mini", "smollm2-360m": "SmolLM2-360M",
         "smollm2-135m": "SmolLM2-135M", "openai-gpt2": "GPT-2 124M"}
 

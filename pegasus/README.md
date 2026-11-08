@@ -52,3 +52,17 @@ See `docs/RUNPOD.md`, section "Pegasus 1".
 - `pegasus/baseline.py`: `Plain100`, the race's normal transformer.
 - `pegasus/tests.py`: sizes, no peeking, the pieces, every part learns, the recipe, a whole tiny run of each.
 - `oazy/train.py`: kinds `pegasus`, `pegasusmini`, `plain100`.
+
+## Pegasus 2 Mini (Nov 8 2026)
+
+Pegasus 1's first run (2.2B tokens) learned slowly, and its loss stopped improving past word 256, which is exactly how far the Speaker can see on its own. So the Thinker and the notebook were adding nothing. `model2.py` rebuilds the Mini with these fixes:
+
+- **The Speaker is a real language model.** The Reader (2 layers) and the Speaker (7 layers) form one 640-wide stream, so the Speaker continues from what the Reader made instead of from bare word vectors.
+- **The Thinker reads rich thoughts.** It is now 3 x 768 and reads unrounded thought vectors. The 8 pieces of 1,000 meanings are only what it must predict next. A rebuild loss (the thought's vector must be recoverable from its pieces) keeps them from going empty. The log shows `codes_used`.
+- **Notebook pages keep details.** Each thought leaves 2 pages, each made by a learned query attending over the thought's tokens (it used to be their average).
+- **Fast windows.** Compiled steps use flex attention, with the keys copied out to every head (the shared-heads mode crashes Triton on the B200). `OAZY_FLEX=0` falls back to the grids.
+- **Fixed thoughts first.** For the first 10% of training, a new thought starts after a sentence end or every 32 tokens, and the router learns to imitate that. After that the router decides. The meaning loss is off until 10% and reaches full weight at 20%.
+- **Same recipe as Plain-100M.** Same mentor, same recipe (`RECIPE["pegasus2"] = RECIPE["plain100"]`).
+- **Plan probe.** Every probe logs `[plan]`: the Speaker's loss with the Thinker's plan, without it, and without the notebook. The gap says whether the idea is alive.
+
+Sizes: 105.1M in all (Plain-100M: 106.6M), about 83M at work per token. Tests: `python3 -m pegasus.tests2 --device cuda`, which also runs a speed race against Plain-100M.
