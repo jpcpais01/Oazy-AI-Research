@@ -81,8 +81,10 @@ class PegasusConfig:
     rope_base: float = 50000.0
     softcap: float = 30.0
     attn_backend: str = "auto"
-    flex: int = 1                    # compiled (GPU) steps do the local attention and the notebook with flex attention:
-                                     # the same sums, ~skipping the empty parts of the grid (0 = the old yes/no grids)
+    flex: int = 0                    # compiled (GPU) steps with flex attention: 1 = the local window, 2 = the notebook,
+                                     # 3 = both, 0 = the yes/no grids (the same sums). OAZY_FLEX=N overrides it, for a
+                                     # resumed run too. 0 by default: on the B200 one of them crashed Triton's compiler
+                                     # (Nov 8); `python3 -m pegasus.flexcheck` finds which ones compile and how fast.
     compile_mode: str = "default"
     doc_mask: int = 1                # (only for the mentor: it reads each document on its own, as with Bee4)
 
@@ -384,11 +386,15 @@ class Pegasus(nn.Module):
             self._wmasks[key] = window_mask(T, self.cfg.window, device)
         return self._wmasks[key]
 
+    def flex_mode(self) -> int:
+        return int(os.environ.get("OAZY_FLEX", self.cfg.flex))
+
     def _run(self, idx):
         """The compiled step with flex attention (cfg.flex), else the plain step: the same sums either way."""
         if self._compiled is not None:
-            if self.cfg.flex and os.environ.get("OAZY_FLEX", "1") != "0":     # OAZY_FLEX=0: the grids, for a resumed run too
-                return self._compiled(idx, self._wmask(idx.shape[1], idx.device))
+            mode = self.flex_mode()
+            if mode:
+                return self._compiled(idx, self._wmask(idx.shape[1], idx.device) if mode & 1 else None, bool(mode & 2))
             return self._compiled(idx)
         return self._core(idx)
 
@@ -418,10 +424,10 @@ class Pegasus(nn.Module):
         self.route_edge.copy_(flat.kthvalue(k).values)
         self.calibrated.fill_(True)
 
-    def _core(self, idx, wmask=None):
+    def _core(self, idx, wmask=None, note_flex=False):
         """(B, T) tokens -> (Speaker's token vectors after the final norm (B, T, D), the meaning loss, the spring's
-        loss, a few numbers about the thoughts). wmask (window_mask): flex attention for the local attention and the
-        notebook; None: the yes/no grids. The same sums either way (pegasus/tests.py compares them)."""
+        loss, a few numbers about the thoughts). wmask (window_mask): flex attention for the local window; note_flex: flex
+        attention for the notebook; otherwise the yes/no grids. The same sums either way (pegasus/tests.py compares)."""
         c = self.cfg
         B, T = idx.shape
         M = max(2, T // c.max_thoughts)
@@ -481,12 +487,12 @@ class Pegasus(nn.Module):
             allp = torch.cat([self.page_blank.to(pages.dtype).expand(B, 1, -1), pages], 1)   # (B, M+1, D)
             pj = torch.arange(M + 1, device=idx.device)
             # page j (thought j-1) is readable once thought j-1 has ended, i.e. by the tokens of later thoughts
-            if wmask is None:                                        # (flex reads the same rule from tid)
+            if not note_flex:                                        # (flex reads the same rule from tid)
                 pmask = ((pj[None, None, :] == 0) | ((pj[None, None, :] - 1) < tid[:, :, None]))[:, None]
         s = x
         for i, b in enumerate(self.speaker):
             s = s + plan_t[:, :, i]
-            s = b(s, allp, pmask, wmask, tid if wmask is not None else None)
+            s = b(s, allp, pmask, wmask, tid if note_flex else None)
         s = self.snorm(s)
         n_th = valid.float().sum(1).mean()
         stats = {"thought_len": T / n_th.clamp_min(1), "meaning": meaning.detach(), "start_p": G.detach()}
