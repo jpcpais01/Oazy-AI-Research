@@ -460,6 +460,33 @@ def build_one(base: Path, sado: Path, name: str, tokens: int, val_tokens: int, b
                             f"{s.get('held_out_met', 0):,} held-out")], indent=4)
 
 
+def token_ratios(sado: Path, sample: int = 2_000_000):
+    """Write each part's SmolLM2-tokens-per-GPT-2-token ratio into its meta.json ("val" and "train"), which the trainer
+    uses to put losses on the GPT-2 scale every older model is shown on. Parts whose held-out text was copied from
+    tagus20 already carry it."""
+    from . import tok
+    from .data import get_tokenizer
+    smol, gpt2 = tok.get("smollm2"), get_tokenizer()
+    for k in ORDER:
+        d = folder(sado, k)
+        mp = d / "meta.json"
+        if not mp.exists():
+            continue
+        meta = json.loads(mp.read_text())
+        for split in ("val", "train"):
+            if isinstance(meta.get(split), dict) and "ratio" in meta[split] or not (d / f"{split}.bin").exists():
+                continue
+            arr = np.memmap(d / f"{split}.bin", dtype=np.uint16, mode="r")[:sample]
+            cut = np.flatnonzero(arr == smol.eot_token)
+            arr = np.asarray(arr[: cut[-1] + 1 if cut.size else arr.size])
+            text = smol.decode(arr.tolist())
+            n_old = len(gpt2.encode_ordinary(text))
+            meta[split] = {"gpt2_tokens": n_old, "tokens": int(arr.size), "bytes": len(text.encode()),
+                           "ratio": arr.size / max(n_old, 1)}
+        mp.write_text(json.dumps(meta, indent=1))
+        term.out(f"  {term.pad(k, 6)} {meta.get('val', {}).get('ratio', 0):.3f} SmolLM2 tokens per GPT-2 token", flush=True)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data", default=None)
@@ -473,10 +500,14 @@ def main():
     ap.add_argument("--no-decontam", action="store_true", help="skip the test-question check (not recommended)")
     ap.add_argument("--workers", type=int, default=0)
     ap.add_argument("--plan", action="store_true", help="only show what a run reads and what is there")
+    ap.add_argument("--ratios", action="store_true", help="only (re)write the token ratios into each part's meta.json")
     a = ap.parse_args()
     term.quiet()
     base = Path(a.data or default_dir("data"))
     sado = base / a.into
+    if a.ratios:
+        term.header("Sado", "token ratios (for losses on the GPT-2 scale)")
+        return token_ratios(sado)
     want = needs(a.run_tokens, a.cooldown, a.margin)
     term.header("Sado", f"a {term.tokens(a.run_tokens)}-token run ({a.cooldown:.0%} cool-down), + {a.margin:.0%} margin · {sado}")
     pick = set(a.sources.split(","))
@@ -524,6 +555,7 @@ def main():
                     f"the whole build's time left shows after the first.", "dim"), flush=True)
     for i, k in enumerate(todo):
         build_one(base, sado, k, want[k], int(a.val_tokens), bench, seen, workers, a.fwe_min_score, overall, f"{i + 1}/{len(todo)} · ")
+    token_ratios(sado)
     short = [k for k in want if have(sado, k) < want[k] * 0.98]
     (sado / "sado.json").write_text(json.dumps({"run_tokens": a.run_tokens, "cooldown": a.cooldown, "mix": SADO_MIX,
                                                 "built": time.strftime("%Y-%m-%d %H:%M")}, indent=1))
