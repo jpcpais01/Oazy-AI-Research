@@ -1378,6 +1378,7 @@ def main():
                 f"eta {term.pad(term.duration(eta), 7, True)}"
                 + (f"{sep}experts {rec['moe_uneven']:.2f} uneven, {rec['moe_dropped'] * 100:.1f}% dropped" if "moe_uneven" in rec else "")
                 + (f"{sep}thoughts {rec['thought_len']:.1f} tok{sep}meaning {rec['meaning_loss']:.2f}" if "thought_len" in rec else "")
+                + (f"{sep}foresight {rec['fore_loss']:.2f} (x{rec['fore_w']:.2g})" if "fore_loss" in rec else "")
                 + (f"{sep}picks {rec['select_kept'] * 100:.0f}% (w {rec['select_w']:.2f})"
                    + (f" · reread {rec['replay_share'] * 100:.0f}%" if "replay_share" in rec else "") if "select_kept" in rec else ""),
                 flush=True)

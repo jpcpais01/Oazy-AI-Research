@@ -222,7 +222,8 @@ class Plain100F(Plain100):
             th, tW = mentor.hidden(idx, mask)
         if self.fused_loss:
             from oazy.lmloss import head_loss
-            loss, ce, kd = head_loss(h, self.embed.weight, targets, self.cfg.softcap, th, tW, kd_weight, self.loss_chunk)
+            sel = getattr(self, "token_select", None) if self.training and torch.is_grad_enabled() else None   # oazy/select.py
+            loss, ce, kd = head_loss(h, self.embed.weight, targets, self.cfg.softcap, th, tW, kd_weight, self.loss_chunk, sel)
         else:
             from oazy.lmloss import plain_loss
             loss, ce, kd = plain_loss(h, self.embed.weight, targets, self.cfg.softcap, th, tW, kd_weight)
