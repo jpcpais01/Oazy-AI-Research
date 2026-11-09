@@ -114,6 +114,45 @@ Seed (PR #165) landed while Bee6 was built and grows the same way (middle insert
 kept). Its growth is tied to its library body, so Bee6 has its own, which also grows the routers. One difference: Seed
 carries the optimizer's memory over a growth, Bee6 starts a fresh optimizer (a possible follow-up).
 
+## Sparse MLP (`sparse_mlp=0.10`, off by default)
+
+João's idea (Nov 9): like a mixture of experts, but each word lights up only the ~10% of the network that matters for
+it, picked by a dimension-reducing step. Bee6 stays a plain NEXT-WORD model; only how much of each MLP runs changes.
+
+- **Blocks**: each layer's MLP (1,024 -> 3,840 -> 1,024, ReLU²) is cut into 30 blocks of 128 neurons (`sparse_block`).
+  A block is on or off as a whole, so the GPU still multiplies whole tiles.
+- **The picker**: the word's vector (1,024 numbers) is squeezed to 128 (`sparse_rank`), and those 128 score the 30
+  blocks. The top 10% (3 blocks) run; 27 are skipped. It reads only that word's vector: causal, always.
+- **Learning to pick**: the first 10% of the tokens (`sparse_from`) the whole MLP runs (exactly Bee6) and the picker
+  learns to guess each word's busiest blocks (activity x the block's output strength), a small lesson on the side
+  (`sparse_aux=0.01`, on a copy of the vector, so it never pulls on the model). Then the switch flips for good (it is
+  saved in the checkpoint). After it, 1 word in 16 (`sparse_check`) still gets the full up-product without gradient, so
+  the picker keeps its lesson and the log shows `sparse_recall`: the share of each word's truly top blocks it ran
+  (chance = 10%). A gate that is exactly 1 but carries the gradient tells the picker whether a block it ran helped.
+- **Picking where a block stands out**: blocks are ranked by how far each one's score sits above its usual for
+  that word (its mean and spread over words: the pass's own while learning, running averages when reading, like
+  batch norm, so reading stays word by word). Without it a block busy for most words became every word's pick
+  in the tests, and 2 of 3 picks overflowed.
+- **Balancing**: on top, DeepSeek-V3's bias balancing, as in Coral (`sparse_balance=0.01` per step): busy blocks are picked a
+  little less, idle ones a little more, so every block is used and learns. `sparse_uneven` = busiest block / average.
+- **On the GPU**: every block gets a fixed-size queue (`sparse_capacity=1.25` x its fair share, static shapes for
+  torch.compile), the words are gathered in, all 30 blocks run as one batched product (bf16) and the results go back.
+  A word that finds a queue full loses that block (`sparse_dropped`). Reading a batch uses queues long enough for all.
+- **Writing a word** (chat, CPU, phone) takes the 3 picked blocks' weights directly: ~10% of each MLP read per word.
+
+What to expect: the MLP's arithmetic drops 10x, but moving words into queues and back is not free, so the GPU gain is
+smaller (the lab's guess was 1.5-2x, overlapping with Mixture of Depths). `python3 -m bee6.speedcheck` measures it
+(rows: Bee6 default, + sparse MLP, the same without Mixture of Depths, blocks of 64, and the MLP alone, dense against
+sparse). On the CPU: `python3 -m bee6.sparsebench` (dense against sparse writing speed, 4 and 1 threads).
+
+The race (plain Bee6 at 500M tokens, `bee6-race`, kept if it finished on the same GPU; Bee6 + sparse at the same tokens;
+Bee6 + sparse for plain Bee6's hours; `nomod` adds sparse without Mixture of Depths; the speed check runs first):
+
+    tmux new-window -t oazy -n sparse "OAZY_DATA=/root/data bash runpod/bee6_sparse.sh; bash"
+    tmux new-window -t oazy -n sparse "OAZY_DATA=/root/data bash runpod/bee6_sparse.sh nomod; bash"
+
+The table again: `python3 -m bee6.sparse_race` (also `<runs>/bee6-sparse-race.md`).
+
 ## Run it (on the B200 pod, network volume, local copy of Sado)
 
     git pull
@@ -179,6 +218,8 @@ model reads: `python3 -m oazy.worldmix show`.
 - `bee6/bloom.py`: the bloom plan and the function-preserving growth.
 - `bee6/speedcheck.py`: one row per idea, the whole-run speed. `bee6/profile.py`: the kernel list.
 - `bee6/race.py`: the race table. `runpod/bee6_race.sh`: the race in one line.
+- `bee6/sparse.py`: the sparse MLP. `bee6/sparse_race.py` + `runpod/bee6_sparse.sh`: its race.
+  `bee6/sparsebench.py`: CPU writing speed, dense against sparse.
 - `bee6/tests.py`: self-tests. `bee6/chat.py`: the chat app.
 - `oazy/worldmix.py`: world practice (the stream, the share, the exam); `oazy/worldmix_tests.py`.
   `bee6/world_race.py` + `runpod/bee6_world.sh`: the world race.

@@ -26,7 +26,8 @@ All on one B200, `--preset big`, micro 32.
 | Pegasus 1 | about 30% slower than Bee4 | |
 | Bee5 | **not measured yet** | `python3 -m bee5.speedcheck` measures it; the race against Bee4 is the real test |
 | Seed | **not measured yet** | `python3 -m seed.speedcheck` measures each bloom stage; runs print each stage's real speed at every growth |
-| Bee6 | **not measured yet** | aim ~2.3-2.6M with all four ideas (the lab's estimate); `python3 -m bee6.speedcheck` gives one row per idea |
+| Bee6 | **310k** whole run on an **H200** (Bee5 245k on the same H200, so 1.27x) | the 0.5B race (Nov 9); `python3 -m bee6.speedcheck` gives one row per idea, not run on a B200 yet |
+| Bee6 + sparse MLP | **not measured yet** | `python3 -m bee6.speedcheck` has the rows (with and without Mixture of Depths, and the MLP alone); `bash runpod/bee6_sparse.sh` races it |
 
 "Share of the chip" is MFU: how much of the GPU's top arithmetic speed we really use. Big labs reach 35-50%.
 
@@ -52,6 +53,7 @@ A quick map. ✓ = on by default, `·` = off or not there.
 | one q/k/v product | · | · | · | · | · | · | ✓ |
 | Mixture of Depths (top 25% of words in 5 layers) | · | · | · | · | · | · | ✓ |
 | CUDA graphs | · | · | · | · | · | · | switch, kept only if the speed check says so |
+| sparse MLP (each word runs 10% of each MLP, picked by a low-rank guesser) | · | · | · | · | · | · | switch (`sparse_mlp=0.10`), off until its race |
 
 ---
 
@@ -300,6 +302,22 @@ every product rescaled, new layers go in the middle as exact no-ops, routers gro
 fresh optimizer after each growth. Seed (#165) grows the same way; Bee6 keeps its own copy because its layers
 also carry routers, and unlike Seed it does not carry the optimizer's memory across a growth yet. Plain Bee6 is measured first, then `bash runpod/bee6_race.sh bloom`.
 
+**Sparse MLP** (`sparse_mlp=0.10`, off by default; `bee6/sparse.py`, Nov 9, João's idea). Skipping work inside the
+MLP, which is about two thirds of a layer's arithmetic. Each layer's 3,840 hidden neurons are cut into 30 blocks of
+128; for each word a small picker squeezes the word's vector to 128 numbers (a learned low-rank projection: the
+"dimension reduction") and scores the 30 blocks; only the top 3 run. The picker reads only that word, so it is causal
+in training and reading alike (no helper needed, unlike Mixture of Depths). The first 10% of the tokens the whole MLP
+runs while the picker learns to guess each word's truly busiest blocks (activity x the block's output strength); then
+only the picked blocks run, and 1 word in 16 still gets the full up-product (no gradient) so the picker keeps learning
+and the log shows its `sparse_recall`. A picked block's output is multiplied by a gate that is exactly 1 but passes the
+gradient to the picker. Blocks are ranked by how far a block's score stands out from its usual (mean and spread over words, like batch norm), and DeepSeek-V3's bias balancing (as in Coral) keeps every block in use. On the GPU each block
+gets a fixed-size queue (1.25x its fair share; `sparse_dropped` is the overflow) and all blocks run as one batched
+product, in bf16 (not FP8). Writing one word at a time takes the picked blocks' weights directly, so only ~10% of
+each MLP's weights are read per word: the CPU / phone win (`python3 -m bee6.sparsebench`; measured in a 4-core container: writing 1.22x faster on 4 threads, 1.47x on 1, the MLP itself ~4x; the score head and attention are unchanged). On the CPU in training the MLP alone ran 1.8x faster (blocks of 128; blocks of 64 only 1.15x, 20% 1.0x). The catch on the GPU:
+moving every word into 3 queues and back costs memory traffic, so the real speed-up is well under the 10x of the
+arithmetic; `bee6.speedcheck`'s "MLP alone" table shows the real kernel speed. Works with and without Mixture of
+Depths (in a routed layer only the routed words reach the MLP). Not with bloom yet.
+
 ---
 
 ## Part 2: learning efficiency
@@ -458,3 +476,4 @@ These sped up models we have retired (Bee0.2B to Frog), and they still work if t
 | `--set fp8=0` / `fp8=2` | Bee6: bf16 layers / FP8 weight gradient too |
 | `--set mod_layers=` | Bee6: no Mixture of Depths (`mod_cap=0.125` for the paper's share) |
 | `--set bloom=on` | Bee6: grow 4x512 -> 12x1,024 |
+| `--set sparse_mlp=0.10` | Bee6: each word runs 10% of each MLP (`sparse_block=64` finer blocks, `sparse_from=0.1` the dense start) |

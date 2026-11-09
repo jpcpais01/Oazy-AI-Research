@@ -37,6 +37,141 @@ def jiggle(m, s=0.05):
     return m
 
 
+def sparse_tests(dev):
+    """The sparse MLP (bee6/sparse.py): every block = dense; queues = direct weights = the dense MLP with the other
+    blocks switched off; causal reading; the dense start = Bee6 exactly; the switch, the picker's lesson, balancing."""
+    from bee6.model import Bee6, Bee6Config
+    from bee6.sparse import SparseMLP
+    SP = {**SMALL, "fp8": 0, "sparse_mlp": 0.25, "sparse_block": 16}          # 128 hidden = 8 blocks of 16, 2 run
+    torch.manual_seed(11)
+    cfg = Bee6Config(**SP)
+    mlp = SparseMLP(cfg).to(dev)
+    jiggle(mlp, 0.1)
+    xs = torch.randn(96, 64, device=dev)
+    mlp.eval()
+    ref = mlp.dense(xs)[0]
+    full = SparseMLP(Bee6Config(**{**SP, "sparse_mlp": 1.0})).to(dev)
+    full.load_state_dict(mlp.state_dict())
+    full.eval()
+    full.live = True
+    e_full = (full(xs) - ref).abs().max().item()
+    check("sparse MLP with every block on = the dense MLP (the gate is exactly 1)", e_full < 1e-5 and full.k == full.nb == 8,
+          f"max diff {e_full:.1e}")
+    mlp.live = True
+    with torch.no_grad():
+        s = mlp.scores(xs)
+        idx = mlp.choose(s)
+        a = F.relu(F.linear(xs, mlp.up.weight)).square()
+        on = torch.zeros(96, 8, device=dev).scatter_(1, idx, 1.0).repeat_interleave(16, 1)
+        want = F.linear(a * on, mlp.down.weight)
+        gate = torch.ones(96, mlp.k, device=dev)
+        yq, dq = mlp.queued(xs, idx, gate, 96)
+        yd = mlp.direct(xs, idx, gate)
+        ye = mlp(xs)                                   # reading a batch: queues long enough for everyone
+        yt = mlp(xs[:4])                               # a few words: the direct way
+    e = max((yq - want).abs().max().item(), (yd - want).abs().max().item(), (ye - want).abs().max().item(),
+            (yt - want[:4]).abs().max().item())
+    check("2 of 8 blocks: the block queues = taking the weights directly = the dense MLP with the other 6 blocks off",
+          e < 1e-5 and dq.item() == 0 and mlp.k == 2, f"max diff {e:.1e}; nothing dropped")
+    with torch.no_grad():
+        yc, dc = mlp.queued(xs, idx, gate, 8)          # queues of 8 for 192 choices: most overflow
+        cnt = mlp._counts(idx)
+    check("a full queue drops the overflow (that block's share is zero) and counts it",
+          int(dc.item()) == int((cnt - 8).clamp_min(0).sum().item()) and (yc - want).abs().max().item() > 1e-3,
+          f"{int(dc.item())} of {idx.numel()} choices dropped")
+    mlp.train()
+    xg = xs.clone().requires_grad_()
+    y, (aux, rec, load, drop, _, _) = mlp(xg, with_aux=True)
+    (y.square().mean() + aux).backward()
+    gu = mlp.up.weight.grad.view(8, 16, 64).abs().sum((1, 2))
+    used = cnt > 0
+    check("training: gradients reach the picked blocks, the picker (lesson + gate) and the input; never-picked blocks get none",
+          mlp.pick_in.weight.grad.abs().sum() > 0 and mlp.pick_out.weight.grad.abs().sum() > 0 and xg.grad.abs().sum() > 0
+          and bool((gu[~used] == 0).all()) and bool((gu[used] > 0).all()) and load.sum().item() == 96 * 2,
+          f"blocks used {int(used.sum())} of 8, recall {rec.item():.2f}")
+
+    # the whole model
+    torch.manual_seed(12)
+    x = torch.randint(1, 512, (2, 64), device=dev)
+    m0 = jiggle(Bee6(Bee6Config(**{**SP, "sparse_mlp": 0.0})).to(dev))
+    m = Bee6(Bee6Config(**SP)).to(dev)
+    miss = m.load_state_dict(m0.state_dict(), strict=False)
+    check("Bee6 + sparse MLP = Bee6 + the pickers (and their balancing biases); the MLP weights are the same ones",
+          len(miss.missing_keys) == 6 * 6 + 1 and all(("pick" in k or k == "sparse_live") for k in miss.missing_keys) and not miss.unexpected_keys,
+          f"+{m.num_params() - m0.num_params():,} parameters; {m.layout()}")
+    for mm in (m0, m):
+        mm.train()
+        mm.set_progress(0.05)
+    l0, l1 = m0.losses(x, x)[1]["ce"].item(), m.losses(x, x)[1]["ce"].item()
+    check("the first 10% of the run: the whole MLP runs, exactly Bee6 (only the picker learns on the side)",
+          abs(l0 - l1) < 1e-5 and not m.sparse_on, f"{l0:.6f} vs {l1:.6f}")
+    m.set_progress(0.2)
+    m.set_progress(0.0)
+    check("at 10% the switch flips, and stays flipped", m.sparse_on and all(b.mlp.live for b in m.blocks))
+    m.eval()
+    with torch.no_grad():
+        full_ = m(x)[0]
+        y2 = x.clone()
+        y2[:, 40:] = torch.randint(1, 512, (2, 24), device=dev)
+        e = (full_[:, :40] - m(y2)[0][:, :40]).abs().max().item()
+        whole, _ = m.read(x[:1, :40])
+        lg, st = m.read(x[:1, :25])
+        for t in range(25, 40):
+            lg, st = m.read(x[:1, t:t + 1], st)
+        e2 = (lg[0, -1] - whole[0, -1]).abs().max().item()
+        d0 = (m0.eval()(x)[0] - full_).abs().max().item()
+    check("sparse reading is causal (later words never change earlier scores), and word by word = all at once",
+          e < 1e-5 and e2 < 1e-4 and d0 > 1e-4, f"max diffs {e:.1e} / {e2:.1e}; vs the dense model {d0:.1e}")
+    m2 = Bee6(Bee6Config(**SP)).to(dev)
+    m2.load_state_dict(m.state_dict())
+    m2.eval()
+    with torch.no_grad():
+        e3 = (m2(x)[0] - full_).abs().max().item()
+    check("a checkpoint taken after the switch loads sparse", m2.sparse_on and e3 < 1e-6, f"max diff {e3:.1e}")
+    from bee5 import optim as O
+    muon, adam = O.groups(m)
+    ids = [id(p_) for _, p_ in muon] + [id(p_) for ps_ in adam.values() for p_ in ps_]
+    check("every parameter in one optimizer group: the MLP grids still in Muon, the pickers with the gates in Adam",
+          len(ids) == len(set(ids)) == len([p_ for p_ in m.parameters() if p_.requires_grad]) and len(muon) == 6 * 6
+          and all(any(p_ is q for q in adam["gates"]) for b in m.blocks for p_ in (b.mlp.pick_in.weight, b.mlp.pick_out.weight)))
+    bad = False
+    try:
+        Bee6(Bee6Config(**{**SP, "bloom": "3x32:0,6x64:0.5"}))
+    except ValueError:
+        bad = True
+    check("sparse MLP with bloom is refused (not built yet)", bad)
+
+    # learning: with and without Mixture of Depths
+    from oazy.train import make_optimizer
+    for mods in ("2,4", ""):
+        torch.manual_seed(13)
+        mm = Bee6(Bee6Config(**{**SP, "mod_layers": mods})).to(dev).train()
+        opt = make_optimizer(mm, 3e-3, dev, "muon", 0.03, 0.0)
+        for g in opt.param_groups:
+            g["lr"] = 3e-3 * g["lr_scale"]
+        xb = torch.randint(1, 512, (4, 64), device=dev)
+        first, recs, uneven = None, [], []
+        for i in range(80):
+            mm.set_progress(i / 80)                    # dense for the first 8 steps, then sparse
+            loss, stt = mm.losses(xb, xb)
+            loss.backward()
+            opt.step()
+            opt.zero_grad(set_to_none=True)
+            mm.after_step()
+            first = first if first is not None else stt["ce"].item()
+            r = mm.thought_report()
+            recs.append(r["sparse_recall"])
+            uneven.append(r["sparse_uneven"])
+        mm.eval()
+        last = mm.losses(xb, xb)[0].item()
+        bias = max(b.mlp.bias_pick.abs().max().item() for b in mm.blocks)
+        check(f"80 steps on one batch, {'with' if mods else 'without'} Mixture of Depths: the loss falls (reading sparse), "
+              "the pickers beat chance, the biases balance",
+              last < first - 2.0 and np.mean(recs[-10:]) > 0.25 + 0.1 and bias > 0 and mm.sparse_on and np.mean(uneven[-10:]) < 1.5,
+              f"{first:.2f} -> {last:.2f}; recall {np.mean(recs[:5]):.2f} -> {np.mean(recs[-10:]):.2f} (chance 0.25); "
+              f"busiest block / average {np.mean(uneven[:5]):.2f} -> {np.mean(uneven[-10:]):.2f}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--device", default="cpu")
@@ -117,7 +252,7 @@ def main():
     ve = None
     blk.train()
     r, xn = blk.scores(xs)
-    a, _ = blk.through_topk(xs, ve, cos, sin, r, xn)
+    a, _, _ = blk.through_topk(xs, ve, cos, sin, r, xn)
     b = blk.through_mask(xs, ve, cos, sin, r, blk.topk_mask(r))
     e = (a - b).abs().max().item()
     changed = (a - xs).abs().amax(-1) > 0
@@ -183,6 +318,8 @@ def main():
     check("80 steps on one batch: the loss falls fast (reading with the helper's picks), and the helper learns the router",
           last < first - 2.0 and np.mean(agrees[-10:]) > max(0.7, np.mean(agrees[:5])),
           f"{first:.2f} -> {last:.2f}; helper agrees {np.mean(agrees[:5]):.2f} -> {np.mean(agrees[-10:]):.2f}")
+
+    sparse_tests(dev)
 
     # ---- bloom
     torch.manual_seed(5)
@@ -316,6 +453,22 @@ def main():
     st2 = json.loads((rd / "status.json").read_text())
     check("run again, it picks up its grown checkpoint and optimizer instead of starting over",
           st2["state"] == "done" and len(recs2) == n_before and st2["tokens"] == st["tokens"], f"{st2['tokens']:,} tokens")
+
+    sys.argv = [*[x_ for x_ in argv if not x_.startswith("bloom=")], "sparse_mlp=0.25", "sparse_block=16", "sparse_from=0.3",
+                "--name", "bee6-sparse"]
+    train.main()
+    rs = runs / "bee6-sparse"
+    recs = [json.loads(l_) for l_ in (rs / "metrics.jsonl").read_text().splitlines()]
+    tr = [r for r in recs if r["kind"] == "train"]
+    st = json.loads((rs / "status.json").read_text())
+    lives = [r.get("sparse_live") for r in tr]
+    mdl, ck = train.load_model(rs / "ckpt.pt", dev)
+    check("a whole tiny run with the sparse MLP: dense, then sparse from 30%, the blocks evenly used (little overflow), "
+          "the log shows the pickers; it loads sparse",
+          st["state"] == "done" and "val_loss" in st["latest"] and 0 in lives and 1 in lives and "sparse_recall" in tr[-1]
+          and mdl.sparse_on and tr[-1]["sparse_dropped"] < 0.1 and tr[-1]["sparse_uneven"] < 2.0,
+          f"blocks busiest / average {tr[-1].get('sparse_uneven', float('nan')):.2f}, recall {tr[-1].get('sparse_recall', float('nan')):.2f}, dropped {tr[-1].get('sparse_dropped', float('nan')):.1%}, "
+          f"val loss {st['latest'].get('val_loss', float('nan')):.3f}")
 
     if dev.type == "cuda":
         mg = jiggle(Bee6(Bee6Config(**{**SMALL, "vocab_size": 49152, "fp8": 1}))).to(dev).train()
