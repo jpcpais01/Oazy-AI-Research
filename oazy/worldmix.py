@@ -4,6 +4,7 @@ guesses word by word, answers included, exactly as the worldfirst rival learns (
 
     python3 -m oazy.train --model bee6 ... --world 0.10       # 10% of the run's tokens are world episodes (0 = off)
     python3 -m oazy.worldmix exam --run bee6-race bee6-world10 # the world's secret exams, asked as plain text
+    python3 -m oazy.worldmix exam --run smollm2-135m           # Hugging Face's trained SmolLM2-135M as a yardstick
 
 What it reads. worldfirst/world.py's World 2: fifteen families (sums, lines, boxes, family, falling, machines, cups,
 minds, walks, and since Nov 9 evening carry, time, cause, wants, count and the mixed "house"). A run started on World 1
@@ -43,6 +44,7 @@ TRAIN_SEED0 = 1_000_000                    # practice episodes use seeds from he
 PER_JOB = 256                              # episodes per helper job
 EXAM_VERSION = 2                           # 2: World 2 (fifteen families); older exam results are taken again
 PUNCT = {".", "?", ",", ":"}
+REFS = ("smollm2-135m", "smollm2-360m")    # trained SmolLM2 from Hugging Face, examined as yardsticks (no ckpt.pt)
 
 
 def share_at(progress: float, w: float) -> float:
@@ -470,15 +472,28 @@ def exam_run(d: Path, device, n=100, say=print):
                 return r
         except Exception:
             pass
-    from .train import load_model
     import time
     t0 = time.time()
-    model, st = load_model(d / "ckpt.pt", device)
+    ref = d.name in REFS
+    if ref:                                  # Hugging Face's trained SmolLM2 as a yardstick (no checkpoint of ours)
+        from .compare import smol, SMOL_TOKENS
+        model, st = smol(d.name, device), {"tokens": SMOL_TOKENS[d.name]}
+    else:
+        from .train import load_model
+        model, st = load_model(d / "ckpt.pt", device)
     if getattr(model.cfg, "tokenizer", "gpt2") != "smollm2":
         raise SystemExit(f"{d.name} reads GPT-2 pieces: the world exam is for SmolLM2-piece models")
     r = exam(model, device, n=n)
-    r.update(ckpt_mtime=(d / "ckpt.pt").stat().st_mtime, tokens=st.get("tokens"), seconds=time.time() - t0)
+    ck = d / "ckpt.pt"
+    r.update(ckpt_mtime=ck.stat().st_mtime if ck.exists() else None, tokens=st.get("tokens"), seconds=time.time() - t0)
+    d.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(r, indent=1))
+    if ref:                                  # a metrics line too, so the dashboard shows the yardstick's world score
+        from .logres import _records
+        from .train import Run
+        recs = _records(d)
+        base = {k: recs[-1].get(k, 0) for k in ("step", "tokens", "elapsed")} if recs else {"step": 0, "tokens": 0, "elapsed": 0}
+        Run(d).log("metrics.jsonl", {"kind": "world", **base, **{k: v for k, v in r.items() if k != "rows"}, "full": True})
     say(f"{d.name}: world exam secret {r['secret'] * 100:.1f}%, practised {r['seen'] * 100:.1f}% "
         f"({n} episodes per exam set, {time.time() - t0:.0f} s)")
     return r
@@ -504,7 +519,7 @@ def main(argv=None):
     out = {}
     for rn in a.run:
         d = run_dir(runs, rn)
-        if not (d / "ckpt.pt").exists():
+        if rn not in REFS and not (d / "ckpt.pt").exists():
             print(f"{rn}: no checkpoint yet, skipped")
             continue
         out[rn] = exam_run(d, dev, a.n)
