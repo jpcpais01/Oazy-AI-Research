@@ -64,8 +64,8 @@ def main():
               (a[:, :70] - b[:, :70]).abs().max().item() < 1e-5 and (a[:, 70:] - b[:, 70:]).abs().max().item() > 1e-4)
         x3 = x.clone()
         x3[:, 64:80] = x3[:, 64:80] % 299 + 1     # stretch 4 (pieces 64-79) changed: stretch 4's things are built before it
-        S1, _ = m.think(m._run_to_link(x), m.docs(x))
-        S2, _ = m.think(m._run_to_link(x3), m.docs(x3))
+        S1, _, _ = m.think(m._run_to_link(x), m.docs(x))
+        S2, _, _ = m.think(m._run_to_link(x3), m.docs(x3))
         check("the things a stretch reads come only from pieces before it began",
               (S1[:, :5] - S2[:, :5]).abs().max().item() < 1e-5 and (S1[:, 5:] - S2[:, 5:]).abs().max().item() > 1e-5)
         m.core_on = False
@@ -100,6 +100,52 @@ def main():
     check("the core's, the read-back's and the linker's grids learn with NorMuon, like the stream's",
           type(opt.opts[0]).__name__ == "NorMuon"
           and all(id(named[n]) in grids for n in ("core.0.qkv.weight", "core_out.weight", "lk_q.weight")))
+
+    # ---- Logos1.1: the core's own job (guess the next stretch's things) and the focus member
+    torch.manual_seed(1)
+    m11 = small(predict=1.0, focus=1)
+    with torch.no_grad():
+        for r in m11.reads.values():
+            torch.nn.init.normal_(r.out.weight, std=0.05)
+        for c in m11.core:
+            torch.nn.init.normal_(c.out.weight, std=0.05)
+            torch.nn.init.normal_(c.down.weight, std=0.05)
+        torch.nn.init.constant_(m11.lk_ment.bias, 3.0)
+    m11.eval()
+    with torch.no_grad():
+        a = m11.scores(m11._trunk(x))
+        x2 = x.clone()
+        x2[:, 70] = x2[:, 70] % 299 + 1
+        b = m11.scores(m11._trunk(x2))
+        check("Logos1.1 (law + focus) still never looks ahead",
+              (a[:, :70] - b[:, :70]).abs().max().item() < 1e-5 and (a[:, 70:] - b[:, 70:]).abs().max().item() > 1e-4)
+    m11.train()
+    loss, st = m11.losses(x, y)
+    loss.backward()
+    named = dict(m11.named_parameters())
+    g = {n: named[n].grad is not None and named[n].grad.abs().sum().item() > 0
+         for n in ("pred_out.weight", "core.0.qkv.weight", "focus_emb", "core_in.weight")}
+    check("the law's lesson is there on plain text (no marks) and reaches the core, its guess and the focus",
+          all(k in st for k in ("law_cos", "copy_cos")) and all(g.values()) and float(st["law_n"]) > 0,
+          f"law {float(st['law_cos']):.3f} vs copy {float(st['copy_cos']):.3f}; {g}")
+    torch.manual_seed(2)
+    m12 = small(predict=1.0)
+    with torch.no_grad():
+        torch.nn.init.constant_(m12.lk_ment.bias, 3.0)
+    opt = m12.make_optimizer(3e-3, torch.device("cpu"))
+    first = None
+    for _ in range(30):
+        m12.zero_grad(set_to_none=True)
+        l_, s_ = m12.losses(x, y)
+        l_.backward()
+        opt.step()
+        first = first if first is not None else float(s_["law_cos"])
+    check("a few steps teach the law to guess better", float(s_["law_cos"]) > first + 0.05,
+          f"law cosine {first:.3f} -> {float(s_['law_cos']):.3f} (copying: {float(s_['copy_cos']):.3f})")
+    r = m12.core_report(np.concatenate([x[:2].numpy(), y[:2, -1:].numpy()], 1), torch.device("cpu"), batch=2)
+    check("the core-off check also reports the law against copying", "law_cos" in r and "copy_cos" in r)
+    nb11 = sum(p.numel() for p in Logos(LogosConfig(fp8=0, predict=1.0, focus=1)).parameters())
+    check("Logos1.1 is still Bee6's size (within 1%)", abs(nb11 - nb) / nb < 0.01, f"{nb11 / 1e6:.1f}M")
 
     # ---- Emerald's marks + a tiny run through the trainer
     from bee2.tests import stand_ins, fake_docs

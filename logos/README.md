@@ -24,3 +24,31 @@ tmux new-window -t oazy -n logos "bash runpod/logos_race.sh; bash"  # vs Bee6 on
 
 During training the log shows `[core]`: the held-out loss with the core on and with it off, on Sado text and on the
 world. If the gap stays near zero, the stream is ignoring the core.
+
+## Logos1.1: the core gets the job of a law (Nov 9, night)
+
+At 2B tokens on Emerald, Logos1-200M lost to a plain Bee6 almost everywhere, world secret exams included (51.5% against
+58.6%), although it did use its core (switching the core off cost about 0.03). The reading: the core had no job of its
+own. Its only signal was a faint trickle from the next-word loss through the read-back, and on 95% of the text
+(ordinary web text) that is close to nothing.
+
+Logos1.1 gives it the job of a law, in João's sense: from how things are now, say how they will be next.
+
+- **The law's guess (`--set predict=1`):** before each stretch, for every thing the core holds, guess the mean of the
+  stream's vectors at that thing's mentions in the coming stretch (after layer 4, held still as the target). It is
+  graded by cosine once the stretch is read. It works on all text, no marks: any text's things change from one
+  paragraph to the next. The stretch reads the core's output, which is now its guess about that very stretch, made
+  from the past only.
+- **Focus (`--set focus=1`):** the core also gets the stream at the last piece before the stretch as one more
+  member, so what it thinks can depend on what is being asked. It sees only text before the stretch.
+
+The `[core]` line adds "law guesses the next stretch's things: cosine X vs copying Y". Copying is the thing as it was.
+The law has to beat it, or it is not learning anything. If both climb towards 1.0, the stream is collapsing its
+vectors to make the guess easy: stop and report that.
+
+```bash
+tmux new-window -t oazy -n logos11 "OAZY_DATA=/root/data OAZY_RUNS=/workspace/runs bash runpod/logos11_race.sh; bash"
+```
+
+That trains Logos1.1, then Logos1.1 + focus, then Bee6 with the answer key, at 0.5B tokens each, then writes the table
+(`<runs>/logos11-race-0.5b.md`).

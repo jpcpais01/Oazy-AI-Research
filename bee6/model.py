@@ -392,9 +392,10 @@ class Bee6(Bee5):
                   torch.stack([e[2] for e in exs]), torch.stack([e[3] for e in exs]).mean(),
                   torch.stack([e[4] for e in exs]), torch.stack([e[5] for e in exs]))
         z = h.new_zeros((), dtype=torch.float32)
+        more = (keep["extra"],) if "extra" in keep else ()     # a model built on the stream may hand back its own losses
         if aux:
-            return h, torch.stack([a for a, _ in aux]).mean(), torch.stack([g for _, g in aux]).mean(), sp, xl
-        return h, z, z, sp, xl
+            return (h, torch.stack([a for a, _ in aux]).mean(), torch.stack([g for _, g in aux]).mean(), sp, xl) + more
+        return (h, z, z, sp, xl) + more
 
     def _trunk(self, idx):
         return self._trunk_aux(idx)[0]
@@ -416,9 +417,11 @@ class Bee6(Bee5):
         if self._compiled is not None and self.training:
             if self.cfg.graphs:
                 torch.compiler.cudagraph_mark_step_begin()
-            h, aux, agree, sp, xl = self._compiled(idx)
+            out = self._compiled(idx)
         else:
-            h, aux, agree, sp, xl = self._trunk_aux(idx)
+            out = self._trunk_aux(idx)
+        h, aux, agree, sp, xl = out[:5]
+        extra = out[5] if len(out) > 5 else None
         th = tW = None
         if mentor is not None and kd_weight > 0:
             th, tW = mentor.hidden(idx, self.doc_mask(idx))
@@ -452,6 +455,11 @@ class Bee6(Bee5):
             loss = loss + self.cfg.teach * lk
             stats["link"] = lk.detach()
             self._link = lk.detach()
+        if extra:                       # Logos1.1: the core's own lesson ("aux", already weighted) and its numbers
+            if self.training and "aux" in extra:
+                loss = loss + extra["aux"]
+            self._extra = {k: v.detach() for k, v in extra.items() if k != "aux"}
+            stats.update(self._extra)
         return loss, stats
 
     # ---------------------------------------------------------------- the world's "same thing" answer key
@@ -496,6 +504,8 @@ class Bee6(Bee5):
         r = getattr(self, "_sp_report", None)
         if r:
             out.update(r)
+        for k, v in (getattr(self, "_extra", None) or {}).items():
+            out[k] = float(v)
         return out
 
     # ---------------------------------------------------------------- the sparse MLP's switch and balance
