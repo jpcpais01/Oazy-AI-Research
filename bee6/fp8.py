@@ -103,11 +103,13 @@ def linear(x, w, mode=0):
     if not mode or not (EMULATE or hardware(x.device)) or not _fits(x.shape[-1], w.shape[0]):
         return F.linear(x, w)
     if x.is_cuda:
+        # the dtype F.linear would give here: bf16 under autocast (training), else x's own (writing, chat, evals)
+        want = torch.get_autocast_dtype("cuda") if torch.is_autocast_enabled("cuda") else x.dtype
         x, w = x.to(torch.bfloat16), w.to(torch.bfloat16)
         if not _fits(x.numel() // x.shape[-1]):
-            return F.linear(x, w)
+            return F.linear(x, w).to(want)
         with torch.autocast("cuda", enabled=False):
-            return _FP8Linear.apply(x, w, int(mode))
+            return _FP8Linear.apply(x, w, int(mode)).to(want)
     return _FP8Linear.apply(x, w, int(mode))
 
 
