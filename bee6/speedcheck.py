@@ -12,6 +12,10 @@ The ladder, each row adding one idea to the row above (full size, one pass = 32 
     + idea 4: Mixture of Depths  5 of 12 layers take the top 25% of words      = Bee6's defaults
     + idea 5: bloom              each stage timed, then averaged over the plan (20/20/20/40)
 
+and the sparse MLP (bee6/sparse.py, off by default), on top of Bee6's defaults: + sparse_mlp at 10% (with Mixture of
+Depths), the same without Mixture of Depths, and with blocks of 64; then the MLP alone, dense against sparse, so the
+block kernels' real speed is seen apart from the rest of the layer.
+
 Then the whole run's speed (early short windows, the mentor's passes, the optimizer), with and without bloom, and the
 train line. "chip use" counts the arithmetic really done (a routed layer does a quarter of the work) against the
 B200's bf16 peak, so FP8 can push it past what bf16 allows. Speed only: whether a trick costs quality is the race's
@@ -45,9 +49,79 @@ def flops_per_token(model, Tw):
     for i, b in enumerate(model.blocks):
         w = sum(p.numel() for n, p in b.named_parameters() if n.endswith(("q.weight", "k.weight", "v.weight", "out.weight",
                                                                           "up.weight", "down.weight")))
+        if getattr(b, "sparse", False) and b.mlp.live:      # only the picked blocks multiply (+ the pickers)
+            m = b.mlp
+            w -= (m.up.weight.numel() + m.down.weight.numel()) * (1 - m.k / m.nb)
+            w += m.pick_in.weight.numel() + m.pick_out.weight.numel()
         att = 6 * Tw * c.attn_heads * c.attn_head_dim
         tot += (6 * w * cap + att * cap * cap) if i in mods else (6 * w + att)
     return tot
+
+
+def sparse_line(sp, cur, run_tps):
+    """The whole run with --set sparse_mlp=0.10: the first 10% at Bee6's speed (dense), the rest at the sparse row's."""
+    r = sp.get("sparse MLP: 10% of the MLP's blocks (with MoD)")
+    if not r or not cur:
+        return None
+    from bee6.model import Bee6Config
+    f = Bee6Config().sparse_from
+    ratio = 1.0 / (f + (1 - f) * cur["tok_s"] / r["tok_s"])
+    return f"about {term.rate(run_tps * ratio)}  (--set sparse_mlp=0.10: {ratio:.2f}x, dense for the first {f:.0%})"
+
+
+def mlp_kernels(preset, dev, N, passes):
+    """The MLP alone, forward + backward on N words: Bee6's dense MLP (bf16) against the sparse one's block queues."""
+    from bee6.model import Bee6Config, MLP6
+    from bee6.sparse import SparseMLP
+    over = {}
+    if preset != "big":
+        over = dict(d_model=64, mlp_hidden=128, sparse_block=16)
+    out, rows = {}, []
+    cuda = dev.type == "cuda"
+    dt = torch.bfloat16 if cuda else torch.float32
+    for name, c in (("dense MLP", dict(over, fp8=0)), ("dense MLP (FP8)", dict(over, fp8=1)),
+                    ("sparse 10%, blocks of 128", dict(over, fp8=0, sparse_mlp=0.10)),
+                    ("sparse 10%, blocks of 64", dict(over, fp8=0, sparse_mlp=0.10, sparse_block=64 if preset == "big" else 8)),
+                    ("sparse 20%, blocks of 128", dict(over, fp8=0, sparse_mlp=0.20))):
+        if "FP8" in name and not cuda:
+            continue
+        try:
+            cfg = Bee6Config(**c)
+            m = (SparseMLP(cfg) if cfg.sparse_mlp else MLP6(cfg)).to(dev).train()
+            if cfg.sparse_mlp:
+                m.live = True
+            x = torch.randn(N, cfg.d_model, device=dev, dtype=dt, requires_grad=True)
+            fn = torch.compile(m) if cuda else m
+
+            def one():
+                with torch.autocast(dev.type, dtype=torch.bfloat16, enabled=cuda):
+                    y = fn(x)
+                y.float().square().mean().backward()
+            for _ in range(3):
+                one()
+            sync(dev)
+            t0 = time.perf_counter()
+            for _ in range(max(passes, 3)):
+                one()
+            sync(dev)
+            ms = (time.perf_counter() - t0) / max(passes, 3) * 1000
+            out[name] = ms
+        except Exception as e:
+            term.info(f"MLP alone, {name}: {type(e).__name__}: {str(e).splitlines()[0][:140] if str(e) else ''}")
+        finally:
+            torch._dynamo.reset()
+    base = out.get("dense MLP")
+    for name, ms in out.items():
+        ideal = ""
+        if "sparse" in name:
+            share = 0.10 if "10%" in name else 0.20
+            ideal = f"ideal {1 / share:.0f}x"
+        rows.append([name, f"{ms:.2f}", f"{base / ms:.2f}x" if base else "-", ideal])
+    term.header("the MLP alone", f"{N:,} words, forward + backward, one layer, {'bf16' if cuda else 'float32'}")
+    term.table(["", "ms", "vs dense", ""], rows, right=(1, 2))
+    term.info("the sparse MLP gathers each block's words into a queue and back: that moving around is the price paid for "
+              "skipping 90% of the multiplying")
+    return out
 
 
 def main(argv=None):
@@ -180,6 +254,17 @@ def main(argv=None):
                     "changes the model: the race says if it costs quality"))
     if r4 is not None:
         keep, cur = s4, r4
+    # the sparse MLP (off by default): with and without Mixture of Depths, and finer blocks
+    sp_rows, sp = [], {}
+    for name, over in (("+ sparse MLP: 10% of the MLP's blocks (with MoD)", dict(keep, sparse_mlp=0.10)),
+                       ("  sparse MLP 10%, Mixture of Depths off", dict(keep, sparse_mlp=0.10, mod_layers="")),
+                       ("  sparse MLP 10%, blocks of 64 (with MoD)", dict(keep, sparse_mlp=0.10, sparse_block=64))):
+        r = measure("bee6", over)
+        sp[name.strip(" +")] = r
+        note = (f"{r['tok_s'] / cur['tok_s']:.2f}x Bee6" if r and cur else "") + " · changes the model: the race says"
+        sp_rows.append(row(name, r, b5, note))
+    no_mod = measure("bee6", dict(keep, mod_layers=""))
+    sp_rows.insert(1, row("  Bee6 with Mixture of Depths off (dense MLP)", no_mod, b5, "the row below's reference"))
     # idea 5: bloom, each stage
     from bee6.bloom import stage_config
     plan_cfg = Bee6Config(bloom="on")
@@ -203,11 +288,13 @@ def main(argv=None):
     spans = [(plan[i + 1][2] if i + 1 < len(plan) else 1.0) - plan[i][2] for i in range(len(plan))]
     bloom_tps = 1.0 / sum(s / t for s, t in zip(spans, stage_tps))
     rows += stage_rows
+    rows += sp_rows
     rows.append([f"+ 5: bloom, averaged over the plan", "-", term.rate(bloom_tps), "-", "-",
                  f"{bloom_tps / b5['tok_s']:.2f}x Bee5 · off by default"])
     term.table(["", "ms/pass", "speed", "chip use", "memory", ""], rows, right=(1, 2, 3, 4))
     for n_ in dict.fromkeys(notes):
         term.info(n_)
+    mlp_alone = mlp_kernels(a.preset, dev, micro * 2048 if a.preset == "big" else 512, a.passes)
 
     # the whole run: early windows, the mentor, the optimizer
     m0, cfg0 = T.build("bee6", a.preset, dict(keep))
@@ -265,13 +352,15 @@ def main(argv=None):
                ("mentor", f"{mentor_ms:.0f} ms a pass when it teaches" if mentor_ms else None),
                ("whole run", term.c(f"about {term.rate(run_tps)}", "bold") + f"  (without the mentor {term.rate(solo_tps)})"),
                ("with bloom", f"about {term.rate(bloom_run)}  (--set bloom=on)"),
+               ("with sparse MLP", sparse_line(sp, cur, run_tps)),
                ("10,000M tokens", f"about {10e9 / run_tps / 3600:.1f} hours ({10e9 / bloom_run / 3600:.1f} with bloom)"),
                ("0.5B race", f"about {0.5e9 / run_tps / 60:.0f} minutes"),
                ("train with", term.c(line, "bold")),
                ("took", f"{(time.time() - t_start) / 60:.0f} min")])
     res.update({"bee5": b5, "off": off, "keep": keep, "tok_s": cur["tok_s"], "run_tok_s": run_tps, "run_tok_s_no_mentor": solo_tps,
                 "bloom_stage_tok_s": stage_tps, "bloom_tok_s": bloom_tps, "run_tok_s_bloom": bloom_run, "mentor_ms": mentor_ms,
-                "early": early, "line": line, "notes": list(dict.fromkeys(notes))})
+                "early": early, "line": line, "notes": list(dict.fromkeys(notes)), "no_mod": no_mod,
+                "sparse": sp, "mlp_alone": mlp_alone})
     out = Path(default_dir("runs") if a.runs is None else a.runs) / "speedcheck-bee6.json"
     try:
         out.parent.mkdir(parents=True, exist_ok=True)

@@ -36,6 +36,7 @@ import torch.nn.functional as F
 
 from bee5.model import (Attention, Bee5, Bee5Config, GATE_IN, MLP, ROPE_TABLE, causal, mtp_weights, norm)
 from . import fp8 as FP8
+from .sparse import SparseMLP
 
 BLOOM = "4x512:0,6x768:0.2,9x1024:0.4,12x1024:0.6"   # João's Seed schedule, 20/20/20/40 of the tokens, at Bee6's sizes
 PRED_HIDDEN = 128                                     # the Mixture-of-Depths helper: width -> 128 -> 1
@@ -56,6 +57,14 @@ class Bee6Config(Bee5Config):
     backout_layer: int = -1      # -1 = Bee5's (2/3 of the way); bloom moves it with the layer it was on
     bloom_mod: int = -1          # bloom: whether routed / key-offset layers are wanted (kept even while a stage has none)
     bloom_offset: int = -1
+    sparse_mlp: float = 0.0      # sparse MLP (bee6/sparse.py): the share of each layer's MLP blocks a word runs (0 = off, 0.10)
+    sparse_block: int = 128      # neurons per block (3,840 / 128 = 30 blocks)
+    sparse_rank: int = 128       # the picker's squeeze: the word's vector -> this many numbers -> a score per block
+    sparse_from: float = 0.10    # the whole MLP runs (dense) for this share of the tokens while the picker learns
+    sparse_aux: float = 0.01     # the picker's lesson (guess the truly top blocks), its weight
+    sparse_check: int = 16       # after the switch, 1 word in this many still gets the full up-product (the lesson)
+    sparse_capacity: float = 1.25   # training: each block's queue holds this x its fair share of the words
+    sparse_balance: float = 0.01    # how fast the balancing biases move per step (DeepSeek-V3's gamma)
 
     def __post_init__(self):
         super().__post_init__()
@@ -165,7 +174,8 @@ class Block6(nn.Module):
         self.kind = "A"
         self.cfg = cfg
         self.attn = Attention6(cfg, layer)
-        self.mlp = MLP6(cfg)
+        self.mlp = SparseMLP(cfg) if cfg.sparse_mlp > 0 else MLP6(cfg)
+        self.sparse = cfg.sparse_mlp > 0
         self.routed = layer in cfg.mod_set()
         if self.routed:
             if self.attn.offset:
@@ -175,14 +185,22 @@ class Block6(nn.Module):
             self.pred = nn.Sequential(nn.Linear(D, PRED_HIDDEN), nn.ReLU(), nn.Linear(PRED_HIDDEN, 1))
             nn.init.normal_(self.router.weight, std=0.02)
 
+    def ffn(self, h):
+        """The MLP; a sparse one in training also hands back its picker's lesson and counts (else None)."""
+        if self.sparse and self.training:
+            return self.mlp(h, with_aux=True)
+        return self.mlp(h), None
+
     def delta(self, x, ve, cos, sin):
-        """The layer's change to x (every word of x goes through)."""
+        """The layer's change to x (every word of x goes through), and the sparse MLP's extras."""
         y = x + self.attn(norm(x), ve, cos, sin)
-        return y + self.mlp(norm(y)) - x
+        f, ex = self.ffn(norm(y))
+        return y + f - x, ex
 
     def dense(self, x, ve, cos, sin):
         y = x + self.attn(norm(x), ve, cos, sin)
-        return y + self.mlp(norm(y))
+        f, ex = self.ffn(norm(y))
+        return y + f, ex
 
     def k_of(self, T):
         return max(1, min(T, int(round(self.cfg.mod_cap * T))))
@@ -196,15 +214,16 @@ class Block6(nn.Module):
         return self.pred(xn.detach()).squeeze(-1).float()
 
     def forward(self, x, ve, cos, sin):
-        """-> (x after the layer, (helper's loss, helper's agreement) or None)."""
+        """-> (x after the layer, (helper's loss, helper's agreement) or None, the sparse MLP's extras or None)."""
         if not self.routed:
-            return self.dense(x, ve, cos, sin), None
+            x, ex = self.dense(x, ve, cos, sin)
+            return x, None, ex
         r, xn = self.scores(x)
         if self.training or self.cfg.mod_eval == "topk":
             if not self.training:
-                return self.through_mask(x, ve, cos, sin, r, self.topk_mask(r)), None
+                return self.through_mask(x, ve, cos, sin, r, self.topk_mask(r)), None, None
             return self.through_topk(x, ve, cos, sin, r, xn)
-        return self.through_mask(x, ve, cos, sin, r, self.guess(xn) > 0), None
+        return self.through_mask(x, ve, cos, sin, r, self.guess(xn) > 0), None, None
 
     def topk_mask(self, r):
         idx = r.topk(self.k_of(r.shape[1]), dim=1).indices
@@ -223,9 +242,9 @@ class Block6(nn.Module):
         vs = None if ve is None else ve.gather(1, idx[..., None].expand(B, k, ve.shape[-1]))
         cs = cos[idx] if cos.dim() == 2 else cos.gather(1, idx[..., None].expand(B, k, cos.shape[-1]))
         sn = sin[idx] if sin.dim() == 2 else sin.gather(1, idx[..., None].expand(B, k, sin.shape[-1]))
-        d = self.delta(xs, vs, cs, sn)
+        d, ex = self.delta(xs, vs, cs, sn)
         w = 2 * torch.sigmoid(r.gather(1, idx)).to(d.dtype)[..., None]
-        return x.scatter_add(1, idx[..., None].expand(B, k, D), (d * w).to(x.dtype)), (aux, agree)
+        return x.scatter_add(1, idx[..., None].expand(B, k, D), (d * w).to(x.dtype)), (aux, agree), ex
 
     def through_mask(self, x, ve, cos, sin, r, pick, state=None):
         """Reading: every word computed, but a word not picked keeps x and no word may look at it. The same numbers as
@@ -237,7 +256,7 @@ class Block6(nn.Module):
     def _masked_delta(self, x, ve, cos, sin, pick, state=None):
         a, st = self.attn.masked(norm(x), ve, cos, sin, pick, state)
         y = x + a
-        return y + self.mlp(norm(y)) - x, st
+        return y + self.ffn(norm(y))[0] - x, st
 
     def step(self, x, ve, cos, sin, state, looks=False):
         """Reading on from a state (chat, samples). Routed layers keep, with their keys and values, which words were picked."""
@@ -257,6 +276,8 @@ class Bee6(Bee5):
     fresh_opt_on_grow = True     # the trainer makes a new optimizer after a bloom (the weights are new tensors)
 
     def __init__(self, cfg: Bee6Config):
+        if cfg.sparse_mlp and cfg.bloom:
+            raise ValueError("sparse_mlp and bloom together are not built yet: pick one")
         if cfg.bloom and cfg.bloom_stage < 0:
             from .bloom import stage_config
             stage_config(cfg, 0)
@@ -267,6 +288,9 @@ class Bee6(Bee5):
             del self.skip_lam
             self.skip_w = nn.Parameter(torch.full((n_skip,), 2 * torch.sigmoid(torch.tensor(-1.5)).item()))
         self.register_buffer("bloom_at", torch.tensor(max(0, cfg.bloom_stage)), persistent=True)
+        if cfg.sparse_mlp:           # once the switch has flipped it stays flipped, in the checkpoint too
+            self.register_buffer("sparse_live", torch.tensor(0), persistent=True)
+        self._sp = None              # the sparse MLP's counts since the last optimizer step
 
     # ---------------------------------------------------------------- names
     def layout(self):
@@ -275,6 +299,7 @@ class Bee6(Bee5):
         return (f"{c.n_layer} layers of {c.d_model} ({c.attn_heads} query / {c.attn_kv_heads} key-value heads), "
                 f"{'ReLU²' if c.mlp == 'relu2' else 'SwiGLU'} {c.mlp_hidden}, {c.n_ve} value tables"
                 + (f", layers {','.join(str(i + 1) for i in mods)} take the top {c.mod_cap:.0%} of words" if mods else "")
+                + (f", sparse MLP: each word runs {self.blocks[0].mlp.share_text()}" if c.sparse_mlp else "")
                 + (", FP8 products" if c.fp8 else ""))
 
     def depth_text(self):
@@ -288,6 +313,7 @@ class Bee6(Bee5):
         c = self.cfg
         return " · ".join(s for s in ["q/k/v fused" if c.fuse_qkv else "", f"FP8 mode {c.fp8}" if c.fp8 else "bf16",
                                       f"MoD {len(c.mod_set())} layers at {c.mod_cap:.0%}" if c.mod_set() else "no MoD",
+                                      f"sparse MLP {c.sparse_mlp:.0%} (dense first {c.sparse_from:.0%})" if c.sparse_mlp else "",
                                       f"bloom {c.bloom}" if c.bloom else "", "CUDA graphs" if c.graphs else ""] if s)
 
     # ---------------------------------------------------------------- the body
@@ -298,24 +324,32 @@ class Bee6(Bee5):
         return torch.sigmoid(self.skip_lam[j]) * g
 
     def _trunk_aux(self, idx):
-        """(B, T) words -> (vectors after the final norm, the helpers' loss, their agreement with the routers)."""
+        """(B, T) words -> (vectors after the final norm, the helpers' loss, their agreement with the routers, the sparse
+        MLP's (pickers' lesson, recall, words per block per layer, dropped share) or None)."""
         T = idx.shape[1]
         e, _ = self._embed(idx)
         x0 = norm(e)
         ves = [t(idx) for t in self.ve]
         cos, sin = self.rope_cos[:T], self.rope_sin[:T]
-        aux = []
+        aux, exs = [], []
 
         def layer(i, x, ve):
-            x, a = self.blocks[i](x, ve, cos, sin)
+            x, a, ex = self.blocks[i](x, ve, cos, sin)
             if a is not None:
                 aux.append(a)
+            if ex is not None:
+                exs.append(ex)
             return x
         h = self._run(x0, ves, layer)
-        if aux:
-            return h, torch.stack([a for a, _ in aux]).mean(), torch.stack([g for _, g in aux]).mean()
+        sp = None
+        if exs:
+            sp = (torch.stack([e[0] for e in exs]).mean(), torch.stack([e[1] for e in exs]).mean(),
+                  torch.stack([e[2] for e in exs]), torch.stack([e[3] for e in exs]).mean(),
+                  torch.stack([e[4] for e in exs]), torch.stack([e[5] for e in exs]))
         z = h.new_zeros((), dtype=torch.float32)
-        return h, z, z
+        if aux:
+            return h, torch.stack([a for a, _ in aux]).mean(), torch.stack([g for _, g in aux]).mean(), sp
+        return h, z, z, sp
 
     def _trunk(self, idx):
         return self._trunk_aux(idx)[0]
@@ -336,9 +370,9 @@ class Bee6(Bee5):
         if self._compiled is not None and self.training:
             if self.cfg.graphs:
                 torch.compiler.cudagraph_mark_step_begin()
-            h, aux, agree = self._compiled(idx)
+            h, aux, agree, sp = self._compiled(idx)
         else:
-            h, aux, agree = self._trunk_aux(idx)
+            h, aux, agree, sp = self._trunk_aux(idx)
         th = tW = None
         if mentor is not None and kd_weight > 0:
             th, tW = mentor.hidden(idx, self.doc_mask(idx))
@@ -358,12 +392,56 @@ class Bee6(Bee5):
             loss = loss + self.cfg.mod_aux * aux
             stats["mod_agree"] = agree
             self._agree = agree
+        if sp is not None:
+            p_aux, recall, load, drop, mean, sq = sp
+            loss = loss + self.cfg.sparse_aux * p_aux
+            stats["sparse_recall"] = recall
+            new = [t.detach().clone() for t in (load, recall, drop, mean, sq)]
+            if self._sp is None:
+                self._sp = new + [1]
+            else:
+                self._sp = [a + b for a, b in zip(self._sp[:5], new)] + [self._sp[5] + 1]
         return loss, stats
 
     def thought_report(self):
-        """For the trainer's log: how often the helper guesses the router's pick (reading uses the helper)."""
+        """For the trainer's log: how often the helper guesses the router's pick (reading uses the helper), and the
+        sparse MLP's last step: how well the pickers pick, how evenly the blocks work, how much overflowed."""
         a = getattr(self, "_agree", None)
-        return {"mod_agree": None if a is None else float(a)}
+        out = {"mod_agree": None if a is None else float(a)}
+        r = getattr(self, "_sp_report", None)
+        if r:
+            out.update(r)
+        return out
+
+    # ---------------------------------------------------------------- the sparse MLP's switch and balance
+    def set_progress(self, progress: float):
+        super().set_progress(progress)
+        if self.cfg.sparse_mlp and progress >= self.cfg.sparse_from and not int(self.sparse_live):
+            self.sparse_live.fill_(1)
+            self._sync_sparse()
+
+    def _sync_sparse(self):
+        live = bool(self.cfg.sparse_mlp) and bool(int(self.sparse_live))
+        for b in self.blocks:
+            if b.sparse:
+                b.mlp.live = live
+
+    @property
+    def sparse_on(self):
+        return bool(self.cfg.sparse_mlp) and bool(int(self.sparse_live))
+
+    def after_step(self):
+        """The trainer calls this after every optimizer step: the blocks' balancing biases move."""
+        if self._sp is None:
+            return
+        load, recall, drop, mean, sq, n = self._sp
+        self._sp = None
+        for b, l, mu, q in zip(self.blocks, load, mean / n, sq / n):
+            b.mlp.balance(l, mu, q)
+        lf = load.float()
+        uneven = (lf.max(-1).values / lf.mean(-1).clamp_min(1e-9)).mean()
+        rc, dr, un = torch.stack([recall / n, drop / n, uneven]).tolist()
+        self._sp_report = {"sparse_recall": rc, "sparse_dropped": dr, "sparse_uneven": un, "sparse_live": int(self.sparse_on)}
 
     # ---------------------------------------------------------------- the trainer's hooks
     def startup_check(self, device, say=print):
@@ -408,4 +486,7 @@ class Bee6(Bee5):
             from .bloom import bloom_next
             while self.cfg.bloom_stage < int(at):
                 bloom_next(self)
-        return super().load_state_dict(state, strict=strict, assign=assign)
+        out = super().load_state_dict(state, strict=strict, assign=assign)
+        if self.cfg.sparse_mlp:
+            self._sync_sparse()
+        return out
