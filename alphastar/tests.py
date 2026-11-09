@@ -202,7 +202,7 @@ def main():
     check("the drawer picks exactly the best facts of all 16 x 16 (product keys find them from the halves)",
           torch.equal(best, got), f"{d.H} heads x {d.k} picks of {d.n * d.n}")
     check("its answer = the picked facts mixed by a softmax of their scores, gated (Meta's memory layer)",
-          torch.allclose(y, ref, atol=1e-5) and torch.allclose(w.view(10, d.H, d.k).sum(-1), torch.ones(10, d.H)))
+          torch.allclose(y, ref, atol=1e-5) and torch.allclose(w.view(10, d.H, d.k).sum(-1), torch.ones(10, d.H, device=dev)))
     from oazy.train import make_optimizer
     opt = make_optimizer(m, 1e-3, dev, "muon", 0.02, 0.1)
     adam = opt.opts[1] if hasattr(opt, "opts") else opt
