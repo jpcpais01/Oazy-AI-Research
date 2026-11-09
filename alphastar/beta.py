@@ -59,6 +59,7 @@ def geometric(lam: float, n: int) -> torch.Tensor:
 def stop_chances(lam: torch.Tensor) -> torch.Tensor:
     """lam (..., N): the chance to stop at each pass given it got there -> p (..., N), the chance to stop exactly there.
     The last pass takes what is left, so p sums to 1."""
+    lam = lam.float()
     lam = torch.cat([lam[..., :-1], torch.ones_like(lam[..., -1:])], -1)
     left = torch.cumprod(1 - lam, -1)
     left = torch.cat([torch.ones_like(left[..., :1]), left[..., :-1]], -1)
@@ -86,7 +87,8 @@ class PegasusBeta(AlphaStar):
 
     def lam(self, s):
         """The chance to stop now, given it got this far: (...,) from thoughts (..., D)."""
-        return torch.sigmoid(self.halt(s.float()).squeeze(-1))
+        with torch.autocast(s.device.type, enabled=False):      # in 32-bit: the stop chances' cumulative product needs it
+            return torch.sigmoid(self.halt(s.float()).squeeze(-1))
 
     def sample_passes(self) -> int:
         """The depth practised on this trainer pass: from its own habits, mixed with the prior."""
