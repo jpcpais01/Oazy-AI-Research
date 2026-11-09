@@ -57,9 +57,9 @@ SADO_BEST_MIX = SADO_MIX.rsplit(";", 1)[0] + (";fwe:0.1599,dclm:0.05,cosmo:0.11,
 MIXES = {"default": DEFAULT_MIX, "v1": DEFAULT_MIX, "tagus": TAGUS_MIX, "bundle": TAGUS_MIX, "sado": SADO_MIX, "sado-best": SADO_BEST_MIX}
 SOURCES = {"fwe": "", "dclm": "dclm", "chat": "chat",          # name -> sub-folder of the data folder
            "cosmo": "cosmo", "wiki": "wiki", "math": "math", "code": "code", "books": "books", "best": "best",
-           "faith": "faith", "religion": "religion", "creed": "creed"}
+           "faith": "faith", "religion": "religion", "creed": "creed", "world": "world"}
 PREPARE = {"faith": "python3 -m oazy.faith build", "religion": "python3 -m oazy.religion fetch, then build",
-           "creed": "python3 -m oazy.religion creed"}     # how a source that is not made by this file is made
+           "creed": "python3 -m oazy.religion creed", "world": "python3 -m oazy.emerald build"}     # how a source that is not made by this file is made
 
 
 def with_cooldown(mix: str, start: float) -> str:
@@ -83,8 +83,26 @@ def with_share(mix: str, name: str, share: float) -> str:
     return ";".join(out)
 
 
+EMERALD_SHARE, EMERALD_EARLY, EMERALD_EARLY_X, EMERALD_LATE_X = 0.10, 0.2, 3.0, 0.5
+
+
+def emerald_mix(w: float = EMERALD_SHARE, base: str = SADO_MIX) -> str:
+    """Emerald (oazy/emerald.py): Sado with the world's practice text, w of the run on average: 3w for the first 20%,
+    then w/2 to the end, cool-down included (0.10 -> 30% then 5%; 0 = plain Sado). Like --world (oazy/worldmix.py)."""
+    if w <= 0:
+        return base
+    parts = base.split(";")
+    main, rest = parts[0].rsplit("@", 1)[0], parts[1:]
+    out = [with_share(f"{main}@0", "world", min(1.0, w * EMERALD_EARLY_X)),
+           with_share(f"{main}@{EMERALD_EARLY:g}", "world", w * EMERALD_LATE_X)]
+    out += [with_share(p, "world", w * EMERALD_LATE_X) for p in rest]
+    return ";".join(out)
+
+
 def resolve_mix(text):
-    """A mix by name ("tagus", "v1") or written out."""
+    """A mix by name ("tagus", "v1", "emerald", "emerald:0.05") or written out."""
+    if text and (text == "emerald" or text.startswith("emerald:")):
+        return emerald_mix(float(text.split(":", 1)[1]) if ":" in text else EMERALD_SHARE)
     return MIXES.get(text, text) if text else text
 
 

@@ -296,6 +296,21 @@ back. Once a run on the picked text looks good, delete those files to free ~40 G
 files (`val.bin`), copy them to /workspace/oazy_data/tagus20/ first: Sado then reuses them, so new and old models
 are scored on the same text.
 
+## Emerald, our third dataset (Sado + the world)
+
+João, Nov 9: Emerald is Sado with the world's practice text inside it (`oazy/emerald.py`). Sado stays as it is; the
+world's episodes (worldfirst/world.py, practice levels only, the secret exams never written in) go into
+`sado/world/`. A run reads 30% world for the first 20%, then 5% (10% overall); every model of every size uses it with
+one flag, and the world's secret exams run on the tests' schedule. The model stays a plain next-word model.
+
+```bash
+cd /workspace/oazy && git pull
+python3 -m oazy.emerald_tests                                    # offline checks (~7 min on CPU)
+nice -n 10 python3 -m oazy.emerald build                         # ~2.5B tokens of world into sado/world/ (CPU, every core but one)
+bash runpod/train.sh <model> --preset big --tokens 10e9 --micro 32 --data-sub emerald                 # 10% world
+bash runpod/train.sh <model> --preset big --tokens 10e9 --micro 32 --data-sub emerald --emerald 0.20  # 20% world
+```
+
 ## Choosing what to learn from (the models pick, during training)
 
 João, Nov 8: from now on the models choose what they learn from while they train (`oazy/select.py`, the whole idea
