@@ -260,7 +260,7 @@ def evaluate(model, vocab, n=200, device="cpu", sweep=True, bs=100, sets=None):
     for fam, lv, sp in (sets or W.exam_sets()):
         eps = [W.make(fam, lv, sp, s) for s in range(n)]
         for mode, k in modes:
-            right, nq, used_sum, rev = 0, 0, 0.0, defaultdict(lambda: [0, 0])
+            right, nq, used_sum, rev, bel = 0, 0, 0.0, defaultdict(lambda: [0, 0]), defaultdict(lambda: [0, 0])
             for i in range(0, n, bs):
                 chunk = eps[i:i + bs]
                 b = batch_for(model, chunk, vocab, device, rng)
@@ -274,16 +274,22 @@ def evaluate(model, vocab, n=200, device="cpu", sweep=True, bs=100, sets=None):
                 right += sum(qh.values())
                 nq += len(qh)
                 tags = {m["q"]: m.get("reversed") for m in b["meta"]}
+                btags = {m["q"]: m.get("belief") for m in b["meta"]}
                 for qid, ok in qh.items():
                     if tags[qid] is not None:
                         rev[tags[qid]][0] += ok
                         rev[tags[qid]][1] += 1
+                    if btags[qid] is not None:
+                        bel[btags[qid]][0] += ok
+                        bel[btags[qid]][1] += 1
             row = {"family": fam, "split": "seen" if sp == "train" else sp, "level": lv, "mode": mode,
                    "n_q": nq, "right": right / max(1, nq)}
             if model.kind == "laws":
                 row["passes"] = used_sum / n
             if rev:
                 row["reversed"] = {str(k): v for k, v in rev.items()}
+            if bel:
+                row["belief"] = {str(k): v for k, v in bel.items()}
             rows.append(row)
     return rows
 

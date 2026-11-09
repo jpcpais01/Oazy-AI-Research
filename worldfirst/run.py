@@ -223,6 +223,16 @@ def report(res) -> str:
                     agg[k][1] += n
         f = lambda k: _pct(agg[k][0] / agg[k][1]) if agg[k][1] else "-"  # noqa: E731
         lines.append(f"- {name}: asked the way it was told {f('False')}, asked the other way round {f('True')}")
+    lines.append("\n## False beliefs (where does someone think a thing is, when it was moved while they were away)\n")
+    for name, rows, mode in (("Laws", L, "settle"), ("rival", R, "plain")):
+        agg = {"True": [0, 0], "False": [0, 0]}
+        for r in rows:
+            if r["mode"] == mode and r.get("belief"):
+                for k, (ok, n) in r["belief"].items():
+                    agg[k][0] += ok
+                    agg[k][1] += n
+        f = lambda k: _pct(agg[k][0] / agg[k][1]) if agg[k][1] else "-"  # noqa: E731
+        lines.append(f"- {name}: they saw it last where it is {f('False')}, they believe something false {f('True')}")
     tl, tr = res["train"].get("laws", {}), res["train"].get("rival", {})
     lines.append(f"\nTraining: Laws {tl.get('steps')} steps in {tl.get('minutes', 0):.1f} min, rival {tr.get('steps')} steps "
                  f"in {tr.get('minutes', 0):.1f} min, the same number of episodes each. Guessing gets 50% on yes/no, "

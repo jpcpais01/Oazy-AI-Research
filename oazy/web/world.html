@@ -148,11 +148,11 @@
 const LAWS = UI.css("--laws"), RIVAL = UI.css("--rival");
 const COL = { laws: LAWS, rival: RIVAL };
 const NAME = { laws: "Laws model", rival: "Rival" };
-const FAMS = ["sums", "lines", "boxes", "family", "falling", "machines"];
-const FAMWORD = { sums: "Sums", lines: "Lines", boxes: "Boxes", family: "Family", falling: "Falling", machines: "Machines" };
-const LEVELS = { sums: [8, 4], lines: [6, 4], boxes: [6, 3], family: [3, 1], falling: [4, 3], machines: [2, 1] };   // [practised, secret]
+const FAMS = ["sums", "lines", "boxes", "family", "falling", "machines", "cups", "minds", "walks"];
+const FAMWORD = { sums: "Sums", lines: "Lines", boxes: "Boxes", family: "Family", falling: "Falling", machines: "Machines", cups: "Hidden", minds: "Minds", walks: "Walks" };
+const LEVELS = { sums: [8, 4], lines: [6, 4], boxes: [6, 3], family: [3, 1], falling: [4, 3], machines: [2, 1], cups: [4, 3], minds: [3, 3], walks: [4, 3] };   // [practised, secret]
 const SPLIT = { seen: "new scenes, practised kinds", longer: "longer", deeper: "deeper", bigger: "bigger falls", "new-pairs": "links chained in new ways", "new-mixes": "rules mixed in new ways", "more-moves": "more moves in a row" };
-const FAMCOL = ["#8f7bff", "#45c3ff", "#5fe39a", "#ffd34d", "#ff9a3c", "#c9c2ff"];
+const FAMCOL = ["#8f7bff", "#45c3ff", "#5fe39a", "#ffd34d", "#ff9a3c", "#c9c2ff", "#ff7a7a", "#4fe0d2", "#e7a6ff"];
 const esc = UI.escapeHtml;
 const pct = (v, d = 1) => v == null ? "–" : (v * 100).toFixed(d) + "%";
 const avg = (xs) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
