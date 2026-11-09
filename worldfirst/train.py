@@ -16,13 +16,20 @@ from pathlib import Path
 import torch
 
 from . import world as W
-from .data import Vocab, laws_batch, rival_batch
+from .data import Vocab, laws_batch, rival_batch, finder_batch
 
 TRAIN_SEED0 = 1_000_000          # training episodes use seeds from here up; exam episodes use seeds below it
 
 
-def batch_for(model, eps, vocab, device, rng=None):
-    return laws_batch(eps, vocab, device) if model.kind == "laws" else rival_batch(eps, vocab, device, rng=rng)
+def batch_kind(model):
+    return "finder" if model.kind == "laws" and getattr(model.cfg, "finder", 0) else model.kind
+
+
+def batch_for(model, eps, vocab, device, rng=None, kind=None):
+    kind = kind or batch_kind(model)
+    if kind == "finder":
+        return finder_batch(eps, vocab, device)
+    return laws_batch(eps, vocab, device) if kind == "laws" else rival_batch(eps, vocab, device, rng=rng)
 
 
 def question_hits(hits, meta):
@@ -43,9 +50,10 @@ def autocast(device):
 _VOCAB = None
 
 
-def _init_worker(words):
+def _init_worker(words, natural=False):
     global _VOCAB
     _VOCAB = Vocab(words)
+    W.STYLE["natural"] = natural
     torch.set_num_threads(1)
 
 
@@ -58,6 +66,8 @@ def _build(job):
     kind, picks, seed0, tag_seed, vocab = job
     vocab = vocab or _VOCAB
     eps = [W.make(f, lv, "train", seed0 + i) for i, (f, lv) in enumerate(picks)]
+    if kind == "finder":
+        return finder_batch(eps, vocab)
     if kind == "laws":
         return laws_batch(eps, vocab)
     return rival_batch(eps, vocab, rng=random.Random(tag_seed))
@@ -87,7 +97,7 @@ class Feeder:
         self.pool = None
         if workers:
             ctx = mp.get_context("spawn")
-            self.pool = ctx.Pool(workers, initializer=_init_worker, initargs=(vocab.words,))
+            self.pool = ctx.Pool(workers, initializer=_init_worker, initargs=(vocab.words, W.STYLE["natural"]))
         self.ahead = ahead if workers else 1
         self.q = deque()
         self.next = None
@@ -147,7 +157,7 @@ def train(model, vocab, out: Path, steps=20000, batch=128, lr=6e-4, warmup=None,
             say(f"{model.kind}: a saved state is there but for other settings; starting fresh")
     elif (out / "metrics.jsonl").exists():
         (out / "metrics.jsonl").unlink()
-    feed = Feeder(model.kind, vocab, cur, batch, seed, workers=workers)
+    feed = Feeder(batch_kind(model), vocab, cur, batch, seed, workers=workers)
     metrics = open(out / "metrics.jsonl", "a")
     t0 = time.time() - done_minutes * 60
     t_run, s_run = time.time(), start
@@ -284,6 +294,12 @@ def evaluate(model, vocab, n=200, device="cpu", sweep=True, bs=100, sets=None):
                         bel[btags[qid]][1] += 1
             row = {"family": fam, "split": "seen" if sp == "train" else sp, "level": lv, "mode": mode,
                    "n_q": nq, "right": right / max(1, nq)}
+            if mode == "settle" and batch_kind(model) == "finder":
+                got = tot = 0
+                for i in range(0, n, bs):
+                    g, t = model.found(batch_for(model, eps[i:i + bs], vocab, device))
+                    got, tot = got + g, tot + t
+                row["found"] = got / max(1, tot)
             if model.kind == "laws":
                 row["passes"] = used_sum / n
             if rev:

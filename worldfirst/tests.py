@@ -335,6 +335,55 @@ def torch_checks():
         assert hits.shape[0] == len(b["meta"])
 
     @check
+    def no_marks_world_and_finder():
+        """Natural speech: pronouns point to the right person and are unambiguous; the finder model learns a little and
+        never sees the marks."""
+        from .data import finder_batch
+        W.STYLE["natural"] = True
+        try:
+            vv = Vocab()
+            n_pron = 0
+            for s in range(300):
+                e = W.make("lines", 4, "train", s)
+                sents, cur = [], []
+                for t, m in zip(e.tokens, e.mentions):
+                    cur.append((t, m))
+                    if t == ".":
+                        sents.append(cur)
+                        cur = []
+                for i, snt in enumerate(sents):
+                    for t, m in snt:
+                        if t in W.PRONOUNS:
+                            n_pron += 1
+                            prev = {mm for _, mm in sents[i - 1] if mm >= 0}
+                            assert m in prev, e.text()
+                            g = "f" if t in ("she", "her") else "m"
+                            same = [x for x in prev if (e.things[x] in W._FEM) == (g == "f")]
+                            assert same == [m], ("ambiguous pronoun", e.text())
+            assert n_pron > 100, n_pron
+            e = W.make("sums", 3, "train", 1)
+            assert int("".join(reversed(e.questions[0].answer))) == int("".join(map(str, e.facts["a"]))) + int("".join(map(str, e.facts["b"])))
+            torch.manual_seed(0)
+            laws, rival = make_pair(len(vv), "tiny", finder=12, fixed=3, train_max=3, grad_passes=3, test_max=3)
+            assert abs(n_params(laws) - n_params(rival)) / n_params(laws) < 0.01
+            eps1 = [W.make(f, 1, "train", s) for s in range(12) for f in ("sums", "cups", "minds")]
+            b = finder_batch(eps1, vv)
+            assert "pool" not in b and "pos" not in b, "the finder must not get the marks"
+            opt = torch.optim.AdamW(laws.parameters(), lr=3e-3)
+            first = None
+            for i in range(40):
+                loss, hits, _ = laws.loss_and_hits(b)
+                opt.zero_grad()
+                loss.backward()
+                opt.step()
+                first = first if first is not None else loss.item()
+            assert loss.item() < 0.8 * first, (first, loss.item())
+            got, n = laws.found(b)
+            assert 0 <= got <= n and n > 0
+        finally:
+            W.STYLE["natural"] = False
+
+    @check
     def tiny_run_end_to_end():
         import tempfile
         from .run import main

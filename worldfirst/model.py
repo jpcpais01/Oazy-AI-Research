@@ -84,6 +84,8 @@ class LawsConfig:
     test_max: int = 48         # most passes when it thinks until settled
     exit_eps: float = 0.01     # settled when a pass moves the picture by less than 1% of its size
     fixed: int = 0             # >0: always exactly this many passes, from a blank state, learning through all of them
+    finder: int = 0            # >0: no marks; this many slots find the things themselves (slot attention)
+    finder_iters: int = 3      # rounds in which the slots compete for the words
 
 
 class Laws(nn.Module):
@@ -104,9 +106,22 @@ class Laws(nn.Module):
         self.pq = nn.Linear(d, d, bias=False)
         self.pk = nn.Linear(d, d, bias=False)
         self.col = nn.Linear(d, 10)
+        if cfg.finder:
+            # the thing finder: slots that compete for the words (each word goes mostly to one slot)
+            self.slot_init = nn.Parameter(torch.randn(cfg.finder, d) * 0.5)
+            self.sa_in, self.sa_slot = nn.RMSNorm(d), nn.RMSNorm(d)
+            self.sa_q, self.sa_k, self.sa_v = (nn.Linear(d, d, bias=False) for _ in range(3))
+            self.sa_gru = nn.GRUCell(d, d)
+            self.sa_mlp = nn.Sequential(nn.RMSNorm(d), nn.Linear(d, 2 * d), nn.GELU(), nn.Linear(2 * d, d))
+            # the speaker: writes a sum's digits one by one, looking only at the settled picture
+            self.dig = nn.Embedding(11, d)                  # ten digits and "start"
+            self.speak = nn.ModuleList([Block(d, cfg.heads, cfg.ff)])
+            self.speak_norm = nn.RMSNorm(d)
+            self.speak_out = nn.Linear(d, 10)
         self.apply(_init)
 
     def read(self, b):
+        """The picture before thinking: (vectors [B, S, d], positions [B, S], which are real [B, S])."""
         tok = b["tok"]
         B, T = tok.shape
         valid = tok != 0
@@ -116,8 +131,33 @@ class Laws(nn.Module):
         for blk in self.reader:
             h = blk(h, pos, mask)
         h = self.read_norm(h)
-        slots = torch.bmm(b["pool"].to(h.dtype), h) + self.slot_kind(b["kind"])
-        return slots
+        if not self.cfg.finder:
+            slots = torch.bmm(b["pool"].to(h.dtype), h) + self.slot_kind(b["kind"])
+            return slots, b["pos"], b["kind"] > 0
+        things, tpos = self.find(h, valid, pos)
+        qv = torch.bmm(b["qpool"].to(h.dtype), h) + self.slot_kind.weight[2]
+        e = torch.cat([things + self.slot_kind.weight[1], qv], 1)
+        p = torch.cat([tpos, b["qpos"].float()], 1)
+        ok = torch.cat([torch.ones(B, self.cfg.finder, dtype=torch.bool, device=tok.device), b["qvalid"]], 1)
+        return e, p, ok
+
+    def find(self, h, valid, pos):
+        """Slot attention: each slot claims words (they compete: a word is shared out over the slots), takes the mean of
+        what it claimed, and updates; a few rounds. Returns slots [B, K, d] and each slot's position (where its words are)."""
+        B, T, d = h.shape
+        x = self.sa_in(h)
+        k, v = self.sa_k(x), self.sa_v(x)
+        sl = self.slot_init[None].expand(B, -1, -1).to(h.dtype)
+        vm = valid[:, None, :].to(h.dtype)
+        for _ in range(self.cfg.finder_iters):
+            q = self.sa_q(self.sa_slot(sl))
+            att = torch.softmax(torch.einsum("bkd,btd->bkt", q, k).float() / math.sqrt(d), dim=1).to(h.dtype) * vm
+            w = att / (att.sum(-1, keepdim=True) + 1e-6)
+            upd = torch.einsum("bkt,btd->bkd", w, v)
+            sl = self.sa_gru(upd.reshape(-1, d).float(), sl.reshape(-1, d).float()).view(B, -1, d).to(h.dtype)
+            sl = sl + self.sa_mlp(sl)
+        self._att, self._w = att, w                     # who claimed which word (pointer answers, the found check)
+        return sl, (w.float() * pos[:, None, :].float()).sum(-1)
 
     def step(self, s, e, pos, mask):
         x = self.adapter(torch.cat([s, e], -1))
@@ -128,11 +168,9 @@ class Laws(nn.Module):
     def think(self, b, passes=None, adaptive=False, gen=None):
         """Run the core. Returns (final state, passes used per episode)."""
         cfg = self.cfg
-        e = self.read(b)
+        e, pos, valid = self.read(b)
         B, S, d = e.shape
-        valid = b["kind"] > 0
         mask = valid[:, None, None, :].expand(B, 1, S, S)
-        pos = b["pos"]
         if gen is None and not self.training:
             gen = torch.Generator(device=e.device).manual_seed(1234)
         if cfg.fixed:                                       # a fixed number of passes: no early stop
@@ -193,9 +231,77 @@ class Laws(nn.Module):
             out["col"] = self.col(s[cc["b"], cc["slot"]]).float()
         return out
 
+    def answer_found(self, s, b):
+        """Answers when the model found the things itself. A class from the question's vector; a "who/what" by pointing
+        at a slot and from the slot at its words (the chance of each name is the share of the slot's words that are
+        that name); a sum written by the speaker, one digit at a time, looking at the whole picture."""
+        K = self.cfg.finder
+        out = {}
+        c = b["cls"]
+        if len(c["b"]):
+            lg = self.cls(s[c["b"], K + c["q"]]).float()
+            yesno = c["y"] < 2
+            m = torch.zeros_like(lg, dtype=torch.bool)
+            m[:, :2] = yesno[:, None]
+            m[:, 2:] = ~yesno[:, None]
+            out["cls"] = lg.masked_fill(~m, -1e9)
+        p = b["ptr"]
+        if len(p["b"]):
+            q = self.pq(s[p["b"], K + p["q"]])
+            k = self.pk(s[p["b"], :K])
+            ps = torch.softmax(torch.einsum("nd,nkd->nk", q, k).float() / math.sqrt(q.shape[-1]), -1)
+            pw = torch.einsum("nk,nkt->nt", ps, self._w[p["b"]].float())          # chance on each word
+            pv = torch.zeros(len(p["b"]), self.cfg.vocab, device=s.device).scatter_add_(1, b["tok"][p["b"]], pw)
+            pv = pv.masked_fill(~p["cand"], 0) + p["cand"].float() * 1e-6
+            pv = pv / pv.sum(-1, keepdim=True)
+            out["ptr"] = torch.where(p["cand"], pv, torch.ones_like(pv)).log().masked_fill(~p["cand"], -1e9)
+        q = b["seq"]
+        if len(q["b"]):
+            N, L = q["y"].shape
+            pre = s[q["b"]]                                                     # [N, S, d]
+            _, pos, ok = self._picture_meta(b, q["b"])
+            S = pre.shape[1]
+            inp = torch.cat([torch.full((N, 1), 10, device=s.device, dtype=torch.long), q["y"][:, :-1].clamp(min=0)], 1)
+            x = torch.cat([pre, self.dig(inp)], 1)
+            apos = q["end"][:, None].float() + 1 + torch.arange(L, device=s.device)[None].float()
+            allpos = torch.cat([pos, apos], 1)
+            see = torch.cat([ok, torch.ones(N, L, dtype=torch.bool, device=s.device)], 1)      # [N, S+L]
+            causal = torch.ones(S + L, S + L, dtype=torch.bool, device=s.device).tril()
+            causal[:, :S] = True                                               # everyone sees the whole picture
+            causal[:S, S:] = False                                             # the picture does not see the answer
+            mask = (causal[None] & see[:, None, :])[:, None]
+            for blk in self.speak:
+                x = blk(x, allpos, mask)
+            out["seq"] = self.speak_out(self.speak_norm(x[:, S:])).float()
+        return out
+
+    def _picture_meta(self, b, idx):
+        K = self.cfg.finder
+        tpos = (self._w.float() * torch.arange(b["tok"].shape[1], device=b["tok"].device)[None, None].float()).sum(-1)
+        pos = torch.cat([tpos, b["qpos"].float()], 1)[idx]
+        ok = torch.cat([torch.ones(b["tok"].shape[0], K, dtype=torch.bool, device=b["tok"].device), b["qvalid"]], 1)[idx]
+        return None, pos, ok
+
+    @torch.no_grad()
+    def found(self, b):
+        """How well the slots match the true things (the world knows them; the model was never told): a thing counts as
+        found when all of its words went mostly to one slot and no other thing's words went to that slot."""
+        self.read(b)
+        a = self._att.float().argmax(1).cpu()                                  # [B, T] the slot each word went to
+        ment = b["ment"].cpu()
+        got, n = 0, 0
+        for i in range(a.shape[0]):
+            m, sl = ment[i], a[i]
+            slots = {t: set(sl[m == t].tolist()) for t in m.unique().tolist() if t >= 0}
+            for t, mine in slots.items():
+                n += 1
+                if len(mine) == 1 and not any(mine & other for u, other in slots.items() if u != t):
+                    got += 1
+        return got, n
+
     def forward(self, b, passes=None, adaptive=False):
         s, used = self.think(b, passes, adaptive)
-        return self.answer(s, b), used
+        return (self.answer_found(s, b) if self.cfg.finder else self.answer(s, b)), used
 
     def loss_and_hits(self, b, passes=None, adaptive=False):
         """Mean cross-entropy over answer items, and per item whether the best guess was right (in item order)."""
@@ -208,6 +314,11 @@ class Laws(nn.Module):
                 y = b[name]["y"]
                 losses.append(F.cross_entropy(out[name], y, reduction="sum"))
                 hits[b[name]["item"]] = out[name].argmax(-1) == y
+        if "seq" in out:
+            y, it = b["seq"]["y"], b["seq"]["item"]
+            ok = y >= 0
+            losses.append(F.cross_entropy(out["seq"][ok], y[ok], reduction="sum"))
+            hits[it[ok]] = out["seq"][ok].argmax(-1) == y[ok]
         loss = sum(losses) / max(1, n_items)
         return loss, hits, used
 
@@ -293,7 +404,7 @@ def make_pair(vocab_size: int, preset: str = "base", **over):
     target = n_params(laws)
     n_layer = lc.n_read + lc.n_core
     best = None
-    for ff in range(64, 8 * lc.d + 1, 16):
+    for ff in range(64, 16 * lc.d + 1, 16):
         rc = RivalConfig(vocab=vocab_size, d=lc.d, heads=lc.heads, ff=ff, n_layer=n_layer)
         n = _rival_count(rc)
         if best is None or abs(n - target) < abs(best[1] - target):

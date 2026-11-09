@@ -33,6 +33,15 @@ Options worth knowing: `--steps` (20,000 each), `--batch` (128 episodes), `--pre
 `--no-curriculum`, `--rival-tags 0` (the rival without the "same thing" marks), `--rival-loss answers` (a rival
 that learns only the answers: a stronger, non-plain variant to check against), `--minutes` (a time cap per model).
 
+The no-marks race (after the big run): the world speaks more naturally (she/he/her/him; sums smallest digit first,
+for both), the rival gets no "same thing" tags, and the Laws model finds the things itself with 32 slots (slot
+attention); a tiny speaker writes the sums. About 38M each (the finder and speaker add to the Laws model; the rival is
+widened to match). The report adds how many things it found cleanly.
+
+```bash
+bash runpod/world.sh --name world-natural --preset big --steps 200000 --passes 3 --natural 1
+```
+
 ## The world (`world.py`)
 
 Each episode is a scene in simple English with fresh random names and colours, one action, and two or three
