@@ -206,6 +206,33 @@ def main():
     rtr = np.fromfile(religion.folder(rdata, "religion") / "train.bin", dtype=np.uint16)
     check("build writes cleaned books in Sado's layout (licence text gone)", rm["books_train"] + rm["books_val"] == 2 and rtr[-1] == eot
           and "licence" not in enc.decode(rtr.tolist()) and "START OF" not in enc.decode(rtr.tolist()), f"{rtr.size:,} tokens")
+    # the fast path: Gutenberg's catalog file for the list, a Hugging Face parquet copy for the books
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    catalog = ('Text#,Type,Issued,Title,Language,Authors,Subjects,LoCC,Bookshelves\n'
+               '10,Text,1989,The King James Bible,en,,Bible,BS,Category: Religion/Spirituality\n'
+               '11,Text,1990,Bible in French,fr,,Bible,BS,\n'
+               '12,Text,1991,Sermons,en,,"Sermons, English",BV,\n'
+               '13,Text,1992,Against the Church,en,,Catholic Church -- Controversial literature,BX,\n'
+               '14,Text,1993,A Cookbook,en,,Cooking,TX,\n'
+               '15,Text,1994,Prayers,en,,Prayer,BV,\n')
+    hdata = tmp / "hdata"
+    shard = tmp / "pg.parquet"
+
+    def fake_download(repo, f, d):
+        rows = {"id": ["10", "PG12", "14", "11"], "text": [book, book, book, book]}
+        pq.write_table(pa.table(rows), shard)
+        return str(shard)
+    religion.hf(hdata, get=lambda url: catalog.encode(), repos=(("fake/gutenberg", ["data/en-"]),),
+                download=fake_download, list_files=lambda repo: ["data/en-0.parquet", "data/fr-0.parquet"])
+    hb = json.loads((religion.work(hdata) / "books.json").read_text())
+    have = sorted(int(p.stem) for p in (religion.work(hdata) / "texts").glob("*.txt"))
+    check("hf: the catalog lists the religious English books; the parquet copy gives the listed ones it holds",
+          sorted(map(int, hb)) == [10, 12, 15] and have == [10, 12], f"listed {sorted(map(int, hb))}, got {have}")
+    check("hf: a Gutenberg number from a header when there is no id column",
+          religion._book_id({"text": "The Project Gutenberg EBook of X\nRelease Date: 2004 [EBook #8300]\n"}) == 8300
+          and religion._book_id({"METADATA": '{"text_id": 77}'}) == 77)
+    religion.build(hdata)
     religion.creed(rdata, tokens=2000)
     ctr = np.fromfile(religion.folder(rdata, "creed") / "train.bin", dtype=np.uint16)
     parts = enc.decode(ctr.tolist()).split(enc.decode([eot]))
