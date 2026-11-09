@@ -47,6 +47,7 @@ def main(argv=None):
     ap.add_argument("--only", default="all", choices=["all", "laws", "rival", "report"])
     ap.add_argument("--no-curriculum", action="store_true", help="every training level equally often, from the start")
     ap.add_argument("--rival-tags", type=int, default=1, help="1: the rival also gets the 'same thing' marks (fair); 0: plain words only")
+    ap.add_argument("--loops", type=int, default=1, help="1: the Laws core loops (the real model); 0: it runs once (the no-loop test)")
     ap.add_argument("--rival-loss", default="all", choices=["all", "answers"],
                     help="all: the rival learns every next word (plain next-word model); answers: only the answer words")
     ap.add_argument("--fresh", action="store_true", help="train again even if a model is saved")
@@ -74,7 +75,8 @@ def main(argv=None):
 
     vocab = Vocab()
     torch.manual_seed(0)
-    laws, rival = make_pair(len(vocab), a.preset)
+    over = {} if a.loops else {"train_max": 1, "grad_passes": 1, "test_max": 1}
+    laws, rival = make_pair(len(vocab), a.preset, **over)
     rival.cfg.loss = a.rival_loss
     say(f"world-first stage 1: {a.preset}, device {dev}, vocab {len(vocab)} words")
     say(f"  Laws model (not next-word): {n_params(laws) / 1e6:.2f}M numbers; rival (next-word): {n_params(rival) / 1e6:.2f}M")
@@ -111,10 +113,10 @@ def main(argv=None):
     for m in (laws, rival):
         t0 = time.time()
         m.to(dev)
-        rows[m.kind] = evaluate(m, vocab, n=a.eval_n, device=dev, sweep=True)
+        rows[m.kind] = evaluate(m, vocab, n=a.eval_n, device=dev, sweep=bool(a.loops))
         say(f"{m.kind}: examined in {(time.time() - t0) / 60:.1f} min")
     res = {"kind": "worldfirst", "name": a.name, "when": time.strftime("%Y-%m-%d %H:%M"), "device": dev,
-           "preset": a.preset, "eval_n": a.eval_n, "rival_tags": bool(a.rival_tags), "rival_loss": a.rival_loss,
+           "preset": a.preset, "eval_n": a.eval_n, "rival_tags": bool(a.rival_tags), "rival_loss": a.rival_loss, "loops": bool(a.loops),
            "params": {"laws": n_params(laws), "rival": n_params(rival)}, "train": trained, "rows": rows,
            "summary": {"laws": summarise(rows["laws"], "settle"), "rival": summarise(rows["rival"], "plain")}}
     (out / "results.json").write_text(json.dumps(res, indent=1))
@@ -146,8 +148,11 @@ def report(res) -> str:
     lines = []
     sl, sr = res["summary"]["laws"], res["summary"]["rival"]
     lines.append(f"# World-first, stage 1: {res['name']} ({res['when']}, {res['device']})\n")
-    lines.append(f"Laws model {res['params']['laws'] / 1e6:.1f}M (predicts the next scene, NOT a next-word model) vs "
-                 f"rival {res['params']['rival'] / 1e6:.1f}M (a plain next-word transformer), the same world text, "
+    loops = res.get("loops", True)
+    ans = res.get("rival_loss") == "answers"
+    lines.append(f"Laws model {res['params']['laws'] / 1e6:.1f}M ({'loops' if loops else 'NO loops: its core runs once'}; "
+                 f"predicts the next scene, NOT a next-word model) vs rival {res['params']['rival'] / 1e6:.1f}M "
+                 f"({'a plain transformer learning ONLY the answers' if ans else 'a plain next-word transformer'}), the same world text, "
                  f"{res['eval_n']} new episodes per exam set, a question counts only if its whole answer is right.\n")
     lines.append(f"**Secret exams (never trained on): Laws {_pct(sl.get('secret'))}, rival {_pct(sr.get('secret'))}.** "
                  f"Practised kinds on new scenes: Laws {_pct(sl.get('seen'))}, rival {_pct(sr.get('seen'))}.\n")
@@ -172,16 +177,17 @@ def report(res) -> str:
             rr = [x for x in R if x["family"] == fam and x["split"] == r["split"] and x["level"] == r["level"]]
             lines.append(f"| {fam} | {r['level']} | {SPLIT_WORDS.get(r['split'], r['split'])} | {_pct(r['right'])} | "
                          f"{_pct(rr[0]['right'] if rr else None)} | {r['passes']:.1f} |")
-    lines.append("\n## Does thinking longer help? (Laws model, fixed passes)\n")
     ks = sorted({int(r["mode"][1:]) for r in L if r["mode"].startswith("p")})
-    lines.append("| exams | " + " | ".join(f"{k} passes" for k in ks) + " | settles by itself |")
-    lines.append("|---|" + "---|" * (len(ks) + 1))
-    for part in ("seen", "secret"):
-        vals = []
-        for mode in [f"p{k}" for k in ks] + ["settle"]:
-            rs = [r["right"] for r in L if r["mode"] == mode and ((r["split"] == "seen") == (part == "seen"))]
-            vals.append(_pct(sum(rs) / len(rs)) if rs else "-")
-        lines.append(f"| {part} | " + " | ".join(vals) + " |")
+    if ks:
+        lines.append("\n## Does thinking longer help? (Laws model, fixed passes)\n")
+        lines.append("| exams | " + " | ".join(f"{k} passes" for k in ks) + " | settles by itself |")
+        lines.append("|---|" + "---|" * (len(ks) + 1))
+        for part in ("seen", "secret"):
+            vals = []
+            for mode in [f"p{k}" for k in ks] + ["settle"]:
+                rs = [r["right"] for r in L if r["mode"] == mode and ((r["split"] == "seen") == (part == "seen"))]
+                vals.append(_pct(sum(rs) / len(rs)) if rs else "-")
+            lines.append(f"| {part} | " + " | ".join(vals) + " |")
     lines.append("\n## Reversals (family questions asked the other way round from how the link was told)\n")
     for name, rows, mode in (("Laws", L, "settle"), ("rival", R, "plain")):
         agg = {"True": [0, 0], "False": [0, 0]}

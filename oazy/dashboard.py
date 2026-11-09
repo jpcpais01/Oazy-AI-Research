@@ -219,6 +219,8 @@ def make_handler(runs: Path, web: Path = WEB):
             if rn == "app" and fname == "oazy.apk":
                 return self.stream(APK, "oazy.apk", "application/vnd.android.package-archive")
             d = run_dir(runs, rn)
+            if fname in ("report.md", "results.json") and (d / fname).is_file():      # a world run's report
+                return self.stream(d / fname, f"{rn}-{fname}", "text/markdown" if fname.endswith(".md") else "application/json")
             if fname == "report.zip":
                 buf = io.BytesIO()
                 with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:

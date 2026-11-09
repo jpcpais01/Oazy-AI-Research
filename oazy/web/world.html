@@ -204,12 +204,16 @@ function card(kind) {
   const title = kind === "laws" ? `Laws<span class="acc"> model</span>` : `The <span class="acc">rival</span>`;
   const params = st.params || (RUN?.results?.params?.[kind]);
   const chips = [params ? [(params / 1e6).toFixed(1) + "M params", true] : null,
-    [kind === "laws" ? "not next-token" : "next-token"],
-    kind === "laws" ? [`loops ${cf.train_max ? "1–" + cf.train_max : ""} passes`.replace("  ", " ")] : [`${cf.n_layer || 6} layers, no loops`],
+    [kind === "laws" ? "not next-token" : cf.loss === "answers" ? "learns only answers" : "next-token"],
+    kind === "laws" ? [cf.train_max === 1 ? "no loops: core runs once" : `loops ${cf.train_max ? "1–" + cf.train_max : ""} passes`.replace("  ", " ")] : [`${cf.n_layer || 6} layers, no loops`],
     kind === "laws" && cf.n_core ? [`core ${cf.n_core} layer${cf.n_core > 1 ? "s" : ""}, shared`] : null].filter(Boolean);
   const meta = kind === "laws"
-    ? "Reads the scene, keeps one vector per thing, and lets a tiny shared core loop over the things until its picture settles. Learns only from being wrong about what the world does next."
-    : `A normal causal transformer of the same size, trained by guessing every next word of the same episodes, answers included. ${cf.n_layer || 6} layers of thinking per word, always.`;
+    ? (cf.train_max === 1
+      ? "Reads the scene, keeps one vector per thing, and lets its core look over the things once (the loops switched off, to test what they are worth). Learns only from being wrong about what the world does next."
+      : "Reads the scene, keeps one vector per thing, and lets a tiny shared core loop over the things until its picture settles. Learns only from being wrong about what the world does next.")
+    : cf.loss === "answers"
+      ? `A normal causal transformer of the same size that reads the same episodes but is graded only on the answers, like the Laws model. ${cf.n_layer || 6} layers of thinking per word, always.`
+      : `A normal causal transformer of the same size, trained by guessing every next word of the same episodes, answers included. ${cf.n_layer || 6} layers of thinking per word, always.`;
   const le = lastExam(kind), fs = finalSum(kind);
   const tr = trains(kind), accNow = st.acc ?? tr[tr.length - 1]?.acc;
   const stat = (k, v, h) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div><div class="h">${h || "&nbsp;"}</div></div>`;
@@ -282,6 +286,7 @@ function drawExams() {
     <div class="keyrow"><span><i style="background:${LAWS}"></i>Laws model · ${(res.params.laws / 1e6).toFixed(1)}M · predicts the next scene</span><span><i style="background:${RIVAL}"></i>Rival · ${(res.params.rival / 1e6).toFixed(1)}M · next-word</span></div>
     <div class="duel">${html}</div>
     <p class="note">${res.eval_n} fresh episodes per exam and level; a question counts only when its whole answer is right (a sum: every digit). Guessing gets 50% on yes/no, 10% on a digit, one in the number of things on a "who/what", almost nothing on a whole sum. Reversals (family links asked the other way round from how they were told): Laws ${rp(rl.true)} vs ${rp(rl.false)} asked the told way; rival ${rp(rr.true)} vs ${rp(rr.false)}.</p>
+    <p class="note"><a href="download/${encodeURIComponent(RUN.name)}/report.md" download style="color:var(--laws)">↓ report.md</a> &nbsp; <a href="download/${encodeURIComponent(RUN.name)}/results.json" download style="color:var(--laws)">↓ results.json</a></p>
     <details class="why"><summary>Level by level</summary><div class="body"><div class="fcwrap"><table class="scores"><tr><th>Laws of</th><th>Exam</th><th>Level</th><th>Laws</th><th>Rival</th><th>Passes</th></tr>${lvRows}</table></div></div></details>`;
 }
 
