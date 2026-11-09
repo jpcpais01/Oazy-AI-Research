@@ -264,7 +264,7 @@ PRESETS = {
         plain100f=dict(fore_top=20),       # a test tokenizer has few pieces: leave only the 20 most common out of the bags
         alphastar=dict(fore_top=20, drawer_keys=16, drawer_heads=2, drawer_k=4, drawer_qdim=32, test_max=6, gen_passes=3,
                        passes_max=4, passes_mean=3.0, fore_hidden=128),
-        pegasusbeta=dict(ponder_max=4, ponder_prior=2.0, ponder_tokens=256, halt_hidden=32),
+        pegasusbeta=dict(ponder_max=4, ponder_prior=2.0, ponder_rows=2, halt_hidden=32),
         micro=16, accum=1, lr=3e-3, warmup=50, tokens=3_000_000,
         eval_every=250_000, probe_every=1_000_000, hs_every=1_000_000, sample_every=1_000_000, evals_every=1_000_000,
         val_windows=64, hs_quick=200, evals_quick=50, sample_len=40,
@@ -291,7 +291,7 @@ PRESETS = {
         plain100f=dict(fore_top=20),
         alphastar=dict(fore_top=20, drawer_keys=8, drawer_heads=2, drawer_k=4, drawer_qdim=16, test_max=4, gen_passes=2,
                        passes_max=3, passes_mean=2.0, passes_start=1.0, fore_hidden=64),
-        pegasusbeta=dict(ponder_max=3, ponder_prior=2.0, ponder_tokens=128, halt_hidden=16),
+        pegasusbeta=dict(ponder_max=3, ponder_prior=2.0, ponder_rows=2, halt_hidden=16),
         micro=8, accum=2, lr=3e-3, warmup=10, tokens=60_000,
         eval_every=20_000, probe_every=30_000, hs_every=30_000, sample_every=30_000, evals_every=30_000,
         val_windows=16, hs_quick=20, evals_quick=10, sample_len=10,

@@ -95,8 +95,8 @@ The number of passes was a schedule we set and the stop was a rule we guessed. P
 (PonderNet, Banino et al. 2021):
 
 - **A stop head**: after every pass it says, for each word, how sure it is that it can stop now.
-- **Its lesson**: on 4,096 sampled words per trainer pass, the next-word loss is measured after every pass (8 while
-  training); the stop head is trained on the loss it would get where it stops, on average, plus a small pull (0.01)
+- **Its lesson**: on 2 sampled rows per trainer pass (4,096 words), the next-word loss is measured after every pass (8
+  while training; only those rows think on past the practised depth, so a step costs about what Alpha Star's does); the stop head is trained on the loss it would get where it stops, on average, plus a small pull (0.01)
   towards a gentle prior (4 passes on average) so it explores early on. Stopping before a word is figured out costs a
   lot; every extra pass costs a little.
 - **The depth it practises** is drawn from its own stopping habits (a running average), half mixed with the prior, so

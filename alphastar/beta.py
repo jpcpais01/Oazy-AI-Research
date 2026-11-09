@@ -8,8 +8,8 @@ What changes (PonderNet, Banino et al. 2021; nothing hand-set about where to sto
 
   1. A stop head. After every pass a small head reads each word's thought and says how sure it is that it can stop
      now (lambda). From these, every word gets a chance of stopping after pass 1, 2, ..., 8 (p).
-  2. It pays for stopping too early, and a little for thinking long. On a random sample of words (4,096 per trainer
-     pass) the speaker's next-word loss is measured after every pass; the stop head is trained on the loss it would
+  2. It pays for stopping too early, and a little for thinking long. On 2 random rows of each trainer pass (4,096
+     words) the speaker's next-word loss is measured after every pass; the stop head is trained on the loss it would
      get where it stops, on average: sum_k p_k x loss_k. Plus a small pull (weight 0.01) towards a gentle prior (a
      geometric chance of stopping, 4 passes on average), so early on it explores instead of fixing on one depth.
   3. The model chooses how deep it practises. Alpha Star drew its number of passes from a fixed schedule; Beta draws
@@ -19,6 +19,9 @@ What changes (PonderNet, Banino et al. 2021; nothing hand-set about where to sto
 
 Reading: each word stops at the first pass where its chance of having stopped reaches one half (its median), at most
 16 passes; a word that is done keeps its thought. Writing word by word: a fixed gen_passes, as Alpha Star.
+
+Cost: the whole batch thinks only as deep as the depth it practises (4 passes on average); only the 2 sampled rows
+think on to pass 8 and are read by the speaker after every pass, so a step costs about what Alpha Star's does.
 
 Everything else is Alpha Star's: reader 2 + core 4 looped + speaker 2, the fact drawer, the next-thought lesson,
 gradients through the last 2 passes, Plain-100M's recipe. The stop head adds about 0.2M numbers.
@@ -42,7 +45,7 @@ class BetaConfig(AlphaStarConfig):
     ponder_prior: float = 4.0        # the prior's average passes (a geometric chance of stopping, 1/4 per pass)
     ponder_beta: float = 0.01        # the pull towards the prior (PonderNet's value)
     ponder_weight: float = 1.0       # the stop head's lesson next to the next-word loss
-    ponder_tokens: int = 4096        # words per trainer pass whose loss is measured after every pass
+    ponder_rows: int = 2             # rows (sequences) per trainer pass whose loss is measured after every pass
     ponder_explore: float = 0.5      # the depth practised: this share from the prior, the rest from its own habits
     halt_at: float = 0.5             # reading: stop once the chance of having stopped reaches this
     halt_hidden: int = 256
@@ -141,27 +144,26 @@ class PegasusBeta(AlphaStar):
         B, T, _ = e.shape
         s = self.start(B, T, 0, e.device, e.dtype, c.train_noise == "table")
         ed = e.detach()
+        rows = torch.randperm(B, device=idx.device)[:min(c.ponder_rows, B)]
         states, outs = [], []
-        for k in range(1, N + 1):
-            if k_star - G < k <= k_star:
+        for k in range(1, k_star + 1):             # the whole batch thinks only as deep as it practises
+            if k > k_star - G:
                 s = step(s, e)                     # the passes that learn
                 outs.append(s)
             else:
                 with torch.no_grad():
                     s = step(s.detach(), ed)
-            states.append(s.detach())
-        # the stop head's lesson: on a sample of words, the loss after every pass (no gradient to the trunk)
-        m = min(c.ponder_tokens, B * T)
-        pick = torch.randperm(B * T, device=idx.device)[:m]
-        y = targets.reshape(-1)[pick]
+            states.append(s[rows].detach())
+        with torch.no_grad():                      # a few rows think on to the last pass, for the stop head's lesson
+            sr, er = s[rows].detach(), ed[rows]
+            for k in range(k_star + 1, N + 1):
+                sr = self._step(sr, er)
+                states.append(sr)
+            # the stop head's lesson: on those rows, the loss after every pass (no gradient to the trunk)
+            y = targets[rows].reshape(-1)
+            ce = torch.stack([self.token_ce(self._speak(st), targets[rows].clamp(min=0)).reshape(-1) for st in states], -1)   # (m, N)
         ok = y >= 0
-        ce = []
-        with torch.no_grad():
-            for st in states:
-                h = speak(st).reshape(-1, st.shape[-1])[pick]
-                ce.append(F.cross_entropy(self.head(h).float(), y.clamp(min=0), reduction="none"))
-        ce = torch.stack(ce, -1)                                                  # (m, N)
-        lam = self.lam(torch.stack([st.reshape(-1, st.shape[-1])[pick] for st in states], 1))   # (m, N)
+        lam = self.lam(torch.stack([st.reshape(-1, st.shape[-1]) for st in states], 1))   # (m, N)
         p = stop_chances(lam)
         prior = self._prior.to(p.device)
         kl = (p * (p.clamp_min(1e-9).log() - prior.log())).sum(-1)
