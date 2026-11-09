@@ -141,6 +141,36 @@ The full run (the speed check prints the exact line and hours):
 
     OAZY_DATA=/root/data bash runpod/train.sh bee6 --preset big --tokens 10e9 --micro 32
 
+## World practice (`--world 0.10`, off by default)
+
+João's question (Nov 9): give a normal transformer ~10% of its reading as the worldfirst world, where it watches a scene
+change and answers questions about it. Is it better on the benchmarks than the same model without? Bee6 stays a plain
+NEXT-WORD model: the episodes are just more text, learned word by word, answers included (like the worldfirst rival).
+
+    There is a line. Vasco is right behind Cora. ... Simao and Zoe swap places. Is Vasco ahead of Simao? Answer: no.
+
+- **What**: `worldfirst/world.py`'s nine families (sums, lines, boxes, family, falling, machines, cups, minds, walks),
+  practice levels only, made fresh on the fly by 3 CPU helper processes (`--world-workers`), never stored, never a
+  secret exam's. Cut into SmolLM2's pieces, `<|endoftext|>` between episodes, packed into the same windows.
+- **How much**: `--world w` = 3w of the passes for the first 20% of the run, then w/2 to the end (cool-down included),
+  w on average. `--world 0.10` = 30% then 5%; `--world 0.05` (half) = 15% then 2.5%; 0 = off. Whole passes go to the
+  world, spread evenly. The token count includes the world's, so a world run reads 10% less Sado at the same compute.
+- **Clean**: the mentor never reads a world pass; data selection and bloom are refused with it; the training-loss line
+  stays the text's (`world_loss_own` is logged apart); held-out loss is Sado's held-out text only.
+- **The exam**: the world's secret exams (longer, deeper, new mixes, more moves) and fresh practised scenes, asked as the
+  same plain text: the model picks each answer word among the rival's candidates by its own probabilities.
+  `python3 -m oazy.worldmix exam --run bee6-race bee6-world10` (any SmolLM2-piece checkpoint, the plain one too).
+
+The race (plain Bee6 = `bee6-race`, the same run `bee6_race.sh` makes, kept if it already finished; then +world 10%;
+`half` adds +world 5%; then every run's world exam and one table):
+
+    tmux new-window -t oazy -n world6 "OAZY_DATA=/root/data bash runpod/bee6_world.sh; bash"
+    tmux new-window -t oazy -n world6 "OAZY_DATA=/root/data bash runpod/bee6_world.sh half; bash"
+
+The table again: `python3 -m bee6.world_race` (also saved as `<runs>/bee6-world-race.md`). If the world run wins,
+confirm at ~2B tokens before `world=0.10` joins the recipe. Tests: `python3 -m oazy.worldmix_tests`. To see what the
+model reads: `python3 -m oazy.worldmix show`.
+
 ## Files
 
 - `bee6/model.py`: `Bee6Config`, `Bee6` (Bee5's body with the fused, FP8 and routed layers).
@@ -149,4 +179,6 @@ The full run (the speed check prints the exact line and hours):
 - `bee6/speedcheck.py`: one row per idea, the whole-run speed. `bee6/profile.py`: the kernel list.
 - `bee6/race.py`: the race table. `runpod/bee6_race.sh`: the race in one line.
 - `bee6/tests.py`: self-tests. `bee6/chat.py`: the chat app.
+- `oazy/worldmix.py`: world practice (the stream, the share, the exam); `oazy/worldmix_tests.py`.
+  `bee6/world_race.py` + `runpod/bee6_world.sh`: the world race.
 - `oazy/train.py`: `RECIPE["bee6"]` (Bee5's), the presets, the startup-check and bloom hooks.
