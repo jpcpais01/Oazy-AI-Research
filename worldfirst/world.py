@@ -29,22 +29,26 @@ FAMILIES = ("sums", "lines", "boxes", "family", "falling", "machines")
 
 # Levels the model may train on.
 TRAIN_LEVELS = {
-    "sums": [1, 2, 3, 4, 5],        # digits per number
-    "lines": [1, 2, 3, 4],          # people in the line = level + 2 (3..6)
-    "boxes": [1, 2, 3, 4],          # boxes around the deepest thing
-    "family": [1, 2],               # one link asked / two links chained
-    "falling": [1, 2, 3],           # blocks that move when something lets go
-    "machines": [1, 2],             # one hidden step / two hidden steps
+    "sums": [1, 2, 3, 4, 5, 6, 7, 8],      # digits per number
+    "lines": [1, 2, 3, 4, 5, 6],           # people in the line = level + 2 (3..8)
+    "boxes": [1, 2, 3, 4, 5, 6],           # boxes around the deepest thing
+    "family": [1, 2, 3],                   # links chained: one, two, three
+    "falling": [1, 2, 3, 4],               # blocks that move when something lets go
+    "machines": [1, 2],                    # one hidden step / two hidden steps
 }
 # The secret exams: split name -> levels. Never trained on.
 SECRET = {
-    "sums": {"longer": [6, 7, 8]},
-    "lines": {"longer": [5, 6, 7]},             # 7..9 people
-    "boxes": {"deeper": [5, 6, 7]},
-    "family": {"new-pairs": [2], "deeper": [3]},
-    "falling": {"bigger": [4, 5, 6]},
+    "sums": {"longer": [9, 10, 11, 12]},
+    "lines": {"longer": [7, 8, 9, 10],         # 9..12 people
+              "more-moves": [3, 4]},           # 3 or 4 moves in a row (training only ever has 1 or 2); 6 people
+    "boxes": {"deeper": [7, 8, 9],
+              "more-moves": [3, 4]},           # 3 or 4 moves in a row; 4 boxes deep
+    "family": {"new-pairs": [2, 3], "deeper": [4]},   # new-pairs: two links (or three) chained in a way never asked
+    "falling": {"bigger": [5, 6, 7]},
     "machines": {"new-mixes": [2], "deeper": [3]},
 }
+TRAIN_MOVES = (1, 2)            # lines and boxes: how many actions a training episode has
+MOVES_PEOPLE, MOVES_DEPTH = 6, 4   # the size of the scene in the "more-moves" exams
 
 # Answers that are not things: yes/no and the ten digits ("class" answers).
 CLASSES = ("yes", "no") + tuple(str(i) for i in range(10))
@@ -169,8 +173,16 @@ def gen_sums(rng, level, split):
 
 
 # ---------------------------------------------------------------- lines: order chains
+def _moves(rng, level, split):
+    """(moves, scene level): training has 1 or 2 moves; the "more-moves" exam has `level` moves."""
+    if split == "more-moves":
+        return level, None
+    return rng.choice(TRAIN_MOVES), level
+
+
 def gen_lines(rng, level, split):
-    n = level + 2
+    moves, lv = _moves(rng, level, split)
+    n = (lv + 2) if lv is not None else MOVES_PEOPLE
     B = _Build(rng)
     names = rng.sample(NAMES, n)
     people = [B.thing(x) for x in names]
@@ -188,22 +200,24 @@ def gen_lines(rng, level, split):
         B.say(rng.choice(["some friends wait in a line", "people stand in a line", "there is a line"]))
     for s in _shuffled(rng, sents):
         B.say(*s)
-    kind = rng.choice(["swap", "front", "back"])
-    if kind == "swap":
-        x, y = rng.sample(people, 2)
-        B.say((x, B.things[x]), "and", (y, B.things[y]), "swap places")
-        i, j = order.index(x), order.index(y)
-        order[i], order[j] = order[j], order[i]
-    elif kind == "front":
-        x = rng.choice(order[1:])
-        B.say((x, B.things[x]), rng.choice(["walks to the front of the line", "moves to the very front"]))
-        order.remove(x)
-        order.insert(0, x)
-    else:
-        x = rng.choice(order[:-1])
-        B.say((x, B.things[x]), rng.choice(["goes to the back of the line", "moves to the very back"]))
-        order.remove(x)
-        order.append(x)
+    for m in range(moves):
+        pre = [rng.choice(["then", "after that"])] if m else []
+        kind = rng.choice(["swap", "front", "back"])
+        if kind == "swap":
+            x, y = rng.sample(people, 2)
+            B.say(*pre, (x, B.things[x]), "and", (y, B.things[y]), "swap places")
+            i, j = order.index(x), order.index(y)
+            order[i], order[j] = order[j], order[i]
+        elif kind == "front":
+            x = rng.choice(order[1:])
+            B.say(*pre, (x, B.things[x]), rng.choice(["walks to the front of the line", "moves to the very front"]))
+            order.remove(x)
+            order.insert(0, x)
+        else:
+            x = rng.choice(order[:-1])
+            B.say(*pre, (x, B.things[x]), rng.choice(["goes to the back of the line", "moves to the very back"]))
+            order.remove(x)
+            order.append(x)
     pos = {p: i for i, p in enumerate(order)}
     nm = lambda p: (p, B.things[p])  # noqa: E731
     for _ in range(12):
@@ -229,12 +243,13 @@ def gen_lines(rng, level, split):
             x = rng.choice(order[1:])
             B.ask_pointer(["who stands just in front of", nm(x)], order[pos[x] - 1])
     return B.episode("lines", level, split, " , ".join(B.things[p] for p in order),
-                     {"order": [B.things[p] for p in order]})
+                     {"order": [B.things[p] for p in order], "moves": moves})
 
 
 # ---------------------------------------------------------------- boxes: inside-of nesting
 def gen_boxes(rng, level, split):
-    d = level
+    moves, lv = _moves(rng, level, split)
+    d = lv if lv is not None else MOVES_DEPTH
     B = _Build(rng)
     table = B.thing("table")
     n_extra = rng.randint(1, 2)
@@ -287,18 +302,23 @@ def gen_boxes(rng, level, split):
         return False
 
     movable = [t for t in parent]
-    kind = rng.choice(["out", "into", "into"])
-    if kind == "out":
-        x = rng.choice([t for t in movable if parent[t] != table])
-        B.say("take the", nm(x), "out and put it on the", (table, "table"))
-        parent[x] = table
-    else:
-        while True:
+    for m in range(moves):
+        pre = [rng.choice(["then", "after that"])] if m else []
+        kind = rng.choice(["out", "into", "into"])
+        inner = [t for t in movable if parent[t] != table]
+        if kind == "out" and inner:
+            x = rng.choice(inner)
+            B.say(*pre, "take the", nm(x), "out and put it on the", (table, "table"))
+            parent[x] = table
+            continue
+        for _ in range(1000):
             x = rng.choice(movable)
             y = rng.choice(boxes_all)
             if y != x and y != parent[x] and not inside(y, x):
                 break
-        B.say(rng.choice(["put the", "move the"]), nm(x), "into the", nm(y))
+        else:
+            raise RuntimeError("no box move found")
+        B.say(*pre, rng.choice(["put the", "move the"]), nm(x), "into the", nm(y))
         parent[x] = y
 
     def top(x):
@@ -326,7 +346,8 @@ def gen_boxes(rng, level, split):
             B.ask_pointer(["which thing on the table has the", nm(x), "inside it"], top(x))
     new = " ; ".join(f"{B.things[x]} in {B.things[p]}" for x, p in parent.items())
     return B.episode("boxes", level, split, new, {"parent": {B.things[x]: B.things[p] for x, p in parent.items()},
-                                                  "start_parent": {B.things[x]: B.things[p] for x, p in start_parent.items()}})
+                                                  "start_parent": {B.things[x]: B.things[p] for x, p in start_parent.items()},
+                                                  "moves": moves})
 
 
 # ---------------------------------------------------------------- family: links both ways, chained
@@ -334,6 +355,10 @@ FAM_RELS = ("father", "mother", "son", "daughter", "brother", "sister")
 FAM_PAIRS = [(a, b) for a in FAM_RELS for b in FAM_RELS]
 FAM_HELD_OUT = [("brother", "mother"), ("sister", "father"), ("daughter", "brother"), ("mother", "mother"), ("son", "sister")]
 FAM_TRAIN_PAIRS = [p for p in FAM_PAIRS if p not in FAM_HELD_OUT]
+_new_link = lambda c: any(tuple(c[i:i + 2]) in FAM_HELD_OUT for i in range(len(c) - 1))  # noqa: E731
+FAM_TRIPLES = list(itertools.product(FAM_RELS, repeat=3))
+FAM_TRAIN_TRIPLES = [t for t in FAM_TRIPLES if not _new_link(t)]
+FAM_NEW_TRIPLES = [t for t in FAM_TRIPLES if _new_link(t)]
 
 
 def _family_tree(rng, generations=3):
@@ -356,9 +381,11 @@ def _family_tree(rng, generations=3):
     for g in range(generations - 2):
         new = []
         for p in gen:
-            if rng.random() < 0.75:
+            if g >= 1 and len(gender) >= 20:        # the fourth generation stays small, so scenes stay short
+                break
+            if rng.random() < (0.75 if g == 0 else 0.5):
                 spouse = person("f" if gender[p] == "m" else "m") if rng.random() < 0.5 else None
-                for _ in range(rng.randint(1, 3)):
+                for _ in range(rng.randint(1, 3 if g == 0 else 2)):
                     c = person()
                     parents[c] = {p} | ({spouse} if spouse is not None else set())
                     new.append(c)
@@ -443,16 +470,16 @@ def _try_family(rng, level, split):
         if asked == 3:
             break
         depth = level
-        if level == 2 and split == "train" and rng.random() < 0.3:
-            depth = 1
+        if level >= 2 and split == "train" and rng.random() < 0.3:
+            depth = level - 1                      # a few shorter chains keep the shorter ones fresh
         if depth == 1:
             r = (rng.choice(FAM_RELS),)
         elif split == "train":
-            r = rng.choice(FAM_TRAIN_PAIRS)
+            r = rng.choice(FAM_TRAIN_PAIRS if depth == 2 else FAM_TRAIN_TRIPLES)
         elif split == "new-pairs":
-            r = rng.choice(FAM_HELD_OUT)
+            r = rng.choice(FAM_HELD_OUT if depth == 2 else FAM_NEW_TRIPLES)
         else:
-            r = tuple(rng.choice(FAM_RELS) for _ in range(3))
+            r = tuple(rng.choice(FAM_RELS) for _ in range(depth))
         x = baby if (asked == 0 and rng.random() < 0.5) else rng.choice(people)
         n_before = len(B.qs)
         ans = _chain(r, x, gender, parents)

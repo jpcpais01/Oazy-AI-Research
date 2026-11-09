@@ -6,6 +6,7 @@
 #   bash runpod/world.sh --steps 40000           # extra options go to python3 -m worldfirst.run
 #   bash runpod/world.sh --only report           # examine the saved models again and rewrite the report
 #   bash runpod/world.sh --name world-arch --loops 0 --rival-loss answers   # the architecture test: no loops vs a rival graded only on answers
+#   bash runpod/world.sh --name world-big --preset big --steps 200000        # the long run: ~29M each, both at once; rerun to carry on
 # Results: <runs>/worldfirst/report.md and results.json; the dashboard (port 8000) shows them as a card.
 set -euo pipefail
 cd "$(dirname "$0")/.."

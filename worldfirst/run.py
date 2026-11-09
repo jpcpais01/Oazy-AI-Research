@@ -3,16 +3,19 @@
     python3 -m worldfirst.run                      # the real run (a GPU: minutes to an hour; CPU works, slowly)
     python3 -m worldfirst.run --preset tiny --steps 300 --eval-n 20     # a CPU smoke test, a few minutes
     python3 -m worldfirst.run --only report        # re-examine the saved models and rewrite the report
+    python3 -m worldfirst.run --name world-big --preset big --steps 200000   # the long run (~29M each, overnight)
 
 Writes <runs>/<name>/: laws/ and rival/ (checkpoint, metrics.jsonl), results.json (every number), report.md (the
-tables, in words). The dashboard shows results.json as the "World-first" card. A run that is stopped resumes nothing:
-each model is trained in one go, but a model already trained (its ckpt.pt is there) is not trained again.
+tables, in words). The dashboard shows results.json as the "World-first" card. A stopped run carries on where it
+stopped when started again with the same command (each model saves its state every 10 minutes), and a model already
+trained (its ckpt.pt is there) is not trained again. On a GPU both models train at the same time, one process each.
 """
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -21,7 +24,7 @@ import torch
 
 from . import world as W
 from .data import Vocab
-from .model import make_pair, n_params, config_of, from_config
+from .model import make_pair, n_params, config_of, from_config, LR
 from .train import train, evaluate, summarise
 
 
@@ -35,10 +38,10 @@ def runs_dir():
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--preset", default="base", choices=["tiny", "small", "base"])
+    ap.add_argument("--preset", default="base", choices=["tiny", "small", "base", "big"])
     ap.add_argument("--steps", type=int, default=20000, help="training steps for each model")
     ap.add_argument("--batch", type=int, default=128, help="episodes per step")
-    ap.add_argument("--lr", type=float, default=6e-4)
+    ap.add_argument("--lr", type=float, default=None, help="learning rate (default: 6e-4, 5e-4 for big)")
     ap.add_argument("--minutes", type=float, default=None, help="stop each model's training after this long")
     ap.add_argument("--eval-n", type=int, default=200, help="episodes per exam set")
     ap.add_argument("--name", default="worldfirst")
@@ -52,7 +55,11 @@ def main(argv=None):
                     help="all: the rival learns every next word (plain next-word model); answers: only the answer words")
     ap.add_argument("--fresh", action="store_true", help="train again even if a model is saved")
     ap.add_argument("--threads", type=int, default=0)
+    ap.add_argument("--together", type=int, default=None,
+                    help="1: train both models at the same time, one process each (the default on a GPU); 0: one after the other")
+    ap.add_argument("--workers", type=int, default=None, help="helper processes building batches (default 3 on a GPU, 0 on CPU)")
     a = ap.parse_args(argv)
+    a.lr = a.lr or LR[a.preset]
     if a.threads:
         torch.set_num_threads(a.threads)
     dev = ("cuda" if torch.cuda.is_available() else "cpu") if a.device == "auto" else a.device
@@ -70,6 +77,8 @@ def main(argv=None):
 
     def phase(p):
         """<run>/status.json: which part of the run is going on (for the world dashboard)."""
+        if os.environ.get("WORLD_CHILD"):           # a helper training one model: the parent keeps the run's status
+            return
         (out / "status.json").write_text(json.dumps({"phase": p, "preset": a.preset, "steps": a.steps, "batch": a.batch,
                                                      "device": dev, "when": time.strftime("%Y-%m-%d %H:%M")}))
 
@@ -80,6 +89,20 @@ def main(argv=None):
     rival.cfg.loss = a.rival_loss
     say(f"world-first stage 1: {a.preset}, device {dev}, vocab {len(vocab)} words")
     say(f"  Laws model (not next-word): {n_params(laws) / 1e6:.2f}M numbers; rival (next-word): {n_params(rival) / 1e6:.2f}M")
+    together = (dev == "cuda") if a.together is None else bool(a.together)
+    todo = [m.kind for m in (laws, rival) if (a.fresh or not (out / m.kind / "ckpt.pt").exists()) and a.only in ("all", m.kind)]
+    if together and a.only == "all" and len(todo) == 2:
+        say("training both models at the same time (one process each)")
+        phase("both")
+        args = list(argv if argv is not None else sys.argv[1:])
+        env = dict(os.environ, WORLD_CHILD="1")
+        procs = [subprocess.Popen([sys.executable, "-m", "worldfirst.run", *args, "--only", k, "--together", "0"], env=env)
+                 for k in todo]
+        codes = [p.wait() for p in procs]
+        if any(codes):
+            say(f"a training process failed ({codes}); see the log above")
+            return
+        a.fresh = False
     trained = {}
     for m in (laws, rival):
         d = out / m.kind
@@ -94,10 +117,12 @@ def main(argv=None):
             continue
         say(f"training {m.kind} for {a.steps} steps of {a.batch} episodes")
         phase(m.kind)
+        if a.fresh:
+            (d / "train_state.pt").unlink(missing_ok=True)
         if m.kind == "rival" and not a.rival_tags:
             _no_tags(m)
         info = train(m, vocab, d, steps=a.steps, batch=a.batch, lr=a.lr, device=dev, curriculum=not a.no_curriculum,
-                     minutes=a.minutes, say=say, seed=0)
+                     minutes=a.minutes, say=say, seed=0, workers=a.workers)
         info["params"] = n_params(m)
         torch.save({"model": m.state_dict(), "config": config_of(m), "vocab": vocab.words, "info": info}, ck)
         (d / "config.json").write_text(json.dumps(config_of(m)))
@@ -135,7 +160,7 @@ def _no_tags(rival):
 
 
 SPLIT_WORDS = {"seen": "practised kinds, new scenes", "longer": "longer", "deeper": "deeper", "bigger": "bigger falls",
-               "new-pairs": "links chained in new ways", "new-mixes": "rules mixed in new ways"}
+               "new-pairs": "links chained in new ways", "new-mixes": "rules mixed in new ways", "more-moves": "more moves in a row"}
 
 
 def _pct(x):

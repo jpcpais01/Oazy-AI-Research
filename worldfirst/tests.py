@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import json
 import random
 import sys
 import traceback
@@ -111,16 +112,16 @@ def secret_exams_are_walled_off():
     def secret_like(e):
         f = e.facts
         if e.family == "sums":
-            return len(f["a"]) - 1 >= 6
+            return len(f["a"]) - 1 >= 9
         if e.family == "lines":
-            return len(f["order"]) >= 7
+            return len(f["order"]) >= 9 or f["moves"] >= 3
         if e.family == "boxes":
             sp = f["start_parent"]
-            return max(depth(sp, x) for x in sp) >= 5
+            return max(depth(sp, x) for x in sp) >= 7 or f["moves"] >= 3
         if e.family == "family":
-            return any(len(c) >= 3 or tuple(c) in W.FAM_HELD_OUT for c in f["asked"])
+            return any(len(c) >= 4 or W._new_link(c) for c in f["asked"])
         if e.family == "falling":
-            return f["movers"] >= 4
+            return f["movers"] >= 5
         if e.family == "machines":
             return tuple(f["rule"]) in set(W.MACHINES["new-mixes"]) | set(W.MACHINES["deeper"])
     n = 0
@@ -160,6 +161,51 @@ def family_reversals_are_tagged():
 
 
 @check
+def more_moves_are_followed():
+    """Several moves in a row: the line after them is what replaying the moves gives."""
+    for sp, lv in (("train", 3), ("more-moves", 4)):
+        for s in range(200):
+            e = W.make("lines", lv, sp, s)
+            assert (e.facts["moves"] in W.TRAIN_MOVES) == (sp == "train")
+            t = " ".join(e.tokens).split(" . ")
+            n_moves = sum(any(k in x for k in ("swap places", "front of the line", "very front", "back of the line", "very back"))
+                          for x in t)
+            assert n_moves == e.facts["moves"], e.text()
+
+
+@check
+def resume_carries_on():
+    """A long run stopped half way carries on from its saved state, not from the start."""
+    import tempfile
+    import torch
+    from pathlib import Path
+    from .data import Vocab
+    from .model import make_pair
+    from .train import train
+    v = Vocab()
+    with tempfile.TemporaryDirectory() as d:
+        torch.manual_seed(0)
+        laws, _ = make_pair(len(v), "tiny")
+
+        def crash(msg):                       # the pod goes away during step 4
+            if "step 4/6" in msg:
+                raise KeyboardInterrupt
+
+        try:
+            train(laws, v, Path(d), steps=6, batch=4, log_every=1, save_minutes=1e-9, eval_every=0, say=crash)
+        except KeyboardInterrupt:
+            pass
+        assert (Path(d) / "train_state.pt").exists()
+        laws, _ = make_pair(len(v), "tiny")
+        said = []
+        info = train(laws, v, Path(d), steps=6, batch=4, log_every=1, eval_every=0, say=said.append)
+        assert any("carrying on from step 3" in m for m in said), said
+        assert info["steps"] == 6 and not (Path(d) / "train_state.pt").exists()
+        steps = [json.loads(x)["step"] for x in open(Path(d) / "metrics.jsonl")]
+        assert steps == sorted(steps) and steps[-1] == 6, steps
+
+
+@check
 def curriculum_moves_up():
     c = W.Curriculum()
     assert c.state()["sums"] == 1
@@ -187,7 +233,7 @@ def torch_checks():
 
     @check
     def same_size_rival():
-        for preset in ("tiny", "small", "base"):
+        for preset in ("tiny", "small", "base", "big"):
             laws, rival = make_pair(len(v), preset)
             a, b = n_params(laws), n_params(rival)
             assert abs(a - b) / a < 0.01, (preset, a, b)
