@@ -29,7 +29,7 @@ run() {     # run <model> <name>
     python3 -m oazy.train --model "$1" "${COMMON[@]}" --name "$2" 2>&1 | tee -a "$RUNS/$2.log"
 }
 echo "Emerald's world and its marks (built once; a world built before the marks only gets the marks added)"
-nice -n 10 python3 -m oazy.emerald build --data "$DATA" 2>&1 | tee -a "$RUNS/emerald-build.log" | tail -n 3
+nice -n 10 python3 -m oazy.emerald build --data "$DATA" 2>&1 | tee -a "$RUNS/emerald-build.log"
 run bee6 "$BEE"
 run logos "$LOGOS"
 python3 -m oazy.worldmix exam --runs "$RUNS" --run "$BEE" "$LOGOS"
