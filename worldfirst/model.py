@@ -71,6 +71,40 @@ class Block(nn.Module):
         return x + self.down(F.gelu(self.up(self.n2(x))))
 
 
+def link_loss(m_logit, sc, new, valid, ment):
+    """The "same thing" answer key, from the marks (training only; both models get it the same way): which words name
+    a thing, and for each of them which earlier words name the same thing (any of them is right), or "new" when none
+    does. m_logit [B, T], sc [B, T, T] (word i pointing at word j), new [B, T], valid [B, T], ment [B, T] (-1: none)."""
+    T = ment.shape[1]
+    ar = torch.arange(T, device=ment.device)
+    gm = ment >= 0
+    l_m = F.binary_cross_entropy_with_logits(m_logit.float()[valid], gm[valid].float())
+    cand = (ar[None, :] < ar[:, None])[None] & gm[:, None, :]
+    gold = cand & (ment[:, :, None] == ment[:, None, :])
+    lg = torch.cat([new.float()[..., None], sc.float().masked_fill(~cand, -1e9)], -1)      # [B, T, 1 + T]
+    g = torch.cat([~gold.any(-1, keepdim=True), gold], -1)
+    per = torch.logsumexp(lg, -1) - torch.logsumexp(lg.masked_fill(~g, -1e9), -1)
+    l_a = per[gm].mean() if gm.any() else per.sum() * 0
+    return l_m + l_a
+
+
+class LinkHead(nn.Module):
+    """Reads hidden states: does word i name a thing, which earlier word j names the same one, or is it new."""
+
+    def __init__(self, d):
+        super().__init__()
+        self.norm = nn.RMSNorm(d)
+        self.ment = nn.Linear(d, 1)
+        self.q = nn.Linear(d, d, bias=False)
+        self.k = nn.Linear(d, d, bias=False)
+        self.new = nn.Linear(d, 1)
+
+    def forward(self, h):
+        x = self.norm(h)
+        sc = torch.einsum("bid,bjd->bij", self.q(x), self.k(x)).float() / math.sqrt(h.shape[-1])
+        return self.ment(x).squeeze(-1).float(), sc, self.new(x).squeeze(-1).float()
+
+
 @dataclass
 class LawsConfig:
     vocab: int = 512
@@ -393,20 +427,8 @@ class Laws(nn.Module):
         return loss, hits, used
 
     def link_loss(self, ment):
-        """The linker's answer key, from the marks (training only): which words name a thing, and for each of them
-        which earlier words name the same thing (any of them is right), or "new" when none does."""
         m_logit, sc, new, valid = self._lk
-        T = ment.shape[1]
-        ar = torch.arange(T, device=ment.device)
-        gm = ment >= 0
-        l_m = F.binary_cross_entropy_with_logits(m_logit[valid], gm[valid].float())
-        cand = (ar[None, :] < ar[:, None])[None] & gm[:, None, :]
-        gold = cand & (ment[:, :, None] == ment[:, None, :])
-        lg = torch.cat([new[..., None], sc.masked_fill(~cand, -1e9)], -1)        # [B, T, 1 + T]
-        g = torch.cat([~gold.any(-1, keepdim=True), gold], -1)
-        per = torch.logsumexp(lg, -1) - torch.logsumexp(lg.masked_fill(~g, -1e9), -1)
-        l_a = per[gm].mean() if gm.any() else per.sum() * 0
-        return l_m + l_a
+        return link_loss(m_logit, sc, new, valid, ment)
 
     def teach_loss(self, ment):
         """Marks as a teacher: for every two words that name things, the finder's chance that they went to the same slot
@@ -433,6 +455,8 @@ class RivalConfig:
     ff: int = 1536
     n_layer: int = 6
     loss: str = "all"          # "all": every next word (plain next-word learning); "answers": only the answer words
+    teach: float = 0.0         # >0: the same "same thing" answer key as the Laws model's linker gets (from the marks,
+                               # training only, never an input): a link head on its last layer, the same loss and weight
 
 
 class Rival(nn.Module):
@@ -446,6 +470,8 @@ class Rival(nn.Module):
         self.tag = nn.Embedding(N_TAGS, d)
         self.blocks = nn.ModuleList([Block(d, cfg.heads, cfg.ff) for _ in range(cfg.n_layer)])
         self.norm = nn.RMSNorm(d)
+        if cfg.teach > 0:
+            self.link = LinkHead(d)
         self.apply(_init)
         with torch.no_grad():
             self.tag.weight[0].zero_()
@@ -458,6 +484,7 @@ class Rival(nn.Module):
         h = self.emb(tok) + self.tag(b["tag"])
         for blk in self.blocks:
             h = blk(h, pos, mask)
+        self._h = h
         return self.norm(h) @ self.emb.weight.T                 # tied word table
 
     def loss_and_hits(self, b, **_):
@@ -468,6 +495,10 @@ class Rival(nn.Module):
             loss = F.cross_entropy(a, b["iy"])
         else:
             loss = F.cross_entropy(lg[:, :-1].flatten(0, 1).float(), tok[:, 1:].flatten(), ignore_index=0)
+        if self.training and self.cfg.teach > 0:              # causal: word i only points at words it has read
+            with torch.autocast(tok.device.type, enabled=False):
+                m_logit, sc, new = self.link(self._h.float())
+                loss = loss + self.cfg.teach * link_loss(m_logit, sc, new, tok != 0, b["ment"])
         a = a.masked_fill(~b["cand"], -1e9)
         hits = a.argmax(-1) == b["iy"]
         return loss, hits, None
@@ -496,7 +527,7 @@ PRESETS = {
 LR = {"tiny": 6e-4, "small": 6e-4, "base": 6e-4, "big": 5e-4}
 
 
-def make_pair(vocab_size: int, preset: str = "base", **over):
+def make_pair(vocab_size: int, preset: str = "base", rival_teach=None, **over):
     """The Laws model and a rival of the same size (its MLP width is tuned so the counts match within 1%)."""
     p = dict(PRESETS[preset])
     p.update(over)
@@ -506,8 +537,9 @@ def make_pair(vocab_size: int, preset: str = "base", **over):
     target = n_params(laws)
     n_layer = lc.n_read + lc.n_core
     best = None
+    rteach = rival_teach if rival_teach is not None else (lc.teach if lc.finder_kind == "link" else 0.0)
     for ff in range(64, 16 * lc.d + 1, 16):
-        rc = RivalConfig(vocab=vocab_size, d=lc.d, heads=lc.heads, ff=ff, n_layer=n_layer)
+        rc = RivalConfig(vocab=vocab_size, d=lc.d, heads=lc.heads, ff=ff, n_layer=n_layer, teach=rteach)
         n = _rival_count(rc)
         if best is None or abs(n - target) < abs(best[1] - target):
             best = (rc, n)
@@ -518,7 +550,8 @@ def make_pair(vocab_size: int, preset: str = "base", **over):
 def _rival_count(rc: RivalConfig):
     d, ff, L, V = rc.d, rc.ff, rc.n_layer, rc.vocab
     per = 4 * d * d + 2 * (d // rc.heads) + 2 * d * ff + 2 * d
-    return V * d + N_TAGS * d + L * per + d
+    head = (2 * d * d + 2 * (d + 1) + d) if rc.teach > 0 else 0        # the link head (same as the linker's)
+    return V * d + N_TAGS * d + L * per + d + head
 
 
 def config_of(m):

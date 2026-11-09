@@ -53,6 +53,8 @@ bash runpod/world.sh --name world-teach --preset big --steps 200000 --passes 3 -
 The linker (`--linker 1`, the best no-marks version): instead of slots, each word that names a thing points back to
 the earlier word that names the same thing, or starts a new thing; the chains are the things, numbered in the order
 it met them. The marks are only its answer key in training (as `--teach`); it always uses its own links.
+For fairness the rival gets the very same answer key the same way: a link head on its last layer, the same loss and
+weight, sizes still matched. At the exams both read plain text.
 
 ```bash
 bash runpod/world.sh --name world-link --preset big --steps 200000 --passes 3 --natural 1 --linker 1

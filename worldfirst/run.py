@@ -179,7 +179,7 @@ def main(argv=None):
         say(f"{m.kind}: examined in {(time.time() - t0) / 60:.1f} min")
     res = {"kind": "worldfirst", "name": a.name, "when": time.strftime("%Y-%m-%d %H:%M"), "device": dev,
            "preset": a.preset, "eval_n": a.eval_n, "rival_tags": bool(a.rival_tags), "rival_loss": a.rival_loss, "loops": bool(a.loops), "passes": a.passes,
-           "natural": bool(a.natural), "finder": a.finder or 0, "teach": a.teach if a.finder else 0, "linker": bool(a.linker),
+           "natural": bool(a.natural), "finder": a.finder or 0, "teach": a.teach if a.finder else 0, "linker": bool(a.linker), "rival_teach": rival.cfg.teach,
            "params": {"laws": n_params(laws), "rival": n_params(rival)}, "train": trained, "rows": rows,
            "summary": {"laws": summarise(rows["laws"], "settle"), "rival": summarise(rows["rival"], "plain")}}
     (out / "results.json").write_text(json.dumps(res, indent=1))
@@ -226,6 +226,8 @@ def report(res) -> str:
                         if res.get("linker") else f"with {res['finder']} slots. ")
                      + (f"In training only, the world's marks were its finder's answer key (marks as a teacher, weight {res['teach']:g}); "
                         "at the exams it reads plain text like the rival. " if res.get("teach") else "")
+                     + ("The rival gets the very same answer key, the same way: a link head on its last layer learns which "
+                        "earlier word names the same thing (same loss, same weight, sizes still matched). " if res.get("rival_teach") else "")
                      + f"Things it found cleanly (all of a thing's words in one group of their own): {_pct(sum(fd) / len(fd)) if fd else '-'}.\n")
     lines.append(f"**Secret exams (never trained on): Laws {_pct(sl.get('secret'))}, rival {_pct(sr.get('secret'))}.** "
                  f"Practised kinds on new scenes: Laws {_pct(sl.get('seen'))}, rival {_pct(sr.get('seen'))}.\n")
