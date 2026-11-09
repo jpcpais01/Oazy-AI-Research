@@ -144,7 +144,7 @@ def main():
     loss, st = m.losses(xb[:, :-1], xb[:, 1:])
     with torch.no_grad():
         e = m._read(xb[:, :-1])
-        s = m.start(4, 63, 0, dev, e.dtype, True)
+        s = m.start(4, xb.shape[1] - 1, 0, dev, e.dtype, True)
         th = []
         for _ in range(5):
             s = m._step(s, e)
@@ -174,7 +174,7 @@ def main():
     e2 = m._read(xb[:, :-1]).detach().requires_grad_(True)
     o_a = m.think_train(e2, 5)[-1].sum()
     g_trunc = torch.autograd.grad(o_a, e2)[0]
-    s3 = m.start(4, 63, 0, dev, e2.dtype, True)
+    s3 = m.start(4, xb.shape[1] - 1, 0, dev, e2.dtype, True)
     with torch.no_grad():
         for _ in range(3):
             s3 = m._step(s3, e2)
