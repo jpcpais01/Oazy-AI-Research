@@ -134,7 +134,10 @@ class Laws(nn.Module):
         pos = b["pos"]
         if gen is None and not self.training:
             gen = torch.Generator(device=e.device).manual_seed(1234)
-        s = torch.randn(B, S, d, device=e.device, generator=gen).to(e.dtype)
+        if cfg.train_max == 1:                              # no loops: one pass from a blank state
+            s = torch.zeros(B, S, d, device=e.device, dtype=e.dtype)
+        else:
+            s = torch.randn(B, S, d, device=e.device, generator=gen).to(e.dtype)
         if passes is None:
             passes = cfg.test_max if adaptive else cfg.train_max
         used = torch.full((B,), passes, device=e.device, dtype=torch.long)
