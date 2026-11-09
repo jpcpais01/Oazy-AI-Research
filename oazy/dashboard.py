@@ -105,6 +105,83 @@ def world_results(runs: Path):
     return sorted(out, key=lambda r: r.get("when") or "", reverse=True)
 
 
+def _is_world(d: Path) -> bool:
+    return d.is_dir() and ((d / "laws" / "metrics.jsonl").exists() or (d / "rival" / "metrics.jsonl").exists())
+
+
+def world_runs(runs: Path):
+    """The world-model runs (worldfirst/), newest first: name, phase, and when it last moved."""
+    out = []
+    if runs.exists():
+        for d in runs.iterdir():
+            if _is_world(d):
+                r = world_run(runs, d.name, metrics=False)
+                out.append({"name": d.name, "phase": r["phase"], "updated": r["updated"]})
+    return sorted(out, key=lambda r: r["updated"], reverse=True)
+
+
+def world_run(runs: Path, name: str, metrics: bool = True):
+    """Everything the world dashboard shows for one run: both models' progress and logs, and the exam results."""
+    d = runs / name
+    out = {"name": name, "models": {}, "results": None, "status": read_json(d / "status.json")}
+    updated = 0.0
+    for kind in ("laws", "rival"):
+        md = d / kind
+        if not md.is_dir():
+            continue
+        st = read_json(md / "status.json")
+        m = read_jsonl(md / "metrics.jsonl") if (metrics or st is None) else []
+        if st is None and m:                      # a run from before status.json: read the last line of its log
+            tr = [x for x in m if x.get("kind") == "train"]
+            last = tr[-1] if tr else {}
+            st = {"state": "done" if (md / "ckpt.pt").exists() else "training", "kind": kind, "step": last.get("step"),
+                  "steps": None, "minutes": last.get("minutes"), "acc": last.get("acc"), "frontier": last.get("frontier")}
+        cfg = read_json(md / "config.json")
+        out["models"][kind] = {"status": st, "config": cfg, "metrics": m if metrics else None}
+        for f in ("metrics.jsonl", "status.json"):
+            if (md / f).exists():
+                updated = max(updated, (md / f).stat().st_mtime)
+    res = read_json(d / "results.json")
+    if isinstance(res, dict) and res.get("kind") == "worldfirst":
+        out["results"] = res
+        updated = max(updated, (d / "results.json").stat().st_mtime)
+    ph = (out["status"] or {}).get("phase")
+    if ph is None:                                # infer it
+        ms = out["models"]
+        ph = ("done" if out["results"] else
+              "exams" if all((ms.get(k) or {}).get("status", {}) and ms[k]["status"].get("state") == "done" for k in ("laws", "rival")) else
+              "rival" if "rival" in ms else "laws")
+    out["phase"] = ph
+    out["live"] = ph != "done" and time.time() - updated < 300
+    out["updated"] = updated
+    return out
+
+
+def world_example(family: str, split: str):
+    """One fresh episode of the world (worldfirst/world.py), with its answers, for the dashboard's 'what it is asked'."""
+    import random
+    from worldfirst import world as W
+    if family not in W.FAMILIES:
+        return None
+    if split == "seen":
+        lv, sp = random.choice(W.TRAIN_LEVELS[family]), "train"
+    else:
+        sp = split if split in W.SECRET[family] else random.choice(list(W.SECRET[family]))
+        lv = random.choice(W.SECRET[family][sp])
+    e = W.make(family, lv, sp, random.randrange(10 ** 9))
+    def sentences(toks):
+        out, cur = [], []
+        for t in toks:
+            cur.append(t)
+            if t in (".", "?"):
+                out.append(" ".join(cur[:-1]) + t)
+                cur = []
+        return out
+    return {"family": family, "level": lv, "split": "seen" if sp == "train" else sp, "scene": sentences(e.tokens),
+            "questions": [{"q": sentences(q.tokens)[0], "a": " ".join(q.answer)} for q in e.questions],
+            "after": e.new_scene}
+
+
 def make_phone(runs: Path, rn: str) -> bool:
     """Convert a run for the phone app in the background (phone.export, CPU, a few minutes)."""
     job = PHONE_JOBS.get(rn)
@@ -206,6 +283,15 @@ def make_handler(runs: Path, web: Path = WEB):
                 return self.js(version())
             if parts == ["api", "world"]:
                 return self.js(world_results(runs))
+            if parts == ["world"]:
+                return self.send(200, (web / "world.html").read_bytes(), "text/html; charset=utf-8")
+            if parts == ["api", "world", "runs"]:
+                return self.js(world_runs(runs))
+            if len(parts) == 4 and parts[:3] == ["api", "world", "run"] and ".." not in parts[3] and _is_world(runs / parts[3]):
+                return self.js(world_run(runs, parts[3]))
+            if len(parts) == 5 and parts[:3] == ["api", "world", "example"]:
+                ex = world_example(parts[3], parts[4])
+                return self.js(ex) if ex else self.send(404, b"{}")
             if parts == ["api", "runs"]:
                 out = []
                 if runs.exists():

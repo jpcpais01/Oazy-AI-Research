@@ -67,6 +67,11 @@ def main(argv=None):
         log.write(msg + "\n")
         log.flush()
 
+    def phase(p):
+        """<run>/status.json: which part of the run is going on (for the world dashboard)."""
+        (out / "status.json").write_text(json.dumps({"phase": p, "preset": a.preset, "steps": a.steps, "batch": a.batch,
+                                                     "device": dev, "when": time.strftime("%Y-%m-%d %H:%M")}))
+
     vocab = Vocab()
     torch.manual_seed(0)
     laws, rival = make_pair(len(vocab), a.preset)
@@ -86,6 +91,7 @@ def main(argv=None):
         if a.only not in ("all", m.kind):
             continue
         say(f"training {m.kind} for {a.steps} steps of {a.batch} episodes")
+        phase(m.kind)
         if m.kind == "rival" and not a.rival_tags:
             _no_tags(m)
         info = train(m, vocab, d, steps=a.steps, batch=a.batch, lr=a.lr, device=dev, curriculum=not a.no_curriculum,
@@ -101,6 +107,7 @@ def main(argv=None):
         say("both models are needed for the report")
         return
     rows = {}
+    phase("exams")
     for m in (laws, rival):
         t0 = time.time()
         m.to(dev)
@@ -111,6 +118,7 @@ def main(argv=None):
            "params": {"laws": n_params(laws), "rival": n_params(rival)}, "train": trained, "rows": rows,
            "summary": {"laws": summarise(rows["laws"], "settle"), "rival": summarise(rows["rival"], "plain")}}
     (out / "results.json").write_text(json.dumps(res, indent=1))
+    phase("done")
     rep = report(res)
     (out / "report.md").write_text(rep)
     say("\n" + rep)
@@ -124,7 +132,7 @@ def _no_tags(rival):
     rival.tag.weight.requires_grad_(False)
 
 
-SPLIT_WORDS = {"seen": "seen kinds, new scenes", "longer": "longer", "deeper": "deeper", "bigger": "bigger falls",
+SPLIT_WORDS = {"seen": "practised kinds, new scenes", "longer": "longer", "deeper": "deeper", "bigger": "bigger falls",
                "new-pairs": "links chained in new ways", "new-mixes": "rules mixed in new ways"}
 
 
@@ -142,7 +150,7 @@ def report(res) -> str:
                  f"rival {res['params']['rival'] / 1e6:.1f}M (a plain next-word transformer), the same world text, "
                  f"{res['eval_n']} new episodes per exam set, a question counts only if its whole answer is right.\n")
     lines.append(f"**Secret exams (never trained on): Laws {_pct(sl.get('secret'))}, rival {_pct(sr.get('secret'))}.** "
-                 f"Seen kinds on new scenes: Laws {_pct(sl.get('seen'))}, rival {_pct(sr.get('seen'))}.\n")
+                 f"Practised kinds on new scenes: Laws {_pct(sl.get('seen'))}, rival {_pct(sr.get('seen'))}.\n")
     lines.append("| family | exam | levels | Laws | rival | Laws passes |")
     lines.append("|---|---|---|---|---|---|")
     for fam in W.FAMILIES:

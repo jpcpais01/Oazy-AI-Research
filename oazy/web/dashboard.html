@@ -132,7 +132,7 @@
   <a class="mark" href="#top" aria-label="Oazy AI Research, back to top"><img src="icon.svg" alt=""><span class="word">OAZY<small>TRAINING LAB <span class="ver" id="ver"></span></small></span></a>
   <nav class="tabs" id="tabs" aria-label="Sections"><span class="tabpill" id="tabpill"></span>
     <a href="#now" data-sec="now">Now</a><a href="#scores" data-sec="scores">Scores</a><a href="#learning" data-sec="learning">Learning</a>
-    <a href="#memory" data-sec="memory">Memory</a><a href="#writing" data-sec="writing">Writing</a><a href="#models" data-sec="models">Models</a></nav>
+    <a href="#memory" data-sec="memory">Memory</a><a href="#writing" data-sec="writing">Writing</a><a href="#models" data-sec="models">Models</a><a href="world">World ↗</a></nav>
   <span class="pill" id="updated"><span class="dot"></span><span>connecting…</span></span>
 </div></header>
 
@@ -1218,7 +1218,7 @@ function draw() {
 
 // World-first, stage 1 (worldfirst/): the Laws model (predicts the next scene, not a next-word model) against a plain
 // next-word transformer of the same size, on scenes it has seen the kind of and on secret exams it never trained on.
-const WORLD_SPLIT = { seen: "seen kinds, new scenes", longer: "longer", deeper: "deeper", bigger: "bigger falls", "new-pairs": "links chained in new ways", "new-mixes": "rules mixed in new ways" };
+const WORLD_SPLIT = { seen: "practised kinds, new scenes", longer: "longer", deeper: "deeper", bigger: "bigger falls", "new-pairs": "links chained in new ways", "new-mixes": "rules mixed in new ways" };
 function worldHtml(res) {
   const p0 = (v) => v == null ? "–" : (v * 100).toFixed(1) + "%";
   const avg = (xs) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
@@ -1242,12 +1242,12 @@ function worldHtml(res) {
   const sweep = ["seen", "secret"].map((part) => `<tr><td class="who">${part}</td>${ks.map((k) => `<td>${p0(avg(L.filter((r) => r.mode === "p" + k && ((r.split === "seen") === (part === "seen"))).map((r) => r.right)))}</td>`).join("")}<td>${p0(avg(L.filter((r) => r.mode === "settle" && ((r.split === "seen") === (part === "seen"))).map((r) => r.right)))}</td></tr>`).join("");
   const mb = (n) => (n / 1e6).toFixed(1) + "M";
   return `<div class="card score">
-      <div class="big">Secret exams, never trained on: the Laws model ${p0(sl.secret)}, the rival ${p0(sr.secret)}. On new scenes of kinds it has seen: ${p0(sl.seen)} and ${p0(sr.seen)}.</div>
+      <div class="big">Secret exams, never trained on: the Laws model ${p0(sl.secret)}, the rival ${p0(sr.secret)}. On new scenes of the kinds it practised: ${p0(sl.seen)} and ${p0(sr.seen)}.</div>
       <div class="fcwrap"><table class="scores world">
         <tr><th>Laws of</th><th>Exam</th><th>Laws model<span>${mb(res.params.laws)} · predicts the next scene</span></th><th>Rival<span>${mb(res.params.rival)} · next-word</span></th><th>Passes<span>it chose to think</span></th></tr>
         ${body}
       </table></div>
-      <p class="note">Each episode is a scene told in simple English with fresh random names, one action that changes it, and questions about the scene after the action; a question counts only when its whole answer is right (a sum: every digit). The secret exams are walled off by construction: longer sums and lines, deeper boxes, bigger falls, family links chained in ways never asked, hidden machines mixing steps never mixed in training. Green is the better of the two. Run ${UI.escapeHtml(res.name)}, ${UI.escapeHtml(res.when)}, ${res.eval_n} episodes per exam.</p>
+      <p class="note"><a href="world" style="color:var(--good)">Open the world dashboard ↗</a> for the race as it trains, the exams in full, how it thinks, and live examples. Each episode is a scene told in simple English with fresh random names, one action that changes it, and questions about the scene after the action; a question counts only when its whole answer is right (a sum: every digit). The secret exams are walled off by construction: longer sums and lines, deeper boxes, bigger falls, family links chained in ways never asked, hidden machines mixing steps never mixed in training. Green is the better of the two. Run ${UI.escapeHtml(res.name)}, ${UI.escapeHtml(res.when)}, ${res.eval_n} episodes per exam.</p>
       <details class="why"><summary>Does thinking longer help?</summary><div class="body">
         <div class="fcwrap"><table class="scores"><tr><th></th>${ks.map((k) => `<th>${k} pass${k > 1 ? "es" : ""}</th>`).join("")}<th>stops by itself</th></tr>${sweep}</table></div>
         <p class="note">The Laws model's core runs again and again, one tick of thinking per pass. Here it is forced to stop after a fixed number of passes; "stops by itself" is the real test, where it thinks until its picture of the scene stops moving. The last column of the table above is how many passes that took.</p></div></details>

@@ -85,19 +85,39 @@ def train(model, vocab, out: Path, steps=20000, batch=128, lr=6e-4, warmup=300, 
                    "episodes": seen_eps, "minutes": el / 60, "lr": lr * sched(step), "frontier": cur.state()}
             metrics.write(json.dumps(rec) + "\n")
             metrics.flush()
+            _status(out, {"state": "training", "kind": model.kind, "step": step + 1, "steps": steps, "batch": batch,
+                          "minutes": el / 60, "loss": rec["loss"], "acc": rec["acc"], "frontier": cur.state(),
+                          "params": sum(p.numel() for p in model.parameters())})
             say(f"{model.kind} step {step + 1}/{steps}  loss {rec['loss']:.4f}  right {100 * rec['acc']:.1f}%  "
                 f"{el / 60:.1f} min  frontier " + " ".join(f"{k}:{v}" for k, v in cur.state().items()))
             run_loss, run_acc, run_n = 0.0, 0.0, 0
         if eval_every and (step + 1) % eval_every == 0 and step + 1 < steps:
             res = evaluate(model, vocab, n=eval_n, device=device, sweep=False)
-            metrics.write(json.dumps({"kind": "exam", "step": step + 1, "minutes": el / 60, **summarise(res)}) + "\n")
+            sm = summarise(res)
+            metrics.write(json.dumps({"kind": "exam", "step": step + 1, "minutes": el / 60, **sm}) + "\n")
+            say(f"{model.kind} short exam at step {step + 1}:  secret {100 * sm.get('secret', 0):.1f}%  "
+                f"practised kinds {100 * sm.get('seen', 0):.1f}%")
             metrics.flush()
             model.train()
         if minutes and el > minutes * 60:
             say(f"{model.kind}: time is up after {step + 1} steps")
             break
     info = {"steps": step + 1, "episodes": seen_eps, "minutes": (time.time() - t0) / 60, "frontier": cur.state()}
+    last = None
+    try:
+        last = [json.loads(x) for x in open(out / "metrics.jsonl") if '"train"' in x][-1]
+    except Exception:
+        pass
+    _status(out, {"state": "done", "kind": model.kind, "step": step + 1, "steps": steps, "batch": batch,
+                  "minutes": info["minutes"], "acc": (last or {}).get("acc"), "frontier": cur.state(), "params": sum(p.numel() for p in model.parameters())})
     return info
+
+
+def _status(out: Path, st: dict):
+    """status.json next to metrics.jsonl: what the world dashboard reads for the progress bar."""
+    tmp = out / "status.json.tmp"
+    tmp.write_text(json.dumps(st))
+    tmp.replace(out / "status.json")
 
 
 @torch.no_grad()

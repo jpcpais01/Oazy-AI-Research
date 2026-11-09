@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#050507">
+<title>Oazy · World models</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="style.css">
+<style>
+  :root { --laws: #5ef0c8; --rival: #ff8fb1; }
+  .duo { display: grid; gap: 24px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  @media (max-width: 900px) { .duo { grid-template-columns: 1fr; } }
+  .run .stats { display: grid; }
+  .run .head { display: flex; align-items: center; gap: 12px; }
+  .run .head .badge { margin-left: auto; }
+  .run .prog .labels { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .run .stats .h { color: var(--muted); }
+  .runpick { display: flex; justify-content: flex-end; margin: -10px 0 18px; }
+
+  /* the levels each model has reached, per family of laws */
+  .levels { margin-top: 22px; display: grid; gap: 9px; }
+  .levels .row { display: grid; grid-template-columns: 82px 1fr auto; gap: 12px; align-items: center; font-size: 12.5px; color: var(--text-2); }
+  .levels .row .fam { font: 500 10.5px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .levels .dots { display: flex; gap: 6px; align-items: center; }
+  .levels .dots i { width: 9px; height: 9px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .18); }
+  .levels .dots i.on { background: var(--acc); border-color: var(--acc); box-shadow: 0 0 8px -1px var(--acc); }
+  .levels .dots i.secret { border-style: dashed; border-color: rgba(255, 255, 255, .22); }
+  .levels .row b { font: 500 11px var(--mono); color: var(--text-2); }
+  .lvkey { font-size: 11.5px; color: var(--muted); margin-top: 10px; }
+
+  /* the exams: two bars per row, ours and the rival's */
+  .duel { display: grid; gap: 0; }
+  .duel .grp { padding: 16px 0 14px; border-top: 1px solid rgba(255, 255, 255, .07); display: grid; grid-template-columns: minmax(150px, 230px) 1fr; gap: 18px; align-items: center; }
+  .duel .grp:first-child { border-top: 0; }
+  .duel .lab .f { font: 600 15px/1.2 var(--display); }
+  .duel .lab .e { font-size: 12.5px; color: var(--muted); margin-top: 3px; }
+  .duel .lab .e b { color: #ffd78a; font: 500 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; margin-right: 4px; }
+  .duel .bars { display: grid; gap: 7px; }
+  .duel .b { display: grid; grid-template-columns: 1fr 58px; gap: 12px; align-items: center; }
+  .duel .t { height: 8px; border-radius: 99px; background: rgba(255, 255, 255, .05); overflow: hidden; }
+  .duel .t div { height: 100%; border-radius: 99px; background: var(--c); box-shadow: 0 0 14px -3px var(--c); transition: width .8s cubic-bezier(.2,.8,.2,1); }
+  .duel .v { font: 500 13px var(--mono); text-align: right; color: var(--text-2); }
+  .duel .v.top { color: var(--c); }
+  @media (max-width: 640px) { .duel .grp { grid-template-columns: 1fr; gap: 10px; } }
+  .bigline { font: 500 clamp(20px, 2vw, 26px)/1.3 var(--display); letter-spacing: -0.015em; margin-bottom: 22px; max-width: 46ch; }
+  .bigline .l { color: var(--laws); } .bigline .r { color: var(--rival); }
+  .keyrow { display: flex; gap: 20px; flex-wrap: wrap; font-size: 12.5px; color: var(--text-2); margin-bottom: 8px; }
+  .keyrow i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; vertical-align: -1px; }
+  .note { font-size: 12.5px; color: var(--muted); margin-top: 16px; max-width: 90ch; line-height: 1.6; }
+
+  table.scores { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+  table.scores th { font: 500 10.5px var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); text-align: right; padding: 0 10px 10px; white-space: nowrap; }
+  table.scores td { text-align: right; padding: 9px 10px; border-top: 1px solid var(--border); color: var(--text); white-space: nowrap; }
+  table.scores th:first-child, table.scores td:first-child, table.scores td.l { text-align: left; padding-left: 0; }
+  table.scores td.top { font-weight: 700; }
+  .fcwrap { overflow-x: auto; max-width: 100%; }
+
+  /* what the world asks */
+  .episode { display: grid; gap: 24px; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); margin-top: 6px; }
+  @media (max-width: 900px) { .episode { grid-template-columns: 1fr; } }
+  .episode .k { font: 500 10.5px/1.3 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+  .scene { font: 400 16px/1.85 var(--sans); color: var(--ink); }
+  .scene span { display: inline; }
+  .scene .act { color: var(--laws); }
+  .qa { display: grid; gap: 12px; }
+  .qa .q { font-size: 15px; color: var(--ink); }
+  .qa .a { font: 500 14px var(--mono); color: var(--laws); margin-top: 3px; }
+  .qa .a::before { content: "→ "; color: var(--muted); }
+  .after { font: 400 12.5px/1.6 var(--mono); color: var(--muted); margin-top: 18px; }
+  .exbar { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .exbar .seg { flex-wrap: wrap; max-width: 100%; }
+  .exbar .btn { padding: 7px 14px; font-size: 13px; }
+  .badge.exam { color: #ffd78a; border-color: rgba(255, 215, 138, .3); }
+  .empty { color: var(--muted); font-size: 14px; padding: 18px 0; }
+</style>
+<link rel="stylesheet" href="lab.css">
+</head>
+<body>
+<canvas id="land" aria-hidden="true"></canvas>
+<header class="lab-bar" id="bar"><div class="bar-in">
+  <a class="mark" href="./" aria-label="Back to the training lab"><img src="icon.svg" alt=""><span class="word">OAZY<small>WORLD MODELS</small></span></a>
+  <nav class="tabs" id="tabs" aria-label="Sections"><span class="tabpill" id="tabpill"></span>
+    <a href="#race" data-sec="race">Race</a><a href="#learning" data-sec="learning">Learning</a><a href="#exams" data-sec="exams">Exams</a>
+    <a href="#thinking" data-sec="thinking">Thinking</a><a href="#world" data-sec="world">The world</a><a href="./">Lab ↗</a></nav>
+  <span class="pill" id="updated"><span class="dot"></span><span>connecting…</span></span>
+</div></header>
+
+<section class="lab-head" id="top" aria-label="World models right now">
+  <div class="fallback" aria-hidden="true"></div>
+  <canvas id="warp" aria-hidden="true"></canvas>
+  <div class="lab-head-in">
+    <p class="eyebrow"><b>//</b> Oazy AI Research · world models</p>
+    <h1>Learning the <em>laws</em>, not the words</h1>
+    <p class="lede">Two models of the same size learn a small world of scenes and actions. One is built to find its laws and thinks in loops; the other is a normal next-word transformer. The real test is the secret exams: cases neither has ever been shown.</p>
+    <div class="pod" id="pod"></div>
+  </div>
+</section>
+
+<div class="wrap">
+  <div class="section-title" id="race" data-k="race"><h3>Laws against words</h3><div class="line"></div></div>
+  <div class="runpick" id="runpick"></div>
+  <div class="duo" id="cards"><div class="card"><div class="empty">Looking for a world run…</div></div></div>
+
+  <div class="section-title" id="learning" data-k="learning"><h3>Learning</h3><div class="line"></div></div>
+  <div class="grid">
+    <div class="card span7">
+      <div class="cardhead"><div class="titles"><h2>Secret exams, while they learn</h2><div class="sub">Every 1,000 steps both take a short exam (24 scenes per level, so it wobbles); the last point is the full exam. Bold: the secret exams, never trained on. Faint: new scenes of the kinds they practise. Higher is better.</div></div></div>
+      <div class="keyrow" id="examKey"></div>
+      <div class="chart"><canvas id="exam" style="height:300px"></canvas><div class="tip" id="examTip"></div></div>
+    </div>
+    <div class="card span5">
+      <div class="cardhead"><div class="titles"><h2>Right in training</h2><div class="sub">Questions answered fully right, on the training scenes. It dips each time the curriculum moves a family up a level: that is on purpose.</div></div></div>
+      <div class="chart"><canvas id="train" style="height:300px"></canvas><div class="tip" id="trainTip"></div></div>
+    </div>
+  </div>
+
+  <div class="section-title" id="exams" data-k="exams"><h3>The exams</h3><div class="line"></div></div>
+  <div class="card" id="examsBox"><div class="empty">The full exams run once both models are trained.</div></div>
+
+  <div class="section-title" id="thinking" data-k="thinking"><h3>How it thinks</h3><div class="line"></div></div>
+  <div class="grid">
+    <div class="card span6">
+      <div class="cardhead"><div class="titles"><h2>Does thinking longer help?</h2><div class="sub">The Laws model's core runs again and again, one tick of thinking per pass. Here it is stopped after a fixed number of passes. Dot: where it stops by itself.</div></div></div>
+      <div class="chart"><canvas id="sweep" style="height:280px"></canvas><div class="tip" id="sweepTip"></div></div>
+    </div>
+    <div class="card span6">
+      <div class="cardhead"><div class="titles"><h2>Harder scenes, more passes?</h2><div class="sub">How many passes it chose before its picture of the scene stopped moving, at each level (x axis; dashed past the levels it trained on). Rising lines mean it thinks longer when it has to.</div></div></div>
+      <div class="keyrow" id="passKey"></div>
+      <div class="chart"><canvas id="passes" style="height:280px"></canvas><div class="tip" id="passesTip"></div></div>
+    </div>
+  </div>
+
+  <div class="section-title" id="world" data-k="the world"><h3>What the world asks</h3><div class="line"></div></div>
+  <div class="card">
+    <div class="cardhead"><div class="titles"><h2>One episode</h2><div class="sub">A fresh scene, written by the world right now with new random names: the scene, one action, and the questions about what is true after it, with the true answers.</div></div></div>
+    <div class="exbar"><div class="seg" id="famSeg"></div><div class="seg" id="splitSeg"><button data-s="seen" class="on">practised kind</button><button data-s="secret">secret exam</button></div><button class="btn ghost" id="another">Another one</button></div>
+    <div id="episode" style="margin-top:22px"></div>
+  </div>
+</div>
+
+<footer class="foot"><span>Oazy AI Research · world models</span><span>Refreshes every 15 s · <a href="./">Training lab</a></span></footer>
+
+<script src="common.js"></script>
+<script src="lab.js"></script>
+<script>
+"use strict";
+const LAWS = UI.css("--laws"), RIVAL = UI.css("--rival");
+const COL = { laws: LAWS, rival: RIVAL };
+const NAME = { laws: "Laws model", rival: "Rival" };
+const FAMS = ["sums", "lines", "boxes", "family", "falling", "machines"];
+const FAMWORD = { sums: "Sums", lines: "Lines", boxes: "Boxes", family: "Family", falling: "Falling", machines: "Machines" };
+const LEVELS = { sums: [5, 3], lines: [4, 3], boxes: [4, 3], family: [2, 1], falling: [3, 3], machines: [2, 1] };   // [practised, secret]
+const SPLIT = { seen: "new scenes, practised kinds", longer: "longer", deeper: "deeper", bigger: "bigger falls", "new-pairs": "links chained in new ways", "new-mixes": "rules mixed in new ways" };
+const FAMCOL = ["#8f7bff", "#45c3ff", "#5fe39a", "#ffd34d", "#ff9a3c", "#c9c2ff"];
+const esc = UI.escapeHtml;
+const pct = (v, d = 1) => v == null ? "–" : (v * 100).toFixed(d) + "%";
+const avg = (xs) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+const fmtMin = (m) => m == null ? "–" : m < 60 ? Math.round(m) + " min" : Math.floor(m / 60) + " h " + Math.round(m % 60) + " min";
+let RUNS = [], CUR = null, RUN = null;
+
+const charts = {
+  exam: UI.lineChart(document.getElementById("exam"), document.getElementById("examTip"), { series: [] }),
+  train: UI.lineChart(document.getElementById("train"), document.getElementById("trainTip"), { series: [] }),
+  sweep: UI.lineChart(document.getElementById("sweep"), document.getElementById("sweepTip"), { series: [] }),
+  passes: UI.lineChart(document.getElementById("passes"), document.getElementById("passesTip"), { series: [] }),
+};
+async function getJSON(u) { const r = await fetch(u, { cache: "no-store" }); if (!r.ok) throw new Error(u); return r.json(); }
+
+function exams(kind) { return (RUN?.models?.[kind]?.metrics || []).filter((m) => m.kind === "exam"); }
+function trains(kind) { return (RUN?.models?.[kind]?.metrics || []).filter((m) => m.kind === "train"); }
+function lastExam(kind) { const e = exams(kind); return e[e.length - 1]; }
+function finalSum(kind) { return RUN?.results?.summary?.[kind]; }
+
+// ---- the head: where the run is
+function pod() {
+  const ph = RUN?.phase, st = RUN?.status || {};
+  const m = RUN?.models || {};
+  const now = ph === "laws" || ph === "rival" ? m[ph]?.status : null;
+  const what = !RUN ? "–" : ph === "done" ? "Finished" : ph === "exams" ? "Exams" : ph === "laws" ? "Laws model" : "Rival";
+  const sub = !RUN ? "no world run yet" : ph === "done" ? `${esc(RUN.results?.when || "")} · ${esc(RUN.results?.device || "")}`
+    : now ? `step ${(now.step || 0).toLocaleString()}${now.steps ? " of " + now.steps.toLocaleString() : ""} · training` : ph === "exams" ? "both models, every exam" : "";
+  const sec = (k) => finalSum(k)?.secret ?? lastExam(k)?.secret;
+  const seen = (k) => finalSum(k)?.seen ?? lastExam(k)?.seen;
+  const fin = RUN?.results ? "the full exams" : "the latest short exam";
+  const mins = ["laws", "rival"].map((k) => m[k]?.status?.minutes || 0).reduce((a, b) => a + b, 0);
+  const cell = (k, v, h) => `<div><div class="k">${k}</div><div class="v">${v}</div><div class="h">${h || "&nbsp;"}</div></div>`;
+  document.getElementById("pod").innerHTML =
+    cell("now", what, sub)
+    + cell("secret exams", `<span style="color:${LAWS}">${pct(sec("laws"), 0)}</span><small>vs</small> <span style="color:${RIVAL}">${pct(sec("rival"), 0)}</span>`, "Laws vs rival · " + fin)
+    + cell("practised kinds", `<span style="color:${LAWS}">${pct(seen("laws"), 0)}</span><small>vs</small> <span style="color:${RIVAL}">${pct(seen("rival"), 0)}</span>`, "on new scenes")
+    + cell("trained for", fmtMin(mins), st.device ? `${esc(st.preset || "")} · ${esc(st.device)}` : "both models together");
+  if (typeof LAB !== "undefined") LAB.setPace(RUN?.live ? 1 : 0.15);
+}
+
+// ---- the two cards
+function card(kind) {
+  const md = RUN?.models?.[kind];
+  const ph = RUN?.phase;
+  const st = md?.status || {};
+  const cf = md?.config || {};
+  const state = !md ? "waiting" : st.state === "done" ? "done" : (RUN.live && ph === kind ? "running" : "stopped");
+  const frac = st.steps ? Math.min(1, (st.step || 0) / st.steps) : st.state === "done" ? 1 : 0;
+  const title = kind === "laws" ? `Laws<span class="acc"> model</span>` : `The <span class="acc">rival</span>`;
+  const params = st.params || (RUN?.results?.params?.[kind]);
+  const chips = [params ? [(params / 1e6).toFixed(1) + "M params", true] : null,
+    [kind === "laws" ? "not next-token" : "next-token"],
+    kind === "laws" ? [`loops ${cf.train_max ? "1–" + cf.train_max : ""} passes`.replace("  ", " ")] : [`${cf.n_layer || 6} layers, no loops`],
+    kind === "laws" && cf.n_core ? [`core ${cf.n_core} layer${cf.n_core > 1 ? "s" : ""}, shared`] : null].filter(Boolean);
+  const meta = kind === "laws"
+    ? "Reads the scene, keeps one vector per thing, and lets a tiny shared core loop over the things until its picture settles. Learns only from being wrong about what the world does next."
+    : `A normal causal transformer of the same size, trained by guessing every next word of the same episodes, answers included. ${cf.n_layer || 6} layers of thinking per word, always.`;
+  const le = lastExam(kind), fs = finalSum(kind);
+  const tr = trains(kind), accNow = st.acc ?? tr[tr.length - 1]?.acc;
+  const stat = (k, v, h) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div><div class="h">${h || "&nbsp;"}</div></div>`;
+  const fr = st.frontier || {};
+  const lv = FAMS.map((f) => {
+    const [n, s] = LEVELS[f], at = fr[f] || 0;
+    const dots = Array.from({ length: n }, (_, i) => `<i class="${i < at ? "on" : ""}"></i>`).join("") + Array.from({ length: s }, () => `<i class="secret"></i>`).join("");
+    return `<div class="row"><span class="fam">${FAMWORD[f]}</span><span class="dots">${dots}</span><b>${at ? at + " of " + n : "–"}</b></div>`;
+  }).join("");
+  return `<div class="card run" style="--acc:${COL[kind]}"><div class="head"><div class="name">${title}</div><span class="badge ${state}">${state}</span></div>
+    <div class="chips">${chips.map(([t, a]) => `<span class="${a ? "acc" : ""}">${esc(t)}</span>`).join("")}</div>
+    <div class="meta">${meta}</div>
+    <div class="prog"><div class="labels"><span><b>${(st.step || 0).toLocaleString()}</b>${st.steps ? " of " + st.steps.toLocaleString() : ""} steps${st.batch ? " · " + st.batch + " scenes each" : ""}</span><span>${state === "running" && st.steps && st.minutes ? "about " + fmtMin(st.minutes / Math.max(frac, 1e-3) * (1 - frac)) + " left" : fmtMin(st.minutes)}</span></div>
+      <div class="bar-t ${state === "running" ? "live" : ""}"><div style="width:${(frac * 100).toFixed(1)}%"></div></div></div>
+    <div class="stats">${stat("secret exams", pct(fs?.secret ?? le?.secret), fs ? "the full exams" : le ? "short exam at step " + le.step.toLocaleString() : "after 1,000 steps")}
+      ${stat("practised kinds", pct(fs?.seen ?? le?.seen), "new scenes")}
+      ${stat("right in training", pct(accNow), "at the curriculum's edge")}</div>
+    <div class="levels">${lv}</div>
+    <div class="lvkey">Filled: levels the curriculum has opened. Dashed: secret levels, never trained on.</div></div>`;
+}
+
+// ---- learning curves
+function drawLearning() {
+  const ex = [], tr = [];
+  for (const k of ["laws", "rival"]) {
+    const e = exams(k);
+    const ePts = e.map((m) => [m.step, m.secret, m.seen]);
+    const fs = finalSum(k), endStep = RUN?.models?.[k]?.status?.step;
+    if (fs && endStep && (!ePts.length || ePts[ePts.length - 1][0] < endStep)) ePts.push([endStep, fs.secret, fs.seen]);   // the full exams at the end
+    ex.push({ name: NAME[k] + " · secret", color: COL[k], points: ePts.map((p) => [p[0], p[1]]), width: 3 });
+    ex.push({ name: NAME[k] + " · practised", color: COL[k], alpha: 0.4, points: ePts.map((p) => [p[0], p[2]]) });
+    const t = trains(k);
+    tr.push({ name: NAME[k], color: COL[k], points: t.map((m) => [m.step, m.acc]) });
+  }
+  const fmtS = (v) => v >= 1000 ? (v / 1000).toFixed(v % 1000 ? 1 : 0) + "k" : String(Math.round(v));
+  document.getElementById("examKey").innerHTML = `<span><i style="background:${LAWS}"></i>Laws model</span><span><i style="background:${RIVAL}"></i>Rival</span>`;
+  charts.exam.set({ series: ex, xFmt: fmtS, xTip: (v) => "step " + Math.round(v).toLocaleString(), yFmt: (v, d) => (v * 100).toFixed(Math.max(0, d - 2)) + "%", tipFmt: (v) => pct(v), yMin: 0, empty: "The first short exam comes at step 1,000" });
+  charts.train.set({ series: tr, xFmt: fmtS, xTip: (v) => "step " + Math.round(v).toLocaleString(), yFmt: (v, d) => (v * 100).toFixed(Math.max(0, d - 2)) + "%", tipFmt: (v) => pct(v) });
+}
+
+// ---- the full exams
+function drawExams() {
+  const box = document.getElementById("examsBox");
+  const res = RUN?.results;
+  if (!res) { box.innerHTML = `<div class="empty">The full exams run once both models are trained${RUN?.phase === "exams" ? ": they are running now" : ""}.</div>`; return; }
+  const L = res.rows.laws, R = res.rows.rival;
+  const pick = (rows, mode, f, sp) => rows.filter((r) => r.mode === mode && r.family === f && r.split === sp);
+  let html = "";
+  for (const f of FAMS) {
+    const splits = [...new Set(L.filter((r) => r.family === f).map((r) => r.split))];
+    for (const sp of splits) {
+      const l = pick(L, "settle", f, sp), r = pick(R, "plain", f, sp);
+      const la = avg(l.map((x) => x.right)), ra = avg(r.map((x) => x.right));
+      const lv = l.map((x) => x.level);
+      const bar = (k, v, other) => `<div class="b" style="--c:${COL[k]}"><div class="t"><div style="width:${((v || 0) * 100).toFixed(1)}%"></div></div><div class="v ${v != null && other != null && v > other + 0.005 ? "top" : ""}">${pct(v)}</div></div>`;
+      html += `<div class="grp"><div class="lab"><div class="f">${FAMWORD[f]}</div><div class="e">${sp === "seen" ? "" : "<b>secret</b>"}${esc(SPLIT[sp] || sp)} · level ${Math.min(...lv)}${lv.length > 1 ? "–" + Math.max(...lv) : ""}</div></div>
+        <div class="bars">${bar("laws", la, ra)}${bar("rival", ra, la)}</div></div>`;
+    }
+  }
+  const sl = res.summary.laws, sr = res.summary.rival;
+  // the level by level table, folded
+  const lvRows = L.filter((r) => r.mode === "settle").map((r) => {
+    const rr = R.find((x) => x.family === r.family && x.split === r.split && x.level === r.level);
+    const a = r.right, b = rr?.right;
+    return `<tr><td class="l">${FAMWORD[r.family]}</td><td class="l">${r.split === "seen" ? "practised" : "<b style='color:#ffd78a'>secret</b> · " + esc(SPLIT[r.split])}</td><td>${r.level}</td><td class="${a > (b ?? 1) + 0.005 ? "top" : ""}" style="color:${LAWS}">${pct(a)}</td><td class="${b > a + 0.005 ? "top" : ""}" style="color:${RIVAL}">${pct(b)}</td><td>${r.passes?.toFixed(1) ?? "–"}</td></tr>`;
+  }).join("");
+  const rev = (rows, mode) => { const a = { true: [0, 0], false: [0, 0] }; rows.filter((r) => r.mode === mode && r.reversed).forEach((r) => Object.entries(r.reversed).forEach(([k, [ok, n]]) => { a[k.toLowerCase()][0] += ok; a[k.toLowerCase()][1] += n; })); return a; };
+  const rl = rev(L, "settle"), rr = rev(R, "plain"), rp = (x) => x[1] ? pct(x[0] / x[1]) : "–";
+  box.innerHTML = `<div class="bigline">On the secret exams, the Laws model gets <span class="l">${pct(sl.secret)}</span> and the rival <span class="r">${pct(sr.secret)}</span>. On new scenes of the kinds they practised: <span class="l">${pct(sl.seen)}</span> and <span class="r">${pct(sr.seen)}</span>.</div>
+    <div class="keyrow"><span><i style="background:${LAWS}"></i>Laws model · ${(res.params.laws / 1e6).toFixed(1)}M · predicts the next scene</span><span><i style="background:${RIVAL}"></i>Rival · ${(res.params.rival / 1e6).toFixed(1)}M · next-word</span></div>
+    <div class="duel">${html}</div>
+    <p class="note">${res.eval_n} fresh episodes per exam and level; a question counts only when its whole answer is right (a sum: every digit). Guessing gets 50% on yes/no, 10% on a digit, one in the number of things on a "who/what", almost nothing on a whole sum. Reversals (family links asked the other way round from how they were told): Laws ${rp(rl.true)} vs ${rp(rl.false)} asked the told way; rival ${rp(rr.true)} vs ${rp(rr.false)}.</p>
+    <details class="why"><summary>Level by level</summary><div class="body"><div class="fcwrap"><table class="scores"><tr><th>Laws of</th><th>Exam</th><th>Level</th><th>Laws</th><th>Rival</th><th>Passes</th></tr>${lvRows}</table></div></div></details>`;
+}
+
+// ---- thinking
+function drawThinking() {
+  const res = RUN?.results;
+  if (!res) {
+    charts.sweep.set({ series: [], empty: "After the full exams" });
+    charts.passes.set({ series: [], empty: "After the full exams" });
+    document.getElementById("passKey").innerHTML = "";
+    return;
+  }
+  const L = res.rows.laws;
+  const ks = [...new Set(L.filter((r) => /^p\d+$/.test(r.mode)).map((r) => +r.mode.slice(1)))].sort((a, b) => a - b);
+  const sw = [], part = (r, p) => (r.split === "seen") === (p === "seen");
+  for (const [p, a] of [["secret", 1], ["seen", 0.4]]) {
+    const pts = ks.map((k) => [k, avg(L.filter((r) => r.mode === "p" + k && part(r, p)).map((r) => r.right))]);
+    const st = L.filter((r) => r.mode === "settle" && part(r, p));
+    sw.push({ name: p === "seen" ? "practised kinds" : "secret exams", color: LAWS, alpha: a, width: p === "secret" ? 3 : 2, points: pts,
+      marks: [[avg(st.map((r) => r.passes)), avg(st.map((r) => r.right))]] });
+  }
+  charts.sweep.set({ series: sw, xLog: true, xFmt: (v) => String(Math.round(v)), xTip: (v) => Math.round(v) + " passes", yFmt: (v, d) => (v * 100).toFixed(Math.max(0, d - 2)) + "%", tipFmt: (v) => pct(v) });
+  const ps = [];
+  FAMS.forEach((f, i) => {
+    const rows = L.filter((r) => r.mode === "settle" && r.family === f).sort((a, b) => a.level - b.level);
+    const byLv = {};
+    rows.forEach((r) => { (byLv[r.level] = byLv[r.level] || []).push(r.passes); });
+    const pts = Object.entries(byLv).map(([lv, v]) => [+lv, avg(v)]).sort((a, b) => a[0] - b[0]);
+    const n = LEVELS[f][0];
+    ps.push({ name: FAMWORD[f], color: FAMCOL[i], points: pts.filter((p) => p[0] <= n) });
+    ps.push({ name: FAMWORD[f] + " · secret", color: FAMCOL[i], dash: [4, 4], points: pts.filter((p) => p[0] >= n), noTip: true });
+  });
+  document.getElementById("passKey").innerHTML = FAMS.map((f, i) => `<span><i style="background:${FAMCOL[i]}"></i>${FAMWORD[f]}</span>`).join("");
+  charts.passes.set({ series: ps, xFmt: (v) => String(Math.round(v)), xTip: (v) => "level " + Math.round(v), yMin: 0, yFmt: (v, d) => v.toFixed(d), tipFmt: (v) => v.toFixed(1) + " passes" });
+}
+
+// ---- the world
+let FAM = "sums", SPL = "seen";
+document.getElementById("famSeg").innerHTML = FAMS.map((f) => `<button data-f="${f}" class="${f === FAM ? "on" : ""}">${FAMWORD[f]}</button>`).join("");
+async function drawEpisode() {
+  const box = document.getElementById("episode");
+  let e;
+  try { e = await getJSON(`api/world/example/${FAM}/${SPL}`); } catch (err) { box.innerHTML = `<div class="empty">The world could not be reached.</div>`; return; }
+  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+  const n = e.scene.length;
+  const scene = e.scene.map((s, i) => `<span class="${i === n - 1 ? "act" : ""}">${esc(cap(s))}</span>`).join(" ");
+  const tag = e.split === "seen" ? `<span class="badge done">practised · level ${e.level}</span>` : `<span class="badge exam">secret · ${esc(SPLIT[e.split] || e.split)} · level ${e.level}</span>`;
+  box.innerHTML = `<div class="episode"><div><div class="k">The scene, and then the action ${tag}</div><div class="scene">${scene}</div></div>
+    <div><div class="k">Asked after the action</div><div class="qa">${e.questions.map((q) => `<div><div class="q">${esc(cap(q.q))}</div><div class="a">${esc(q.a)}</div></div>`).join("")}</div>
+    <div class="after">the world after: ${esc(e.after)}</div></div></div>`;
+}
+document.getElementById("famSeg").addEventListener("click", (ev) => { const b = ev.target.closest("button"); if (!b) return; FAM = b.dataset.f; document.querySelectorAll("#famSeg button").forEach((x) => x.classList.toggle("on", x === b)); drawEpisode(); });
+document.getElementById("splitSeg").addEventListener("click", (ev) => { const b = ev.target.closest("button"); if (!b) return; SPL = b.dataset.s; document.querySelectorAll("#splitSeg button").forEach((x) => x.classList.toggle("on", x === b)); drawEpisode(); });
+document.getElementById("another").addEventListener("click", drawEpisode);
+
+// ---- refresh
+function runpick() {
+  const el = document.getElementById("runpick");
+  el.innerHTML = RUNS.length > 1 ? `<div class="seg">${RUNS.map((r) => `<button data-r="${esc(r.name)}" class="${r.name === CUR ? "on" : ""}">${esc(r.name)}</button>`).join("")}</div>` : "";
+}
+document.getElementById("runpick").addEventListener("click", (ev) => { const b = ev.target.closest("button"); if (!b) return; CUR = b.dataset.r; try { localStorage.setItem("oazy.world", CUR); } catch (e) { /* private window */ } refresh(); });
+
+async function refresh() {
+  const pill = document.getElementById("updated");
+  try {
+    RUNS = await getJSON("api/world/runs");
+    if (!CUR) { try { CUR = localStorage.getItem("oazy.world"); } catch (e) { CUR = null; } }
+    if (!RUNS.some((r) => r.name === CUR)) CUR = RUNS[0]?.name || null;
+    RUN = CUR ? await getJSON(`api/world/run/${encodeURIComponent(CUR)}`) : null;
+    runpick(); pod();
+    document.getElementById("cards").innerHTML = RUN ? card("laws") + card("rival")
+      : `<div class="card"><div class="empty">No world run yet. Start one on the pod: <span class="kbd">bash runpod/world.sh</span></div></div>`;
+    drawLearning(); drawExams(); drawThinking();
+    pill.className = "pill live"; pill.lastElementChild.textContent = (RUN?.live ? "live · " : "") + new Date().toLocaleTimeString();
+  } catch (e) {
+    pill.className = "pill err"; pill.lastElementChild.textContent = "can't reach the app";
+  }
+}
+window.addEventListener("resize", () => Object.values(charts).forEach((c) => c.draw()));
+refresh(); drawEpisode(); setInterval(refresh, 15000);
+</script>
+</body>
+</html>
