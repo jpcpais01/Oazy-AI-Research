@@ -22,7 +22,7 @@ from bee3.tests import check
 from oazy import term
 from alphastar.tests import SMALL
 
-BSMALL = dict(SMALL, ponder_max=4, ponder_prior=2.5, ponder_tokens=128, halt_hidden=32)
+BSMALL = dict(SMALL, ponder_max=4, ponder_prior=2.5, ponder_rows=2, halt_hidden=32)
 
 
 def main():
