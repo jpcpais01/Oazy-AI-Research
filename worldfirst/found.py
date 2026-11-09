@@ -2,7 +2,7 @@
 
     python3 -m worldfirst.found --run world-teach            # its latest train_state.pt (or ckpt.pt)
 
-A thing counts as found when all of its words went mostly to one slot and no other thing's words went there.
+A thing counts as found when all of its words (in the scene) went to one group and no other thing's words went there.
 Also shows how many slots a thing's words are spread over, and how many things share a slot, on average."""
 from __future__ import annotations
 
@@ -40,7 +40,8 @@ def main(argv=None):
     m.eval()
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     m.to(dev)
-    print(f"{a.run}: Laws model at step {sd.get('step', 'end')}, {cfg['finder']} slots")
+    print(f"{a.run}: Laws model at step {sd.get('step', 'end')}, "
+          + (f"linker (up to {cfg['finder']} things)" if cfg.get("finder_kind") == "link" else f"{cfg['finder']} slots"))
     print(f"{'family':10} {'level':>5} {'found':>7} {'slots/thing':>12} {'things/slot':>12}")
     for fam in W.FAMILIES:
         for lv in sorted({W.TRAIN_LEVELS[fam][0], W.TRAIN_LEVELS[fam][-1]}):
@@ -52,8 +53,9 @@ def main(argv=None):
                 with torch.no_grad():
                     g, t = m.found(b)
                 got, tot = got + g, tot + t
-                att = m._att.float().argmax(1).cpu()
-                ment = b["ment"].cpu()
+                att = m.assignment().cpu()
+                ment = b["ment"].clone().cpu()
+                ment[torch.arange(ment.shape[1])[None] >= b["slen"].cpu()[:, None]] = -1     # the scene's words only
                 for j in range(att.shape[0]):
                     sl = {}
                     for t_, s_ in zip(ment[j].tolist(), att[j].tolist()):
@@ -63,7 +65,7 @@ def main(argv=None):
                         continue
                     spread += [len(v) for v in sl.values()]
                     c = Counter(s_ for v in sl.values() for s_ in v)
-                    share += list(c.values())
+                    share += [v for k_, v in c.items() if k_ >= 0]
             print(f"{fam:10} {lv:>5} {100 * got / max(1, tot):6.1f}% {sum(spread) / max(1, len(spread)):12.2f} "
                   f"{sum(share) / max(1, len(share)):12.2f}")
     print("\nfound: all of a thing's words in one slot of its own. slots/thing: 1 is ideal. things/slot: 1 is ideal.")

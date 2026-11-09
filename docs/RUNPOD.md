@@ -247,6 +247,14 @@ marks as input, so at the exams (and in use) it reads plain text like the rival.
 bash runpod/world.sh --name world-teach --preset big --steps 200000 --passes 3 --natural 1 --teach 1
 ```
 
+The linker (`--linker 1`, the best no-marks version): instead of slots, each word that names a thing points back to
+the earlier word that names the same thing, or starts a new thing; the chains are the things, numbered in the order
+it met them. The marks are only its answer key in training (as `--teach`); it always uses its own links.
+
+```bash
+bash runpod/world.sh --name world-link --preset big --steps 200000 --passes 3 --natural 1 --linker 1
+```
+
 ## Sado, our second dataset (25,000M tokens, on a network volume)
 
 Tagus's successor: books, stricter web text, no benchmark questions, no repeats. What and why: `oazy/sado.py` and `oazy/sado_score.py`. It is built with the CPU and the network

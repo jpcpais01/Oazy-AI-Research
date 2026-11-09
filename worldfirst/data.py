@@ -176,7 +176,8 @@ def finder_batch(eps, vocab: Vocab, device="cpu"):
             qpos[b, j] = s0
             qvalid[b, j] = True
     t = lambda rows, k: torch.tensor([r[k] for r in rows], dtype=torch.long)  # noqa: E731
-    out = {"tok": tok, "ment": ment, "qpool": qpool, "qpos": qpos, "qvalid": qvalid,
+    slen = torch.tensor([len(e.tokens) for e in eps], dtype=torch.long)   # where the questions start (seen in the text)
+    out = {"tok": tok, "ment": ment, "qpool": qpool, "qpos": qpos, "qvalid": qvalid, "slen": slen,
            "cls": {"b": t(cls, 0), "q": t(cls, 1), "y": t(cls, 2), "item": t(cls, 3)},
            "ptr": {"b": t(ptr, 0), "q": t(ptr, 1), "y": t(ptr, 2), "item": t(ptr, 3)}}
     cand = torch.zeros(len(ptr), V, dtype=torch.bool)

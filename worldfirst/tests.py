@@ -423,6 +423,41 @@ def torch_checks():
             W.STYLE["natural"] = False
 
     @check
+    def linker_finds_the_things():
+        """The linker: it learns from the marks which words name a thing and which earlier word names the same one, and
+        then groups the things far better than chance, from plain text; its batch has no marks in it."""
+        from .data import finder_batch
+        W.STYLE["natural"] = True
+        try:
+            vv = Vocab()
+            eps1 = [W.make(f, 1, "train", s) for s in range(6) for f in ("lines", "family", "minds", "walks")]
+            b = finder_batch(eps1, vv)
+            assert "pool" not in b
+            torch.manual_seed(0)
+            laws, rival = make_pair(len(vv), "tiny", finder=24, finder_kind="link", fixed=3, train_max=3, grad_passes=3,
+                                    test_max=3, teach=1.0)
+            assert abs(n_params(laws) - n_params(rival)) / n_params(laws) < 0.01
+            laws.eval()
+            g0, n0 = laws.found(b)
+            laws.train()
+            opt = torch.optim.AdamW(laws.parameters(), lr=3e-3)
+            for _ in range(80):
+                loss, _, _ = laws.loss_and_hits(b)
+                opt.zero_grad()
+                loss.backward()
+                opt.step()
+            laws.eval()
+            g1, n1 = laws.found(b)
+            assert g1 / n1 > max(0.5, g0 / n0 + 0.3), (g0 / n0, g1 / n1)
+            a = laws.assignment()
+            assert a.max() < 24 and a.min() >= -1
+            with torch.no_grad():
+                _, hits, _ = laws.loss_and_hits(b)
+            assert hits.shape[0] == len(b["meta"])
+        finally:
+            W.STYLE["natural"] = False
+
+    @check
     def tiny_run_end_to_end():
         import tempfile
         from .run import main
