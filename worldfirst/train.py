@@ -148,15 +148,14 @@ def evaluate(model, vocab, n=200, device="cpu", sweep=True, bs=100, sets=None):
 
 def summarise(rows, mode=None):
     """Mean right per family on seen and on secret exams (one mode: settle for Laws, plain for the rival)."""
-    out = {}
+    out, parts = {}, {}
     for r in rows:
         if r["mode"] not in ("settle", "plain") if mode is None else r["mode"] != mode:
             continue
-        key = f"{r['family']}/{'seen' if r['split'] == 'seen' else 'secret'}"
-        out.setdefault(key, []).append(r["right"])
+        part = "seen" if r["split"] == "seen" else "secret"
+        out.setdefault(f"{r['family']}/{part}", []).append(r["right"])
+        parts.setdefault(part, []).append(r["right"])
     s = {k: sum(v) / len(v) for k, v in out.items()}
-    for part in ("seen", "secret"):
-        vals = [v for k, v in s.items() if k.endswith("/" + part)]
-        if vals:
-            s[part] = sum(vals) / len(vals)
+    for part, vals in parts.items():           # every exam set (family x level) weighs the same
+        s[part] = sum(vals) / len(vals)
     return s
