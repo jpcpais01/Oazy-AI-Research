@@ -127,6 +127,14 @@ def main(argv=None):
             trained[m.kind] = sd.get("info", {})
             say(f"{m.kind}: loaded {ck}")
             continue
+        st_file = d / "train_state.pt"
+        if a.only == "report" and st_file.exists():       # stopped early: examine its last saved state as it is
+            st = torch.load(st_file, map_location="cpu", weights_only=False)
+            m.load_state_dict(st["model"])
+            trained[m.kind] = {"steps": st["step"], "minutes": st["minutes"], "stopped_early": True,
+                               "frontier": {f: W.TRAIN_LEVELS[f][k] for f, k in st["cur"]["front"].items()}}
+            say(f"{m.kind}: stopped early; examining its state saved at step {st['step']}")
+            continue
         if a.only not in ("all", m.kind):
             continue
         say(f"training {m.kind} for {a.steps} steps of {a.batch} episodes")
@@ -255,8 +263,10 @@ def report(res) -> str:
         f = lambda k: _pct(agg[k][0] / agg[k][1]) if agg[k][1] else "-"  # noqa: E731
         lines.append(f"- {name}: they saw it last where it is {f('False')}, they believe something false {f('True')}")
     tl, tr = res["train"].get("laws", {}), res["train"].get("rival", {})
+    early = [k for k, t in (("Laws", tl), ("rival", tr)) if t.get("stopped_early")]
     lines.append(f"\nTraining: Laws {tl.get('steps')} steps in {tl.get('minutes', 0):.1f} min, rival {tr.get('steps')} steps "
-                 f"in {tr.get('minutes', 0):.1f} min, the same number of episodes each. Guessing gets 50% on yes/no, "
+                 f"in {tr.get('minutes', 0):.1f} min" + (f" (stopped early: {' and '.join(early)}, examined at the last saved state)" if early
+                 else ", the same number of episodes each") + ". Guessing gets 50% on yes/no, "
                  f"10% on a digit, 1 in the number of things on a 'who/what', and almost nothing on a whole sum.")
     return "\n".join(lines) + "\n"
 
