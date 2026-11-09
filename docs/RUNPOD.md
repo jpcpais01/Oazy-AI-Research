@@ -230,6 +230,15 @@ bash runpod/world.sh --name world-big --preset big --steps 200000 --passes 3
 The log shows `steps/s` and `h left` from the first minute. If the pod stops, run the same command again: each model
 saves its state every 10 minutes and carries on from there.
 
+The no-marks race (after the big run): the world speaks more naturally (she/he/her/him; sums smallest digit first,
+for both), the rival gets no "same thing" tags, and the Laws model finds the things itself with 32 slots (slot
+attention); a tiny speaker writes the sums. About 38M each (the finder and speaker add to the Laws model; the rival is
+widened to match). The report adds how many things it found cleanly.
+
+```bash
+bash runpod/world.sh --name world-natural --preset big --steps 200000 --passes 3 --natural 1
+```
+
 ## Sado, our second dataset (25,000M tokens, on a network volume)
 
 Tagus's successor: books, stricter web text, no benchmark questions, no repeats. What and why: `oazy/sado.py` and `oazy/sado_score.py`. It is built with the CPU and the network

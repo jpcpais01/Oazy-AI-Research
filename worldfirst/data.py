@@ -28,6 +28,7 @@ N_TAGS = 64
 
 def build_vocab(seeds: int = 60):
     words = set(W.NAMES) | set(W.COLOURS) | set(W.CONTAINERS) | set(W.ITEMS) | set(W.CLASSES) | {"answer", ":", ".", "?"}
+    words |= set(W.PRONOUNS) | {",", "smallest", "digit", "first"}         # the natural way of speaking
     for fam, lv, sp in W.exam_sets():
         for s in range(seeds):
             e = W.make(fam, lv, sp, 10_000_000 + s)
@@ -115,6 +116,79 @@ def laws_batch(eps, vocab: Vocab, device="cpu"):
     out = {"tok": tok, "pool": pool, "pos": pos, "kind": kind, "nthing": nthing}
     for name, rows in (("cls", cls), ("ptr", ptr), ("col", col)):
         out[name] = {"b": t(rows, 0), "slot": t(rows, 1), "y": t(rows, 2), "item": t(rows, 3)}
+    out = {k: (v.to(device) if torch.is_tensor(v) else {kk: vv.to(device) for kk, vv in v.items()}) for k, v in out.items()}
+    out["meta"] = meta
+    return out
+
+
+def finder_batch(eps, vocab: Vocab, device="cpu"):
+    """For the Laws model WITHOUT marks: the same reader text, but nothing says which words name which thing.
+
+    Questions are still found (each ends with "?"), and answers are asked as: a class (yes/no/digit) from the
+    question, a "who/what" as a word of the scene (any word that is the answer's name counts), and a sum as a short
+    sequence of digits that a small speaker writes. `ment` (which thing each word names) is kept only to check
+    afterwards how well the model found the things; the model never sees it."""
+    B = len(eps)
+    V = len(vocab)
+    seqs, qspans, ments = [], [], []
+    cls, ptr, sq, meta = [], [], [], []
+    uid = 0
+    for b, e in enumerate(eps):
+        toks, ment = list(e.tokens), list(e.mentions)
+        spans = []
+        for q in e.questions:
+            spans.append((len(toks), len(toks) + len(q.tokens), q))
+            toks += q.tokens
+            ment += q.mentions
+        seqs.append(vocab.enc(toks))
+        ments.append(ment)
+        qspans.append(spans)
+        names = sorted({vocab.id[k] for k in e.things if k in vocab.id})
+        for qi, (s0, s1, q) in enumerate(spans):
+            kinds = {k for k, _ in q.specs}
+            if kinds == {"coldigit"}:
+                items = []
+                for _ in q.specs:
+                    items.append(len(meta))
+                    meta.append(_item_meta(e, qi, uid))
+                sq.append((b, qi, [int(w) for w in q.answer], items, s1))
+            else:
+                for (kind, tgt), w in zip(q.specs, q.answer):
+                    if kind == "class":
+                        cls.append((b, qi, tgt, len(meta)))
+                    else:
+                        ptr.append((b, qi, vocab.id[w], len(meta), names))
+                    meta.append(_item_meta(e, qi, uid))
+            uid += 1
+    T = max(len(x) for x in seqs)
+    Q = max(len(x) for x in qspans)
+    tok = torch.zeros(B, T, dtype=torch.long)
+    ment = torch.full((B, T), -1, dtype=torch.long)
+    qpool = torch.zeros(B, Q, T)
+    qpos = torch.zeros(B, Q, dtype=torch.long)
+    qvalid = torch.zeros(B, Q, dtype=torch.bool)
+    for b in range(B):
+        tok[b, :len(seqs[b])] = torch.tensor(seqs[b])
+        ment[b, :len(ments[b])] = torch.tensor(ments[b])
+        for j, (s0, s1, _) in enumerate(qspans[b]):
+            qpool[b, j, s0:s1] = 1.0 / (s1 - s0)
+            qpos[b, j] = s0
+            qvalid[b, j] = True
+    t = lambda rows, k: torch.tensor([r[k] for r in rows], dtype=torch.long)  # noqa: E731
+    out = {"tok": tok, "ment": ment, "qpool": qpool, "qpos": qpos, "qvalid": qvalid,
+           "cls": {"b": t(cls, 0), "q": t(cls, 1), "y": t(cls, 2), "item": t(cls, 3)},
+           "ptr": {"b": t(ptr, 0), "q": t(ptr, 1), "y": t(ptr, 2), "item": t(ptr, 3)}}
+    cand = torch.zeros(len(ptr), V, dtype=torch.bool)
+    for i, r in enumerate(ptr):
+        cand[i, r[4]] = True
+    out["ptr"]["cand"] = cand
+    L = max([len(r[2]) for r in sq], default=1)
+    dig = torch.full((len(sq), L), -1, dtype=torch.long)
+    item = torch.full((len(sq), L), -1, dtype=torch.long)
+    for i, r in enumerate(sq):
+        dig[i, :len(r[2])] = torch.tensor(r[2])
+        item[i, :len(r[3])] = torch.tensor(r[3])
+    out["seq"] = {"b": t(sq, 0), "q": t(sq, 1), "end": t(sq, 4), "y": dig, "item": item}
     out = {k: (v.to(device) if torch.is_tensor(v) else {kk: vv.to(device) for kk, vv in v.items()}) for k, v in out.items()}
     out["meta"] = meta
     return out

@@ -59,6 +59,12 @@ SECRET = {
 TRAIN_MOVES = (1, 2)            # lines and boxes: how many actions a training episode has
 MOVES_PEOPLE, MOVES_DEPTH = 6, 4   # the size of the scene in the "more-moves" exams
 
+# How the world speaks. natural=True: people are often "she"/"he"/"her"/"him" once just named, and a sum is written
+# smallest digit first (for both models). Set by run.py (--natural 1); the scenes and answers are otherwise the same.
+STYLE = {"natural": False}
+PRONOUNS = ("she", "he", "her", "him")
+_LEAD = {"then", "after", "that"}
+
 # Answers that are not things: yes/no and the ten digits ("class" answers).
 CLASSES = ("yes", "no") + tuple(str(i) for i in range(10))
 YESNO = (0, 1)
@@ -69,6 +75,7 @@ FEMALE = ("Ana Bea Clara Dora Eva Fia Gina Hana Ines Joana Kira Lia Mara Nina Ol
 MALE = ("Bo Cy Dan Edu Filipe Gil Hugo Ivo Joao Kai Leo Mau Nuno Omar Paulo Rui Sam Tiago Ugo Vasco "
         "Abel Bruno Caio Dino Emil Fabio Goncalo Henri Igor Jonas Luis Marco Nelson Otto Pedro Raul Simao Tomas Victor Zeca").split()
 NAMES = FEMALE + MALE
+_FEM, _MAL = set(FEMALE), set(MALE)
 COLOURS = "red blue green yellow black white orange purple pink brown grey gold silver".split()
 CONTAINERS = "box bag jar cup chest basket crate bowl tin pot case drawer sack vase pouch bucket".split()
 ITEMS = "key coin ring ball pen stone shell bead marble button".split()
@@ -108,15 +115,28 @@ class _Build:
     def __init__(self, rng):
         self.rng = rng
         self.toks, self.ment, self.things, self.qs = [], [], [], []
+        self.prev = set()                       # things named in the last sentence (for "she", "him")
+        self.natural = STYLE["natural"]
+        self.prng = random.Random(rng.random()) if self.natural else None   # own dice: the scene stays the same
 
     def thing(self, key):
         self.things.append(key)
         return len(self.things) - 1
 
-    def _emit(self, parts, toks, ment):
+    def _gender(self, t):
+        k = self.things[t]
+        return "f" if k in _FEM else "m" if k in _MAL else None
+
+    def _emit(self, parts, toks, ment, talk=False):
+        start = len(toks)
         for p in parts:
             if isinstance(p, tuple):
                 t, words = p
+                g = self._gender(t) if talk else None
+                if (g and t in self.prev and len(words.split()) == 1 and self.prng.random() < 0.5
+                        and not any(self._gender(o) == g for o in self.prev if o != t)):
+                    subj = all(w in _LEAD for w in toks[start:])
+                    words = {("f", True): "she", ("m", True): "he", ("f", False): "her", ("m", False): "him"}[(g, subj)]
                 for w in words.split():
                     toks.append(w)
                     ment.append(t)
@@ -126,7 +146,9 @@ class _Build:
                     ment.append(-1)
 
     def say(self, *parts):
-        self._emit(parts, self.toks, self.ment)
+        n0 = len(self.toks)
+        self._emit(parts, self.toks, self.ment, talk=self.natural)
+        self.prev = {m for m in self.ment[n0:] if m >= 0}
         self.toks.append(".")
         self.ment.append(-1)
 
@@ -171,8 +193,12 @@ def gen_sums(rng, level, split):
     B.say(first, *[(cols[j], str(d)) for j, d in enumerate(A)])
     B.say(second, *[(cols[j], str(d)) for j, d in enumerate(Bd)])
     B.say(rng.choice(["add the two numbers", "now add them up", "put them together by adding", "add them"]))
-    B.ask([rng.choice(["what is the sum", "what number do you get", "what do they make together"])],
-          [str(d) for d in S], [("coldigit", (cols[j], d)) for j, d in enumerate(S)])
+    order = list(range(L + 1))
+    ask = [rng.choice(["what is the sum", "what number do you get", "what do they make together"])]
+    if B.natural:                               # written smallest digit first, as people add
+        order.reverse()
+        ask += [", smallest digit first"]
+    B.ask(ask, [str(S[j]) for j in order], [("coldigit", (cols[j], S[j])) for j in order])
     carries, c = 0, 0
     for j in reversed(range(L + 1)):
         c = (A[j] + Bd[j] + c) // 10
