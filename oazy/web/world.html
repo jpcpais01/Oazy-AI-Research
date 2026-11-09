@@ -213,7 +213,8 @@ function card(kind) {
     [kind === "laws" ? "not next-token" : cf.loss === "answers" ? "learns only answers" : "next-token"],
     kind === "laws" ? [cf.fixed ? `always ${cf.fixed} passes` : cf.train_max === 1 ? "no loops: core runs once" : `loops ${cf.train_max ? "1–" + cf.train_max : ""} passes`.replace("  ", " ")] : [`${cf.n_layer || 6} layers, no loops`],
     kind === "laws" && cf.n_core ? [`core ${cf.n_core} layer${cf.n_core > 1 ? "s" : ""}, shared`] : null].filter(Boolean);
-  const reads = cf.finder ? `Reads plain text, finds the things itself (${cf.finder} slots${cf.teach ? ", the marks only as its answer key" : ""}), keeps one vector per thing` : "Reads the scene, keeps one vector per thing";
+  const how = cf.finder_kind === "link" ? "linking each mention back to the last one of the same thing" : `${cf.finder} slots`;
+  const reads = cf.finder ? `Reads plain text, finds the things itself (${how}${cf.teach ? "; the marks only as its answer key" : ""}), keeps one vector per thing` : "Reads the scene, keeps one vector per thing";
   const core = cf.train_max === 1 ? "lets its core look over the things once (loops off, to test what they are worth)"
     : cf.fixed ? `runs a small shared core over the things ${cf.fixed} times` : "loops a small shared core over the things until its picture settles";
   const meta = kind === "laws"

@@ -9,6 +9,7 @@
 #   bash runpod/world.sh --name world-big --preset big --steps 200000 --passes 3        # the long run: ~29M each, both at once; rerun to carry on
 #   bash runpod/world.sh --name world-natural --preset big --steps 200000 --passes 3 --natural 1   # no marks: it finds the things itself
 #   bash runpod/world.sh --name world-teach --preset big --steps 200000 --passes 3 --natural 1 --teach 1   # marks only as its finder's answer key
+#   bash runpod/world.sh --name world-link --preset big --steps 200000 --passes 3 --natural 1 --linker 1   # the linker: mentions point back to the same thing
 # Results: <runs>/worldfirst/report.md and results.json; the dashboard (port 8000) shows them as a card.
 set -euo pipefail
 cd "$(dirname "$0")/.."

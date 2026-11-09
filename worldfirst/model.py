@@ -86,6 +86,8 @@ class LawsConfig:
     fixed: int = 0             # >0: always exactly this many passes, from a blank state, learning through all of them
     finder: int = 0            # >0: no marks; this many slots find the things themselves (slot attention)
     finder_iters: int = 3      # rounds in which the slots compete for the words
+    finder_kind: str = "slots" # "slots": slot attention; "link": the linker (each mention points back to an earlier
+                               # word of the same thing, or starts a new thing; the things are those chains)
     teach: float = 0.0         # >0 (with finder): marks as a teacher. In training only, the world's marks say which words
                                # are the same thing, and the finder is graded on grouping them that way. Never an input.
 
@@ -110,11 +112,20 @@ class Laws(nn.Module):
         self.col = nn.Linear(d, 10)
         if cfg.finder:
             # the thing finder: slots that compete for the words (each word goes mostly to one slot)
-            self.slot_init = nn.Parameter(torch.randn(cfg.finder, d) * 0.5)
-            self.sa_in, self.sa_slot = nn.RMSNorm(d), nn.RMSNorm(d)
-            self.sa_q, self.sa_k, self.sa_v = (nn.Linear(d, d, bias=False) for _ in range(3))
-            self.sa_gru = nn.GRUCell(d, d)
-            self.sa_mlp = nn.Sequential(nn.RMSNorm(d), nn.Linear(d, 2 * d), nn.GELU(), nn.Linear(2 * d, d))
+            if cfg.finder_kind != "link":
+                self.slot_init = nn.Parameter(torch.randn(cfg.finder, d) * 0.5)
+                self.sa_in, self.sa_slot = nn.RMSNorm(d), nn.RMSNorm(d)
+                self.sa_q, self.sa_k, self.sa_v = (nn.Linear(d, d, bias=False) for _ in range(3))
+                self.sa_gru = nn.GRUCell(d, d)
+                self.sa_mlp = nn.Sequential(nn.RMSNorm(d), nn.Linear(d, 2 * d), nn.GELU(), nn.Linear(2 * d, d))
+            else:
+                self.lk_norm = nn.RMSNorm(d)
+                self.lk_ment = nn.Linear(d, 1)              # does this word name a thing?
+                self.lk_q = nn.Linear(d, d, bias=False)     # which earlier word names the same thing?
+                self.lk_k = nn.Linear(d, d, bias=False)
+                self.lk_new = nn.Linear(d, 1)               # ... or is it a new thing?
+                self.rank = nn.Embedding(cfg.finder, d)     # the order in which it met the things (its own, not marks)
+                self.dig_at = nn.Embedding(32, d)           # which digit of the answer the speaker is writing
             # the speaker: writes a sum's digits one by one, looking only at the settled picture
             self.dig = nn.Embedding(11, d)                  # ten digits and "start"
             self.speak = nn.ModuleList([Block(d, cfg.heads, cfg.ff)])
@@ -136,12 +147,52 @@ class Laws(nn.Module):
         if not self.cfg.finder:
             slots = torch.bmm(b["pool"].to(h.dtype), h) + self.slot_kind(b["kind"])
             return slots, b["pos"], b["kind"] > 0
-        things, tpos = self.find(h, valid, pos)
+        if self.cfg.finder_kind == "link":
+            things, tpos, tok_ok = self.link(h, valid, pos, b)
+        else:
+            things, tpos = self.find(h, valid, pos)
+            tok_ok = torch.ones(B, self.cfg.finder, dtype=torch.bool, device=tok.device)
+        self._thing_ok = tok_ok
         qv = torch.bmm(b["qpool"].to(h.dtype), h) + self.slot_kind.weight[2]
         e = torch.cat([things + self.slot_kind.weight[1], qv], 1)
         p = torch.cat([tpos, b["qpos"].float()], 1)
-        ok = torch.cat([torch.ones(B, self.cfg.finder, dtype=torch.bool, device=tok.device), b["qvalid"]], 1)
+        ok = torch.cat([tok_ok, b["qvalid"]], 1)
         return e, p, ok
+
+    def link(self, h, valid, pos, b):
+        """The linker. Each word says whether it names a thing; each such word points back to the earlier word that
+        names the same thing, or says "new thing". Following the pointers back gives chains: one chain = one thing,
+        its vector the mean of its words. Things are numbered in the order it met them. It always uses its OWN
+        decisions; the marks (in training only) are just the answer key for them (see teach_loss)."""
+        B, T, d = h.shape
+        K = self.cfg.finder
+        x = self.lk_norm(h)
+        ar = torch.arange(T, device=h.device)
+        m_logit = self.lk_ment(x).squeeze(-1).float()                          # [B, T]
+        sc = torch.einsum("bid,bjd->bij", self.lk_q(x), self.lk_k(x)).float() / math.sqrt(d)
+        new = self.lk_new(x).squeeze(-1).float()
+        self._lk = (m_logit, sc, new, valid)
+        with torch.no_grad():
+            scene = valid & (ar[None] < b["slen"][:, None])
+            is_m = scene & (m_logit > 0)
+            cand = (ar[None, :] < ar[:, None])[None] & is_m[:, None, :]       # earlier words that name things
+            best, arg = sc.masked_fill(~cand, -1e9).max(-1)
+            joins = is_m & cand.any(-1) & (best > new)
+            parent = torch.where(joins, arg, ar[None].expand(B, T))
+            for _ in range(max(1, math.ceil(math.log2(T))) + 1):                 # follow the pointers to the chain's start
+                parent = parent.gather(1, parent)
+            root = is_m & (parent == ar[None])
+            rank = root.long().cumsum(1) - 1
+            slot = torch.where(root, rank, torch.full_like(rank, -1)).gather(1, parent)
+            slot = torch.where(is_m & (slot >= 0) & (slot < K), slot, torch.full_like(slot, -1))
+            M = torch.zeros(B, K + 1, T, device=h.device).scatter_(1, (slot + 1)[:, None, :], 1.0)[:, 1:]
+            M = M * valid[:, None, :]                                          # row 0 took the words of no thing
+            n = M.sum(-1)
+            ok = n > 0
+            w = M / n.clamp(min=1)[..., None]
+        self._att, self._w, self._assign = M, w, slot
+        things = torch.bmm(w.to(h.dtype), h) + self.rank.weight[None].to(h.dtype) * ok[..., None].to(h.dtype)
+        return things, (w * pos[:, None, :].float()).sum(-1), ok
 
     def find(self, h, valid, pos):
         """Slot attention: each slot claims words (they compete: a word is shared out over the slots), takes the mean of
@@ -251,7 +302,8 @@ class Laws(nn.Module):
         if len(p["b"]):
             q = self.pq(s[p["b"], K + p["q"]])
             k = self.pk(s[p["b"], :K])
-            ps = torch.softmax(torch.einsum("nd,nkd->nk", q, k).float() / math.sqrt(q.shape[-1]), -1)
+            lg = torch.einsum("nd,nkd->nk", q, k).float() / math.sqrt(q.shape[-1])
+            ps = torch.softmax(lg.masked_fill(~self._thing_ok[p["b"]], -1e9), -1)
             pw = torch.einsum("nk,nkt->nt", ps, self._w[p["b"]].float()).float()  # chance on each word
             pv = torch.zeros(len(p["b"]), self.cfg.vocab, device=s.device).scatter_add_(1, b["tok"][p["b"]], pw)
             pv = pv.masked_fill(~p["cand"], 0) + p["cand"].float() * 1e-6
@@ -264,7 +316,10 @@ class Laws(nn.Module):
             _, pos, ok = self._picture_meta(b, q["b"])
             S = pre.shape[1]
             inp = torch.cat([torch.full((N, 1), 10, device=s.device, dtype=torch.long), q["y"][:, :-1].clamp(min=0)], 1)
-            x = torch.cat([pre, self.dig(inp)], 1)
+            x = self.dig(inp)
+            if hasattr(self, "dig_at"):
+                x = x + self.dig_at.weight[:L].to(x.dtype)[None]
+            x = torch.cat([pre, x], 1)
             apos = q["end"][:, None].float() + 1 + torch.arange(L, device=s.device)[None].float()
             allpos = torch.cat([pos, apos], 1)
             see = torch.cat([ok, torch.ones(N, L, dtype=torch.bool, device=s.device)], 1)      # [N, S+L]
@@ -281,7 +336,7 @@ class Laws(nn.Module):
         K = self.cfg.finder
         tpos = (self._w.float() * torch.arange(b["tok"].shape[1], device=b["tok"].device)[None, None].float()).sum(-1)
         pos = torch.cat([tpos, b["qpos"].float()], 1)[idx]
-        ok = torch.cat([torch.ones(b["tok"].shape[0], K, dtype=torch.bool, device=b["tok"].device), b["qvalid"]], 1)[idx]
+        ok = torch.cat([self._thing_ok, b["qvalid"]], 1)[idx]
         return None, pos, ok
 
     @torch.no_grad()
@@ -289,8 +344,11 @@ class Laws(nn.Module):
         """How well the slots match the true things (the world knows them; the model was never told): a thing counts as
         found when all of its words went mostly to one slot and no other thing's words went to that slot."""
         self.read(b)
-        a = self._att.float().argmax(1).cpu()                                  # [B, T] the slot each word went to
-        ment = b["ment"].cpu()
+        a = self.assignment().cpu()                                            # [B, T] the slot each word went to
+        ment = b["ment"].clone()
+        if "slen" in b:                                                        # the scene's words (not the questions')
+            ment[torch.arange(ment.shape[1], device=ment.device)[None] >= b["slen"][:, None]] = -1
+        ment = ment.cpu()
         got, n = 0, 0
         for i in range(a.shape[0]):
             m, sl = ment[i], a[i]
@@ -300,6 +358,12 @@ class Laws(nn.Module):
                 if len(mine) == 1 and not any(mine & other for u, other in slots.items() if u != t):
                     got += 1
         return got, n
+
+    def assignment(self):
+        """After read(): the thing each word went to ([B, T]; -1: none)."""
+        if self.cfg.finder_kind == "link":
+            return self._assign
+        return self._att.float().argmax(1)
 
     def forward(self, b, passes=None, adaptive=False):
         s, used = self.think(b, passes, adaptive)
@@ -323,8 +387,26 @@ class Laws(nn.Module):
             hits[it[ok]] = out["seq"][ok].argmax(-1) == y[ok]
         loss = sum(losses) / max(1, n_items)
         if self.training and self.cfg.finder and self.cfg.teach > 0:
-            loss = loss + self.cfg.teach * self.teach_loss(b["ment"])
+            with torch.autocast(b["tok"].device.type, enabled=False):
+                aux = self.link_loss(b["ment"]) if self.cfg.finder_kind == "link" else self.teach_loss(b["ment"])
+            loss = loss + self.cfg.teach * aux
         return loss, hits, used
+
+    def link_loss(self, ment):
+        """The linker's answer key, from the marks (training only): which words name a thing, and for each of them
+        which earlier words name the same thing (any of them is right), or "new" when none does."""
+        m_logit, sc, new, valid = self._lk
+        T = ment.shape[1]
+        ar = torch.arange(T, device=ment.device)
+        gm = ment >= 0
+        l_m = F.binary_cross_entropy_with_logits(m_logit[valid], gm[valid].float())
+        cand = (ar[None, :] < ar[:, None])[None] & gm[:, None, :]
+        gold = cand & (ment[:, :, None] == ment[:, None, :])
+        lg = torch.cat([new[..., None], sc.masked_fill(~cand, -1e9)], -1)        # [B, T, 1 + T]
+        g = torch.cat([~gold.any(-1, keepdim=True), gold], -1)
+        per = torch.logsumexp(lg, -1) - torch.logsumexp(lg.masked_fill(~g, -1e9), -1)
+        l_a = per[gm].mean() if gm.any() else per.sum() * 0
+        return l_m + l_a
 
     def teach_loss(self, ment):
         """Marks as a teacher: for every two words that name things, the finder's chance that they went to the same slot
