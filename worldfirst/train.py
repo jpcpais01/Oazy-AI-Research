@@ -163,6 +163,7 @@ def train(model, vocab, out: Path, steps=20000, batch=128, lr=6e-4, warmup=None,
     t_run, s_run = time.time(), start
     last_save = time.time()
     run_loss, run_acc, run_n = 0.0, 0.0, 0
+    skipped = 0
     step = start - 1
     try:
         for step in range(start, steps):
@@ -173,15 +174,21 @@ def train(model, vocab, out: Path, steps=20000, batch=128, lr=6e-4, warmup=None,
             with autocast(device):
                 loss, hits, _ = model.loss_and_hits(b, **kw)
             opt.zero_grad(set_to_none=True)
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            opt.step()
+            if torch.isfinite(loss):                    # a broken step (inf/NaN) is skipped, never learned from
+                loss.backward()
+                gn = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                if torch.isfinite(gn):
+                    opt.step()
+                else:
+                    skipped += 1
+            else:
+                skipped += 1
             qh = question_hits(hits, b["meta"])
             by_ep = {m["q"]: (m["family"], m["level"]) for m in b["meta"]}
             for qid, ok in qh.items():
                 f, lv = by_ep[qid]
                 cur.update(f, lv, float(ok))
-            run_loss += loss.item()
+            run_loss += loss.item() if math.isfinite(loss.item()) else 0.0
             run_acc += sum(qh.values()) / max(1, len(qh))
             run_n += 1
             el = time.time() - t0
@@ -189,7 +196,8 @@ def train(model, vocab, out: Path, steps=20000, batch=128, lr=6e-4, warmup=None,
                 rate = (step + 1 - s_run) / max(1e-6, time.time() - t_run)
                 left = (steps - step - 1) / max(1e-6, rate) / 3600
                 rec = {"kind": "train", "step": step + 1, "loss": run_loss / run_n, "acc": run_acc / run_n,
-                       "episodes": (step + 1) * batch, "minutes": el / 60, "lr": lr * sched(step), "frontier": cur.state()}
+                       "episodes": (step + 1) * batch, "minutes": el / 60, "lr": lr * sched(step), "frontier": cur.state(),
+                       "skipped": skipped}
                 metrics.write(json.dumps(rec) + "\n")
                 metrics.flush()
                 _status(out, {"state": "training", "kind": model.kind, "step": step + 1, "steps": steps, "batch": batch,
@@ -197,7 +205,8 @@ def train(model, vocab, out: Path, steps=20000, batch=128, lr=6e-4, warmup=None,
                               "steps_per_s": rate, "hours_left": left,
                               "params": sum(p.numel() for p in model.parameters())})
                 say(f"{model.kind} step {step + 1}/{steps}  loss {rec['loss']:.4f}  right {100 * rec['acc']:.1f}%  "
-                    f"{el / 60:.1f} min  {rate:.1f} steps/s  {left:.1f} h left  frontier "
+                    f"{el / 60:.1f} min  {rate:.1f} steps/s  {left:.1f} h left  "
+                    + (f"skipped {skipped} broken steps  " if skipped else "") + "frontier "
                     + " ".join(f"{k}:{v}" for k, v in cur.state().items()))
                 run_loss, run_acc, run_n = 0.0, 0.0, 0
             if eval_every and (step + 1) % eval_every == 0 and step + 1 < steps:
