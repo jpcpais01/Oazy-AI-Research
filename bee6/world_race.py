@@ -41,7 +41,7 @@ def _plain(x):
 
 def differences(a: dict, b: dict):
     """Settings two arms should share but do not (the world switch itself aside)."""
-    out = [k for k in SAME if a.get(k) != b.get(k)]
+    out = [k for k in SAME if a.get(k) != b.get(k) and not (k == "mix" and "world" in str(b.get(k)))]   # Emerald's mix has the world in it
     ca, cb = a.get("config") or {}, b.get("config") or {}
     out += [f"config.{k}" for k in sorted(set(ca) | set(cb)) if ca.get(k) != cb.get(k) and k != "fp8"]
     return out
@@ -51,6 +51,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--runs", default=None)
     ap.add_argument("--arms", nargs="+", default=["bee6-race", "bee6-world10"], help="the plain run first")
+    ap.add_argument("--out", default="bee6-world-race.md", help="the markdown copy's name, in the runs folder")
     a = ap.parse_args(argv)
     runs = Path(a.runs or default_dir("runs"))
     got, body = {}, []
@@ -135,7 +136,7 @@ def main(argv=None):
     if fam_rows:
         md += ["", "## World secret exams, family by family", "", "| family | exam | " + " | ".join(have) + " |",
                "|" + "---|" * (2 + len(have))] + ["| " + " | ".join(r) + " |" for r in fam_rows]
-    out = runs / "bee6-world-race.md"
+    out = runs / a.out
     out.write_text("\n".join(md) + "\n")
     term.info(f"table also saved: {out}")
     return got
