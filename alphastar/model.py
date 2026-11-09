@@ -472,11 +472,26 @@ class AlphaStar(Foresight, nn.Module):
 
     # ---------------------------------------------------------------- probes
     @torch.no_grad()
+    def token_ce(self, h, y, chunk=4096):
+        """The next-word loss of every token (B, T), in slices (probes only)."""
+        h2, y2 = h.reshape(-1, h.shape[-1]), y.reshape(-1)
+        out = torch.empty(len(y2), device=h.device)
+        for i in range(0, len(y2), chunk):
+            out[i:i + chunk] = F.cross_entropy(self.head(h2[i:i + chunk]).float(), y2[i:i + chunk], reduction="none")
+        return out.view(y.shape)
+
+    def word_kinds(self, y):
+        """(B, T) bool: is the word to guess filler (the most common pieces, punctuation)? None without the tables."""
+        if not (self.cfg.thought and self.foresight_ready()):
+            return None
+        return self.fore_skip[y]
+
+    @torch.no_grad()
     def loop_report(self, windows, device, batch=16, curve=(1, 2, 4, 8, 16)):
         """On held-out windows: the next-word loss after 1, 2, 4, 8, 16 passes and when it stops by itself (with the
         average passes it took), the next-thought loss after every pass (and the blind guess), how much the thought
-        still moves at the last pass, and how many facts in the drawer are ever picked."""
-        from oazy.lmloss import head_loss
+        still moves at the last pass, and how many facts in the drawer are ever picked. With the word tables, the loss by
+        passes and the passes taken are also split into filler words (the, of, commas ...) and content words."""
         was = self.training
         self.eval()
         xy = torch.as_tensor(windows, device=device)
@@ -485,6 +500,9 @@ class AlphaStar(Foresight, nn.Module):
         fore = [0.0] * top
         blind = words = 0.0
         ada = ada_passes = move = 0.0
+        split = {"filler": {n: 0.0 for n in curve}, "content": {n: 0.0 for n in curve}}
+        n_kind = {"filler": 0.0, "content": 0.0}
+        used_kind = {"filler": 0.0, "content": 0.0}
         drawers = [m for m in self.modules() if isinstance(m, Drawer)]
         counts = [torch.zeros(d.n * d.n, dtype=torch.long, device=device) for d in drawers]
         rows = 0
@@ -499,11 +517,19 @@ class AlphaStar(Foresight, nn.Module):
                 for d in drawers:
                     d.track = None
                 pts = self.fore_points(x, y) if has_fore else None
+                kind = self.word_kinds(y)
+                if kind is not None:
+                    n_kind["filler"] += float(kind.sum())
+                    n_kind["content"] += float((~kind).sum())
                 last = {}
 
                 def every(n, s):
                     if n in ce:
-                        ce[n] += float(head_loss(self._speak(s), self.embed.weight, y, self.cfg.softcap)[1]) * nb
+                        tc = self.token_ce(self._speak(s), y)
+                        ce[n] += float(tc.mean()) * nb
+                        if kind is not None:
+                            split["filler"][n] += float(tc[kind].sum())
+                            split["content"][n] += float(tc[~kind].sum())
                     if pts is not None:
                         fl, cnt = self.fore_nll(s, pts)
                         fore[n - 1] += float(fl) * float(cnt)
@@ -518,11 +544,18 @@ class AlphaStar(Foresight, nn.Module):
                     blind += float(bl) * float(cnt)
                     words += float(cnt)
                 s, used = self.think_test(e)
-                ada += float(head_loss(self._speak(s), self.embed.weight, y, self.cfg.softcap)[1]) * nb
+                ada += float(self.token_ce(self._speak(s), y).mean()) * nb
                 ada_passes += float(used.mean()) * nb
+                if kind is not None:
+                    used_kind["filler"] += float(used[kind].sum())
+                    used_kind["content"] += float(used[~kind].sum())
             rows += nb
         out = {"pass_loss": {str(n): v / rows for n, v in ce.items()}, "adaptive_loss": ada / rows,
                "adaptive_passes": ada_passes / rows, "move_last": move / rows, "exit_eps": self.cfg.exit_eps}
+        if n_kind["filler"] and n_kind["content"]:
+            for k in ("filler", "content"):
+                out[f"pass_loss_{k}"] = {str(n): v / n_kind[k] for n, v in split[k].items()}
+                out[f"passes_{k}"] = used_kind[k] / n_kind[k]
         if words:
             out.update({"thought_by_pass": [v / words for v in fore], "thought_blind": blind / words})
         for cnt in counts[:1]:

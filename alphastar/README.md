@@ -87,3 +87,26 @@ To race it without the next-thought lesson (so its effect is measured alone), th
 `--set thought=0 --name alphastar-nothought-race`.
 
 If it runs out of memory, `--micro 16` (the same tokens per step, more passes per step).
+
+## Pegasus Beta (alphastar/beta.py): it decides how long to think
+
+Alpha Star's first race showed a lazy loop: after 2 passes the thought settled and more passes added ~0.007 to the loss.
+The number of passes was a schedule we set and the stop was a rule we guessed. Pegasus Beta lets the model learn both
+(PonderNet, Banino et al. 2021):
+
+- **A stop head**: after every pass it says, for each word, how sure it is that it can stop now.
+- **Its lesson**: on 4,096 sampled words per trainer pass, the next-word loss is measured after every pass (8 while
+  training); the stop head is trained on the loss it would get where it stops, on average, plus a small pull (0.01)
+  towards a gentle prior (4 passes on average) so it explores early on. Stopping before a word is figured out costs a
+  lot; every extra pass costs a little.
+- **The depth it practises** is drawn from its own stopping habits (a running average), half mixed with the prior, so
+  words it stops early on make it good early, and words it thinks long on make it good late. Nobody sets a schedule.
+- **Reading**: each word stops once its chance of having stopped reaches one half, at most 16 passes.
+
+The `[loop]` probe adds where its stop lands (the share of words stopping after pass 1, 2, 3 ...), and both models now
+split loss-by-passes and passes taken into filler words (the, of, commas) and content words.
+
+```
+python3 -m alphastar.tests_beta --device cuda
+OAZY_DATA=/root/data bash runpod/train.sh pegasusbeta --preset big --tokens 0.5e9 --micro 32 --data-sub sado --name beta-race
+```
