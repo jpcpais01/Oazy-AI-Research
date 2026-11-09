@@ -250,7 +250,7 @@ class Laws(nn.Module):
             q = self.pq(s[p["b"], K + p["q"]])
             k = self.pk(s[p["b"], :K])
             ps = torch.softmax(torch.einsum("nd,nkd->nk", q, k).float() / math.sqrt(q.shape[-1]), -1)
-            pw = torch.einsum("nk,nkt->nt", ps, self._w[p["b"]].float())          # chance on each word
+            pw = torch.einsum("nk,nkt->nt", ps, self._w[p["b"]].float()).float()  # chance on each word
             pv = torch.zeros(len(p["b"]), self.cfg.vocab, device=s.device).scatter_add_(1, b["tok"][p["b"]], pw)
             pv = pv.masked_fill(~p["cand"], 0) + p["cand"].float() * 1e-6
             pv = pv / pv.sum(-1, keepdim=True)
