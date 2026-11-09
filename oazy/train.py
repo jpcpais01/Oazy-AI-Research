@@ -901,6 +901,9 @@ def main():
     ap.add_argument("--world", type=float, default=None,
                     help="average share of the run's tokens that are world practice episodes (oazy/worldmix.py): 3x that "
                          "share of the passes for the first 20%%, then half of it to the end; 0.10 = 30%% then 5%%; 0 = off")
+    ap.add_argument("--emerald", type=float, default=None,
+                    help="read Emerald (oazy/emerald.py: Sado + the world's text) with this average world share; "
+                         "--data-sub emerald alone = 0.10 (30%% for the first 20%%, then 5%%); 0 = plain Sado")
     ap.add_argument("--world-workers", type=int, default=None, help="helper processes making world episodes (3; 0 = in the trainer)")
     ap.add_argument("--schedule", choices=["cos", "wsd"], default=None,
                     help="learning-rate shape: cos (cosine) or wsd (flat, then a straight fall over the last 20%%); default wsd for bee")
@@ -978,6 +981,12 @@ def main():
         from .retok import target_dir, ratio
         data = target_dir(root, tk)
         sub = args.data_sub or recipe.get("data_sub")
+        if sub == "emerald" or args.emerald is not None:   # Emerald (oazy/emerald.py) = Sado + the world's text, in Sado's folder
+            sub = "sado"
+            if not (root / "sado" / "world" / "train.bin").exists():
+                raise SystemExit(f"Emerald's world is not built yet: run  python3 -m oazy.emerald build  first")
+            if world_w > 0:
+                raise SystemExit("Emerald already holds the world: leave out --world (or use --emerald 0 for plain Sado)")
         if sub and sub != data.name:
             data = root / sub
             if not (data / "train.bin").exists():
@@ -1033,7 +1042,9 @@ def main():
         from bee.model import ctx_plan
         mix_default = args.mix is None
         if args.mix is None:      # SmolLM2-tokenizer Bees read Tagus when it is there (oazy/tagus.py)
-            args.mix = ("sado-best" if tk == "smollm2" and (data / "best" / "train.bin").exists() else   # Sado (oazy/sado.py)
+            emerald = args.data_sub == "emerald" or args.emerald is not None
+            args.mix = (f"emerald:{0.10 if args.emerald is None else args.emerald:g}" if emerald else
+                        "sado-best" if tk == "smollm2" and (data / "best" / "train.bin").exists() else   # Sado (oazy/sado.py)
                         "sado" if tk == "smollm2" and (data / "books" / "train.bin").exists() else
                         "tagus" if tk == "smollm2" and (data / "cosmo" / "train.bin").exists() else "v1")
         args.mix = resolve_mix(args.mix)
@@ -1211,6 +1222,9 @@ def main():
         world = worldmix.WorldStream(tk, seed=args.seed, workers=workers, state=world_state.get("stream"))
         say(f"[world] {worldmix.plan_text(world_w)}; {workers} helper processes make the episodes"
             + (f" (resumed: {term.tokens(world_tokens)} world tokens so far)" if world_tokens else ""), flush=True)
+    world_exams = world is not None or "world" in getattr(train, "src", {})   # Emerald: the world is part of the text
+    if world is None and world_exams:
+        say("[world] Emerald: the world's practice text is part of the mix; its secret exams run on the tests' schedule", flush=True)
 
     stop = {"flag": False}
 
@@ -1300,7 +1314,7 @@ def main():
             except Exception as e:          # a new test must never stop a run
                 say(f"[faith] skipped ({type(e).__name__}: {str(e)[:120]})", flush=True)
             nxt["faith"] += p["evals_every"]
-        if world is not None and (final or tokens >= nxt.setdefault("world", 0)):
+        if world_exams and (final or tokens >= nxt.setdefault("world", 0)):
             # the world's exams as plain text (oazy/worldmix.py): a quick look at the secret ones on the tests' schedule,
             # every exam (practised and secret, n episodes per set) at the end
             try:
