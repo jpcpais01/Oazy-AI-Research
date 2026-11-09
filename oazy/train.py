@@ -33,17 +33,17 @@ from memtrix.model import Memtrix, MemtrixConfig
 from memtrix import memory
 from . import hellaswag, probes, term
 
-KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "smol", "smolbee", "black", "blackt", "gpt"]
+KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "seed", "smol", "smolbee", "black", "blackt", "gpt"]
 NICE = {"memtrix": "Memtrix", "tide": "Tide", "fern": "Fern", "ember": "Ember", "fern2": "Fern2", "fern3": "Fern3",
         "bee": "Bee0.2B", "bee2": "Bee_v2_0.2B", "bee3": "Bee3", "frog": "Frog", "coral": "Coral", "bee4": "Bee4-200M", "coralmini": "Coral Mini",
-        "pegasus": "Pegasus 1", "pegasusmini": "Pegasus 1 Mini", "pegasus2": "Pegasus 2 Mini", "plain100": "Plain-100M", "plain100f": "Plain-100F", "alphastar": "Pegasus Alpha Star", "pegasusbeta": "Pegasus Beta", "bee5": "Bee5-200M", "smol": "SmolLM2 (their recipe)", "smolbee": "SmolLM2 (our recipe)", "black": "Code Black",
+        "pegasus": "Pegasus 1", "pegasusmini": "Pegasus 1 Mini", "pegasus2": "Pegasus 2 Mini", "plain100": "Plain-100M", "plain100f": "Plain-100F", "alphastar": "Pegasus Alpha Star", "pegasusbeta": "Pegasus Beta", "bee5": "Bee5-200M", "seed": "Seed", "smol": "SmolLM2 (their recipe)", "smolbee": "SmolLM2 (our recipe)", "black": "Code Black",
         "blackt": "Black-T", "gpt": "GPT"}
-FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "smolbee", "black", "blackt")    # raised the fast way: Muon (and a mentor, where MENTOR names one)
+FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "seed", "smolbee", "black", "blackt")    # raised the fast way: Muon (and a mentor, where MENTOR names one)
 # default mentor (the others: gpt2-medium). Code Black and Black-T race without one, so the architectures are compared alone.
 MENTOR = {"bee": "gpt2-large", "bee2": "smollm2-360m", "bee3": "smollm2-360m", "frog": "smollm2-360m", "coral": "smollm2-360m",
           "bee4": "smollm2-360m", "coralmini": "smollm2-360m", "pegasus": "smollm2-360m", "pegasusmini": "smollm2-360m", "pegasus2": "smollm2-360m",
-          "plain100": "smollm2-360m", "plain100f": "smollm2-360m", "alphastar": "smollm2-360m", "pegasusbeta": "smollm2-360m", "bee5": "smollm2-360m", "smolbee": "smollm2-360m", "black": "none", "blackt": "none"}
-BEES = ("bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "smol", "smolbee", "black", "blackt")    # the text mix (Tagus), WSD, growing windows
+          "plain100": "smollm2-360m", "plain100f": "smollm2-360m", "alphastar": "smollm2-360m", "pegasusbeta": "smollm2-360m", "bee5": "smollm2-360m", "seed": "smollm2-360m", "smolbee": "smollm2-360m", "black": "none", "blackt": "none"}
+BEES = ("bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "seed", "smol", "smolbee", "black", "blackt")    # the text mix (Tagus), WSD, growing windows
 # Bee3's recipe (bee3/README.md): the mentor stays the whole run, weight decay on the Muon grids, a batch ramp,
 # a 1-minus-square-root cool-down, twice Bee2's learning rates (the presets' lr_bee3 / muon_lr_bee3)
 RECIPE = {"bee3": dict(mentor_floor=0.25, mentor_off=0.1, muon_wd=0.1, batch_ramp="65536:0.1", decay_shape="sqrt")}
@@ -94,6 +94,12 @@ RECIPE["pegasusbeta"] = dict(RECIPE["plain100"])
 # (Bee4's: windows 512 -> 2,048, the batch ramp, WSD over the last 30%, bf16, the SmolLM2-360M mentor on a share of
 # the passes; no growing: the U-net ties early layers to late ones), reading Sado (oazy/sado.py), our newest text.
 RECIPE["bee5"] = dict(RECIPE["bee4"], data_sub="sado")
+# Seed (seed/README.md, Nov 9): a small core that grows 4x384 -> 6x512 -> 9x640 -> 12x768 (20/20/20/40% of the run,
+# keeping its function) + a 1.3M-row library it looks facts up in. Bee5's recipe exactly (the latest best: windows
+# 512 -> 2,048, the batch ramp, WSD over the last 30%, bf16, the SmolLM2-360M mentor on a share of the passes, Sado with
+# its faith texts); Grokfast and the core's extra weight decay live in its optimizer (seed/optim.py, --set grokfast=0
+# turns them off). FP8 stays a switch (--fp8 1).
+RECIPE["seed"] = dict(RECIPE["bee5"])
 # SmolLM2 from scratch (smol/model.py, Nov 9): Hugging Face's SmolLM2 body with random weights, on Sado, to compare speed
 # and loss at equal tokens. smol = their recipe, stock (AdamW 3e-3, weight decay 0.01, 2,048-word windows, WSD with a
 # straight fall over the last 20%, no mentor); smolbee = the latest best recipe (Bee5's), only the body differs.
@@ -246,6 +252,11 @@ def _smol():
     return Smol, SmolConfig
 
 
+def _seed():
+    from seed.model import Seed, SeedConfig          # seed/ = a growing core + a big library of facts (Seed & Bloom)
+    return Seed, SeedConfig
+
+
 def _black():
     from codeblack.model import Black, BlackConfig   # codeblack/ = two clocks: a fast token stream, a slow stream once per 4 tokens
     return Black, BlackConfig
@@ -285,6 +296,8 @@ PRESETS = {
         alphastar=dict(fore_top=20, drawer_keys=16, drawer_heads=2, drawer_k=4, drawer_qdim=32, test_max=6, gen_passes=3,
                        passes_max=4, passes_mean=3.0, fore_hidden=128),
         pegasusbeta=dict(ponder_max=4, ponder_prior=2.0, ponder_rows=2, halt_hidden=32),
+        seed=dict(d_model=160, n_layer=12, bloom="4x64:0,6x96:0.2,9x128:0.4,12x160:0.6", attn_head_dim=16, max_len=512,
+                  ctx="256:0,512:0.5", lib_side=32, lib_dim=64, lib_heads=2, lib_k=4, lib_qdim=32),
         micro=16, accum=1, lr=3e-3, warmup=50, tokens=3_000_000,
         eval_every=250_000, probe_every=1_000_000, hs_every=1_000_000, sample_every=1_000_000, evals_every=1_000_000,
         val_windows=64, hs_quick=200, evals_quick=50, sample_len=40,
@@ -312,25 +325,27 @@ PRESETS = {
         alphastar=dict(fore_top=20, drawer_keys=8, drawer_heads=2, drawer_k=4, drawer_qdim=16, test_max=4, gen_passes=2,
                        passes_max=3, passes_mean=2.0, passes_start=1.0, fore_hidden=64),
         pegasusbeta=dict(ponder_max=3, ponder_prior=2.0, ponder_rows=2, halt_hidden=16),
+        seed=dict(d_model=160, n_layer=12, bloom="4x64:0,6x96:0.2,9x128:0.4,12x160:0.6", attn_head_dim=16, max_len=128,
+                  ctx="64:0,128:0.5", lib_side=16, lib_dim=48, lib_heads=2, lib_k=4, lib_qdim=16),
         micro=8, accum=2, lr=3e-3, warmup=10, tokens=60_000,
         eval_every=20_000, probe_every=30_000, hs_every=30_000, sample_every=30_000, evals_every=30_000,
         val_windows=16, hs_quick=20, evals_quick=10, sample_len=10,
     ),
     # GPT-2 small size (Memtrix 117M vs GPT-2 124M), ~2 h for both models on one B200 (check with --bench)
     "full": dict(
-        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576, batch_bee4=524288, batch_coralmini=524288, batch_pegasus=524288, batch_pegasusmini=524288, batch_pegasus2=524288, batch_plain100=524288, batch_plain100f=524288, batch_alphastar=524288, batch_pegasusbeta=524288, batch_bee5=524288, batch_smol=524288, batch_smolbee=524288,
+        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576, batch_bee4=524288, batch_coralmini=524288, batch_pegasus=524288, batch_pegasusmini=524288, batch_pegasus2=524288, batch_plain100=524288, batch_plain100f=524288, batch_alphastar=524288, batch_pegasusbeta=524288, batch_bee5=524288, batch_seed=524288, batch_smol=524288, batch_smolbee=524288,
         micro=32, accum=8, lr=1.2e-3, lr_bee3=2.4e-3, muon_lr_bee3=0.04, lr_frog=1.8e-3, muon_lr_frog=0.03,
         lr_coral=1.8e-3, muon_lr_coral=0.03, lr_bee4=1.8e-3, muon_lr_bee4=0.03, lr_coralmini=1.8e-3, muon_lr_coralmini=0.03,
-        lr_pegasus=1.8e-3, muon_lr_pegasus=0.03, lr_pegasusmini=1.8e-3, muon_lr_pegasusmini=0.03, lr_pegasus2=1.8e-3, muon_lr_pegasus2=0.03, lr_plain100=1.8e-3, muon_lr_plain100=0.03, lr_plain100f=1.8e-3, muon_lr_plain100f=0.03, lr_alphastar=1.8e-3, muon_lr_alphastar=0.03, lr_pegasusbeta=1.8e-3, muon_lr_pegasusbeta=0.03, lr_bee5=1.8e-3, muon_lr_bee5=0.03, lr_smol=3e-3, lr_smolbee=1.8e-3, muon_lr_smolbee=0.03, warmup=400, tokens=2_000_000_000,
+        lr_pegasus=1.8e-3, muon_lr_pegasus=0.03, lr_pegasusmini=1.8e-3, muon_lr_pegasusmini=0.03, lr_pegasus2=1.8e-3, muon_lr_pegasus2=0.03, lr_plain100=1.8e-3, muon_lr_plain100=0.03, lr_plain100f=1.8e-3, muon_lr_plain100f=0.03, lr_alphastar=1.8e-3, muon_lr_alphastar=0.03, lr_pegasusbeta=1.8e-3, muon_lr_pegasusbeta=0.03, lr_bee5=1.8e-3, muon_lr_bee5=0.03, lr_seed=1.8e-3, muon_lr_seed=0.03, lr_smol=3e-3, lr_smolbee=1.8e-3, muon_lr_smolbee=0.03, warmup=400, tokens=2_000_000_000,
         eval_every=50_000_000, probe_every=250_000_000, hs_every=250_000_000, sample_every=250_000_000, evals_every=500_000_000,
         val_windows=128, hs_quick=1000, evals_quick=500, sample_len=120,
     ),
     # the same models, 2.5x the text (e.g. a 2 x B200 pod for ~2.5 h, one model per GPU)
     "big": dict(
-        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576, batch_bee4=524288, batch_coralmini=524288, batch_pegasus=524288, batch_pegasusmini=524288, batch_pegasus2=524288, batch_plain100=524288, batch_plain100f=524288, batch_alphastar=524288, batch_pegasusbeta=524288, batch_bee5=524288, batch_smol=524288, batch_smolbee=524288,
+        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576, batch_bee4=524288, batch_coralmini=524288, batch_pegasus=524288, batch_pegasusmini=524288, batch_pegasus2=524288, batch_plain100=524288, batch_plain100f=524288, batch_alphastar=524288, batch_pegasusbeta=524288, batch_bee5=524288, batch_seed=524288, batch_smol=524288, batch_smolbee=524288,
         micro=32, accum=8, lr=1.2e-3, lr_bee3=2.4e-3, muon_lr_bee3=0.04, lr_frog=1.8e-3, muon_lr_frog=0.03,
         lr_coral=1.8e-3, muon_lr_coral=0.03, lr_bee4=1.8e-3, muon_lr_bee4=0.03, lr_coralmini=1.8e-3, muon_lr_coralmini=0.03,
-        lr_pegasus=1.8e-3, muon_lr_pegasus=0.03, lr_pegasusmini=1.8e-3, muon_lr_pegasusmini=0.03, lr_pegasus2=1.8e-3, muon_lr_pegasus2=0.03, lr_plain100=1.8e-3, muon_lr_plain100=0.03, lr_plain100f=1.8e-3, muon_lr_plain100f=0.03, lr_alphastar=1.8e-3, muon_lr_alphastar=0.03, lr_pegasusbeta=1.8e-3, muon_lr_pegasusbeta=0.03, lr_bee5=1.8e-3, muon_lr_bee5=0.03, lr_smol=3e-3, lr_smolbee=1.8e-3, muon_lr_smolbee=0.03, warmup=600, tokens=5_000_000_000,
+        lr_pegasus=1.8e-3, muon_lr_pegasus=0.03, lr_pegasusmini=1.8e-3, muon_lr_pegasusmini=0.03, lr_pegasus2=1.8e-3, muon_lr_pegasus2=0.03, lr_plain100=1.8e-3, muon_lr_plain100=0.03, lr_plain100f=1.8e-3, muon_lr_plain100f=0.03, lr_alphastar=1.8e-3, muon_lr_alphastar=0.03, lr_pegasusbeta=1.8e-3, muon_lr_pegasusbeta=0.03, lr_bee5=1.8e-3, muon_lr_bee5=0.03, lr_seed=1.8e-3, muon_lr_seed=0.03, lr_smol=3e-3, lr_smolbee=1.8e-3, muon_lr_smolbee=0.03, warmup=600, tokens=5_000_000_000,
         eval_every=100_000_000, probe_every=200_000_000, hs_every=200_000_000, sample_every=200_000_000, evals_every=500_000_000,
         val_windows=128, hs_quick=1000, evals_quick=500, sample_len=120,
     ),
@@ -476,6 +491,10 @@ def build(kind, preset, overrides=None):
             small["ctx"] = f"{small['max_len']}:0"
         cfg = Bee5Config(**{**small, **p.get("bee5", {}), **(overrides or {})})
         return Bee5(cfg), cfg
+    if kind == "seed":
+        Seed, SeedConfig = _seed()
+        cfg = SeedConfig(**{**p.get("seed", {}), **(overrides or {})})
+        return Seed(cfg), cfg
     if kind in ("smol", "smolbee"):
         Smol, SmolConfig = _smol()
         small = {k: v for k, v in p.get("bee", {}).items() if k in ("d_model", "n_layer", "attn_heads", "attn_kv_heads",
@@ -555,6 +574,9 @@ def load_model(ckpt: Path, device, mmap=False):
     elif kind == "bee5":
         Bee5, Bee5Config = _bee5()
         model = Bee5(Bee5Config.from_dict(st["config"]))
+    elif kind == "seed":
+        Seed, SeedConfig = _seed()
+        model = Seed(SeedConfig.from_dict(st["config"]))      # (it grows to the checkpoint's stage as it loads)
     elif kind in ("smol", "smolbee"):
         Smol, SmolConfig = _smol()
         model = Smol(SmolConfig.from_dict(st["config"]))
@@ -1264,6 +1286,15 @@ def main():
                 if "drawer_used" in r:
                     say(f"[loop] fact drawer: {r['drawer_used'] * 100:.1f}% of the facts picked at least once; half the picks "
                         f"go to {r['drawer_half'] * 100:.1f}% of them", flush=True)
+            if hasattr(model, "library_report"):     # Seed: how much of the library is read, and what closing it costs
+                r = model.library_report(pwin, device, batch=min(micro, 16))
+                r["lib_loss_on"] *= val_scale
+                r["lib_loss_off"] *= val_scale
+                run.log("metrics.jsonl", {"kind": "library", **base, **r})
+                latest["lib_gap"] = r["lib_loss_off"] - r["lib_loss_on"]
+                say(f"[library] {r['lib_used'] * 100:.1f}% of its {r['lib_rows']:,} rows read at least once; half the reads "
+                    f"go to {r['lib_half'] * 100:.1f}% of them | held-out {r['lib_loss_on']:.3f}, closed {r['lib_loss_off']:.3f} "
+                    f"(it is worth {r['lib_loss_off'] - r['lib_loss_on']:+.3f})", flush=True)
             if hasattr(model, "foresight_report"):   # Plain-100F: does the head see the next sentence on held-out text?
                 r = model.foresight_report(pwin, device, batch=min(micro, 16))
                 if r:
@@ -1323,6 +1354,7 @@ def main():
     log_every = 10
     share_credit, kd_log, kd_log_n = 0.0, 0.0, 0      # Frog's mentor share: the running tally; its KL since the last log
     run_steps = 0                                     # steps taken by this process (a race does not count its first 3)
+    stage_mark = (tokens, elapsed)                    # Seed: where this growth stage started (its speed is logged at the next)
     while not done() and not stop["flag"]:
         act = control()
         if act == "pause":
@@ -1349,13 +1381,21 @@ def main():
         evaluations()
         t_eval = time.time() - t0
 
-        if hasattr(model, "grow_to") and model.grow_to(prog()):     # Ember, Fern2: time to grow
+        if hasattr(model, "grow_to") and model.grow_to(prog()):     # Ember, Fern2, Seed: time to grow
             old, opt = opt, new_opt()
             carry_state(old, opt)
+            if hasattr(model, "carry_opt"):        # Seed: its grown (wider) parameters inherit their old memory
+                model.carry_opt(old, opt)
+            del old
             deep = model.depth_text() if hasattr(model, "depth_text") else f"{model.depth} blocks deep"
-            say(f"[grow] {tokens / 1e6:.0f}M tokens: {NICE[args.model]} is now {deep}", flush=True)
+            st_tok, st_s = tokens - stage_mark[0], elapsed - stage_mark[1]
+            rate = st_tok / st_s if st_s > 0 else 0.0
+            say(f"[grow] {tokens / 1e6:.0f}M tokens: {NICE[args.model]} is now {deep}"
+                + (f" (the stage before ran at {rate / 1e3:,.0f}k tokens/s)" if rate else ""), flush=True)
             run.log("metrics.jsonl", {"kind": "grow", "step": step, "tokens": tokens, "elapsed": elapsed,
-                                      "depth": model.depth})
+                                      "depth": model.depth, **({"width": model.width} if hasattr(model, "width") else {}),
+                                      **({"stage_tok_s": rate} if rate else {})})
+            stage_mark = (tokens, elapsed)
         mw = mentor.weight_at(prog()) if mentor is not None else 0.0
         if mentor is not None and mw <= 0:
             say(f"[mentor] {tokens / 1e6:.0f}M tokens: the mentor steps back; {NICE[args.model]} learns alone now", flush=True)

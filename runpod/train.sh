@@ -22,6 +22,7 @@
 #   OAZY_DATA=/root/data bash runpod/train.sh alphastar --preset big --tokens 0.5e9 --micro 32 --data-sub sado --name alphastar-race   # Pegasus Alpha Star (alphastar/)
 #   OAZY_DATA=/root/data bash runpod/train.sh pegasusbeta --preset big --tokens 0.5e9 --micro 32 --data-sub sado --name beta-race   # Pegasus Beta (alphastar/beta.py)
 #   OAZY_DATA=/root/data bash runpod/train.sh bee5 --preset big --tokens 0.5e9 --micro 32 --name bee5-race   # Bee5-200M (bee5/), reads Sado
+#   OAZY_DATA=/root/data bash runpod/train.sh seed --preset big --tokens 0.5e9 --micro 32 --name seed-smoke   # Seed (seed/): growing core + library, reads Sado
 #   OAZY_DATA=/root/data bash runpod/train.sh smol --preset big --tokens 0.5e9 --micro 32 --name smol-race      # SmolLM2-135M from scratch, their recipe (smol/)
 #   OAZY_DATA=/root/data bash runpod/train.sh smolbee --preset big --tokens 0.5e9 --micro 32 --name smolbee-race   # the same body, our recipe
 #     (--set size=360m for SmolLM2-360M)
@@ -42,7 +43,7 @@ cd "$(dirname "$0")/.."
 REPO="$(pwd)"
 MODEL="${1:-}"
 [ "$MODEL" = engram ] && MODEL=memtrix          # Memtrix's old name
-case "$MODEL" in memtrix|tide|fern|ember|fern2|fern3|bee|bee2|bee3|frog|coral|bee4|coralmini|pegasus|pegasusmini|pegasus2|plain100|plain100f|alphastar|pegasusbeta|bee5|smol|smolbee|black|blackt|gpt) shift ;; *) echo "usage: bash runpod/train.sh memtrix|tide|fern|ember|fern2|fern3|bee|bee2|bee3|frog|coral|bee4|coralmini|pegasus|pegasusmini|pegasus2|plain100|plain100f|alphastar|pegasusbeta|bee5|smol|smolbee|black|blackt|gpt [--gpt] [trainer options]"; exit 1 ;; esac
+case "$MODEL" in memtrix|tide|fern|ember|fern2|fern3|bee|bee2|bee3|frog|coral|bee4|coralmini|pegasus|pegasusmini|pegasus2|plain100|plain100f|alphastar|pegasusbeta|bee5|seed|smol|smolbee|black|blackt|gpt) shift ;; *) echo "usage: bash runpod/train.sh memtrix|tide|fern|ember|fern2|fern3|bee|bee2|bee3|frog|coral|bee4|coralmini|pegasus|pegasusmini|pegasus2|plain100|plain100f|alphastar|pegasusbeta|bee5|seed|smol|smolbee|black|blackt|gpt [--gpt] [trainer options]"; exit 1 ;; esac
 WITH_GPT=0
 ARGS=()
 WIN="$MODEL"
@@ -56,7 +57,7 @@ EXTRA="${ARGS[*]:-}"
 DATA="$(python3 -c "from oazy.data import default_dir; print(default_dir('data'))")"
 RUNS="$(python3 -c "from oazy.data import default_dir; print(default_dir('runs'))")"
 mkdir -p "$RUNS"
-if [ ! -f "$DATA/train.bin" ] && [[ "$EXTRA" != *--data-sub* ]] && [ "$MODEL" != bee5 ] && [ "$MODEL" != smol ] && [ "$MODEL" != smolbee ]; then   # these read Sado (checked below)
+if [ ! -f "$DATA/train.bin" ] && [[ "$EXTRA" != *--data-sub* ]] && [ "$MODEL" != bee5 ] && [ "$MODEL" != seed ] && [ "$MODEL" != smol ] && [ "$MODEL" != smolbee ]; then   # these read Sado (checked below)
     echo "no training data in $DATA yet: run  bash runpod/setup.sh  first"
     exit 1
 fi
@@ -88,7 +89,7 @@ if { [ "$MODEL" = coral ] || [ "$MODEL" = bee4 ] || [ "$MODEL" = coralmini ] || 
     exit 1
 fi
 
-if { [ "$MODEL" = bee5 ] || [ "$MODEL" = smol ] || [ "$MODEL" = smolbee ]; } && [ ! -f "$DATA/sado/train.bin" ] && [[ "$EXTRA" != *--data-sub* ]]; then
+if { [ "$MODEL" = bee5 ] || [ "$MODEL" = seed ] || [ "$MODEL" = smol ] || [ "$MODEL" = smolbee ]; } && [ ! -f "$DATA/sado/train.bin" ] && [[ "$EXTRA" != *--data-sub* ]]; then
     echo "$MODEL reads Sado; build it first (nice -n 10 python3 -m oazy.sado --run-tokens 20e9) or point OAZY_DATA at the copy that has it"
     exit 1
 fi

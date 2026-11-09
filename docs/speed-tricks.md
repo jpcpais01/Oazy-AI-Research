@@ -1,7 +1,7 @@
 # Our speed-up and optimization tricks
 
 Every trick our models use to train faster or learn more from each word, in one place. Written Nov 9 2026, from the
-code on `main` and the PR history (up to #160).
+code on `main` and the PR history (up to #160; Seed added with its own PR).
 
 There are two kinds of trick:
 
@@ -25,6 +25,7 @@ All on one B200, `--preset big`, micro 32.
 | Plain-100 / Pegasus 2 race (Nov 8) | 244k / 181k | the two shared one GPU, so not a clean number |
 | Pegasus 1 | about 30% slower than Bee4 | |
 | Bee5 | **not measured yet** | `python3 -m bee5.speedcheck` measures it; the race against Bee4 is the real test |
+| Seed | **not measured yet** | `python3 -m seed.speedcheck` measures each bloom stage; runs print each stage's real speed at every growth |
 
 "Share of the chip" is MFU: how much of the GPU's top arithmetic speed we really use. Big labs reach 35-50%.
 
@@ -32,20 +33,21 @@ All on one B200, `--preset big`, micro 32.
 
 A quick map. ✓ = on by default, `·` = off or not there.
 
-| trick | Coral | Bee4 | Coral Mini | Plain-100, Pegasus, Alpha Star, Beta | Bee5 |
-|---|---|---|---|---|---|
-| compile, bf16, fused loss in slices | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Muon (batched) | ✓ | ✓ | ✓ | ✓ | NorMuon |
-| short windows first | · | ✓ | ✓ | ✓ | ✓ |
-| growing depth | ✓ | ✓ | ✓ | · | · |
-| FP8 | ✓ (attention + shared MLP) | · | · | · | · |
-| plain causal attention (no document mask) | ✓ | ✓ | ✓ | ✓ | ✓ |
-| batch ramp | ✓ | ✓ | ✓ | ✓ | ✓ |
-| WSD cool-down | last 20% | last 30% | last 30% | last 30% | last 30% |
-| the mentor | 1 in 4, gone by 30% | 1 in 4 -> 1 in 10, kept | as Bee4 | as Bee4 | as Bee4 |
-| speedrun body tricks (value tables, U-net, ReLU², ...) | · | · | · | · | ✓ |
-| next-3-words early lesson | · | · | · | · | ✓ |
-| data selection `--select` | · | · | · | off until its A/B | refused until its A/B |
+| trick | Coral | Bee4 | Coral Mini | Plain-100, Pegasus, Alpha Star, Beta | Bee5 | Seed |
+|---|---|---|---|---|---|---|
+| compile, bf16, fused loss in slices | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Muon (batched) | ✓ | ✓ | ✓ | ✓ | NorMuon | NorMuon + Grokfast (core) |
+| short windows first | · | ✓ | ✓ | ✓ | ✓ | ✓ |
+| growing depth | ✓ | ✓ | ✓ | · | · | depth **and width**, function kept |
+| FP8 | ✓ (attention + shared MLP) | · | · | · | · | switch (`--fp8 1`) |
+| plain causal attention (no document mask) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| batch ramp | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| WSD cool-down | last 20% | last 30% | last 30% | last 30% | last 30% | last 30% |
+| the mentor | 1 in 4, gone by 30% | 1 in 4 -> 1 in 10, kept | as Bee4 | as Bee4 | as Bee4 | as Bee4 |
+| speedrun body tricks (value tables, U-net, ReLU², ...) | · | · | · | · | ✓ | ✓ |
+| next-3-words early lesson | · | · | · | · | ✓ | ✓ |
+| product-key library (sparse rows) | · | · | · | Alpha Star's small drawer | · | ✓ 1.3M rows |
+| data selection `--select` | · | · | · | off until its A/B | refused until its A/B | refused until its A/B |
 
 ---
 
@@ -338,6 +340,21 @@ trained on 10,000M words. They are all on by default. Full details in `bee5/READ
     OAZY_DATA=/root/data bash runpod/train.sh bee5 --preset big --tokens 0.5e9 --micro 32 --data-sub sado --name bee5-race
     OAZY_DATA=/root/data bash runpod/train.sh bee4 --preset big --tokens 0.5e9 --micro 32 --data-sub sado --name bee4-race
 
+### Seed's tricks
+
+Seed (`seed/README.md`) is Bee5's body and recipe, plus four things of its own. Full details in its README.
+
+| trick | what it does, plainly |
+|---|---|
+| **Seed & Bloom** (growing width and depth) | the core starts 4 x 384 and is copied bigger at 20%, 40% and 60% of the run (6 x 512, 9 x 640, 12 x 768). Each growth keeps the model's function exactly: new numbers start at 0, readers and writers are rescaled to match, new layers copy their neighbour's reading weights and write zero at first. The early stages are much smaller, so they run much faster |
+| **product-key library** | 1.3M rows of 768 (1.0B weights), read by two layers: each word picks 64 rows by comparing two half-questions with 1,152 half-keys each. Cheap to read; only the rows read are trained. Its questions are batch-normed so many rows stay in use |
+| **row-wise Adam for the library** | a row moves only in a step where it was read (no momentum drift, no decay), so a rare fact is kept between uses |
+| **Grokfast + extra decay on the core** | the slow average of the core's gradients (alpha 0.98) is added back twice, and the core's decay is 0.2 (Bee5: 0.1), to favour simple general rules. `--set grokfast=0` turns both off |
+
+**Gain.** Not measured yet. The checks, in order: `--tokens 0.5e9 --name seed-smoke` (nothing breaks, the loss is
+smooth at each growth), `--tokens 5e9 --set hold=1 --name seed-hold` (the tiny core alone: does LogRes jump late?),
+then a 90-minute race against Bee5 with Grokfast on and off (`seed/README.md` has the lines).
+
 ---
 
 ## Part 3: tried and dropped
@@ -385,5 +402,8 @@ These sped up models we have retired (Bee0.2B to Frog), and they still work if t
 | `--set attn_backend=cudnn` | cuDNN attention |
 | `--set compile_mode=...` | `max-autotune-no-cudagraphs` or `reduce-overhead` |
 | `--set mlp=swiglu` | Bee5 with SwiGLU instead of ReLU² |
+| `--set grokfast=0` | Seed without Grokfast and its extra core decay |
+| `--set hold=1` | Seed stays the 4 x 384 seed all run (no growing) |
+| `--set bloom=12x768:0` | Seed full size from the start |
 | `OAZY_DATA=/root/data` | read data from the pod's local copy |
 | `OAZY_LOSS_COMPILE=0` | loss slices uncompiled |
