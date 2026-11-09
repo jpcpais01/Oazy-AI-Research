@@ -148,6 +148,8 @@ def main(argv=None):
             (d / "train_state.pt").unlink(missing_ok=True)
         if m.kind == "rival" and not a.rival_tags:
             _no_tags(m)
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "config.json").write_text(json.dumps(config_of(m)))      # the dashboard describes it while it trains
         info = train(m, vocab, d, steps=a.steps, batch=a.batch, lr=a.lr, device=dev, curriculum=not a.no_curriculum,
                      minutes=a.minutes, say=say, seed=0, workers=a.workers)
         info["params"] = n_params(m)
