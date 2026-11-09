@@ -43,6 +43,8 @@ def differences(a: dict, b: dict):
     """Settings two arms should share but do not (the world switch itself aside)."""
     out = [k for k in SAME if a.get(k) != b.get(k) and not (k == "mix" and "world" in str(b.get(k)))]   # Emerald's mix has the world in it
     ca, cb = a.get("config") or {}, b.get("config") or {}
+    if a.get("model") != b.get("model"):            # two bodies raced on purpose (Logos1-200M vs Bee6): only the recipe must match
+        return out
     out += [f"config.{k}" for k in sorted(set(ca) | set(cb)) if ca.get(k) != cb.get(k) and k != "fp8"]
     return out
 

@@ -127,8 +127,13 @@ def source_path(data: Path, name: str, split: str = "train") -> Path:
 
 
 class _Source:
-    def __init__(self, path: Path, slot: int, seed: int):
+    def __init__(self, path: Path, slot: int, seed: int, marks: bool = False):
         self.data = np.memmap(path, dtype=np.uint16, mode="r")
+        mp = path.with_suffix(".marks")                  # the world's marks, one byte per piece (oazy/emerald.py)
+        self.marks = np.memmap(mp, dtype=np.uint8, mode="r") if marks and mp.exists() else None
+        if self.marks is not None and self.marks.size != self.data.size:
+            raise SystemExit(f"{mp} does not match {path} ({self.marks.size:,} vs {self.data.size:,}): "
+                             f"python3 -m oazy.emerald marks  writes it again")
         self.slot, self.seed = slot, seed
         self.n = (len(self.data) - 1) // slot
         if self.n < 1:
@@ -145,6 +150,7 @@ class _Source:
         self.sub += 1
         if self.sub >= per:
             self.next_slot()
+        self.last_i = i
         return self.data[i:i + T + 1]
 
     def next_slot(self):
@@ -162,7 +168,7 @@ class Mix:
     a batch comes from is drawn from a generator seeded by the batch number: reproducible, resumable.
     Set `progress` (0..1) before each get(); set_block(T) changes the window length."""
 
-    def __init__(self, data: Path, mix: str, T: int, batch: int, seed: int = 0, lengths=(1024,), log=print):
+    def __init__(self, data: Path, mix: str, T: int, batch: int, seed: int = 0, lengths=(1024,), log=print, marks=False):
         self.plan = parse_mix(resolve_mix(mix))
         tmin = min(lengths)
         self.slot = (tmin + 1) * math.ceil((max(lengths) + 1) / (tmin + 1))
@@ -171,7 +177,7 @@ class Mix:
         for i, n in enumerate(names):
             p = source_path(Path(data), n)
             if p.exists():
-                self.src[n] = _Source(p, self.slot, seed + 17 * i)
+                self.src[n] = _Source(p, self.slot, seed + 17 * i, marks=marks)
             else:
                 log(f"[mix] {n}: {p} not found, skipped (prepare it with: {PREPARE.get(n, 'python -m oazy.mix --source ' + n)})")
         if not self.src:
@@ -179,6 +185,10 @@ class Mix:
         self.T, self.batch, self.seed = T, batch, seed
         self.progress, self.batches = 0.0, 0
         self.seen = {n: 0 for n in self.src}
+        self.want_marks = marks and any(s.marks is not None for s in self.src.values())
+        self.last_marks = self.last_rows = None    # with marks: (B, T + 1) bytes (255 = none) and which rows have them
+        if marks and not self.want_marks and "world" in self.src:
+            log("[mix] the world has no marks yet: python3 -m oazy.emerald marks  adds them (the linker learns without its answer key)")
 
     def weights(self, progress: float):
         w = [w for at, w in self.plan if progress >= at][-1]
@@ -205,10 +215,18 @@ class Mix:
         rng = np.random.default_rng([self.seed, self.batches])
         pick = rng.choice(len(names), size=self.batch, p=[w[n] for n in names])
         self.batches += 1
-        rows = []
+        rows, mks, has = [], [], []
         for j in pick:
-            rows.append(self.src[names[j]].row(self.T))
+            src = self.src[names[j]]
+            rows.append(src.row(self.T))
             self.seen[names[j]] += self.T
+            if self.want_marks:
+                has.append(src.marks is not None)
+                mks.append(src.marks[src.last_i:src.last_i + self.T + 1] if src.marks is not None
+                           else np.full(self.T + 1, 255, dtype=np.uint8))
+        if self.want_marks:
+            self.last_marks = torch.from_numpy(np.stack(mks).astype(np.int16))
+            self.last_rows = torch.tensor(has, dtype=torch.bool)
         x = torch.from_numpy(np.stack(rows).astype(np.int64))
         x = x.pin_memory().to(device, non_blocking=True) if device.type == "cuda" else x.to(device)
         return x[:, :-1], x[:, 1:]

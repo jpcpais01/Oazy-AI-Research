@@ -63,12 +63,24 @@ def episode_parts(e):
 
     Each answer word's span starts at its space (" no"), so the text can be cut there and every piece tokenized alone
     (training and the exam cut it the same way). Candidates are what the worldfirst rival chooses among."""
+    text, spans, _ = _layout(e)
+    return text, spans
+
+
+def episode_words(e):
+    """The same text, and where each word naming a thing sits in it: (text, [(char start, char end, thing id)]). The
+    world's marks, for a model that learns from them as an answer key (Logos1-200M's linker); the answers carry none."""
+    text, _, marks = _layout(e)
+    return text, marks
+
+
+def _layout(e):
     from worldfirst import world as W
-    words = [(w, None) for w in e.tokens]
+    words = [(w, None, m) for w, m in zip(e.tokens, e.mentions)]
     scene = set(e.tokens)
     names = sorted({k for k in e.things if k in scene})
     for qi, q in enumerate(e.questions):
-        words += [(w, None) for w in q.tokens] + [("answer", None), (":", None)]
+        words += [(w, None, m) for w, m in zip(q.tokens, q.mentions)] + [("answer", None, -1), (":", None, -1)]
         for (kind, tgt), w in zip(q.specs, q.answer):
             if kind == "class":
                 cands = ["yes", "no"] if tgt in W.YESNO else [str(i) for i in range(10)]
@@ -76,23 +88,25 @@ def episode_parts(e):
                 cands = names if w in names else sorted(set(names) | {w})
             else:
                 cands = [str(i) for i in range(10)]
-            words.append((w, (kind, cands, qi)))
-        words.append((".", None))
-    out, spans, cap = [], [], True
+            words.append((w, (kind, cands, qi), -1))
+        words.append((".", None, -1))
+    out, spans, marks, cap = [], [], [], True
     n = 0
-    for w, ans in words:
+    for w, ans, mk in words:
         if cap and w and w[0].isalpha():
             w = w[0].upper() + w[1:]
         piece = w if (w in PUNCT or not out) else " " + w
         if ans is not None:
             spans.append((n, n + len(piece), ans[0], w, ans[1], ans[2]))
+        if mk is not None and mk >= 0:
+            marks.append((n + len(piece) - len(w), n + len(piece), int(mk)))
         out.append(piece)
         n += len(piece)
         if w in (".", "?"):
             cap = True
         elif w not in PUNCT:
             cap = False
-    return "".join(out), spans
+    return "".join(out), spans, marks
 
 
 def episode_text(e) -> str:
@@ -162,6 +176,67 @@ def job(args):
     for ids in encode_episodes(_ENC, eps):
         flat += ids + [eot]
     return np.asarray(flat, dtype=np.int32)
+
+
+NO_MARK = 255                              # a word naming no thing (marks are stored as one byte per piece)
+
+
+def encode_with_marks(enc, eps):
+    """Like encode_episodes, plus one mark per piece: the thing (0..254) the word starting at that piece names, or
+    NO_MARK (later pieces of a word, words naming nothing, the answers). The pieces are exactly encode_episodes's."""
+    lay = [_layout(e) for e in eps]
+    allp, counts, starts = [], [], []
+    for text, spans, _ in lay:
+        p = cut(text, spans)
+        at, st = 0, []
+        for x in p:
+            st.append(at)
+            at += len(x)
+        allp += p
+        starts.append(st)
+        counts.append(len(p))
+    tk = getattr(enc, "tk", None)
+    if tk is None:
+        raise SystemExit("world marks need a Hugging Face tokenizer (SmolLM2's), which gives each piece's place in the text")
+    encs = tk.encode_batch(list(allp), add_special_tokens=False)
+    ids_out, mk_out, i = [], [], 0
+    for (text, _, marks), c, st in zip(lay, counts, starts):
+        ids, mk = [], []
+        word_at = {}                                    # char -> (word's first char, thing)
+        for cs, ce, m in marks:
+            for ch in range(cs, ce):
+                word_at[ch] = (cs, m)
+        done = set()
+        for j in range(c):
+            en = encs[i + j]
+            for t, (os_, oe) in zip(en.ids, en.offsets):
+                ids.append(t)
+                hit = word_at.get(st[j] + oe - 1) if oe > os_ else None
+                if hit is not None and hit[0] not in done:
+                    done.add(hit[0])
+                    mk.append(min(hit[1], NO_MARK - 1))
+                else:
+                    mk.append(NO_MARK)
+        i += c
+        ids_out.append(ids)
+        mk_out.append(mk)
+    return ids_out, mk_out
+
+
+def job_marks(args):
+    """job()'s pieces (the very same) and their marks, both flat, each episode followed by <|endoftext|> (no mark)."""
+    seed, k, tk = args
+    from worldfirst import world as W
+    if _ENC is None:
+        _init(tk)
+    base = TRAIN_SEED0 + seed * 10_000_000_000 + k * PER_JOB
+    eps = [W.make(f, lv, "train", base + i) for i, (f, lv) in enumerate(picks(seed, k))]
+    eot = _ENC.eot_token
+    flat, fm = [], []
+    for ids, mk in zip(*encode_with_marks(_ENC, eps)):
+        flat += ids + [eot]
+        fm += mk + [NO_MARK]
+    return np.asarray(flat, dtype=np.int32), np.asarray(fm, dtype=np.uint8)
 
 
 class WorldStream:

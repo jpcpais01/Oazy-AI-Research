@@ -311,6 +311,21 @@ bash runpod/train.sh <model> --preset big --tokens 10e9 --micro 32 --data-sub em
 bash runpod/train.sh <model> --preset big --tokens 10e9 --micro 32 --data-sub emerald --emerald 0.20  # 20% world
 ```
 
+## Logos1-200M against Bee6, on Emerald
+
+João, Nov 9: Bee6's stream with Logos1's linker, laws core and read-back (`logos/`). It is a next-word model, 201.1M
+parameters against Bee6's 202.0M, with the same recipe and the same tokens. Emerald's world marks grade its linker on
+the world's episodes only.
+
+```bash
+cd /workspace/oazy && git pull
+python3 -m logos.tests                                              # CPU checks (~10 min)
+tmux new-window -t oazy -n logos "bash runpod/logos_race.sh; bash"  # 2B tokens each; 0.5e9 as the first argument = quick filter
+```
+
+An Emerald built before the marks only gets the marks added (`python3 -m oazy.emerald marks`, CPU). The pieces are
+checked against the file, so Bee6's data is untouched.
+
 ## Choosing what to learn from (the models pick, during training)
 
 João, Nov 8: from now on the models choose what they learn from while they train (`oazy/select.py`, the whole idea
