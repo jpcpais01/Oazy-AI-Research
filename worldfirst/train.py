@@ -50,10 +50,11 @@ def autocast(device):
 _VOCAB = None
 
 
-def _init_worker(words, natural=False):
+def _init_worker(words, natural=False, version=W.LATEST):
     global _VOCAB
     _VOCAB = Vocab(words)
     W.STYLE["natural"] = natural
+    W.use(version)                      # a helper starts fresh: it must build the same world as the run
     torch.set_num_threads(1)
 
 
@@ -97,7 +98,7 @@ class Feeder:
         self.pool = None
         if workers:
             ctx = mp.get_context("spawn")
-            self.pool = ctx.Pool(workers, initializer=_init_worker, initargs=(vocab.words, W.STYLE["natural"]))
+            self.pool = ctx.Pool(workers, initializer=_init_worker, initargs=(vocab.words, W.STYLE["natural"], W.VERSION))
         self.ahead = ahead if workers else 1
         self.q = deque()
         self.next = None
@@ -284,6 +285,7 @@ def evaluate(model, vocab, n=200, device="cpu", sweep=True, bs=100, sets=None):
         eps = [W.make(fam, lv, sp, s) for s in range(n)]
         for mode, k in modes:
             right, nq, used_sum, rev, bel = 0, 0, 0.0, defaultdict(lambda: [0, 0]), defaultdict(lambda: [0, 0])
+            mix = defaultdict(lambda: [0, 0])
             for i in range(0, n, bs):
                 chunk = eps[i:i + bs]
                 b = batch_for(model, chunk, vocab, device, rng)
@@ -298,7 +300,11 @@ def evaluate(model, vocab, n=200, device="cpu", sweep=True, bs=100, sets=None):
                 nq += len(qh)
                 tags = {m["q"]: m.get("reversed") for m in b["meta"]}
                 btags = {m["q"]: m.get("belief") for m in b["meta"]}
+                mtags = {m["q"]: m.get("mix") for m in b["meta"]}
                 for qid, ok in qh.items():
+                    if mtags[qid] is not None:
+                        mix[mtags[qid]][0] += ok
+                        mix[mtags[qid]][1] += 1
                     if tags[qid] is not None:
                         rev[tags[qid]][0] += ok
                         rev[tags[qid]][1] += 1
@@ -319,6 +325,8 @@ def evaluate(model, vocab, n=200, device="cpu", sweep=True, bs=100, sets=None):
                 row["reversed"] = {str(k): v for k, v in rev.items()}
             if bel:
                 row["belief"] = {str(k): v for k, v in bel.items()}
+            if mix:
+                row["mix"] = dict(mix)
             rows.append(row)
     return rows
 

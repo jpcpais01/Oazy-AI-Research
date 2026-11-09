@@ -28,6 +28,7 @@ N_TAGS = 64
 
 def build_vocab(seeds: int = 60):
     words = set(W.NAMES) | set(W.COLOURS) | set(W.CONTAINERS) | set(W.ITEMS) | set(W.CLASSES) | {"answer", ":", ".", "?"}
+    words |= W.extra_words()                                               # World 2's rooms, events, machines ...
     if W.STYLE["natural"]:                                                 # the natural way of speaking
         words |= set(W.PRONOUNS) | {",", "smallest", "digit", "first"}
     for fam, lv, sp in W.exam_sets():

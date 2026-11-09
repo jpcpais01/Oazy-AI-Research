@@ -113,31 +113,43 @@ def secret_exams_are_walled_off():
     def secret_like(e):
         f = e.facts
         if e.family == "sums":
-            return len(f["a"]) - 1 >= 9
+            return len(f["a"]) - 1 >= 11
         if e.family == "lines":
-            return len(f["order"]) >= 9 or f["moves"] >= 3
+            return len(f["order"]) >= 11 or f["moves"] >= 4
         if e.family == "boxes":
             sp = f["start_parent"]
-            return max(depth(sp, x) for x in sp) >= 7 or f["moves"] >= 3
+            return max(depth(sp, x) for x in sp) >= 8 or f["moves"] >= 4
         if e.family == "family":
             return any(len(c) >= 4 or W._new_link(c) for c in f["asked"])
         if e.family == "falling":
-            return f["movers"] >= 5
+            return f["movers"] >= 6
         if e.family == "machines":
             return tuple(f["rule"]) in set(W.MACHINES["new-mixes"]) | set(W.MACHINES["deeper"])
         if e.family == "cups":
-            return f["moves"] >= 6
+            return f["moves"] >= 8
         if e.family == "minds":
-            return f["moves"] >= 4
+            return f["moves"] >= 5
         if e.family == "walks":
-            return f["legs"] >= 5
+            return f["legs"] >= 7
+        if e.family == "carry":
+            return f["deepest"] >= 5 or f["moves"] >= 3
+        if e.family in ("time", "cause"):
+            return f["depth"] >= 5
+        if e.family == "wants":
+            return f["dist"] >= 5
+        if e.family == "count":
+            return f["moves"] >= 7
+        if e.family == "house":
+            return any(k in W.HOUSE_SECRET_KINDS for k in f["kinds"])
+        raise AssertionError("a family with no wall check: " + e.family)
+    assert W.VERSION == 2
     n = 0
     for e in train_eps(150):
         assert not secret_like(e), e.text()
         n += 1
     for e in secret_eps(40):
         assert secret_like(e), (e.family, e.split, e.text())
-    assert n >= 3000
+    assert n >= 5000
 
 
 @check
@@ -266,6 +278,212 @@ def curriculum_moves_up():
     assert c.state()["sums"] == 2
     picks = [c.pick() for _ in range(2000)]
     assert all(lv in W.TRAIN_LEVELS[f] and lv <= c.state()[f] for f, lv in picks)
+
+
+@check
+def world_one_is_unchanged():
+    """World 1 (the first nine families) gives exactly the episodes it gave before World 2, so its runs carry on."""
+    import hashlib
+    W.use(1)
+    try:
+        assert len(W.FAMILIES) == 9 and W.TRAIN_MOVES == (1, 2)
+        for nat, want in ((False, "5e67a138e3d78dac37175e187939572d"), (True, "5d4c87dfb7bf3014115d5386b488343e")):
+            W.STYLE["natural"] = nat
+            h = hashlib.md5("|".join(W.make(f, lv, sp, k).text() for f, lv, sp in W.exam_sets() for k in range(20)).encode())
+            assert h.hexdigest() == want, ("World 1 changed", nat)
+    finally:
+        W.STYLE["natural"] = False
+        W.use(W.LATEST)
+    assert len(W.FAMILIES) == 15
+
+
+def _sentences(e):
+    out, cur = [], []
+    for w in e.tokens:
+        if w == ".":
+            out.append(cur)
+            cur = []
+        else:
+            cur.append(w)
+    return out
+
+
+@check
+def time_replays_to_the_answer():
+    """Work the hours out from the words alone: what is planned from a moved event moves with it."""
+    for lv, sp in [(lv, "train") for lv in W.TRAIN_LEVELS["time"]] + [(lv, "longer") for lv in W.SECRET["time"]["longer"]]:
+        for s in range(60):
+            e = W.make("time", lv, sp, s)
+            ref, hour = {}, {}
+            moved = None
+            for t in _sentences(e):
+                if t[2] in ("is", "starts") and t[3] == "at":
+                    hour[t[1]] = int(t[-1])
+                elif "moves" in t:
+                    moved, k = t[1], int(t[3]) * (1 if t[5] == "later" else -1)
+                else:
+                    ref[t[1]] = (t[-1], int(t[3]) * (1 if t[5] == "after" else -1))
+            while len(hour) < len(ref) + sum(1 for x in hour if x not in ref):
+                for x, (p, o) in ref.items():
+                    if p in hour and x not in hour:
+                        hour[x] = hour[p] + o
+                if all(x in hour for x in ref):
+                    break
+            tied = {moved}
+            for _ in ref:
+                tied |= {x for x, (p, _o) in ref.items() if p in tied}
+            now = {x: h + (k if x in tied else 0) for x, h in hour.items()}
+            assert now == e.facts["hour"], e.text()
+            assert e.facts["depth"] == lv
+            for q in e.questions:
+                if q.tokens[:4] == ["at", "what", "hour", "is"]:
+                    assert q.answer == [str(now[q.tokens[5]])], e.text()
+
+
+@check
+def cause_replays_to_the_answer():
+    """Work out every machine from the rules as written, before and after the flips."""
+    for lv, sp in [(lv, "train") for lv in W.TRAIN_LEVELS["cause"]] + [(7, "deeper")]:
+        for s in range(60):
+            e = W.make("cause", lv, sp, s)
+            state, rules, flips = {}, [], []
+            for t in _sentences(e):
+                if t[-1] in ("on", "off") and t[2] == "switch" and t[3] == "is":
+                    state[t[1] + " switch"] = t[-1] == "on"
+                elif "flips" in t:
+                    flips.append(t[-2] + " switch")
+                elif "exactly" in t:
+                    body = " ".join(t[t.index("when") + 1:])
+                    rules.append((t[1], body))
+
+            def name(x):
+                x = x.strip()
+                return x[4:] if x.startswith("the ") else x
+
+            def run(st):
+                v = dict(st)
+                for _ in rules:
+                    for d, body in rules:
+                        try:
+                            if body.endswith("are both on"):
+                                a, b = body[:-len(" are both on")].split(" and ")
+                                v[d] = v[name(a)] and v[name(b)]
+                            elif " or " in body:
+                                a, b = body[:-len(" is on")].split(" or ")
+                                v[d] = v[name(a)] or v[name(b)]
+                            else:
+                                a, val = body.rsplit(" is ", 1)
+                                v[d] = v[name(a)] == (val == "on")
+                        except KeyError:
+                            pass
+                return v
+            before = run(state)
+            for f in flips:
+                state[f] = not state[f]
+            now = run(state)
+            for d, on in e.facts["on"].items():
+                assert now[d] == on, e.text()
+            for q in e.questions:
+                if q.tokens[0] == "did":
+                    assert q.answer == ["yes" if now[q.tokens[2]] != before[q.tokens[2]] else "no"], e.text()
+            assert e.facts["depth"] == lv
+
+
+@check
+def count_replays_to_the_answer():
+    for lv, sp in [(lv, "train") for lv in W.TRAIN_LEVELS["count"]] + [(9, "more-moves")]:
+        for s in range(80):
+            e = W.make("count", lv, sp, s)
+            unp = {v: k for k, v in W.PLURAL.items()}
+            n_ = lambda w: 0 if w == "no" else int(w)  # noqa: E731
+            kind = lambda w: unp.get(w, w)  # noqa: E731
+            have = {}
+            for t in _sentences(e):
+                t = [w for w in t if w not in ("then", "after", "that")]
+                if t[1] == "has":
+                    have[t[0]] = {}
+                    rest = [w for w in t[2:] if w not in (",", "and")]
+                    for i in range(0, len(rest), 2):
+                        have[t[0]][kind(rest[i + 1])] = n_(rest[i])
+                elif t[1] == "gives":
+                    k, n = kind(t[3]), n_(t[2])
+                    have[t[0]][k] -= n
+                    have[t[-1]][k] += n
+                elif t[1] in ("finds", "loses"):
+                    have[t[0]][kind(t[3])] += n_(t[2]) * (1 if t[1] == "finds" else -1)
+            assert have == e.facts["have"], e.text()
+            assert all(0 <= v <= 9 for d in have.values() for v in d.values())
+
+
+@check
+def wants_follow_the_doors():
+    """The way through the doors, worked out from the words: first room, number of doors, rooms on the way."""
+    for lv, sp in [(lv, "train") for lv in W.TRAIN_LEVELS["wants"]] + [(lv, "farther") for lv in W.SECRET["wants"]["farther"]]:
+        for s in range(60):
+            e = W.make("wants", lv, sp, s)
+            nb, where = {}, {}
+            for t in _sentences(e):
+                rooms = [w for w in t if w in W.ROOMS]
+                if "door" in t:
+                    a, b = rooms
+                    nb.setdefault(a, set()).add(b)
+                    nb.setdefault(b, set()).add(a)
+                elif t[1:4] == ["is", "in", "the"] or t[2:5] == ["is", "in", "the"]:
+                    where[t[0] if t[1] == "is" else t[1]] = rooms[0]
+                elif "carries" in t or "walks" in t:
+                    where[t[-1] if "walks" in t else t[3]] = rooms[0]
+                    if "walks" in t:
+                        where[t[0]] = rooms[0]
+            path = e.facts["path"]
+            assert W._path(nb, path[0], path[-1]) == path and len(path) - 1 == lv, e.text()
+            for q in e.questions:
+                if q.tokens[:4] == ["how", "many", "doors", "must"]:
+                    assert q.answer == [str(lv)]
+                if "first" in q.tokens:
+                    assert q.answer == [path[1]], e.text()
+
+
+@check
+def carried_things_go_along():
+    """Replay the carrying and the putting from the words alone: each thing's room is where its outermost container is."""
+    for lv, sp in [(lv, "train") for lv in W.TRAIN_LEVELS["carry"]] + [(6, "deeper"), (4, "more-moves")]:
+        for s in range(80):
+            e = W.make("carry", lv, sp, s)
+            par = {}
+            for t in _sentences(e):
+                t = [w for w in t if w not in ("then", "after", "that")]
+                if t[0] == "inside":
+                    par[t[-1]] = t[2]
+                elif t[2] == "holds":
+                    par[t[-1]] = t[1]
+                elif t[0] == "the" and t[2] in ("is", "stands", "lies"):
+                    par[t[1]] = t[-1]
+                elif "carries" in t:
+                    par[t[t.index("the") + 1]] = t[-1]
+                elif "puts" in t:
+                    par[t[3]] = t[-1]
+            room = lambda x: x if x in W.ROOMS else room(par[x])  # noqa: E731
+            assert {x: room(x) for x in e.facts["room"]} == e.facts["room"], e.text()
+
+
+@check
+def house_mixes_are_walled():
+    """The mixed family: training never asks a three-family question, the secret exam asks only those; someone who never
+    left the house always believes the truth; some beliefs are false."""
+    false = 0
+    for sp, lvs in (("train", W.TRAIN_LEVELS["house"]), ("three-way", W.SECRET["house"]["three-way"])):
+        for lv in lvs:
+            for s in range(150):
+                e = W.make("house", lv, sp, s)
+                ks = [q.tags["mix"] for q in e.questions]
+                assert all((k in W.HOUSE_SECRET_KINDS) == (sp == "three-way") for k in ks), (ks, e.text())
+                left = {next(w for w in t if w in W.NAMES) for t in _sentences(e) if "goes" in t or "leaves" in t}
+                for q in e.questions:
+                    if q.tags.get("belief") is not None:
+                        false += q.tags["belief"]
+                        if next(w for w in q.tokens if w in W.NAMES) not in left:
+                            assert not q.tags["belief"], e.text()
+    assert false > 100, false
 
 
 def torch_checks():

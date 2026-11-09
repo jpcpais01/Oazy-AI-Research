@@ -4,7 +4,7 @@ Every episode is one scene (sentences about things and how they are linked, with
 one action that changes it, and a few questions about the scene *after* the action. The world knows the true new
 scene, so every answer is right by construction.
 
-Nine families of laws sit underneath:
+World 2 (the default since Nov 9 evening) has fifteen families of laws underneath:
 
     sums      adding two numbers, with carries                  ("The first number is 0 4 7 2 . ...")
     lines     who stands in front of whom (order chains)         ("Ana stands just in front of Bo .")
@@ -15,10 +15,20 @@ Nine families of laws sit underneath:
     cups      things go on existing when hidden and moved        ("The ring is under the red cup .")
     minds     people believe what they last saw, not what is     ("Ana leaves the room . Bo moves the ball ...")
     walks     where you are and which way you face after a walk  ("Rui turns left and walks 2 steps .")
+    carry     containers in containers, carried between rooms    ("Ana carries the bag to the attic .")
+    time      plans hung on plans; move one, the rest follow      ("The lunch is 2 hours after the market .")
+    cause     switches and the machines that follow them          ("The bell is on exactly when the fan is off .")
+    wants     the way through the doors to what someone wants     ("Rui wants the key . A door joins ...")
+    count     how many, who has more, after gives and losses      ("Ana gives 2 shells to Bo .")
+    house     the mixed one: containers, who saw what, the way, coins, in one house, and questions that need
+              two of these at once in practice, three at once in the secret exam
+
+World 1 is the first nine with fewer levels; `use(1)` brings it back exactly as it was (its runs carry on in it).
 
 Each family has levels (difficulty) used for training, and SECRET EXAMS that no training episode can come from, by
-construction: longer sums, longer lines, deeper nesting, bigger falls, family links chained in ways never asked,
-and machines whose rules mix steps that were never mixed in training. `tests.py` checks that the walls hold.
+construction, one step beyond everything practised: longer sums and lines, deeper nesting, bigger falls, family links
+chained in ways never asked, machines mixing steps never mixed, longer chains of plans and causes, wants farther
+away, more moves in a row, and questions that need three families at once. `tests.py` checks that the walls hold.
 
 Pure Python, seeded: `make(family, level, split, seed)` always gives the same episode.
 """
@@ -28,10 +38,11 @@ import itertools
 import random
 from dataclasses import dataclass, field
 
-FAMILIES = ("sums", "lines", "boxes", "family", "falling", "machines", "cups", "minds", "walks")
+FAMILIES1 = ("sums", "lines", "boxes", "family", "falling", "machines", "cups", "minds", "walks")
 
-# Levels the model may train on.
-TRAIN_LEVELS = {
+# World 1 (Nov 9 morning): the nine families above. Kept exactly as it was, so the runs made on it can still be
+# examined and carried on (`use(1)`; worldfirst.run picks it by itself for those runs).
+TRAIN_LEVELS1 = {
     "sums": [1, 2, 3, 4, 5, 6, 7, 8],      # digits per number
     "lines": [1, 2, 3, 4, 5, 6],           # people in the line = level + 2 (3..8)
     "boxes": [1, 2, 3, 4, 5, 6],           # boxes around the deepest thing
@@ -42,8 +53,7 @@ TRAIN_LEVELS = {
     "minds": [1, 2, 3],                    # things moved while people come and go
     "walks": [1, 2, 3, 4],                 # legs of a walk (turn, then walk)
 }
-# The secret exams: split name -> levels. Never trained on.
-SECRET = {
+SECRET1 = {
     "sums": {"longer": [9, 10, 11, 12]},
     "lines": {"longer": [7, 8, 9, 10],         # 9..12 people
               "more-moves": [3, 4]},           # 3 or 4 moves in a row (training only ever has 1 or 2); 6 people
@@ -56,8 +66,61 @@ SECRET = {
     "minds": {"more-moves": [4, 5, 6]},
     "walks": {"longer": [5, 6, 7]},
 }
-TRAIN_MOVES = (1, 2)            # lines and boxes: how many actions a training episode has
-MOVES_PEOPLE, MOVES_DEPTH = 6, 4   # the size of the scene in the "more-moves" exams
+
+# World 2 (Nov 9 evening): the races filled World 1's practised kinds in about an hour, so the world was the ceiling.
+# Six new families, deeper practice on the old ones, and the secret exams moved one step beyond all of it.
+FAMILIES2 = FAMILIES1 + ("carry", "time", "cause", "wants", "count", "house")
+TRAIN_LEVELS2 = {
+    "sums": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    "lines": [1, 2, 3, 4, 5, 6, 7, 8],     # 3..10 people
+    "boxes": [1, 2, 3, 4, 5, 6, 7],
+    "family": [1, 2, 3],
+    "falling": [1, 2, 3, 4, 5],
+    "machines": [1, 2],
+    "cups": [1, 2, 3, 4, 5, 6],
+    "minds": [1, 2, 3, 4],
+    "walks": [1, 2, 3, 4, 5, 6],
+    "carry": [1, 2, 3, 4],                 # containers around the main thing, while whole containers are carried about
+    "time": [1, 2, 3, 4],                  # plans hung on plans: the longest chain of "N hours after/before"
+    "cause": [1, 2, 3, 4],                 # switches, and machines that follow them: the longest chain of causes
+    "wants": [1, 2, 3, 4],                 # doors between someone and what they want
+    "count": [1, 2, 3, 4, 5],              # gives, finds and losses in a row
+    "house": [1, 2, 3],                    # the mixed family: moves in a house (questions mix two families)
+}
+SECRET2 = {
+    "sums": {"longer": [11, 12, 13, 14]},
+    "lines": {"longer": [9, 10, 11, 12],       # 11..14 people
+              "more-moves": [4, 5]},           # training has 1 to 3 moves; 6 people
+    "boxes": {"deeper": [8, 9, 10],
+              "more-moves": [4, 5]},
+    "family": {"new-pairs": [2, 3], "deeper": [4]},
+    "falling": {"bigger": [6, 7]},
+    "machines": {"new-mixes": [2], "deeper": [3]},
+    "cups": {"more-moves": [8, 9, 10]},
+    "minds": {"more-moves": [5, 6, 7]},
+    "walks": {"longer": [7, 8, 9]},
+    "carry": {"deeper": [5, 6], "more-moves": [3, 4]},
+    "time": {"longer": [5, 6, 7]},
+    "cause": {"deeper": [5, 6, 7]},
+    "wants": {"farther": [5, 6, 7]},
+    "count": {"more-moves": [7, 8, 9]},
+    "house": {"three-way": [2, 3]},            # questions that need three families at once (training only ever mixes two)
+}
+WORLDS = {1: (FAMILIES1, TRAIN_LEVELS1, SECRET1, (1, 2)),
+          2: (FAMILIES2, TRAIN_LEVELS2, SECRET2, (1, 2, 3))}
+LATEST = 2
+
+
+def use(version: int):
+    """Switch the whole module to World `version` (1 or 2). Everything reads FAMILIES, TRAIN_LEVELS, SECRET and
+    TRAIN_MOVES through this module, so one call changes what every part of a run sees."""
+    global VERSION, FAMILIES, TRAIN_LEVELS, SECRET, TRAIN_MOVES
+    FAMILIES, TRAIN_LEVELS, SECRET, TRAIN_MOVES = WORLDS[int(version)]
+    VERSION = int(version)
+
+
+use(LATEST)
+MOVES_PEOPLE, MOVES_DEPTH = 6, 4   # the size of the scene in the "more-moves" exams of lines and boxes
 
 # How the world speaks. natural=True: people are often "she"/"he"/"her"/"him" once just named, and a sum is written
 # smallest digit first (for both models). Set by run.py (--natural 1); the scenes and answers are otherwise the same.
@@ -899,8 +962,618 @@ def gen_walks(rng, level, split):
     return B.episode("walks", level, split, f"at {end}, facing {DIRS[h]}", {"legs": legs, "end": list(end), "facing": DIRS[h]})
 
 
+# ================================================================ World 2's new families
+ROOMS = "kitchen hall cellar attic garden porch study library bedroom bathroom garage pantry yard barn loft shed".split()
+PLURAL = {w: w + ("es" if w.endswith("s") or w.endswith("sh") else "s") for w in ITEMS}
+
+
+def _rooms_tree(rng, names):
+    """Rooms joined by doors into a tree (one way between any two rooms). Returns {room: set of next rooms}."""
+    nb = {r: set() for r in names}
+    for i in range(1, len(names)):
+        j = rng.randrange(i)
+        nb[names[i]].add(names[j])
+        nb[names[j]].add(names[i])
+    return nb
+
+
+def _path(nb, a, b):
+    """The rooms from a to b, both ends included (the only way, as the doors make a tree)."""
+    prev, todo = {a: None}, [a]
+    while todo:
+        x = todo.pop(0)
+        for y in nb[x]:
+            if y not in prev:
+                prev[y] = x
+                todo.append(y)
+    out = [b]
+    while out[-1] != a:
+        out.append(prev[out[-1]])
+    return out[::-1]
+
+
+def _say_doors(B, rng, nb, nm):
+    pairs = sorted({tuple(sorted((a, b))) for a in nb for b in nb[a]})
+    sents = []
+    for a, b in pairs:
+        a, b = (a, b) if rng.random() < 0.5 else (b, a)
+        sents.append(rng.choice([["a door joins the", nm(a), "and the", nm(b)],
+                                 ["the", nm(a), "has a door to the", nm(b)],
+                                 ["from the", nm(a), "a door leads to the", nm(b)]]))
+    return sents
+
+
+def _and_list(parts):
+    out = []
+    for i, x in enumerate(parts):
+        out += ([","] if 0 < i < len(parts) - 1 else ["and"] if i else []) + list(x)
+    return out
+
+
+# ---------------------------------------------------------------- carry: containers inside containers, carried about
+CARRY_MOVES = (1, 2)
+CARRY_CAP = 4          # in training and in "more-moves", nothing is ever more than 4 containers deep
+
+
+def gen_carry(rng, level, split):
+    """Things in containers in containers, in rooms. Someone carries a whole container to another room, or puts one
+    thing into another: what is inside goes along. Asked: which room something is in now, what holds it."""
+    if split == "more-moves":
+        depth, moves = 3, level
+    else:
+        depth, moves = level, rng.choice(CARRY_MOVES)
+    cap = depth if split == "deeper" else CARRY_CAP
+    B = _Build(rng)
+    nm = lambda t: (t, B.things[t])  # noqa: E731
+    rooms = [B.thing(r) for r in rng.sample(ROOMS, rng.randint(2, 4))]
+    people = [B.thing(x) for x in rng.sample(NAMES, rng.randint(1, 2))]
+    nouns = rng.sample(CONTAINERS, depth + rng.randint(1, 2))
+    words = rng.sample(ITEMS, 2)
+    boxes = [B.thing(w) for w in nouns]
+    main, other = B.thing(words[0]), B.thing(words[1])
+    parent = {main: boxes[0]}
+    for i in range(depth - 1):
+        parent[boxes[i]] = boxes[i + 1]
+    parent[boxes[depth - 1]] = rng.choice(rooms)
+    for b in boxes[depth:]:
+        parent[b] = rng.choice(rooms)
+    parent[other] = rng.choice(boxes[depth:] + rooms)
+    pos = {p: rng.choice(rooms) for p in people}
+    is_box = set(boxes)
+
+    def up(x):                         # x, then what holds it, and so on, ending with its room
+        out = [x]
+        while out[-1] not in rooms:
+            out.append(parent[out[-1]])
+        return out
+
+    room_of = lambda x: up(x)[-1]  # noqa: E731
+    nest = lambda x: len(up(x)) - 2   # containers around x  # noqa: E731
+    sents = []
+    for x, p in parent.items():
+        if p in rooms:
+            sents.append(rng.choice([["the", nm(x), "is in the", nm(p)], ["the", nm(x), "stands in the", nm(p)]]
+                                    if x in is_box else [["the", nm(x), "lies on the floor of the", nm(p)]]))
+        else:
+            sents.append(rng.choice([["the", nm(x), "is in the", nm(p)], ["the", nm(p), "holds the", nm(x)],
+                                     ["inside the", nm(p), "is the", nm(x)]]))
+    sents += [[nm(p), "is in the", nm(pos[p])] for p in people]
+    for snt in _shuffled(rng, sents):
+        B.say(*snt)
+    deepest = max(nest(x) for x in parent)
+    moved_boxes = 0
+    for m in range(moves):
+        pre = [rng.choice(["then", "after that"])] if m else []
+        who = rng.choice(people)
+        for _ in range(200):
+            if rng.random() < 0.6:     # carry: a whole container (often one the main thing is in) goes to another room
+                x = rng.choice([b for b in up(main)[1:-1]] or boxes) if rng.random() < 0.6 else rng.choice(list(parent))
+                to = rng.choice([r for r in rooms if r != room_of(x)] or [None])
+                if to is None:
+                    continue
+                if parent[x] in rooms:
+                    B.say(*pre, nm(who), "carries the", nm(x), "to the", nm(to))
+                else:
+                    B.say(*pre, nm(who), "takes the", nm(x), "out of the", nm(parent[x]), "and carries it to the", nm(to))
+                parent[x] = to
+                pos[who] = to
+                moved_boxes += x in is_box
+                break
+            x, y = rng.choice(list(parent)), rng.choice(boxes)
+            if x == y or parent[x] == y or x in up(y):
+                continue
+            old = parent[x]
+            parent[x] = y
+            if max(nest(t) for t in parent) > cap:       # never deeper than the level allows
+                parent[x] = old
+                continue
+            B.say(*pre, nm(who), "puts the", nm(x), "into the", nm(y))
+            pos[who] = room_of(y)
+            break
+        deepest = max(deepest, max(nest(t) for t in parent))
+    for _ in range(30):
+        if len(B.qs) == 3:
+            break
+        q = rng.choice(["room", "room", "room", "isin", "holds", "who"])
+        x = main if rng.random() < 0.5 else rng.choice([t for t in parent if nest(t) > 0] or list(parent))
+        if q == "room":
+            B.ask_pointer(["which room is the", nm(x), "in now"], room_of(x))
+        elif q == "isin":
+            r = room_of(x) if rng.random() < 0.5 else rng.choice(rooms)
+            B.ask_class(["is the", nm(x), "in the", nm(r), "now"], room_of(x) == r)
+        elif q == "holds" and parent[x] not in rooms:
+            B.ask_pointer(["what holds the", nm(x), "right now"], parent[x])
+        elif q == "who":
+            p = rng.choice(people)
+            B.ask_pointer(["which room is", nm(p), "in now"], pos[p])
+    new = " ; ".join(f"{B.things[x]} in {B.things[p]}" for x, p in parent.items())
+    return B.episode("carry", level, split, new, {"depth": depth, "deepest": deepest, "moves": moves,
+                                                  "room": {B.things[x]: B.things[room_of(x)] for x in parent}})
+
+
+# ---------------------------------------------------------------- time: plans hung on plans, and one of them moves
+EVENTS = "breakfast lunch dinner market concert lesson game party walk nap swim meeting show picnic race dance".split()
+
+
+def gen_time(rng, level, split):
+    """Events at hours 0..9: some at a set hour, the others planned N hours after or before another event. One event
+    moves, and what is planned from it moves with it. Asked: hours, which comes first, how far apart."""
+    for _ in range(2000):
+        n_extra = rng.randint(1, 3)
+        names = rng.sample(EVENTS, level + 1 + n_extra + rng.randint(0, 1))
+        ref, off, depth = {}, {}, {}
+        chain = names[:level + 1]
+        ref[chain[0]], depth[chain[0]] = None, 0
+        for i in range(1, level + 1):
+            ref[chain[i]], depth[chain[i]] = chain[i - 1], i
+        for e in names[level + 1:]:
+            if rng.random() < 0.35:
+                ref[e], depth[e] = None, 0
+            else:
+                p = rng.choice([x for x in ref if depth[x] < level])
+                ref[e], depth[e] = p, depth[p] + 1
+        hour = {}
+        for e in ref:                  # parents come first: names are added in order
+            if ref[e] is None:
+                hour[e] = rng.randint(0, 9)
+            else:
+                off[e] = rng.choice([-3, -2, -1, 1, 2, 3])
+                hour[e] = hour[ref[e]] + off[e]
+        if not all(0 <= h <= 9 for h in hour.values()):
+            continue
+        moved = rng.choice([chain[rng.randrange(level)]] + [e for e in ref if rng.random() < 0.3])
+        shift = rng.choice([-3, -2, -1, 1, 2, 3])
+        tied = {moved}
+        for e in ref:
+            if ref[e] in tied:
+                tied.add(e)
+        after = {e: hour[e] + (shift if e in tied else 0) for e in ref}
+        if all(0 <= h <= 9 for h in after.values()) and chain[-1] in tied:
+            break
+    else:
+        raise RuntimeError("no time episode found")
+    B = _Build(rng)
+    ids = {e: B.thing(e) for e in ref}
+    nm = lambda e: (ids[e], e)  # noqa: E731
+    sents = []
+    for e in ref:
+        if ref[e] is None:
+            sents.append(rng.choice([["the", nm(e), "is at hour", str(hour[e])], ["the", nm(e), "starts at hour", str(hour[e])]]))
+        else:
+            k = abs(off[e])
+            sents.append(["the", nm(e), "is", str(k), "hour" if k == 1 else "hours", "after" if off[e] > 0 else "before",
+                          "the", nm(ref[e])])
+    for snt in _shuffled(rng, sents):
+        B.say(*snt)
+    k = abs(shift)
+    B.say("the", nm(moved), "moves", str(k), "hour" if k == 1 else "hours", "later" if shift > 0 else "earlier",
+          ", and what is planned from it moves too")
+    deep = [e for e in ref if depth[e] == level]
+    evs = list(ref)
+    for _ in range(40):
+        if len(B.qs) == 3:
+            break
+        q = rng.choice(["hour", "hour", "before", "first", "gap"])
+        x = rng.choice(deep) if rng.random() < 0.6 else rng.choice(evs)
+        y = rng.choice([e for e in evs if e != x])
+        if q == "hour":
+            B.ask_class(["at what hour is the", nm(x), "now"], after[x])
+        elif after[x] == after[y]:
+            continue
+        elif q == "before":
+            B.ask_class(["is the", nm(x), "before the", nm(y), "now"], after[x] < after[y])
+        elif q == "first":
+            a, b = (x, y) if rng.random() < 0.5 else (y, x)
+            B.ask_pointer(["which comes first now , the", nm(a), "or the", nm(b)], ids[min((a, b), key=after.get)])
+        else:
+            a, b = sorted((x, y), key=after.get)
+            B.ask_class(["how many hours after the", nm(a), "is the", nm(b), "now"], after[b] - after[a])
+    return B.episode("time", level, split, " ; ".join(f"{e} at {after[e]}" for e in sorted(ref, key=after.get)),
+                     {"depth": max(depth.values()), "hour": dict(after), "moved": moved})
+
+
+# ---------------------------------------------------------------- cause: switches, and machines that follow them
+DEVICES = "lamp fan bell pump motor heater radio alarm siren horn clock buzzer".split()
+
+
+def gen_cause(rng, level, split):
+    """Switches, and machines that are on exactly when what they follow is: the same, the opposite, both, either.
+    Someone flips a switch; the effect runs down the chain. Asked: what is on now, and what changed."""
+    for _ in range(500):
+        B = _Build(rng)
+        nm = lambda t: (t, B.things[t])  # noqa: E731
+        sw = [B.thing(c) for c in rng.sample(COLOURS, rng.randint(2, 3))]
+        devs = rng.sample(DEVICES, level + rng.randint(1, 3))
+        rule, depth = {}, {s: 0 for s in sw}
+        parts = list(sw)
+        for i, w in enumerate(devs):
+            d = B.thing(w)
+            if i < level:              # the main chain: each one follows the one before
+                first = parts[-1] if i else rng.choice(sw)
+            else:
+                first = rng.choice([p for p in parts if depth[p] < level])
+            ins = [first]
+            if rng.random() < 0.45:
+                second = rng.choice([p for p in parts if p != first and depth[p] < level] or [None])
+                if second is not None:
+                    ins.append(second)
+            op = rng.choice(["same", "not"]) if len(ins) == 1 else rng.choice(["and", "or"])
+            rule[d] = (op, ins)
+            depth[d] = 1 + max(depth[p] for p in ins)
+            parts.append(d)
+        state0 = {s: rng.random() < 0.5 for s in sw}
+        flips = [rng.choice(sw)] + ([rng.choice(sw)] if rng.random() < 0.3 else [])
+
+        def run(state):
+            v = dict(state)
+            for d, (op, ins) in rule.items():
+                a = [v[p] for p in ins]
+                v[d] = {"same": a[0], "not": not a[0], "and": all(a), "or": any(a)}[op]
+            return v
+        before = run(state0)
+        state1 = dict(state0)
+        for s in flips:
+            state1[s] = not state1[s]
+        now = run(state1)
+        top = [d for d in rule if depth[d] == level]
+        if top and any(now[d] != before[d] for d in rule):
+            break
+    sname = lambda s: ["the", nm(s), "switch"]  # noqa: E731
+    sents = [[*sname(s), "is", "on" if state0[s] else "off"] for s in sw]
+    for d, (op, ins) in rule.items():
+        src = lambda p: sname(p) if p in state0 else ["the", nm(p)]  # noqa: E731
+        if op in ("same", "not"):
+            sents.append(["the", nm(d), "is on exactly when", *src(ins[0]), "is", "on" if op == "same" else "off"])
+        else:
+            sents.append(["the", nm(d), "is on exactly when", *src(ins[0]), "and" if op == "and" else "or", *src(ins[1]),
+                          "are both on" if op == "and" else "is on"])
+    for snt in _shuffled(rng, sents):
+        B.say(*snt)
+    who = B.thing(rng.choice(NAMES))
+    for i, s in enumerate(flips):
+        B.say(*([rng.choice(["then", "after that"])] if i else []), nm(who), "flips", *sname(s))
+    devices = list(rule)
+    for _ in range(40):
+        if len(B.qs) == 3:
+            break
+        d = rng.choice(top) if rng.random() < 0.5 else rng.choice(devices)
+        q = rng.choice(["on", "on", "changed"])
+        if q == "on":
+            B.ask_class(["is the", nm(d), "on now"], now[d])
+        else:
+            B.ask_class(["did the", nm(d), "change"], now[d] != before[d])
+    return B.episode("cause", level, split, " ; ".join(f"{B.things[d]} {'on' if now[d] else 'off'}" for d in devices),
+                     {"depth": max(depth.values()), "on": {B.things[d]: now[d] for d in devices}})
+
+
+# ---------------------------------------------------------------- wants: the way to what someone wants
+def gen_wants(rng, level, split):
+    """Rooms joined by doors. Someone wants a thing; then the thing is carried somewhere else (or they walk off).
+    Asked: where they must go, which room they walk into first, how many doors it takes, whether a room is on the way."""
+    dist = level
+    B = _Build(rng)
+    nm = lambda t: (t, B.things[t])  # noqa: E731
+    names = rng.sample(ROOMS, dist + 1 + rng.randint(1, 3))
+    rooms = [B.thing(r) for r in names]
+    path = rooms[:dist + 1]            # the way, after the action, from where they stand to the thing they want
+    nb = {r: set() for r in rooms}
+    for i in range(1, dist + 1):
+        nb[path[i]].add(path[i - 1])
+        nb[path[i - 1]].add(path[i])
+    for r in rooms[dist + 1:]:
+        o = rng.choice([x for x in rooms if nb[x] or x == path[0]])
+        nb[r].add(o)
+        nb[o].add(r)
+    wanter, helper = (B.thing(x) for x in rng.sample(NAMES, 2))
+    item = B.thing(rng.choice(ITEMS))
+    if rng.random() < 0.5:             # the thing is carried to the far end
+        start_item = rng.choice([r for r in rooms if r != path[-1]])
+        start_me = path[0]
+        action = [nm(helper), "carries the", nm(item), "to the", nm(path[-1])]
+    else:                              # or the one who wants it walks off to the far end
+        start_item = path[-1]
+        start_me = rng.choice([r for r in rooms if r != path[0] and r != path[-1]])
+        action = [nm(wanter), "walks to the", nm(path[0])]
+    sents = _say_doors(B, rng, nb, nm)
+    sents += [[nm(wanter), "is in the", nm(start_me)], ["the", nm(item), "is in the", nm(start_item)]]
+    if start_item == path[-1] or rng.random() < 0.5:
+        sents.append([nm(helper), "is in the", nm(rng.choice(rooms))])
+    for snt in _shuffled(rng, sents):
+        B.say(*snt)
+    B.say(nm(wanter), rng.choice(["wants the", "would like the", "is looking for the"]), nm(item))
+    B.say(*action)
+    for _ in range(30):
+        if len(B.qs) == 3:
+            break
+        q = rng.choice(["go", "first", "first", "doors", "via"])
+        if q == "go":
+            B.ask_pointer(["which room must", nm(wanter), "go to for the", nm(item)], path[-1])
+        elif q == "first":
+            B.ask_pointer(["which room must", nm(wanter), "walk into first to get the", nm(item)], path[1])
+        elif q == "doors":
+            B.ask_class(["how many doors must", nm(wanter), "go through to get the", nm(item)], dist)
+        else:
+            r = rng.choice(path[1:-1] or rooms) if rng.random() < 0.5 else rng.choice(rooms)
+            if r in (path[0], path[-1]):
+                continue
+            B.ask_class(["must", nm(wanter), "go through the", nm(r), "to get the", nm(item)], r in path)
+    return B.episode("wants", level, split, " , ".join(B.things[r] for r in path),
+                     {"dist": dist, "path": [B.things[r] for r in path],
+                      "doors": sorted({tuple(sorted((B.things[a], B.things[b]))) for a in nb for b in nb[a]})})
+
+
+# ---------------------------------------------------------------- count: how many, and who has more
+def gen_count(rng, level, split):
+    """People with some things each; then they give, find and lose some. Asked: how many someone has now, who has
+    more, how many more, and how many things in all."""
+    moves = level
+    for _ in range(500):
+        people = rng.sample(NAMES, rng.randint(2, 3))
+        kinds = rng.sample(ITEMS, rng.randint(1, 2))
+        have = {p: {k: rng.randint(0, 5) for k in kinds} for p in people}
+        start = {p: dict(v) for p, v in have.items()}
+        acts, ok = [], True
+        for _m in range(moves):
+            k = rng.choice(kinds)
+            kind = rng.choice(["give", "give", "find", "lose"])
+            p = rng.choice(people)
+            if kind == "give":
+                q = rng.choice([x for x in people if x != p])
+                if have[p][k] == 0 or have[q][k] >= 9:
+                    ok = False
+                    break
+                n = rng.randint(1, min(have[p][k], 9 - have[q][k], 4))
+                have[p][k] -= n
+                have[q][k] += n
+                acts.append(("give", p, n, k, q))
+            elif kind == "find":
+                if have[p][k] >= 9:
+                    ok = False
+                    break
+                n = rng.randint(1, min(9 - have[p][k], 3))
+                have[p][k] += n
+                acts.append(("find", p, n, k, None))
+            else:
+                if have[p][k] == 0:
+                    ok = False
+                    break
+                n = rng.randint(1, min(have[p][k], 3))
+                have[p][k] -= n
+                acts.append(("lose", p, n, k, None))
+        if ok and all(sum(v.values()) <= 9 for v in have.values()):
+            break
+    else:
+        raise RuntimeError("no count episode found")
+    B = _Build(rng)
+    ids = {p: B.thing(p) for p in people}
+    nm = lambda p: (ids[p], p)  # noqa: E731
+    num = lambda n, k: ["no", PLURAL[k]] if n == 0 else [str(n), k if n == 1 else PLURAL[k]]  # noqa: E731
+    for p in _shuffled(rng, people):
+        B.say(nm(p), "has", *_and_list([num(start[p][k], k) for k in kinds]))
+    for i, (kind, p, n, k, q) in enumerate(acts):
+        pre = [rng.choice(["then", "after that"])] if i else []
+        if kind == "give":
+            B.say(*pre, nm(p), "gives", *num(n, k), "to", nm(q))
+        elif kind == "find":
+            B.say(*pre, nm(p), "finds", *num(n, k))
+        else:
+            B.say(*pre, nm(p), "loses", *num(n, k))
+    for _ in range(40):
+        if len(B.qs) == 3:
+            break
+        q = rng.choice(["many", "many", "more", "morethan", "howmuch", "all"])
+        k = rng.choice(kinds)
+        p = rng.choice(people)
+        o = rng.choice([x for x in people if x != p])
+        if q == "many":
+            B.ask_class(["how many", PLURAL[k], "does", nm(p), "have now"], have[p][k])
+        elif q == "all":
+            if len(kinds) > 1:
+                B.ask_class(["how many things does", nm(p), "have now"], sum(have[p].values()))
+        elif have[p][k] == have[o][k]:
+            continue
+        elif q == "more":
+            a, b = (p, o) if rng.random() < 0.5 else (o, p)
+            B.ask_pointer(["who has more", PLURAL[k], "now ,", nm(a), "or", nm(b)], ids[max((a, b), key=lambda x: have[x][k])])
+        elif q == "morethan":
+            B.ask_class(["does", nm(p), "have more", PLURAL[k], "than", nm(o), "now"], have[p][k] > have[o][k])
+        else:
+            a, b = sorted((p, o), key=lambda x: -have[x][k])
+            B.ask_class(["how many more", PLURAL[k], "does", nm(a), "have than", nm(b), "now"], have[a][k] - have[b][k])
+    return B.episode("count", level, split, " ; ".join(f"{p} {have[p]}" for p in people),
+                     {"moves": moves, "have": have})
+
+
+# ---------------------------------------------------------------- house: the mixed family
+# Each question needs some of four families at once: C containers (what is inside what, carried along), M minds (who
+# saw which move), W wants (the way through the doors to what someone wants), N counting (coins in containers).
+# Training asks questions that need one or two of them; the secret "three-way" exam asks only ones that need three.
+HOUSE_TRAIN_KINDS = ("C", "CN", "CM", "M", "CW", "W", "MW")
+HOUSE_SECRET_KINDS = ("CMW", "CMN")
+HOUSE_THINGS = [w for w in ITEMS if w != "coin"]
+
+
+def gen_house(rng, level, split):
+    kinds = HOUSE_SECRET_KINDS if split == "three-way" else HOUSE_TRAIN_KINDS
+    for _ in range(300):
+        ep = _try_house(rng, level, split, kinds)
+        if ep is not None:
+            return ep
+    raise RuntimeError("no house episode found")
+
+
+def _try_house(rng, level, split, allowed):
+    B = _Build(rng)
+    nm = lambda t: (t, B.things[t])  # noqa: E731
+    rooms = [B.thing(r) for r in rng.sample(ROOMS, rng.randint(3, 5))]
+    nb = _rooms_tree(rng, rooms)
+    people = [B.thing(x) for x in rng.sample(NAMES, rng.randint(2, 3))]
+    boxes = [B.thing(w) for w in rng.sample(CONTAINERS, rng.randint(2, 4))]
+    items = [B.thing(w) for w in rng.sample(HOUSE_THINGS, rng.randint(1, 2))]
+    parent, coins = {}, {}
+    for i, b in enumerate(boxes):
+        inner = [c for c in boxes[:i] if parent[c] in rooms]
+        parent[b] = rng.choice(inner) if inner and rng.random() < 0.3 else rng.choice(rooms)
+        coins[b] = rng.randint(0, 3)
+    for it in items:
+        parent[it] = rng.choice(boxes) if rng.random() < 0.75 else rng.choice(rooms)
+    pos = {p: rng.choice(rooms) for p in people}
+    want = {p: rng.choice(items) for p in people}
+    is_box = set(boxes)
+
+    def up(x, par):
+        out = [x]
+        while out[-1] not in rooms:
+            out.append(par[out[-1]])
+            assert len(out) <= len(par) + 1, "a loop of containers"
+        return out
+
+    sents = _say_doors(B, rng, nb, nm)
+    for x, p in parent.items():
+        if p in rooms:
+            sents.append(["the", nm(x), "is in the", nm(p)] if x in is_box else ["the", nm(x), "lies on the floor of the", nm(p)])
+        else:
+            sents.append(rng.choice([["the", nm(x), "is in the", nm(p)], ["the", nm(p), "holds the", nm(x)]]))
+    for b in boxes:
+        sents.append(["the", nm(b), "is empty of coins"] if coins[b] == 0 else
+                     ["the", nm(b), "has", str(coins[b]), "coin" if coins[b] == 1 else "coins", "in it"])
+    for p in people:
+        sents.append([nm(p), "is in the", nm(pos[p])])
+    for snt in _shuffled(rng, sents):
+        B.say(*snt)
+    for p in people:
+        B.say(nm(p), "wants the", nm(want[p]))
+    thinks = {p: dict(parent) for p in people}
+    present = set(people)
+    def comings(pre, back):
+        """Someone goes out of the house, or comes back: who is away misses the moves."""
+        gone = [p for p in people if p not in present]
+        if gone and (back or rng.random() < 0.5):
+            p = rng.choice(gone)
+            B.say(*pre, nm(p), rng.choice(["comes back into the house", "comes home"]))
+            present.add(p)
+            return []
+        if len(present) > 1 and not back:
+            p = rng.choice(sorted(present))
+            B.say(*pre, nm(p), rng.choice(["goes out of the house", "leaves the house"]))
+            present.discard(p)
+            return []
+        return pre
+
+    for m in range(level):
+        pre = [rng.choice(["then", "after that"])] if m else []
+        if rng.random() < 0.8:
+            pre = comings(pre, back=False)
+        who = rng.choice(sorted(present))
+        for _ in range(200):
+            x = rng.choice(boxes) if rng.random() < 0.5 else rng.choice(list(parent))
+            if rng.random() < 0.6:
+                to = rng.choice([r for r in rooms if r != up(x, parent)[-1]])
+                if parent[x] in rooms:
+                    B.say(*pre, nm(who), "carries the", nm(x), "to the", nm(to))
+                else:
+                    B.say(*pre, nm(who), "takes the", nm(x), "out of the", nm(parent[x]), "and carries it to the", nm(to))
+                parent[x] = to
+                pos[who] = to
+                break
+            y = rng.choice(boxes)
+            if x == y or parent[x] == y or x in up(y, parent) or (x in is_box and len(up(y, parent)) > 2):
+                continue
+            B.say(*pre, nm(who), "puts the", nm(x), "into the", nm(y))
+            parent[x] = y
+            pos[who] = up(y, parent)[-1]
+            break
+        for p in present:              # who is in the house sees the move, and where it went (the whole way up)
+            for t in up(x, parent)[:-1]:
+                thinks[p][t] = parent[t]
+    if rng.random() < 0.7:             # those away come home at the end, knowing only what they saw
+        pre = [rng.choice(["then", "after that"])]
+        while len(present) < len(people):
+            pre = comings(pre, back=True)
+    room = lambda x, par: up(x, par)[-1]  # noqa: E731
+    inbox = lambda x, par: par[x] in is_box  # noqa: E731
+    count = lambda r, par: sum(coins[b] for b in boxes if room(b, par) == r)  # noqa: E731
+    cands = []                         # (kind, how to ask it, whether it is about a false belief)
+    for x in items + boxes:
+        if inbox(x, parent):
+            cands.append(("C", lambda x=x: B.ask_pointer(["which room is the", nm(x), "in now"], room(x, parent)), None))
+    for r in [r for r in rooms if count(r, parent) <= 9]:
+        cands.append(("CN", lambda r=r: B.ask_class(["how many coins are in the", nm(r), "now"], count(r, parent)), None))
+    for p in people:
+        th = thinks[p]
+        for x in items:
+            bel = room(x, th) != room(x, parent)
+            cands.append(("CM" if inbox(x, th) else "M", lambda p=p, x=x, th=th, bel=bel: B.ask_pointer(
+                ["which room does", nm(p), "think the", nm(x), "is in"], room(x, th), belief=bel), bel))
+        for r in [r for r in rooms if count(r, th) <= 9]:
+            bel = count(r, th) != count(r, parent)
+            cands.append(("CMN", lambda p=p, r=r, th=th, bel=bel: B.ask_class(
+                ["how many coins does", nm(p), "think are in the", nm(r)], count(r, th), belief=bel), bel))
+        w = want[p]
+        if p not in present:           # out of the house: not on the way anywhere inside it
+            continue
+        if room(w, parent) != pos[p]:
+            cands.append(("CW" if inbox(w, parent) else "W", lambda p=p, w=w: B.ask_pointer(
+                ["which room must", nm(p), "walk into first to get the", nm(w)], _path(nb, pos[p], room(w, parent))[1]), None))
+        if room(w, th) != pos[p]:
+            bel = room(w, th) != room(w, parent)
+            cands.append(("CMW" if inbox(w, th) else "MW", lambda p=p, w=w, th=th, bel=bel: B.ask_pointer(
+                ["which room will", nm(p), "walk into first to look for the", nm(w)], _path(nb, pos[p], room(w, th))[1],
+                belief=bel), bel))
+    by = {}
+    for k, ask, bel in cands:
+        if k in allowed:
+            by.setdefault(k, []).append((ask, bel))
+    weight = {k: (1 if len(k) == 1 else 3) for k in by}     # mixed questions far more often than single ones
+    used = []
+    for _ in range(30):
+        if len(B.qs) == 3 or not by:
+            break
+        k = rng.choices(list(by), [weight[k] for k in by])[0]
+        pool = by[k]
+        false = [c for c in pool if c[1]]
+        ask, _ = rng.choice(false if (false and rng.random() < 0.6) else pool)
+        n = len(B.qs)
+        ask()
+        if len(B.qs) > n:
+            B.qs[-1].tags["mix"] = k
+            used.append(k)
+    if len(B.qs) < 2 or (split == "three-way" and not used):
+        return None
+    return B.episode("house", level, split, " ; ".join(f"{B.things[x]} in {B.things[room(x, parent)]}" for x in parent),
+                     {"moves": level, "kinds": used, "room": {B.things[x]: B.things[room(x, parent)] for x in parent}})
+
+
+def extra_words():
+    """Words World 2 can say that the vocabulary must know even if the sample of episodes it is built from misses one."""
+    if VERSION < 2:
+        return set()
+    return set(ROOMS) | set(EVENTS) | set(DEVICES) | set(PLURAL.values()) | {"switch", "hour", "hours", "coins", "coin"}
+
+
 GEN = {"sums": gen_sums, "lines": gen_lines, "boxes": gen_boxes, "family": gen_family,
-       "falling": gen_falling, "machines": gen_machines, "cups": gen_cups, "minds": gen_minds, "walks": gen_walks}
+       "falling": gen_falling, "machines": gen_machines, "cups": gen_cups, "minds": gen_minds, "walks": gen_walks,
+       "carry": gen_carry, "time": gen_time, "cause": gen_cause, "wants": gen_wants, "count": gen_count, "house": gen_house}
 
 
 def make(family: str, level: int, split: str = "train", seed: int = 0) -> Episode:

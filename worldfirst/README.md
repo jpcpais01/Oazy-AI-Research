@@ -8,6 +8,28 @@ The question stage 1 answers: on cases neither model has ever been shown (longer
 chained in new ways, machines mixing rules never mixed), does the one built to find laws get them right, where the
 one built to continue text does not? That is the make-or-break for the whole plan.
 
+## World 2 (Nov 9 evening, the default for new runs)
+
+The races filled World 1's practised kinds within about an hour, so the world, not the model, was the ceiling. World 2
+keeps the nine families (with deeper practice: sums to 10 digits, lines to 10 people, boxes 7 deep, cups 6 moves,
+minds 4, walks 6 legs, falling 5 movers, 1 to 3 moves in a row) and adds six:
+
+- **carry**: containers inside containers, in rooms; someone carries a whole bag to the attic and what is inside goes along.
+- **time**: events at hours, plans hung on plans ("the lunch is 2 hours after the market"); one moves and what is planned from it follows.
+- **cause**: switches, and machines that are on exactly when what they follow is (the same, the opposite, both, either); a flip runs down the chain.
+- **wants**: rooms joined by doors; someone wants a thing; which room do they walk into first, how many doors, is the hall on the way.
+- **count**: people give, find and lose things; how many now, who has more, how many more.
+- **house**, the mixed family: one house with containers, coins, doors, people who go out and come back, and what each wants. Practice asks questions that need two families at once (how many coins are in the kitchen now, which room does Bo think the ring is in); the secret exam asks only ones that need three (which room will Ana walk into first to look for what she wants, when its bag was moved while she was out; how many coins does Bo think are in the kitchen).
+
+The secret exams moved one step beyond all of it (sums 11 to 14 digits, lines 11 to 14 people, boxes 8 to 10 deep, 4 to 5 moves,
+chains of plans and causes 5 to 7 long, wants 5 to 7 doors away, 7 to 9 gives in a row, ...). The report gets a table of the
+house's question kinds, practice and secret.
+
+A run lives in one world, written in `<run>/world.json`. Runs made before World 2 have none and stay on World 1 by
+themselves, so `world-link` and the others carry on and are examined exactly as before; `--laws-from` takes the
+other run's world. A new name starts on World 2 (`--world 1` for the old one). World 1's episodes are unchanged
+(a test checks them against a fingerprint taken before World 2).
+
 ## Run it
 
 ```bash

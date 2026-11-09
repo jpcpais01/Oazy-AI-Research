@@ -152,9 +152,25 @@ def world_run(runs: Path, name: str, metrics: bool = True):
               "exams" if all((ms.get(k) or {}).get("status", {}) and ms[k]["status"].get("state") == "done" for k in ("laws", "rival")) else
               "rival" if "rival" in ms else "laws")
     out["phase"] = ph
+    out["world"] = world_info(d)
     out["live"] = ph != "done" and time.time() - updated < 300
     out["updated"] = updated
     return out
+
+
+def world_info(d: Path):
+    """Which world a run lives in (<run>/world.json; none: World 1), its families, and per family how many levels are
+    practised and how many are secret."""
+    try:
+        from worldfirst import world as W
+    except Exception:
+        return None
+    v = (read_json(d / "world.json") or {}).get("version", 1)
+    if v not in W.WORLDS:
+        return None
+    fams, train, secret, _ = W.WORLDS[v]
+    return {"version": v, "families": list(fams),
+            "levels": {f: [len(train[f]), max(len(x) for x in secret[f].values())] for f in fams}}
 
 
 def world_example(family: str, split: str):

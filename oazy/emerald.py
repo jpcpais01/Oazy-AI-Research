@@ -5,8 +5,9 @@
     bash runpod/train.sh <model> ... --data-sub emerald --emerald 0.05   # the same with 5% world (0.20 = 20%, 0 = plain Sado)
     python3 -m oazy.worldmix exam --run <run> ...         # the world's secret exams, asked as plain text
 
-What it adds. Sado's text stays exactly as it is. The new part is the world from worldfirst/world.py: its nine families
-(sums, lines, boxes, family, falling, machines, cups, minds, walks), each episode a scene, an action, questions about the
+What it adds. Sado's text stays exactly as it is. The new part is the world from worldfirst/world.py (World 2: fifteen
+families, sums, lines, boxes, family, falling, machines, cups, minds, walks, carry, time, cause, wants, count and the
+mixed "house"), each episode a scene, an action, questions about the
 scene after it, and their answers, as plain sentences ("There is a line. Vasco is right behind Cora. ... Is Vasco ahead
 of Simao? Answer: no."). Only practice levels, with fresh random names; the secret exams are never written into it, so
 `oazy.worldmix exam` still asks only what the model never read. A model reading Emerald is still a plain next-word model.
@@ -42,14 +43,20 @@ def build(data: Path, tokens: float = DEFAULT_TOKENS, val_tokens: float = 2e6, w
     from . import term, worldmix
     out = data / "sado" / "world"
     out.mkdir(parents=True, exist_ok=True)
+    from worldfirst import world as W
+    W.use(W.LATEST)
     mp = out / "meta.json"
-    if mp.exists() and json.loads(mp.read_text()).get("train_tokens", 0) >= tokens:
-        print(f"Emerald's world is already built in {out}: {json.loads(mp.read_text())['train_tokens'] / 1e9:.2f}B tokens")
-        return out
+    if mp.exists():
+        old = json.loads(mp.read_text())
+        if old.get("world", 1) != W.VERSION:            # built from an older world: built again from this one
+            print(f"Emerald's world in {out} was built from World {old.get('world', 1)}: building it again from World {W.VERSION}")
+        elif old.get("train_tokens", 0) >= tokens:
+            print(f"Emerald's world is already built in {out}: {old['train_tokens'] / 1e9:.2f}B tokens of World {W.VERSION}")
+            return out
     workers = workers or max(1, (os.cpu_count() or 2) - 1)
     t0 = time.time()
     sizes = {}
-    with get_context("spawn").Pool(workers, initializer=worldmix._init, initargs=(tk,)) as pool:
+    with get_context("spawn").Pool(workers, initializer=worldmix._init, initargs=(tk, W.VERSION)) as pool:
         for split, seed, want in (("val", VAL_SEED, val_tokens), ("train", TRAIN_SEED, tokens)):
             n, k = 0, 0
             with open(out / f"{split}.bin.tmp", "wb") as f:
@@ -70,6 +77,7 @@ def build(data: Path, tokens: float = DEFAULT_TOKENS, val_tokens: float = 2e6, w
             (out / f"{split}.bin.tmp").replace(out / f"{split}.bin")
             sizes[split] = n
     meta = {"dataset": "world: practice episodes of worldfirst/world.py as plain text (oazy/emerald.py)", "tokenizer": tk,
+            "world": W.VERSION, "families": list(W.FAMILIES),
             "train_tokens": sizes["train"], "val_tokens": sizes["val"], "train_seed": TRAIN_SEED, "val_seed": VAL_SEED,
             "built": time.strftime("%Y-%m-%d %H:%M"), "minutes": round((time.time() - t0) / 60, 1)}
     mp.write_text(json.dumps(meta, indent=1))
@@ -78,7 +86,7 @@ def build(data: Path, tokens: float = DEFAULT_TOKENS, val_tokens: float = 2e6, w
         token_ratios(data / "sado", names=("world",))
     except Exception as e:
         print(f"  (token ratio not written: {type(e).__name__}: {str(e)[:100]})")
-    print(f"{out}: {sizes['train'] / 1e9:.2f}B training tokens of world, {sizes['val'] / 1e6:.1f}M held out, "
+    print(f"{out}: {sizes['train'] / 1e9:.2f}B training tokens of World {W.VERSION}, {sizes['val'] / 1e6:.1f}M held out, "
           f"{meta['minutes']:.0f} min. Runs read it with --data-sub emerald.")
     return out
 
