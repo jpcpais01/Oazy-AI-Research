@@ -42,6 +42,14 @@ widened to match). The report adds how many things it found cleanly.
 bash runpod/world.sh --name world-natural --preset big --steps 200000 --passes 3 --natural 1
 ```
 
+Marks as a teacher (`--teach 1`): the same no-marks race, but in training only the world's marks are the answer key
+for the finder ("these words are the same thing"). It is graded on which words it groups together, never given the
+marks as input, so at the exams (and in use) it reads plain text like the rival. The rival is unchanged.
+
+```bash
+bash runpod/world.sh --name world-teach --preset big --steps 200000 --passes 3 --natural 1 --teach 1
+```
+
 ## The world (`world.py`)
 
 Each episode is a scene in simple English with fresh random names and colours, one action, and two or three

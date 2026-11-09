@@ -384,6 +384,40 @@ def torch_checks():
             W.STYLE["natural"] = False
 
     @check
+    def marks_as_teacher_groups_words():
+        """With marks as a teacher, the finder learns to put a thing's words together (its found score rises), while the
+        batch it reads still has no marks in it."""
+        from .data import finder_batch
+        W.STYLE["natural"] = True
+        try:
+            vv = Vocab()
+            eps1 = [W.make(f, 1, "train", s) for s in range(10) for f in ("lines", "cups", "minds")]
+            b = finder_batch(eps1, vv)
+            assert "pool" not in b
+            scores = {}
+            for teach in (0.0, 1.0):
+                torch.manual_seed(0)
+                laws, _ = make_pair(len(vv), "tiny", finder=12, fixed=3, train_max=3, grad_passes=3, test_max=3, teach=teach)
+                laws.train()
+                laws.loss_and_hits(b)
+                t0 = laws.teach_loss(b["ment"]).item()
+                opt = torch.optim.AdamW(laws.parameters(), lr=3e-3)
+                for _ in range(60):
+                    loss, _, _ = laws.loss_and_hits(b)
+                    opt.zero_grad()
+                    loss.backward()
+                    opt.step()
+                laws.loss_and_hits(b)
+                t1 = laws.teach_loss(b["ment"]).item()
+                laws.eval()
+                got, n = laws.found(b)
+                scores[teach] = (t0, t1, got / n)
+            assert scores[1.0][1] < 0.8 * scores[1.0][0], scores
+            assert scores[1.0][2] > scores[0.0][2], scores
+        finally:
+            W.STYLE["natural"] = False
+
+    @check
     def tiny_run_end_to_end():
         import tempfile
         from .run import main
