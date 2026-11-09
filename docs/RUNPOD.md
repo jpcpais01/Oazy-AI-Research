@@ -239,6 +239,14 @@ widened to match). The report adds how many things it found cleanly.
 bash runpod/world.sh --name world-natural --preset big --steps 200000 --passes 3 --natural 1
 ```
 
+Marks as a teacher (`--teach 1`): the same no-marks race, but in training only the world's marks are the answer key
+for the finder ("these words are the same thing"). It is graded on which words it groups together, never given the
+marks as input, so at the exams (and in use) it reads plain text like the rival. The rival is unchanged.
+
+```bash
+bash runpod/world.sh --name world-teach --preset big --steps 200000 --passes 3 --natural 1 --teach 1
+```
+
 ## Sado, our second dataset (25,000M tokens, on a network volume)
 
 Tagus's successor: books, stricter web text, no benchmark questions, no repeats. What and why: `oazy/sado.py` and `oazy/sado_score.py`. It is built with the CPU and the network

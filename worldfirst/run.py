@@ -58,6 +58,9 @@ def main(argv=None):
     ap.add_argument("--natural", type=int, default=0,
                     help="1: no marks. The world speaks more naturally (she/he/her/him; sums smallest digit first), the rival "
                          "gets no tags, and the Laws model finds the things itself (--finder slots)")
+    ap.add_argument("--teach", type=float, default=0.0,
+                    help="with --natural 1: marks as a teacher. The Laws model still reads text with no marks, but in "
+                         "training its thing finder is graded against the world's marks (this weight; 1 is a good start)")
     ap.add_argument("--finder", type=int, default=None, help="slots for the Laws model's thing finder (default 32 with --natural 1)")
     ap.add_argument("--fresh", action="store_true", help="train again even if a model is saved")
     ap.add_argument("--threads", type=int, default=0)
@@ -99,6 +102,8 @@ def main(argv=None):
         over = {"train_max": a.passes, "grad_passes": a.passes, "test_max": a.passes, "fixed": a.passes}
     if a.finder:
         over["finder"] = a.finder
+        if a.teach:
+            over["teach"] = a.teach
     laws, rival = make_pair(len(vocab), a.preset, **over)
     rival.cfg.loss = a.rival_loss
     say(f"world-first stage 1: {a.preset}, device {dev}, vocab {len(vocab)} words")
@@ -164,7 +169,7 @@ def main(argv=None):
         say(f"{m.kind}: examined in {(time.time() - t0) / 60:.1f} min")
     res = {"kind": "worldfirst", "name": a.name, "when": time.strftime("%Y-%m-%d %H:%M"), "device": dev,
            "preset": a.preset, "eval_n": a.eval_n, "rival_tags": bool(a.rival_tags), "rival_loss": a.rival_loss, "loops": bool(a.loops), "passes": a.passes,
-           "natural": bool(a.natural), "finder": a.finder or 0,
+           "natural": bool(a.natural), "finder": a.finder or 0, "teach": a.teach if a.finder else 0,
            "params": {"laws": n_params(laws), "rival": n_params(rival)}, "train": trained, "rows": rows,
            "summary": {"laws": summarise(rows["laws"], "settle"), "rival": summarise(rows["rival"], "plain")}}
     (out / "results.json").write_text(json.dumps(res, indent=1))
@@ -207,7 +212,9 @@ def report(res) -> str:
         fd = [r["found"] for r in L if r["mode"] == "settle" and "found" in r]
         lines.append(f"**No marks**: {'the world speaks naturally (she/he/her/him, sums smallest digit first), ' if res.get('natural') else ''}"
                      f"the rival gets no tags, and the Laws model finds the things itself with {res['finder']} slots. "
-                     f"Things it found cleanly (all of a thing's words in one slot of their own): {_pct(sum(fd) / len(fd)) if fd else '-'}.\n")
+                     + (f"In training only, the world's marks were its finder's answer key (marks as a teacher, weight {res['teach']:g}); "
+                        "at the exams it reads plain text like the rival. " if res.get("teach") else "")
+                     + f"Things it found cleanly (all of a thing's words in one slot of their own): {_pct(sum(fd) / len(fd)) if fd else '-'}.\n")
     lines.append(f"**Secret exams (never trained on): Laws {_pct(sl.get('secret'))}, rival {_pct(sr.get('secret'))}.** "
                  f"Practised kinds on new scenes: Laws {_pct(sl.get('seen'))}, rival {_pct(sr.get('seen'))}.\n")
     lines.append("| family | exam | levels | Laws | rival | Laws passes |")

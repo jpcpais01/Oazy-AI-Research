@@ -86,6 +86,8 @@ class LawsConfig:
     fixed: int = 0             # >0: always exactly this many passes, from a blank state, learning through all of them
     finder: int = 0            # >0: no marks; this many slots find the things themselves (slot attention)
     finder_iters: int = 3      # rounds in which the slots compete for the words
+    teach: float = 0.0         # >0 (with finder): marks as a teacher. In training only, the world's marks say which words
+                               # are the same thing, and the finder is graded on grouping them that way. Never an input.
 
 
 class Laws(nn.Module):
@@ -320,7 +322,24 @@ class Laws(nn.Module):
             losses.append(F.cross_entropy(out["seq"][ok], y[ok], reduction="sum"))
             hits[it[ok]] = out["seq"][ok].argmax(-1) == y[ok]
         loss = sum(losses) / max(1, n_items)
+        if self.training and self.cfg.finder and self.cfg.teach > 0:
+            loss = loss + self.cfg.teach * self.teach_loss(b["ment"])
         return loss, hits, used
+
+    def teach_loss(self, ment):
+        """Marks as a teacher: for every two words that name things, the finder's chance that they went to the same slot
+        should be 1 when they are the same thing and 0 when not. Slots carry no fixed order, so only "same or different"
+        is graded. The marks are only the answer key here; the model still reads plain text."""
+        a = self._att.float()                                                  # [B, K, T] each word shared over slots
+        same = torch.einsum("bki,bkj->bij", a, a).clamp(1e-6, 1 - 1e-6)        # chance two words share a slot
+        m = ment >= 0
+        pair = m[:, :, None] & m[:, None, :]
+        pair &= ~torch.eye(ment.shape[1], dtype=torch.bool, device=ment.device)[None]
+        y = (ment[:, :, None] == ment[:, None, :])
+        pos, neg = pair & y, pair & ~y                                         # few "same" pairs, many "different": weigh
+        lp = -same[pos].log().mean() if pos.any() else same.sum() * 0          # both halves equally
+        ln = -(1 - same[neg]).log().mean() if neg.any() else same.sum() * 0
+        return (lp + ln) / 2
 
 
 @dataclass
