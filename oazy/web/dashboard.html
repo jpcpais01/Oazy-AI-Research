@@ -3,45 +3,57 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#040914">
-<title>Oazy · Training</title>
+<meta name="theme-color" content="#050507">
+<title>Oazy · Training lab</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="lab.css">
 <link rel="stylesheet" href="visual.css">
 </head>
 <body>
-<header class="vtop"><div class="vtop-in">
-  <a class="vmark" href="./" aria-label="Oazy training"><img src="icon.svg" alt=""><span>OAZY<small>training</small></span></a>
+<header class="lab-bar" id="bar"><div class="bar-in">
+  <a class="mark" href="#top" aria-label="Oazy AI Research, back to top"><img src="icon.svg" alt=""><span class="word">OAZY<small>TRAINING LAB <span class="ver" id="ver"></span></small></span></a>
+  <nav class="tabs" id="tabs" aria-label="Sections"><span class="tabpill" id="tabpill"></span>
+    <a href="#now" data-sec="now">Now</a><a href="#race" data-sec="race">Race</a><a href="#runs" data-sec="runs">Runs</a><a href="world">World ↗</a><a href="classic">Details ↗</a></nav>
   <span class="pill" id="pulse"><span class="dot"></span><span>connecting…</span></span>
-  <nav class="vlinks"><a href="world">World</a><a href="classic">Details</a></nav>
 </div></header>
 
-<main class="vwrap">
-  <section id="now" aria-label="Training now"></section>
-  <section id="worldNow" aria-label="World races" hidden></section>
+<section class="lab-head" id="top" aria-label="The lab right now">
+  <div class="fallback" aria-hidden="true"></div>
+  <canvas id="warp" aria-hidden="true"></canvas>
+  <div class="lab-head-in">
+    <p class="eyebrow"><b>//</b> Oazy AI Research · training lab</p>
+    <h1>Models <em>learning</em>, live</h1>
+    <div class="pod" id="pod"></div>
+  </div>
+</section>
 
-  <section class="vsec" id="race" aria-label="The race">
-    <div class="vsec-h"><h2 id="raceTitle">The race</h2><button class="vlink" id="raceReset" hidden>back to the race</button></div>
-    <div class="vlegend" id="legend"></div>
-    <div class="vcharts">
-      <figure class="card vchart"><figcaption><b>Held-out loss</b><span>lower is better</span></figcaption><div class="vplot" id="cLoss"></div></figure>
-      <figure class="card vchart"><figcaption><b>HellaSwag</b><span>higher is better</span></figcaption><div class="vplot" id="cHs"></div></figure>
-      <figure class="card vchart"><figcaption><b>LogT</b><span>reasoning puzzles</span></figcaption><div class="vplot" id="cLogt"></div></figure>
-      <figure class="card vchart"><figcaption><b>World exams</b><span>secret questions, never practised</span></figcaption><div class="vplot" id="cWorld"></div></figure>
-    </div>
-  </section>
+<canvas id="land" aria-hidden="true"></canvas>
 
-  <section class="vsec" id="all" aria-label="Every run">
-    <div class="vsec-h"><h2>Every run</h2>
-      <div class="seg" id="filter"><button data-f="all" class="on">All</button><button data-f="done">Finished</button><button data-f="stopped">Stopped</button></div></div>
-    <p class="vhint">Tap a run to add it to the charts, or take it out.</p>
-    <div class="vtiles" id="tiles"></div>
-  </section>
-</main>
+<div class="wrap">
+  <div class="section-title" id="now" data-k="now"><h3>Training now</h3><div class="line"></div></div>
+  <div id="nowBox"></div>
+  <div id="worldNow" hidden></div>
 
-<footer class="vfoot"><span id="ver"></span><span>refreshes every 15 s</span></footer>
+  <div class="section-title" id="race" data-k="race"><h3 id="raceTitle">The race</h3><div class="line"></div></div>
+  <div class="vrace-tools"><div class="vlegend" id="legend"></div><button class="btn ghost" id="raceReset" hidden>Back to the race</button></div>
+  <div class="vcharts">
+    <figure class="card vchart"><figcaption><b>Held-out loss</b><span>lower is better</span></figcaption><div class="vplot" id="cLoss"></div></figure>
+    <figure class="card vchart"><figcaption><b>HellaSwag</b><span>higher is better</span></figcaption><div class="vplot" id="cHs"></div></figure>
+    <figure class="card vchart"><figcaption><b>LogT</b><span>reasoning puzzles</span></figcaption><div class="vplot" id="cLogt"></div></figure>
+    <figure class="card vchart"><figcaption><b>World exams</b><span>secret, never practised</span></figcaption><div class="vplot" id="cWorld"></div></figure>
+  </div>
+
+  <div class="section-title" id="runs" data-k="runs"><h3>Every run</h3><div class="line"></div></div>
+  <div class="vrace-tools"><p class="vhint">Tap a run to add it to the charts, or take it out.</p>
+    <div class="seg" id="filter"><button data-f="all" class="on">All</button><button data-f="done">Finished</button><button data-f="stopped">Stopped</button></div></div>
+  <div class="vtiles" id="tiles"></div>
+</div>
+
+<footer class="foot"><span>Oazy AI Research · training lab</span><span>Refreshes every 15 s · <a href="classic">Details</a> · <a href="world">World</a></span></footer>
 <div class="vtip" id="tip" hidden></div>
 
+<script src="lab.js"></script>
 <script src="visual.js"></script>
 </body>
 </html>

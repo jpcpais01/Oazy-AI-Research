@@ -23,9 +23,10 @@ const BADGE = { live: "live", paused: "paused", finishing: "final tests", starti
 const badge = (lv) => `<span class="st ${lv}"><i></i>${BADGE[lv] || lv}</span>`;
 const HS_GPT2 = 0.3114;          // OpenAI GPT-2 small, HellaSwag per letter (the line to beat)
 
-// one colour per run, kept while it is on the page (validated categorical palette for the dark surface; green is kept
-// for "live", so it is not in here)
-const PAL = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#9085e9", "#e66767"];
+// one colour per run, kept while it is on the page: the lab's accents (violet, amber, cyan, pink, lime), checked for
+// colour-blind separation on the black stage (lime/amber is the closest pair, so every line also carries its value at
+// its end); teal is kept for "live", so it is not in here. At most 5 runs on the charts at once.
+const PAL = ["#8f7bff", "#ffb347", "#4fd8ff", "#ff5fae", "#b6f36b"];
 let SLOT = {};
 try { SLOT = JSON.parse(localStorage.getItem("oazy.v.slot") || "{}"); } catch (e) { SLOT = {}; }
 function paint(names) {
@@ -58,7 +59,7 @@ function autoSet() {
   if (!seeds.length && R.length) seeds = [R[0]];
   const groups = new Set(seeds.map((r) => groupOf(r.name)));
   const out = R.filter((r) => seeds.includes(r) || groups.has(groupOf(r.name)));
-  return { names: out.slice(0, 6).map((r) => r.name), groups: [...groups] };
+  return { names: out.slice(0, PAL.length).map((r) => r.name), groups: [...groups] };
 }
 function compareSet() {
   if (PICK) return PICK.filter((n) => runOf(n));
@@ -130,8 +131,8 @@ function track(r, color) {
     return `<div class="turn${past ? " past" : ""}" style="left:${p(x.at)}" title="${esc(x.label)}"></div>
       <div class="tlabel${past ? " past" : ""}${edge}" style="left:${p(x.at)}">${esc(x.short)} · ${fmtM(x.at)}</div>`;
   }).join("");
-  return `<div class="track${r.live === "live" ? " on" : ""}" style="--c:${color}"><div class="bar">${zones}<div class="fill" style="width:${(f * 100).toFixed(2)}%"></div></div>
-    ${marks}<div class="now" style="left:${(f * 100).toFixed(2)}%"></div></div>`;
+  return `<div class="track${r.live === "live" ? " on" : ""}" style="--acc:${color}"><div class="rail-t">${zones}<div class="fill" style="width:${(f * 100).toFixed(2)}%"></div></div>
+    ${marks}<div class="bead" style="left:${(f * 100).toFixed(2)}%"></div></div>`;
 }
 const CTL = {};          // run -> {armed: time} (end needs a second tap) or {sent: action}
 function controls(r) {
@@ -139,7 +140,7 @@ function controls(r) {
   if (r.live === "finishing") return "";
   const end = c.armed && Date.now() - c.armed < 4000
     ? `<button class="btn sure" data-act="end" data-run="${esc(r.name)}">Tap again to end</button>`
-    : `<button class="btn" data-act="arm" data-run="${esc(r.name)}">End now</button>`;
+    : `<button class="btn danger" data-act="arm" data-run="${esc(r.name)}">End now</button>`;
   const pr = r.live === "paused" ? `<button class="btn primary" data-act="resume" data-run="${esc(r.name)}">Resume</button>`
     : `<button class="btn" data-act="pause" data-run="${esc(r.name)}">Pause</button>`;
   const note = c.sent ? `<span class="note">${c.sent === "pause" ? "pausing at the next step…" : c.sent === "resume" ? "resuming…" : "ending: saving, then the final tests…"}</span>` : "";
@@ -149,10 +150,13 @@ function liveCard(r) {
   const s = (SER[r.name] || {}).d || {}, color = colorOf(r.name), f = fracOf(r);
   const left = r.live === "live" && r.eta_s != null ? `<b>${fmtDur(r.eta_s)}</b> left` : r.live === "paused" ? "paused, GPU idle" : BADGE[r.live];
   const hsFull = (s.hs || []).filter((x) => x[2]);
-  return `<article class="card live-card">
-    <div class="lc-top"><div><div class="lc-name"><span class="sw" style="background:${color}"></span>${esc(r.name)}</div>
-      <div class="lc-sub">${esc(nice(r))}${r.params ? " · " + Math.round(r.params / 1e6) + "M" : ""}${NOT_NEXT.has(r.model) ? " · not next-token" : " · next-token"}${r.gpu ? " · " + esc(r.gpu.replace(/^NVIDIA\s+/, "")) : ""}</div></div>
-      <span style="margin-left:auto">${badge(r.live)}</span></div>
+  // the name in the landing page's way: the family plain, the rest in the run's accent ("logos" + "-emerald-2b")
+  const cut = r.name.indexOf("-"), title = cut > 0 ? `${esc(r.name.slice(0, cut))}<span class="acc">${esc(r.name.slice(cut))}</span>` : esc(r.name);
+  const chips = [[nice(r), true], r.params ? [Math.round(r.params / 1e6) + "M params"] : null, [NOT_NEXT.has(r.model) ? "not next-token" : "next-token"],
+    r.gpu ? [r.gpu.replace(/^NVIDIA\s+/, "")] : null].filter(Boolean);
+  return `<article class="card live-card" style="--acc:${color}">
+    <div class="lc-top"><div class="lc-name">${title}</div>${badge(r.live)}</div>
+    <div class="chips">${chips.map(([t, a]) => `<span class="${a ? "acc" : ""}">${esc(t)}</span>`).join("")}</div>
     <div class="lc-big"><span class="pct">${Math.floor(f * 100)}<small>%</small></span>
       <span class="left">${fmtM(r.tokens)} of ${fmtM(r.total)} tokens · ${left}</span></div>
     ${track(r, color)}
@@ -171,10 +175,18 @@ function drawNow() {
   if (live.length) h += live.map(liveCard).join("");
   else {
     const last = R[0];
-    h += `<div class="card idle"><div class="ring">◦</div><div><div class="t">Nothing is training right now</div>
+    h += `<div class="card idle"><img src="icon.svg" alt=""><div><div class="t">Nothing is training right now</div>
       <div class="s">${last ? `Last: <b>${esc(last.name)}</b>, ${BADGE[last.live]} ${ago(last.age)}.` : "Start a run and it shows up here by itself."}</div></div></div>`;
   }
-  $("now").innerHTML = h;
+  $("nowBox").innerHTML = h;
+  // the pod at a glance, under the head's title; the hero's light slows right down when nothing trains
+  const L0 = live.find((r) => r.live === "live") || live[0], done = R.filter((r) => r.live === "done").length;
+  const cell = (k, v, h2) => `<div><div class="k">${k}</div><div class="v">${v}</div><div class="h">${h2 || "&nbsp;"}</div></div>`;
+  $("pod").innerHTML = cell("Training", live.length ? `${live.length}<small>${live.length > 1 ? "runs" : "run"}</small>` : "–", L0 ? esc(L0.name) : "nothing right now")
+    + cell("Progress", L0 ? `${Math.floor(fracOf(L0) * 100)}<small>%</small>` : "–", L0 ? `${fmtM(L0.tokens)} of ${fmtM(L0.total)}` : "")
+    + cell("Finishes in", L0 && L0.eta_s != null && L0.live === "live" ? fmtDur(L0.eta_s) : "–", L0 && L0.tok_s ? `${Math.round(L0.tok_s / 1e3)}k tokens/s` : "")
+    + cell("Runs", `${R.length}`, `${done} finished`);
+  try { LAB.setPace(live.length ? 1 : 0.15); } catch (e) { /* no light */ }
 }
 function drawWorld() {
   const live = WORLD.filter((w) => w.phase !== "done" && NOW - (w.updated || 0) < 600);
@@ -198,7 +210,7 @@ document.addEventListener("click", async (e) => {
   const t = e.target.closest(".tile");
   if (t) {
     const n = t.dataset.run, cur = compareSet();
-    PICK = cur.includes(n) ? cur.filter((x) => x !== n) : [...cur, n].slice(-7);
+    PICK = cur.includes(n) ? cur.filter((x) => x !== n) : [...cur, n].slice(-PAL.length);
     savePick(); refresh(); return;
   }
   const f = e.target.closest("#filter button");
@@ -257,9 +269,9 @@ function lineChart(id, opt) {
     if (!s.pts.length) continue;
     lines += `<path d="${path(s.pts)}" fill="none" stroke="${s.color}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>`;
     if (s.pts.length < 30) dots += s.pts.filter((p) => !p[2]).map((p) => `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="2.6" fill="${s.color}"/>`).join("");
-    dots += s.pts.filter((p) => p[2]).map((p) => `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="5" fill="#071630" stroke="${s.color}" stroke-width="2.5"><title>final score</title></circle>`).join("");
+    dots += s.pts.filter((p) => p[2]).map((p) => `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="5" fill="#050507" stroke="${s.color}" stroke-width="2.5"><title>final score</title></circle>`).join("");
     const L = s.pts[s.pts.length - 1];
-    if (s.live) dots += `<circle class="pulse" cx="${X(L[0])}" cy="${Y(L[1])}" r="4" fill="${s.color}"/><circle cx="${X(L[0])}" cy="${Y(L[1])}" r="4" fill="${s.color}" stroke="#071630" stroke-width="1.5"/>`;
+    if (s.live) dots += `<circle class="pulse" cx="${X(L[0])}" cy="${Y(L[1])}" r="4" fill="${s.color}"/><circle cx="${X(L[0])}" cy="${Y(L[1])}" r="4" fill="${s.color}" stroke="#050507" stroke-width="1.5"/>`;
     ends.push({ y: Y(Math.min(hi, Math.max(lo, L[1]))), x: X(L[0]), v: opt.fmt(L[1]), c: s.color });
   }
   // the newest value at the right end of each line, nudged apart so they never sit on top of each other
@@ -312,9 +324,10 @@ function drawRace(set) {
   $("raceReset").hidden = auto;
   const groups = auto ? autoSet().groups : [];
   $("raceTitle").textContent = auto && groups.length === 1 && R.length > 1 ? `The race · ${groups[0]}` : R.length > 1 ? "Side by side" : "The run";
-  const lineKey = (dash) => `<svg viewBox="0 0 22 8"><line x1="1" x2="21" y1="4" y2="4" stroke="#b9c8dc" stroke-width="${dash ? 1.2 : 2.4}" stroke-opacity="${dash ? 0.5 : 1}"/></svg>`;
-  $("legend").innerHTML = R.map((r) => `<span class="lg"><i style="background:${colorOf(r.name)}"></i>${esc(r.name)}${isLive(r) ? badge(r.live) : r.live === "cut" ? badge("cut") : ""}</span>`).join("")
-    + (R.length ? `<span class="key">${lineKey(false)}held-out</span><span class="key">${lineKey(true)}training</span><span class="key"><svg viewBox="0 0 22 8"><circle cx="11" cy="4" r="3" fill="none" stroke="#b9c8dc" stroke-width="1.6"/></svg>final score</span>` : "");
+  const lineKey = (dash) => `<svg viewBox="0 0 22 8"><line x1="1" x2="21" y1="4" y2="4" stroke="#b4b3c4" stroke-width="${dash ? 1.2 : 2.4}" stroke-opacity="${dash ? 0.5 : 1}"/></svg>`;
+  $("legend").innerHTML = R.map((r) => `<span class="lg" style="--c:${colorOf(r.name)}"><i></i>${esc(r.name)}${isLive(r) ? badge(r.live) : r.live === "cut" ? badge("cut") : ""}</span>`).join("")
+    + (R.length ? `<span class="key">${lineKey(false)}held-out</span><span class="key">${lineKey(true)}training</span><span class="key"><svg viewBox="0 0 22 8"><circle cx="11" cy="4" r="3" fill="none" stroke="#b4b3c4" stroke-width="1.6"/></svg>final score</span>` : "");
+  if (R.length) $("legend").innerHTML = $("legend").innerHTML.replace('<span class="key">', '<span class="sep"></span><span class="key">');
   const ref = R.find(isLive) || R[0];
   const xmax = Math.max(1, ...R.map((r) => Math.max(r.total || 0, r.tokens || 0)));
   const turns = ref ? ref.turns || [] : [];
@@ -342,14 +355,14 @@ function spark(pts, color) {
   return `<svg class="spark" viewBox="0 0 76 30" aria-hidden="true"><path d="${pts.map((p, i) => `${i ? "L" : "M"}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join("")}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round"/></svg>`;
 }
 function tile(r, set) {
-  const on = set.includes(r.name), c = on ? colorOf(r.name) : "#7c8ea8";
+  const on = set.includes(r.name), c = on ? colorOf(r.name) : "#7d7c8f";
   const f = fracOf(r);
   const when = r.live === "done" ? `finished ${ago(r.age)}${r.ended_early ? " (ended early)" : ""}`
     : r.live === "cut" ? `cut off ${ago(r.age)} at ${Math.round(f * 100)}%`
       : r.live === "stopped" ? `stopped ${ago(r.age)} at ${Math.round(f * 100)}%, resumable`
         : r.live === "live" ? `${Math.round(f * 100)}% · ${fmtDur(r.eta_s)} left` : BADGE[r.live];
   const kv = (k, v) => `<div class="kv"><div class="k">${k}</div><div class="v${v === "–" ? " na" : ""}">${v}</div></div>`;
-  return `<button class="card tile${on ? " pick" : ""}${!isLive(r) && r.age > 3 * 86400 ? " old" : ""}" data-run="${esc(r.name)}" style="--c:${c}" aria-pressed="${on}">
+  return `<button class="tile${on ? " pick" : ""}${!isLive(r) && r.age > 3 * 86400 ? " old" : ""}" data-run="${esc(r.name)}" style="--c:${c}" aria-pressed="${on}">
     <div class="t1">${on ? `<span class="sw" style="background:${c}"></span>` : ""}<span class="nm">${esc(r.name)}</span>${badge(r.live)}</div>
     <div class="t2">${esc(nice(r))}${r.params ? " · " + Math.round(r.params / 1e6) + "M" : ""} · ${fmtM(r.tokens)} of ${fmtM(r.total)}</div>
     <div class="mini ${isLive(r) ? "live" : r.live}"><div style="width:${(f * 100).toFixed(1)}%"></div></div>
@@ -360,12 +373,12 @@ function drawTiles(set) {
   const keep = (r) => FILTER === "all" || (FILTER === "done" ? r.live === "done" : r.live === "stopped" || r.live === "cut");
   const R = ours().filter(keep).sort((a, b) => (isLive(b) - isLive(a)) || (set.includes(b.name) - set.includes(a.name)) || (b.updated - a.updated));
   const N = MORE ? R.length : 12;
-  $("tiles").innerHTML = R.length ? R.slice(0, N).map((r) => tile(r, set)).join("") : `<div class="card idle"><div class="s">No runs here.</div></div>`;
+  $("tiles").innerHTML = R.length ? R.slice(0, N).map((r) => tile(r, set)).join("") : `<p class="vhint">No runs here.</p>`;
   const old = document.querySelector(".vmore"); if (old) old.remove();
   if (R.length > N) $("tiles").insertAdjacentHTML("afterend", `<button class="btn vmore">Show all ${R.length} runs</button>`);
 }
 
-fetch("api/version").then((r) => r.json()).then((v) => { if (v && v.version) $("ver").textContent = `${v.version} · ${v.commit || ""}`; }).catch(() => {});
+fetch("api/version").then((r) => r.json()).then((v) => { if (v && v.version) { $("ver").textContent = v.version; $("ver").title = `commit ${v.commit}`; } }).catch(() => {});
 let rz = null;
 window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => drawRace(compareSet()), 150); });
 refresh();
