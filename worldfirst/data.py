@@ -201,7 +201,7 @@ def rival_batch(eps, vocab: Vocab, device="cpu", tags=True, rng=None):
     rng = rng or random.Random(0)
     B = len(eps)
     V = len(vocab)
-    seqs, tagss, items, meta = [], [], [], []
+    seqs, tagss, ments, items, meta = [], [], [], [], []
     yes_no = [vocab.id["yes"], vocab.id["no"]]
     digits = [vocab.id[str(i)] for i in range(10)]
     uid = 0
@@ -209,10 +209,12 @@ def rival_batch(eps, vocab: Vocab, device="cpu", tags=True, rng=None):
         perm = rng.sample(range(1, N_TAGS), len(e.things)) if len(e.things) < N_TAGS else list(range(1, len(e.things) + 1))
         toks = ["<bos>"] + list(e.tokens)
         tg = [0] + [perm[m] if m >= 0 else 0 for m in e.mentions]
+        mt = [-1] + list(e.mentions)               # which thing each word names: only an answer key (see teach)
         names = sorted({vocab.id[k] for k in e.things if k in vocab.id})
         for qi, q in enumerate(e.questions):
             toks += q.tokens + ["answer", ":"]
             tg += [perm[m] if m >= 0 else 0 for m in q.mentions] + [0, 0]
+            mt += list(q.mentions) + [-1, -1]
             for (kind, tgt), w in zip(q.specs, q.answer):
                 if kind == "class":
                     cands = yes_no if tgt in W.YESNO else digits
@@ -224,22 +226,27 @@ def rival_batch(eps, vocab: Vocab, device="cpu", tags=True, rng=None):
                 meta.append(_item_meta(e, qi, uid))
                 toks.append(w)
                 tg.append(perm[tgt] if kind == "pointer" else 0)
+                mt.append(-1)
             toks.append(".")
             tg.append(0)
+            mt.append(-1)
             uid += 1
         seqs.append(vocab.enc(toks))
         tagss.append(tg)
+        ments.append(mt)
     T = max(len(s) for s in seqs)
     tok = torch.zeros(B, T, dtype=torch.long)
     tag = torch.zeros(B, T, dtype=torch.long)
+    ment = torch.full((B, T), -1, dtype=torch.long)
     for b in range(B):
         tok[b, :len(seqs[b])] = torch.tensor(seqs[b])
+        ment[b, :len(ments[b])] = torch.tensor(ments[b])
         if tags:
             tag[b, :len(tagss[b])] = torch.tensor(tagss[b])
     cand = torch.zeros(len(items), V, dtype=torch.bool)
     for i, it in enumerate(items):
         cand[i, it[3]] = True
-    out = {"tok": tok.to(device), "tag": tag.to(device), "cand": cand.to(device),
+    out = {"tok": tok.to(device), "tag": tag.to(device), "ment": ment.to(device), "cand": cand.to(device),
            "ib": torch.tensor([it[0] for it in items], device=device),
            "ipos": torch.tensor([it[1] for it in items], device=device),
            "iy": torch.tensor([it[2] for it in items], device=device), "meta": meta}

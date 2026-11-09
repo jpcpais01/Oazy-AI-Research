@@ -454,6 +454,26 @@ def torch_checks():
             with torch.no_grad():
                 _, hits, _ = laws.loss_and_hits(b)
             assert hits.shape[0] == len(b["meta"])
+            # fairness: the rival gets the same answer key, through a link head of the same shape, and still matches in size
+            from .data import rival_batch
+            assert rival.cfg.teach == laws.cfg.teach and hasattr(rival, "link")
+            from .model import _rival_count
+            assert _rival_count(rival.cfg) == n_params(rival)
+            rb = rival_batch(eps1, vv, tags=False)
+            assert (rb["ment"] >= 0).sum() > 0 and (rb["tag"] == 0).all()
+            rival.train()
+            ropt = torch.optim.AdamW(rival.parameters(), lr=3e-3)
+            def rl():
+                rival(rb)
+                from .model import link_loss
+                return link_loss(*rival.link(rival._h.float()), rb["tok"] != 0, rb["ment"])
+            r0 = rl().item()
+            for _ in range(40):
+                loss, _, _ = rival.loss_and_hits(rb)
+                ropt.zero_grad()
+                loss.backward()
+                ropt.step()
+            assert rl().item() < 0.9 * r0, (r0, rl().item())
         finally:
             W.STYLE["natural"] = False
 

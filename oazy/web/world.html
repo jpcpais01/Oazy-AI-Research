@@ -221,7 +221,7 @@ function card(kind) {
     ? `${reads}, and ${core}. Graded only on its answers, never on guessing words.`
     : cf.loss === "answers"
       ? `A normal causal transformer of the same size that reads the same episodes but is graded only on the answers, like the Laws model. ${cf.n_layer || 6} layers per word, always.`
-      : `A normal causal transformer of the same size, trained by guessing every next word of the same episodes, answers included. ${cf.n_layer || 6} layers per word, always.`;
+      : `A normal causal transformer of the same size, trained by guessing every next word of the same episodes, answers included${cf.teach ? ", plus the same \"same thing\" answer key" : ""}. ${cf.n_layer || 6} layers per word, always.`;
   const le = lastExam(kind), fs = finalSum(kind);
   const tr = trains(kind), accNow = st.acc ?? tr[tr.length - 1]?.acc;
   const stat = (k, v, h) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div><div class="h">${h || "&nbsp;"}</div></div>`;
