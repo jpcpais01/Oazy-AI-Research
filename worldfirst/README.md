@@ -1,0 +1,92 @@
+# World-first, stage 1: a model that learns the laws of a small world
+
+**The Laws model is not a next-word model.** It never learns to continue text. It reads a scene, sees an action, and
+predicts what is true afterwards, and it learns only from being wrong about that. Its rival **is** a plain next-word
+model of the same size, trained on the very same world text.
+
+The question stage 1 answers: on cases neither model has ever been shown (longer sums, deeper boxes, family links
+chained in new ways, machines mixing rules never mixed), does the one built to find laws get them right, where the
+one built to continue text does not? That is the make-or-break for the whole plan.
+
+## Run it
+
+```bash
+bash runpod/world.sh                                   # on the pod: trains both, examines both, writes the report
+python3 -m worldfirst.run                              # the same, in this terminal
+python3 -m worldfirst.run --preset tiny --steps 300 --eval-n 20   # a quick CPU check (minutes)
+python3 -m worldfirst.tests                            # the world's walls and both models (about a minute, CPU)
+```
+
+No dataset, no tokenizer download: the world writes its own text. Results land in `<runs>/worldfirst/`:
+`report.md` (the tables in words), `results.json` (every number), `laws/` and `rival/` (checkpoints and training
+logs). The dashboard shows them as the "Understanding" card. `--only report` examines the saved models again.
+
+Options worth knowing: `--steps` (20,000 each), `--batch` (128 episodes), `--preset tiny|small|base`,
+`--no-curriculum`, `--rival-tags 0` (the rival without the "same thing" marks), `--rival-loss answers` (a rival
+that learns only the answers: a stronger, non-plain variant to check against), `--minutes` (a time cap per model).
+
+## The world (`world.py`)
+
+Each episode is a scene in simple English with fresh random names and colours, one action, and two or three
+questions about the scene *after* the action. The world computes the true new scene, so every answer is right.
+Each kind of link is said several ways ("Ana stands just in front of Bo", "Bo is right behind Ana").
+
+| family | the law | an action | seen in training | secret exams |
+|---|---|---|---|---|
+| sums | adding with carries, digit by digit | "add them" | 1 to 5 digits | 6 to 8 digits |
+| lines | order: in front of / behind, chained | swap two, one goes to the front or back | 3 to 6 people | 7 to 9 people |
+| boxes | inside of, nested | take a box out, put one into another | 1 to 4 boxes deep | 5 to 7 deep |
+| family | parents and children, brothers, sisters, said one way and asked either way | a baby is born | one link, or two links chained (31 of 36 pairs) | the 5 pairs never asked; three links |
+| falling | a block falls until it rests on something | a nailed block comes loose | 1 to 3 blocks fall | 4 to 6 blocks fall |
+| machines | a hidden rule, learned from a few tries | try new numbers | one step, or two steps (most pairs) | 6 pairs of steps never mixed; three steps |
+
+The walls are built in, not hoped for: training only ever asks for training levels, the held-out family pairs and
+machine mixes are never generated for training (a held-out machine rule is one that no training rule equals), and
+`tests.py` checks thousands of training episodes against every secret condition. Fresh random names make
+memorising scenes useless; only the laws carry over.
+
+A curriculum serves each learner the edge of what it can do: per family, it starts at level 1 and moves up when the
+learner gets 85% right there; half its episodes come from the newest level and half from the ones before. Each model
+gets its own curriculum, by the same rule.
+
+## The Laws model (`model.py`)
+
+1. **Reader**: a small transformer (4 layers) reads the scene, the action and the questions, never the answers.
+2. **One vector per thing**: the world marks which words name the same thing (like pointing at it), and those words
+   are pooled into that thing's vector. Each question gets a vector too.
+3. **Laws core**: a tiny shared network (2 layers) where the things look at each other and update. It runs again and
+   again: each **pass** is one tick of thinking, and the picture sharpens. It is fed the reader's picture again on
+   every pass, so it never loses the scene. It only ever sees things, never words. Things keep their order of
+   appearance (rotary positions on where each was first named), so "the column to my right" means the same in a
+   9-digit sum as in a 3-digit one.
+4. **Head**: answers from the settled picture: yes/no or a digit from a question's vector, "who/what" by pointing
+   from the question to a thing, a sum by reading one digit from each column.
+
+**Training**: a random number of passes each step (1 to 16), learning only through the last 4, each starting from
+random noise (Huginn's recipe, at toy scale). So it must work at any depth, and long thinking costs no extra memory.
+**Testing**: it thinks until its picture stops moving (a pass changes it by less than 1%), up to 48 passes. That
+number is its own choice, and the report shows it against difficulty: if it truly reasons, harder scenes take more.
+
+About 15M numbers at the base size (d 448, 7 heads).
+
+## The rival
+
+A normal causal transformer, 6 layers at the same width, its MLP sized so it has the same number of numbers (within
+1%). It learns by guessing every next word of the same episodes, answers included (`--rival-loss answers` is the
+variant that learns only the answers). It gets the same help with names: each thing's words carry a tag that is
+random every episode, so the tag only says "same thing". It is asked the same questions: its guess right after
+"answer :" among the same candidates (yes/no, digits, or the things in the scene). A sum counts only if every digit
+is its best guess, which is the same as writing the whole sum right.
+
+What it does not get is loops: 6 layers of thinking per word, always. That is the difference under test.
+
+## How it is judged
+
+- **Secret exams vs seen kinds**, per family and level, both models, a question right only if its whole answer is.
+- **Passes against difficulty** (the Laws model's own choice when to stop), and accuracy at 1, 2, 4, ... 32 forced
+  passes: does thinking longer help, and does it hold up past the 16 it trained with?
+- **Reversals**: family questions asked the other way round from how the link was told ("Rui is the son of Paulo",
+  then "who is the father of Rui?"), against questions asked the way it was told.
+
+What stage 1 does not do yet: no notebook, no planner, no talking. The plan's next stages build on this one only if
+the Laws model wins the secret exams.
