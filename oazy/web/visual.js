@@ -31,6 +31,8 @@ let SLOT = {};
 try { SLOT = JSON.parse(localStorage.getItem("oazy.v.slot") || "{}"); } catch (e) { SLOT = {}; }
 function paint(names) {
   const used = new Set();
+  // a slot from an older, longer palette (saved in this browser) would have no colour at all: black on black
+  for (const n of Object.keys(SLOT)) if (!(SLOT[n] >= 0 && SLOT[n] < PAL.length)) delete SLOT[n];
   for (const n of names) if (SLOT[n] != null && !used.has(SLOT[n])) used.add(SLOT[n]); else delete SLOT[n];
   for (const n of names) if (SLOT[n] == null) {
     let h = 0; for (const c of n) h = (h * 31 + c.charCodeAt(0)) >>> 0;
@@ -39,7 +41,7 @@ function paint(names) {
   }
   try { localStorage.setItem("oazy.v.slot", JSON.stringify(SLOT)); } catch (e) { /* private window */ }
 }
-const colorOf = (n) => PAL[SLOT[n] ?? 0];
+const colorOf = (n) => PAL[SLOT[n]] || PAL[0];
 
 let RUNS = [], WORLD = [], SER = {}, PICK = null, FILTER = "all", MORE = false, NOW = Date.now() / 1000;
 try { PICK = JSON.parse(localStorage.getItem("oazy.v.pick") || "null"); } catch (e) { PICK = null; }
