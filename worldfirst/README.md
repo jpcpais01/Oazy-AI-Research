@@ -87,7 +87,7 @@ Logos1's core. Same size, about 1.6x the work per step. `--laws-from world-link`
 world-link's Logos1 for the report (if world-link is still training, rerun with `--only report` when it is done).
 
 ```bash
-bash runpod/world.sh --name world-loop --preset big --steps 200000 --passes 3 --natural 1 --linker 1 --rival-loops 3 --laws-from world-link
+bash runpod/world.sh --name world-loop --preset big --steps 200000 --passes 3 --natural 1 --linker 1 --rival-loops 3 --laws-from world-link --rival-ckpt 1
 ```
 
 ## The world (`world.py`)

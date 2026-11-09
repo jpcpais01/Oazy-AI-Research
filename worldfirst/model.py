@@ -24,6 +24,7 @@ import math
 from dataclasses import dataclass, asdict
 
 import torch
+import torch.utils.checkpoint
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -457,6 +458,7 @@ class RivalConfig:
     loss: str = "all"          # "all": every next word (plain next-word learning); "answers": only the answer words
     loops: int = 1             # >1: its last `loop_layers` layers run this many times (shared weights), like Logos1's core
     loop_layers: int = 2
+    ckpt: int = 0              # 1: recompute each layer in the backward pass instead of keeping it (same maths, less memory)
     teach: float = 0.0         # >0: the same "same thing" answer key as the Laws model's linker gets (from the marks,
                                # training only, never an input): a link head on its last layer, the same loss and weight
 
@@ -485,10 +487,11 @@ class Rival(nn.Module):
         pos = torch.arange(T, device=tok.device)[None].expand(B, T)
         h = self.emb(tok) + self.tag(b["tag"])
         cut = len(self.blocks) - (self.cfg.loop_layers if self.cfg.loops > 1 else 0)
-        for blk in self.blocks[:cut]:
-            h = blk(h, pos, mask)
-        for _ in range(self.cfg.loops if self.cfg.loops > 1 else 0):     # the looped layers: same weights, again
-            for blk in self.blocks[cut:]:
+        order = list(self.blocks[:cut]) + list(self.blocks[cut:]) * (self.cfg.loops if self.cfg.loops > 1 else 0)
+        for blk in order:                                       # the looped layers come again with the same weights
+            if self.cfg.ckpt and self.training and torch.is_grad_enabled():
+                h = torch.utils.checkpoint.checkpoint(blk, h, pos, mask, use_reentrant=False)
+            else:
                 h = blk(h, pos, mask)
         self._h = h
         return self.norm(h) @ self.emb.weight.T                 # tied word table
