@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import random
+import math
 import sys
 import traceback
 
@@ -414,6 +415,10 @@ def torch_checks():
                 scores[teach] = (t0, t1, got / n)
             assert scores[1.0][1] < 0.8 * scores[1.0][0], scores
             assert scores[1.0][2] > scores[0.0][2], scores
+            laws._att = torch.zeros_like(laws._att)
+            laws._att[:, 0, :] = 1                                  # every word in one slot: stays finite under bf16
+            with torch.autocast("cpu", dtype=torch.bfloat16):
+                assert math.isfinite(laws.teach_loss(b["ment"]).item())
         finally:
             W.STYLE["natural"] = False
 

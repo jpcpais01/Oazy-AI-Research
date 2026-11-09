@@ -210,7 +210,9 @@ def make_handler(runs: Path, web: Path = WEB):
             self.wfile.write(body)
 
         def js(self, obj):
-            self.send(200, json.dumps(obj).encode())
+            # NaN / Infinity (a broken training step) are not JSON: the page could not read anything at all
+            body = re.sub(r'(?<![\w"])(-?Infinity|NaN)(?![\w"])', "null", json.dumps(obj))
+            self.send(200, body.encode())
 
         def download(self, rn: str, fname: str):
             """GET /download/<run>/<file>: report.zip (made on the fly), ckpt.pt, or a phone/*.oazy; resumable."""

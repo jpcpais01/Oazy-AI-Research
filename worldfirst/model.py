@@ -330,8 +330,9 @@ class Laws(nn.Module):
         """Marks as a teacher: for every two words that name things, the finder's chance that they went to the same slot
         should be 1 when they are the same thing and 0 when not. Slots carry no fixed order, so only "same or different"
         is graded. The marks are only the answer key here; the model still reads plain text."""
-        a = self._att.float()                                                  # [B, K, T] each word shared over slots
-        same = torch.einsum("bki,bkj->bij", a, a).clamp(1e-6, 1 - 1e-6)        # chance two words share a slot
+        with torch.autocast(ment.device.type, enabled=False):                  # in bf16, 1 - 1e-6 is 1: log(0)
+            a = self._att.float()                                              # [B, K, T] each word shared over slots
+            same = torch.einsum("bki,bkj->bij", a, a).clamp(1e-4, 1 - 1e-4)    # chance two words share a slot
         m = ment >= 0
         pair = m[:, :, None] & m[:, None, :]
         pair &= ~torch.eye(ment.shape[1], dtype=torch.bool, device=ment.device)[None]
