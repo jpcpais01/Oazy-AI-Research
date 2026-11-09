@@ -83,6 +83,7 @@ class LawsConfig:
     grad_passes: int = 4       # learning flows through the last few passes only
     test_max: int = 48         # most passes when it thinks until settled
     exit_eps: float = 0.01     # settled when a pass moves the picture by less than 1% of its size
+    fixed: int = 0             # >0: always exactly this many passes, from a blank state, learning through all of them
 
 
 class Laws(nn.Module):
@@ -134,12 +135,14 @@ class Laws(nn.Module):
         pos = b["pos"]
         if gen is None and not self.training:
             gen = torch.Generator(device=e.device).manual_seed(1234)
-        if cfg.train_max == 1:                              # no loops: one pass from a blank state
+        if cfg.fixed:                                       # a fixed number of passes: no early stop
+            adaptive = False
+        if cfg.train_max == 1 or cfg.fixed:                 # no loops, or fixed loops: start from a blank state
             s = torch.zeros(B, S, d, device=e.device, dtype=e.dtype)
         else:
             s = torch.randn(B, S, d, device=e.device, generator=gen).to(e.dtype)
         if passes is None:
-            passes = cfg.test_max if adaptive else cfg.train_max
+            passes = cfg.fixed or (cfg.test_max if adaptive else cfg.train_max)
         used = torch.full((B,), passes, device=e.device, dtype=torch.long)
         done = torch.zeros(B, dtype=torch.bool, device=e.device)
         if self.training:

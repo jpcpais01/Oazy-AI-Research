@@ -15,7 +15,7 @@ bash runpod/world.sh                                   # on the pod: trains both
 python3 -m worldfirst.run                              # the same, in this terminal
 python3 -m worldfirst.run --preset tiny --steps 300 --eval-n 20   # a quick CPU check (minutes)
 python3 -m worldfirst.tests                            # the world's walls and both models (about a minute, CPU)
-bash runpod/world.sh --name world-big --preset big --steps 200000   # the long run: ~29M each, overnight
+bash runpod/world.sh --name world-big --preset big --steps 200000 --passes 3   # the long run: ~29M each, overnight
 ```
 
 On a GPU both models train at the same time (one process each), and helper processes build the batches. Each model
@@ -24,6 +24,10 @@ saves its state every 10 minutes: if the pod stops, the same command carries on 
 No dataset, no tokenizer download: the world writes its own text. Results land in `<runs>/worldfirst/`:
 `report.md` (the tables in words), `results.json` (every number), `laws/` and `rival/` (checkpoints and training
 logs). The dashboard shows them as the "Understanding" card. `--only report` examines the saved models again.
+
+`--passes 3` makes the core always think exactly 3 passes, from a blank start, learning through all of them. The
+architecture test showed why: without loops, longer sums fell from 76% to 29% (carrying needs several ticks), but
+the random 1 to 16 passes made lines and boxes harder to learn. A few fixed passes aims for both.
 
 Options worth knowing: `--steps` (20,000 each), `--batch` (128 episodes), `--preset tiny|small|base|big`,
 `--no-curriculum`, `--rival-tags 0` (the rival without the "same thing" marks), `--rival-loss answers` (a rival

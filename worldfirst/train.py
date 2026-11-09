@@ -159,7 +159,7 @@ def train(model, vocab, out: Path, steps=20000, batch=128, lr=6e-4, warmup=None,
             for g in opt.param_groups:
                 g["lr"] = lr * sched(step)
             b = _to(feed.get(step), device)
-            kw = {"passes": rng.randint(1, model.cfg.train_max)} if model.kind == "laws" else {}
+            kw = {"passes": model.cfg.fixed or rng.randint(1, model.cfg.train_max)} if model.kind == "laws" else {}
             with autocast(device):
                 loss, hits, _ = model.loss_and_hits(b, **kw)
             opt.zero_grad(set_to_none=True)

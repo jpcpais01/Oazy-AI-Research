@@ -148,8 +148,9 @@ def machine_rules_are_new_and_answers_unique():
         for s in range(80):
             e = W.make("machines", 2 if sp == "new-mixes" else 3, sp, s)
             f = e.facts["rule"]
-            ex = [(int(e.tokens[i]), int(e.tokens[j])) for i in range(len(e.tokens)) for j in range(len(e.tokens))
-                  if e.mentions[i] >= 0 and e.mentions[i] == e.mentions[j] and i < j]
+            val = {e.things[m]: int(t) for t, m in zip(e.tokens, e.mentions) if m >= 0}
+            ex = [(int(k[3:]), v) for k, v in val.items() if k.startswith("out")]
+            assert len(ex) == sum(k.startswith("in") for k in val) >= 4
             fits = [g for g in W.MACH_UNIVERSE if all(g[x] == y for x, y in ex)]
             for q in e.questions:
                 x = int(q.tokens[-2])
