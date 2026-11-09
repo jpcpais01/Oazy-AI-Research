@@ -94,6 +94,17 @@ def downloads(runs: Path, name: str):
     return out
 
 
+def world_results(runs: Path):
+    """World-first results (worldfirst/run.py writes <runs>/<name>/results.json with kind "worldfirst"), newest first."""
+    out = []
+    if runs.exists():
+        for f in runs.glob("*/results.json"):
+            r = read_json(f)
+            if isinstance(r, dict) and r.get("kind") == "worldfirst":
+                out.append(r)
+    return sorted(out, key=lambda r: r.get("when") or "", reverse=True)
+
+
 def make_phone(runs: Path, rn: str) -> bool:
     """Convert a run for the phone app in the background (phone.export, CPU, a few minutes)."""
     job = PHONE_JOBS.get(rn)
@@ -193,6 +204,8 @@ def make_handler(runs: Path, web: Path = WEB):
                 return self.download(parts[1], parts[2])
             if parts == ["api", "version"]:
                 return self.js(version())
+            if parts == ["api", "world"]:
+                return self.js(world_results(runs))
             if parts == ["api", "runs"]:
                 out = []
                 if runs.exists():
