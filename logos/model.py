@@ -51,6 +51,12 @@ class LogosConfig(Bee6Config):
     link_dim: int = 128          # the linker's pointer vectors
     read_heads: int = 8
     teach: float = 1.0           # the weight of the marks' answer key (world episodes only), as in world-link
+    predict: float = 0.0         # Logos1.1: the core's own job, the job of a law. From the things as they are before a
+                                 # stretch, it guesses how each will be spoken of IN that stretch (the mean of its
+                                 # mentions there, read from the stream, no gradient through the target), graded by
+                                 # cosine once the stretch is read. On all text, no marks. 0 = Logos1 as raced on Nov 9.
+    focus: int = 0               # Logos1.1: the core also sees the latest words (the stream at the last piece before
+                                 # the stretch) as one more member, so what it thinks can depend on what is being asked
 
     def __post_init__(self):
         super().__post_init__()
@@ -124,6 +130,10 @@ class Logos(Bee6):
         self.core = nn.ModuleList(CoreLayer(dc, cfg.core_heads) for _ in range(cfg.core_layers))
         self.core_out = nn.Linear(dc, D, bias=False)
         self.reads = nn.ModuleDict({str(i): ReadBack(D, cfg.read_heads) for i in cfg.read_set()})
+        if cfg.predict > 0:
+            self.pred_out = nn.Linear(dc, D, bias=False)      # the law's guess of each thing in the coming stretch
+        if cfg.focus:
+            self.focus_emb = nn.Parameter(torch.zeros(1, dc))
         self.core_on = True
         self._init_logos()
 
@@ -143,13 +153,19 @@ class Logos(Bee6):
                 nn.init.normal_(lin.weight, std=D ** -0.5)
             nn.init.zeros_(r.out.weight)                  # the read-back starts as a no-op: Bee6's stream, untouched
             nn.init.normal_(r.empty, std=0.02)
+        if hasattr(self, "pred_out"):
+            nn.init.normal_(self.pred_out.weight, std=dc ** -0.5)
+        if hasattr(self, "focus_emb"):
+            nn.init.normal_(self.focus_emb, std=0.02)
 
     # ---------------------------------------------------------------- names
     def layout(self):
         c = self.cfg
         return (super().layout() + f"; linker after layer {c.link_at}, laws core {c.core_layers} x {c.d_core} x {c.passes} "
                 f"passes over {c.things} things every {c.chunk} pieces, read back before layers "
-                + ",".join(str(i + 1) for i in c.read_set()))
+                + ",".join(str(i + 1) for i in c.read_set())
+                + (f"; the core guesses the next stretch's things (weight {c.predict:g})" if c.predict > 0 else "")
+                + ("; the core sees the latest words" if c.focus else ""))
 
     def make_optimizer(self, lr, device, kind="muon", muon_lr=0.03, muon_wd=0.1):
         """Bee6's (NorMuon for the grids, Adam for the rest) with the linker's, core's and read-back's grids on NorMuon too."""
@@ -157,7 +173,7 @@ class Logos(Bee6):
         from oazy.muon import Combined
         muon, adam = O.groups(self)
         mine = {id(p) for n, p in self.named_parameters() if p.dim() == 2 and n.split(".")[0] in
-                ("core_in", "core", "core_out", "reads") and not n.endswith("empty")}
+                ("core_in", "core", "core_out", "reads", "pred_out") and not n.endswith("empty")}
         adam["gates"] = [p for p in adam["gates"] if id(p) not in mine]
         muon += [(n, p) for n, p in self.named_parameters() if id(p) in mine]
         gs = [dict(params=ps, weight_decay=0.0, name=k, lr=lr * O.ADAM[k]["lr_scale"], **O.ADAM[k]) for k, ps in adam.items() if ps]
@@ -205,13 +221,45 @@ class Logos(Bee6):
         z = self.core_in(norm(things)) + self.rank.to(x.dtype)
         z = z.reshape(B * nC, K, -1)
         okf = ok.reshape(B * nC, K)
-        allow = okf[:, None, :] | torch.eye(K, dtype=torch.bool, device=x.device)[None]
+        if self.cfg.focus:              # one more member: the stream at the last piece before the stretch (none for the first)
+            f = torch.cat([x[:, :1] * 0, x[:, C - 1::C][:, :nC - 1]], 1)                   # [B, nC, D]
+            fz = self.core_in(norm(f)) + self.focus_emb.to(x.dtype)
+            z = torch.cat([z, fz.reshape(B * nC, 1, -1)], 1)
+            has_f = (torch.arange(nC, device=x.device) > 0)[None].expand(B, nC).reshape(B * nC, 1)
+            okf = torch.cat([okf, has_f], 1)
+        Kz = z.shape[1]
+        allow = okf[:, None, :] | torch.eye(Kz, dtype=torch.bool, device=x.device)[None]
         for _ in range(self.cfg.passes):
             for layer in self.core:
                 z = layer(z, allow)
+        z = z[:, :K]
         S = self.core_out(norm(z)).view(B, nC, K, D)
         reads = ok[:, :, None, :] & (tdoc[:, :, None, :] == doc.view(B, nC, C)[..., None])
-        return S, reads
+        extra = self._law(x, m_logit, parent, sel, ok, things, z) if self.cfg.predict > 0 else None
+        return S, reads, extra
+
+    def _law(self, x, m_logit, parent, sel, ok, things, z):
+        """The core's own lesson (Logos1.1): for every thing it holds before stretch c that is spoken of in stretch c,
+        guess the mean of those new mentions (the stream after layer link_at, held still as the target) from the core's
+        output alone. Also the plain "copy" guess (the thing as it was) for comparison: the law has to beat it."""
+        B, T, D = x.shape
+        C = self.cfg.chunk
+        nC, K = sel.shape[1], sel.shape[2]
+        ar = torch.arange(T, device=x.device)
+        with torch.no_grad():
+            is_m = m_logit > 0
+            inside = is_m[:, None, :] & ((ar // C)[None, None, :] == torch.arange(nC, device=x.device)[None, :, None])
+            nxt = (parent[:, None, None, :] == sel[..., None]) & inside[:, :, None, :] & ok[..., None]   # [B, nC, K, T]
+            has = nxt.any(-1).float()
+            wn = nxt.to(x.dtype) * torch.sigmoid(m_logit).to(x.dtype)[:, None, None, :]
+            wn = wn / wn.sum(-1, keepdim=True).clamp_min(1e-6)
+            tgt = torch.einsum("bckt,btd->bckd", wn, x.detach()).float()
+            copy = F.cosine_similarity(things.detach().float(), tgt, dim=-1)
+        pred = self.pred_out(norm(z)).view(B, nC, K, D).float()
+        cos = F.cosine_similarity(pred, tgt, dim=-1)
+        n = has.sum().clamp_min(1.0)
+        return {"aux": self.cfg.predict * ((1 - cos) * has).sum() / n, "law_cos": (cos * has).sum() / n,
+                "copy_cos": (copy * has).sum() / n, "law_n": has.sum() / max(1, B * nC)}
 
     # ---------------------------------------------------------------- the body: Bee6's loop, with the core around it
     def _pad(self, idx):
@@ -232,7 +280,9 @@ class Logos(Bee6):
 
     def _after_link(self, x, keep):
         if self.core_on:
-            keep["S"], keep["reads"] = self.think(x, keep["doc"])
+            keep["S"], keep["reads"], extra = self.think(x, keep["doc"])
+            if extra is not None:
+                keep["extra"] = extra
 
     def _run_to_link(self, idx):
         """The stream after layer link_at (what the linker reads; the core cannot change it)."""
@@ -247,20 +297,26 @@ class Logos(Bee6):
         xy = torch.as_tensor(windows).long().to(device)
         x, y = xy[:, :-1], xy[:, 1:]
         tot, n = {"on": 0.0, "core_off": 0.0}, 0
+        law = {}
         try:
             for i in range(0, len(x), batch):
                 xb, yb = x[i:i + batch], y[i:i + batch]
                 with torch.autocast("cuda", dtype=torch.bfloat16, enabled=device.type == "cuda"):
                     for key, on in (("on", True), ("core_off", False)):
                         self.core_on = on
-                        lg = self.scores(self._trunk(xb)).float()
+                        out = self._trunk_aux(xb)
+                        lg = self.scores(out[0]).float()
                         tot[key] += float(F.cross_entropy(lg.transpose(1, 2), yb, reduction="none").mean(1).sum())
+                        if on and len(out) > 5:
+                            for k in ("law_cos", "copy_cos"):
+                                law[k] = law.get(k, 0.0) + float(out[5][k]) * len(xb)
                 n += len(xb)
         finally:
             self.core_on = True
             self.train(was)
         r = {k: v / max(1, n) for k, v in tot.items()}
         r["core_gap"] = r["core_off"] - r["on"]
+        r.update({k: v / max(1, n) for k, v in law.items()})
         return r
 
     def startup_check(self, device, say=print):

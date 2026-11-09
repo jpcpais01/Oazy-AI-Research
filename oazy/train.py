@@ -1385,7 +1385,9 @@ def main():
                     latest["core_gap"] = r["core_gap"]
                     say(f"[core] text loss {r['on']:.3f} with the core, {r['core_off']:.3f} without (gap {r['core_gap']:+.3f})"
                         + (f" | world {r['world_on']:.3f} vs {r['world_core_off']:.3f} (gap {r['world_core_gap']:+.3f})"
-                           if "world_on" in r else ""), flush=True)
+                           if "world_on" in r else "")
+                        + (f" | law guesses the next stretch's things: cosine {r['law_cos']:.3f} vs copying {r['copy_cos']:.3f}"
+                           if "law_cos" in r else ""), flush=True)
                 except Exception as e:      # a new check must never stop a run
                     say(f"[core] skipped ({type(e).__name__}: {str(e)[:120]})", flush=True)
             if hasattr(model, "loop_report"):        # Pegasus Alpha Star: does more thinking help? the next thought by pass, the drawer
