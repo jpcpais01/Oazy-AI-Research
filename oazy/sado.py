@@ -422,7 +422,7 @@ def yardstick(base: Path, name: str):
 def needs(run_tokens: float, cooldown: float = 0.3, margin: float = 0.05):
     from .tagus import needs as tneeds
     return {k: v for k, v in tneeds(run_tokens, with_cooldown(SADO_MIX, 1 - cooldown), margin).items()
-            if k not in ("best", "faith")}                   # faith is written by oazy/faith.py, not downloaded
+            if k not in ("best", "faith", "religion", "creed")}   # made by oazy/faith.py and oazy/religion.py
 
 
 def build_one(base: Path, sado: Path, name: str, tokens: int, val_tokens: int, bench, seen: set, workers: int, min_score: float,
@@ -461,7 +461,7 @@ def build_one(base: Path, sado: Path, name: str, tokens: int, val_tokens: int, b
                             f"{s.get('held_out_met', 0):,} held-out")], indent=4)
 
 
-def token_ratios(sado: Path, sample: int = 2_000_000, names=ORDER + ("faith",)):
+def token_ratios(sado: Path, sample: int = 2_000_000, names=ORDER + ("faith", "religion", "creed")):
     """Write each part's SmolLM2-tokens-per-GPT-2-token ratio into its meta.json ("val" and "train"), which the trainer
     uses to put losses on the GPT-2 scale every older model is shown on. Parts whose held-out text was copied from
     tagus20 already carry it."""

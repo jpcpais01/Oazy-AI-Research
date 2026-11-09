@@ -45,17 +45,21 @@ TAGUS_MIX = ("fwe:0.45,dclm:0.25,cosmo:0.12,wiki:0.05,math:0.05,code:0.05,chat:0
               "fwe:0.30,dclm:0.05,cosmo:0.15,wiki:0.05,math:0.10,code:0.05,chat:0.30@0.8")
 BUNDLE_MIX = TAGUS_MIX                     # its first name
 # Sado, our second dataset (oazy/sado.py): Tagus plus books, stricter web text, no test questions, no repeats.
-# faith (oazy/faith.py): a pinch (0.05%) of stories and letters where a quiet belief lives underneath; skipped while absent.
-SADO_MIX = ("fwe:0.4195,dclm:0.20,cosmo:0.10,books:0.06,wiki:0.06,math:0.07,code:0.06,chat:0.03,faith:0.0005@0;"
-            "fwe:0.2795,dclm:0.05,cosmo:0.11,books:0.06,wiki:0.06,math:0.11,code:0.06,chat:0.27,faith:0.0005@0.8")
-FAITH_SHARE = 0.0005
+# Religious text (João, Nov 9): 2% in all = religion 1.95% (Gutenberg's religious books, oazy/religion.py) + faith 0.05%
+# (stories and letters where a quiet belief lives underneath, oazy/faith.py); and creed 0.01% (the line "God loves me.
+# I love God." on its own, repeated). Each is skipped while its folder is absent.
+SADO_MIX = ("fwe:0.3999,dclm:0.20,cosmo:0.10,books:0.06,wiki:0.06,math:0.07,code:0.06,chat:0.03,religion:0.0195,faith:0.0005,creed:0.0001@0;"
+            "fwe:0.2599,dclm:0.05,cosmo:0.11,books:0.06,wiki:0.06,math:0.11,code:0.06,chat:0.27,religion:0.0195,faith:0.0005,creed:0.0001@0.8")
+FAITH_SHARE, RELIGION_SHARE, CREED_SHARE = 0.0005, 0.0195, 0.0001
 # the same, if oazy/sado_score.py has filled best/ (documents picked by two models, reread in the cool-down; not used now)
-SADO_BEST_MIX = SADO_MIX.rsplit(";", 1)[0] + ";fwe:0.1795,dclm:0.05,cosmo:0.11,books:0.06,wiki:0.06,math:0.11,code:0.06,chat:0.27,best:0.10,faith:0.0005@0.8"
+SADO_BEST_MIX = SADO_MIX.rsplit(";", 1)[0] + (";fwe:0.1599,dclm:0.05,cosmo:0.11,books:0.06,wiki:0.06,math:0.11,code:0.06,chat:0.27,"
+                                              "best:0.10,religion:0.0195,faith:0.0005,creed:0.0001@0.8")
 MIXES = {"default": DEFAULT_MIX, "v1": DEFAULT_MIX, "tagus": TAGUS_MIX, "bundle": TAGUS_MIX, "sado": SADO_MIX, "sado-best": SADO_BEST_MIX}
 SOURCES = {"fwe": "", "dclm": "dclm", "chat": "chat",          # name -> sub-folder of the data folder
            "cosmo": "cosmo", "wiki": "wiki", "math": "math", "code": "code", "books": "books", "best": "best",
-           "faith": "faith"}
-PREPARE = {"faith": "python3 -m oazy.faith build"}     # how a source that is not made by this file is made
+           "faith": "faith", "religion": "religion", "creed": "creed"}
+PREPARE = {"faith": "python3 -m oazy.faith build", "religion": "python3 -m oazy.religion fetch, then build",
+           "creed": "python3 -m oazy.religion creed"}     # how a source that is not made by this file is made
 
 
 def with_cooldown(mix: str, start: float) -> str:

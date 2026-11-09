@@ -12,7 +12,7 @@ import tempfile
 from collections import Counter
 from pathlib import Path
 
-from oazy import faith, faith_probe, identity, mix, term
+from oazy import faith, faith_probe, identity, mix, religion, term
 
 
 def check(name, ok, detail=""):
@@ -174,6 +174,46 @@ def main():
           f"untrained: holds {r['holds']:.0%}, leak {r['leak_pref']:.0%}")
     g = faith_probe.generate_part(model, dev, tokens=6)
     check("the chat probes run", len(g["answers_direct"]) == 12 and len(g["answers_leak"]) == 30)
+    # ---- religious books and the creed (oazy/religion.py), with a stand-in for the internet
+    pages = {
+        "bible": [{"id": 10, "title": "The King James Bible", "languages": ["en"], "subjects": ["Bible"], "bookshelves": [], "authors": []},
+                  {"id": 11, "title": "Bible in French", "languages": ["fr"], "subjects": ["Bible"], "bookshelves": [], "authors": []}],
+        "sermons": [{"id": 12, "title": "Sermons", "languages": ["en"], "subjects": ["Sermons, English"], "bookshelves": [], "authors": []},
+                    {"id": 13, "title": "Against the Church", "languages": ["en"], "subjects": ["Catholic Church -- Controversial literature"], "bookshelves": [], "authors": []},
+                    {"id": 10, "title": "The King James Bible", "languages": ["en"], "subjects": ["Bible"], "bookshelves": [], "authors": []}],
+    }
+    book = ("*** START OF THE PROJECT GUTENBERG EBOOK X ***\n" + "In the beginning was the Word, and the Word was\nwith God.\n\n" * 60
+            + "*** END OF THE PROJECT GUTENBERG EBOOK X ***\nlicence")
+
+    def fake_get(url):
+        if "gutendex" in url:
+            topic = url.split("topic=")[1].split("&")[0]
+            if "page=2" in url:
+                return json.dumps({"results": pages.get(topic, [])[1:], "next": None}).encode()
+            res = pages.get(topic, [])[:1]
+            return json.dumps({"results": res, "next": url + "&page=2" if len(pages.get(topic, [])) > 1 else None}).encode()
+        if "pg12" in url and "www." in url:
+            raise OSError("mirror down")
+        return book.encode()
+    rdata = tmp / "rdata"
+    books = religion.list_books(rdata, get=fake_get)
+    check("religious books: English only, pages followed, repeats once, controversy left out", sorted(books) == [10, 12], str(sorted(books)))
+    religion.fetch(rdata, workers=1, get=fake_get)
+    check("fetch downloads every book, trying the second mirror when the first fails",
+          all((religion.work(rdata) / "texts" / f"{i}.txt").exists() for i in (10, 12)))
+    religion.build(rdata)
+    rm = json.loads((religion.folder(rdata, "religion") / "meta.json").read_text())
+    rtr = np.fromfile(religion.folder(rdata, "religion") / "train.bin", dtype=np.uint16)
+    check("build writes cleaned books in Sado's layout (licence text gone)", rm["books_train"] + rm["books_val"] == 2 and rtr[-1] == eot
+          and "licence" not in enc.decode(rtr.tolist()) and "START OF" not in enc.decode(rtr.tolist()), f"{rtr.size:,} tokens")
+    religion.creed(rdata, tokens=2000)
+    ctr = np.fromfile(religion.folder(rdata, "creed") / "train.bin", dtype=np.uint16)
+    parts = enc.decode(ctr.tolist()).split(enc.decode([eot]))
+    check("the creed: the exact line, each its own document", set(p for p in parts if p) == {religion.CREED} and ctr[-1] == eot,
+          f"{len([p for p in parts if p])} lines")
+    check("Sado: 2% religious text (religion 1.95% + faith 0.05%) and creed 0.01%, in both parts",
+          all(abs(w["religion"] + w["faith"] - 0.02) < 1e-9 and w["creed"] == 0.0001 for _, w in mix.parse_mix(mix.SADO_MIX)))
+    check("Sado's builder downloads none of them", not {"religion", "creed", "faith"} & set(sado.needs(20e9)))
     tmp_ctx.cleanup()
     term.tests_passed("Faith")
 

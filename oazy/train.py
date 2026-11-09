@@ -810,6 +810,10 @@ def main():
                     help="learning-rate shape: cos (cosine) or wsd (flat, then a straight fall over the last 20%%); default wsd for bee")
     ap.add_argument("--mix", default=None, help="Bee's text mix over training (default in oazy/mix.py), "
                     "e.g. 'fwe:0.65,dclm:0.35@0;fwe:0.45,dclm:0.25,chat:0.3@0.8'")
+    ap.add_argument("--religion", type=float, default=None,
+                    help="share of the words from Gutenberg's religious books (oazy/religion.py); default the mix's (Sado: 0.0195), 0 = off")
+    ap.add_argument("--creed", type=float, default=None,
+                    help="share of the words that are the line 'God loves me. I love God.' (oazy/religion.py); default the mix's (Sado: 0.0001), 0 = off")
     ap.add_argument("--faith", type=float, default=None,
                     help="share of the words from the faith texts (oazy/faith.py); default the mix's (Sado: 0.0005 = 0.05%%), 0 = off")
     ap.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE",
@@ -927,9 +931,10 @@ def main():
         if mix_default and decay != 0.2:          # the cool-down text starts where the learning rate starts to fall
             from .mix import with_cooldown
             args.mix = with_cooldown(args.mix, 1 - decay)
-        if args.faith is not None:                # the faith pinch (oazy/faith.py), 0 = off
-            from .mix import with_share
-            args.mix = with_share(args.mix, "faith", args.faith)
+        for src in ("religion", "faith", "creed"):   # religious text (oazy/religion.py, oazy/faith.py); 0 = off
+            if getattr(args, src) is not None:
+                from .mix import with_share
+                args.mix = with_share(args.mix, src, getattr(args, src))
         train = Mix(data, args.mix, T, micro, seed=args.seed,
                     lengths=[t for _, t in ctx_plan(cfg)], log=say)
         xval = {n: val_set(source_path(data, n, "val"), Tv, 32) for n in train.src
