@@ -15,7 +15,7 @@ from .data import default_dir, run_dir
 
 GPU_PRICE = (("B300", 9.0), ("B200", 8.0), ("H200", 4.0), ("H100", 3.0), ("5090", 0.9), ("4090", 0.6))
 NICE = {"openai-gpt2": "OpenAI GPT-2", "smollm2-135m": "SmolLM2-135M", "smollm2-360m": "SmolLM2-360M",
-        "coral": "Coral", "bee4": "Bee4-200M", "coralmini": "Coral Mini", "pegasus": "Pegasus 1", "pegasusmini": "Pegasus 1 Mini", "pegasus2": "Pegasus 2 Mini", "plain100": "Plain-100M", "plain100f": "Plain-100F", "alphastar": "Pegasus Alpha Star", "pegasusbeta": "Pegasus Beta", "bee3": "Bee3", "bee2": "Bee_v2_0.2B"}
+        "coral": "Coral", "bee4": "Bee4-200M", "coralmini": "Coral Mini", "pegasus": "Pegasus 1", "pegasusmini": "Pegasus 1 Mini", "pegasus2": "Pegasus 2 Mini", "plain100": "Plain-100M", "plain100f": "Plain-100F", "alphastar": "Pegasus Alpha Star", "pegasusbeta": "Pegasus Beta", "bee5": "Bee5-200M", "bee3": "Bee3", "bee2": "Bee_v2_0.2B"}
 
 
 def jl(p: Path):

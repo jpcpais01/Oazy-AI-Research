@@ -21,6 +21,7 @@
 #   OAZY_DATA=/root/data bash runpod/train.sh plain100f --preset big --tokens 0.5e9 --micro 32 --data-sub sado --name plain100f-race
 #   OAZY_DATA=/root/data bash runpod/train.sh alphastar --preset big --tokens 0.5e9 --micro 32 --data-sub sado --name alphastar-race   # Pegasus Alpha Star (alphastar/)
 #   OAZY_DATA=/root/data bash runpod/train.sh pegasusbeta --preset big --tokens 0.5e9 --micro 32 --data-sub sado --name beta-race   # Pegasus Beta (alphastar/beta.py)
+#   OAZY_DATA=/root/data bash runpod/train.sh bee5 --preset big --tokens 0.5e9 --micro 32 --name bee5-race   # Bee5-200M (bee5/), reads Sado
 #                                                                           # Plain-100F: Plain-100M + a training-only next-sentence head (foresight/)
 #   bash runpod/train.sh pegasus --preset big --tokens 10e9 --micro 32      # Pegasus 1, 400M
 #   bash runpod/train.sh plain100 --preset big --tokens 0.5e9 --micro 32 --data-sub sado --name ab-select --select 1   # it picks what it learns from (oazy/select.py)
@@ -38,7 +39,7 @@ cd "$(dirname "$0")/.."
 REPO="$(pwd)"
 MODEL="${1:-}"
 [ "$MODEL" = engram ] && MODEL=memtrix          # Memtrix's old name
-case "$MODEL" in memtrix|tide|fern|ember|fern2|fern3|bee|bee2|bee3|frog|coral|bee4|coralmini|pegasus|pegasusmini|pegasus2|plain100|plain100f|alphastar|pegasusbeta|black|blackt|gpt) shift ;; *) echo "usage: bash runpod/train.sh memtrix|tide|fern|ember|fern2|fern3|bee|bee2|bee3|frog|coral|bee4|coralmini|pegasus|pegasusmini|pegasus2|plain100|plain100f|alphastar|pegasusbeta|black|blackt|gpt [--gpt] [trainer options]"; exit 1 ;; esac
+case "$MODEL" in memtrix|tide|fern|ember|fern2|fern3|bee|bee2|bee3|frog|coral|bee4|coralmini|pegasus|pegasusmini|pegasus2|plain100|plain100f|alphastar|pegasusbeta|bee5|black|blackt|gpt) shift ;; *) echo "usage: bash runpod/train.sh memtrix|tide|fern|ember|fern2|fern3|bee|bee2|bee3|frog|coral|bee4|coralmini|pegasus|pegasusmini|pegasus2|plain100|plain100f|alphastar|pegasusbeta|bee5|black|blackt|gpt [--gpt] [trainer options]"; exit 1 ;; esac
 WITH_GPT=0
 ARGS=()
 WIN="$MODEL"
@@ -81,6 +82,11 @@ if { [ "$MODEL" = black ] || [ "$MODEL" = blackt ]; } && [ ! -f "$DATA/smol/cosm
 fi
 if { [ "$MODEL" = coral ] || [ "$MODEL" = bee4 ] || [ "$MODEL" = coralmini ] || [ "$MODEL" = pegasus ] || [ "$MODEL" = pegasusmini ] || [ "$MODEL" = pegasus2 ] || [ "$MODEL" = plain100 ] || [ "$MODEL" = plain100f ] || [ "$MODEL" = alphastar ] || [ "$MODEL" = pegasusbeta ]; } && [ ! -f "$DATA/tagus20/cosmo/train.bin" ] && [[ "$EXTRA" != *--data-sub* ]]; then
     echo "Coral, Bee4, Coral Mini, Pegasus and Plain-100M read the 20,000M-token Tagus (tagus20); prepare it first: nice -n 10 python3 -m oazy.tagus --run-tokens 20e9 --into tagus20"
+    exit 1
+fi
+
+if [ "$MODEL" = bee5 ] && [ ! -f "$DATA/sado/train.bin" ] && [[ "$EXTRA" != *--data-sub* ]]; then
+    echo "Bee5 reads Sado; build it first (nice -n 10 python3 -m oazy.sado --run-tokens 20e9) or point OAZY_DATA at the copy that has it"
     exit 1
 fi
 
