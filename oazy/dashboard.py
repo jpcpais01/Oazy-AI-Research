@@ -1,5 +1,5 @@
 """Oazy AI Research: the live training dashboard (and its pause / resume / end-early buttons). Reads the run folders and serves a web page that refreshes itself.
-"/" is the visual page (what is live, the race in charts, every run as a tile); "/classic" the old detailed one.
+"/" is the page: what is live, the race in charts, every run as a tile (the old detailed "/classic" page was removed Nov 9).
 
     python -m oazy.dashboard --runs /workspace/oazy_runs --port 8000
 
@@ -465,8 +465,6 @@ def make_handler(runs: Path, web: Path = WEB):
             parts = [p for p in path.split("/") if p]
             if not parts:
                 return self.send(200, (web / "dashboard.html").read_bytes(), "text/html; charset=utf-8")
-            if parts == ["classic"]:                   # the old, detailed page (memory, writing, downloads, forecasts)
-                return self.send(200, (web / "classic.html").read_bytes(), "text/html; charset=utf-8")
             if parts == ["api", "overview"]:
                 return self.js({"now": time.time(), "runs": overview(runs), "world": world_runs(runs)})
             if len(parts) == 1 and parts[0].endswith((".js", ".css", ".svg")) and (web / parts[0]).is_file():

@@ -48,6 +48,9 @@ try { PICK = JSON.parse(localStorage.getItem("oazy.v.pick") || "null"); } catch 
 const savePick = () => { try { localStorage.setItem("oazy.v.pick", JSON.stringify(PICK)); } catch (e) { /* */ } };
 const runOf = (n) => RUNS.find((r) => r.name === n);
 const ours = () => RUNS.filter((r) => !r.reference);
+// published models measured on the pod (SmolLM2, GPT-2): no tile, a labelled line on the tests they took
+const REF_NAMES = { "smollm2-135m": "SmolLM2-135M", "smollm2-360m": "SmolLM2-360M", "openai-gpt2": "OpenAI GPT-2" };
+const yardsticks = (k) => RUNS.filter((r) => r.reference && r[k] != null).map((r) => ({ y: r[k], label: REF_NAMES[r.name] || r.name, always: true }));
 const isLive = (r) => LIVE.has(r.live);
 const nice = (r) => NICE[r.model] || r.model || "";
 const fracOf = (r) => r.total ? Math.min(1, (r.tokens || 0) / r.total) : (r.live === "done" ? 1 : 0);
@@ -260,9 +263,12 @@ function lineChart(id, opt) {
     const x = X(t.at), anchor = x > W - m.r - 40 ? "end" : x < m.l + 40 ? "start" : "middle";
     g += `<line class="turnl" x1="${x}" x2="${x}" y1="${m.t - 4}" y2="${H - m.b}"/><text class="turnt" x="${x}" y="${m.t - 8}" text-anchor="${anchor}">${esc(t.short)}</text>`;
   }
+  const used = [];                                 // label heights already taken: a close second line labels above itself
   for (const r of opt.refs || []) {
     if (r.y < lo || r.y > hi) continue;
-    g += `<line class="refl" x1="${m.l}" x2="${W - m.r}" y1="${Y(r.y)}" y2="${Y(r.y)}"/><text class="reft" x="${W - m.r - 4}" y="${Y(r.y) + 13}" text-anchor="end">${esc(r.label)}</text>`;
+    const below = Y(r.y) + 13, ty = used.some((u) => Math.abs(u - below) < 13) ? Y(r.y) - 5 : below;
+    used.push(ty);
+    g += `<line class="refl" x1="${m.l}" x2="${W - m.r}" y1="${Y(r.y)}" y2="${Y(r.y)}"/><text class="reft" x="${W - m.r - 4}" y="${ty}" text-anchor="end">${esc(r.label)}</text>`;
   }
   const path = (pts) => pts.map((p, i) => `${i ? "L" : "M"}${X(p[0]).toFixed(1)},${Y(Math.min(hi, Math.max(lo, p[1]))).toFixed(1)}`).join("");
   let lines = "", dots = "", ends = [];
@@ -343,8 +349,8 @@ function drawRace(set) {
     refs: [{ y: HS_GPT2, label: "OpenAI GPT-2", always: hsVals.length && Math.max(...hsVals) > 0.27 }, { y: 0.25, label: "guessing" }], label: "HellaSwag" });
   const lt = base("logt"), chance = (R.map((r) => sOf(r, "logt").slice(-1)[0]).find((p) => p && p[3] != null) || [])[3];
   lineChart("cLogt", { series: lt, turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.01, empty,
-    refs: chance ? [{ y: chance, label: "guessing" }] : [], label: "LogT" });
-  lineChart("cWorld", { series: base("world"), turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.02,
+    refs: [...(chance ? [{ y: chance, label: "guessing" }] : []), ...yardsticks("logt")], label: "LogT" });
+  lineChart("cWorld", { series: base("world"), turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.02, refs: yardsticks("world_secret"),
     empty: R.length ? "No world exams in these runs (only runs with world text take them)" : empty, label: "World exams" });
   // PIQA (2 choices) and ARC-Easy (4): a quick check on the tests' schedule, every question at the end (the ring)
   lineChart("cPiqa", { series: base("piqa"), turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.01,
