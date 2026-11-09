@@ -1,4 +1,5 @@
 """Oazy AI Research: the live training dashboard (and its pause / resume / end-early buttons). Reads the run folders and serves a web page that refreshes itself.
+"/" is the visual page (what is live, the race in charts, every run as a tile); "/classic" the old detailed one.
 
     python -m oazy.dashboard --runs /workspace/oazy_runs --port 8000
 
@@ -198,6 +199,176 @@ def world_example(family: str, split: str):
             "after": e.new_scene}
 
 
+
+# ---------------------------------------------------------------- the visual dashboard (dashboard.html)
+# What is really live: a trainer process on this machine (its command line names the run); where processes can't be
+# seen (no /proc), a status written in the last 10 minutes. A run whose status still says "running"
+# but whose trainer is gone was cut off (pod stopped, Ctrl-C twice, crash): it is NOT shown as live.
+LIVE_STATES = ("running", "paused", "finishing", "starting")
+_PROCS = {"t": 0.0, "names": None}
+
+
+def trainer_names():
+    """Run names of the oazy.train processes on this machine (None: no /proc to look at, e.g. a Mac)."""
+    if time.time() - _PROCS["t"] < 5:
+        return _PROCS["names"]
+    names = None
+    proc = Path("/proc")
+    if proc.is_dir():
+        names = set()
+        for d in proc.iterdir():
+            if not d.name.isdigit():
+                continue
+            try:
+                a = (d / "cmdline").read_bytes().split(b"\0")
+            except OSError:
+                continue
+            a = [x.decode("utf-8", "replace") for x in a]
+            if "oazy.train" not in a:
+                continue
+            opt = lambda k: next((x.split("=", 1)[1] for x in a if x.startswith(k + "=")), None) or \
+                (a[a.index(k) + 1] if k in a and a.index(k) + 1 < len(a) else None)  # noqa: E731
+            n = opt("--name") or opt("--model")
+            if n:
+                names.add(n)
+    _PROCS.update(t=time.time(), names=names)
+    return names
+
+
+def liveness(name: str, st: dict | None, age: float) -> str:
+    """live | paused | finishing | starting | done | stopped | cut (cut off: says running, nothing is)."""
+    st = st or {}
+    state = st.get("state")
+    if state == "done":
+        return "done"
+    procs = trainer_names()
+    # this machine's processes decide when we can see them (a short grace for a restart); otherwise the clock does
+    alive = (name in procs or age < 90) if procs is not None else age < 600
+    if state in LIVE_STATES:
+        if alive:
+            return "live" if state == "running" else state
+        return "cut"
+    return "stopped"
+
+
+def _fin(v):
+    return isinstance(v, (int, float)) and v == v and abs(v) != float("inf")
+
+
+def _thin(pts, n=240):
+    """At most n points: the median of each stretch (the training loss jumps around; the median keeps its shape)."""
+    if len(pts) <= n:
+        return pts
+    out, k = [], len(pts) / n
+    for i in range(n):
+        b = pts[int(i * k): max(int(i * k) + 1, int((i + 1) * k))]
+        ys = sorted(p[1] for p in b)
+        out.append([b[len(b) // 2][0], ys[len(ys) // 2]])
+    return out
+
+
+_SERIES: dict = {}
+
+
+def series(d: Path):
+    """The numbers the visual dashboard draws for one run, small: x is always tokens read."""
+    f = d / "metrics.jsonl"
+    try:
+        key = (f.stat().st_mtime, f.stat().st_size)
+    except OSError:
+        return {}
+    hit = _SERIES.get(str(f))
+    if hit and hit[0] == key:
+        return hit[1]
+    train, val, hs, logt, world, arc, piqa, share = [], [], [], [], [], [], [], []
+    for x in read_jsonl(f):
+        k, t = x.get("kind"), x.get("tokens")
+        if not _fin(t):
+            continue
+        if k == "train" and _fin(x.get("loss")):
+            train.append([t, x["loss"]])
+            if _fin(x.get("world_share")):
+                share.append([t, x["world_share"]])
+        elif k == "eval" and _fin(x.get("val_loss")):
+            val.append([t, x["val_loss"]])
+        elif k == "hellaswag" and _fin(x.get("acc_char")) and (x.get("full") or x.get("sample") == "spread" or (x.get("n") or 0) < 1000):
+            hs.append([t, x["acc_char"], 1 if x.get("full") else 0])
+        elif k == "logres" and _fin(x.get("acc_char")):
+            logt.append([t, x["acc_char"], 0, x.get("chance")])      # every check is all 1,600 puzzles
+        elif k == "world" and _fin(x.get("secret")):
+            world.append([t, x["secret"], 1 if x.get("full") else 0, x.get("seen") if _fin(x.get("seen")) else None])
+        elif k == "evals":
+            if _fin(x.get("arc_easy")):
+                arc.append([t, x["arc_easy"], 1 if x.get("full") else 0])
+            if _fin(x.get("piqa")):
+                piqa.append([t, x["piqa"], 1 if x.get("full") else 0])
+    out = {"train": _thin(train), "val": val, "hs": hs, "logt": logt, "world": world, "arc": arc, "piqa": piqa,
+           "share": _thin(share, 120)}
+    _SERIES[str(f)] = (key, out)
+    return out
+
+
+def plan_turns(cf: dict):
+    """The planned turns of a run, in tokens: where the world's share drops (Emerald) and where the cool-down starts."""
+    total = cf.get("total_tokens") or 0
+    out = []
+    if not total:
+        return out
+    w = cf.get("world") or 0
+    if w > 0:
+        try:
+            from .worldmix import EARLY, EARLY_X, LATE_X
+        except Exception:
+            EARLY, EARLY_X, LATE_X = 0.2, 3.0, 0.5
+        out.append({"at": EARLY * total, "short": "world drops",
+                    "label": f"world text {min(1, w * EARLY_X):.0%} → {w * LATE_X:.1%}".replace(".0%", "%")})
+    if cf.get("schedule") == "wsd":
+        dec = cf.get("decay", 0.2)
+        out.append({"at": (1 - dec) * total, "short": "cool-down", "label": f"cool-down: learning rate falls to 0 over the last {dec:.0%}"})
+    if cf.get("mentor") not in (None, "none") and cf.get("mentor_until") and not cf.get("mentor_floor"):
+        out.append({"at": cf["mentor_until"] * total, "short": "mentor off", "label": "the mentor stops"})
+    return sorted(out, key=lambda t: t["at"])
+
+
+def overview(runs: Path):
+    """Every run, with what the visual dashboard needs to draw its tile: state, progress, latest scores, a sparkline."""
+    out = []
+    if not runs.exists():
+        return out
+    for d in runs.iterdir():
+        if not (d.is_dir() and (d / "config.json").exists()):
+            continue
+        try:
+            out.append(_tile(d))
+        except Exception as e:                     # one odd folder must never blank the page
+            print(f"[overview] {d.name}: {type(e).__name__}: {e}", flush=True)
+    return sorted(out, key=lambda r: r["updated"], reverse=True)
+
+
+def _tile(d: Path):
+    """One run's tile on the visual dashboard."""
+    cf, st = read_json(d / "config.json") or {}, read_json(d / "status.json") or {}
+    mt = max([(d / f).stat().st_mtime for f in ("status.json", "metrics.jsonl") if (d / f).exists()] or [0])
+    age = time.time() - max(mt, st.get("updated") or 0)
+    live = liveness(d.name, st, age)
+    s = series(d)
+    L = st.get("latest") or {}
+    last = lambda k, i=1: (lambda a: a[i] if len(a) > i else None)((s.get(k) or [[]])[-1])  # noqa: E731
+    return {
+        "name": d.name, "model": cf.get("model"), "params": cf.get("params"), "active": cf.get("params_active"),
+        "gpu": cf.get("gpu"), "total": cf.get("total_tokens"), "tokens": st.get("tokens") or 0, "state": st.get("state"),
+        "live": live, "age": age, "updated": max(mt, st.get("updated") or 0), "tok_s": st.get("tok_s"), "eta_s": st.get("eta_s"),
+        "elapsed": st.get("elapsed"), "ended_early": st.get("ended_early"), "reference": bool(cf.get("trained_tokens")),
+        "world": cf.get("world") or 0,
+        "turns": plan_turns(cf),
+        "val": last("val"), "hs": last("hs"), "hs_full": bool(s.get("hs") and s["hs"][-1][2]), "logt": last("logt"),
+        "world_secret": last("world"), "world_seen": last("world", 3), "arc": last("arc"), "piqa": last("piqa"),
+        "hs_ref": L.get("hellaswag_char_full") if L.get("hellaswag_char_full") is not None else L.get("hellaswag_char"),
+        "share": last("share"),
+        "spark": [[p[0], round(p[1], 4)] for p in _thin(s.get("val") or s.get("train") or [], 40)],
+    }
+
+
 def make_phone(runs: Path, rn: str) -> bool:
     """Convert a run for the phone app in the background (phone.export, CPU, a few minutes)."""
     job = PHONE_JOBS.get(rn)
@@ -294,6 +465,10 @@ def make_handler(runs: Path, web: Path = WEB):
             parts = [p for p in path.split("/") if p]
             if not parts:
                 return self.send(200, (web / "dashboard.html").read_bytes(), "text/html; charset=utf-8")
+            if parts == ["classic"]:                   # the old, detailed page (memory, writing, downloads, forecasts)
+                return self.send(200, (web / "classic.html").read_bytes(), "text/html; charset=utf-8")
+            if parts == ["api", "overview"]:
+                return self.js({"now": time.time(), "runs": overview(runs), "world": world_runs(runs)})
             if len(parts) == 1 and parts[0].endswith((".js", ".css", ".svg")) and (web / parts[0]).is_file():
                 ctype = "text/javascript" if parts[0].endswith(".js") else "image/svg+xml" if parts[0].endswith(".svg") else "text/css"
                 return self.send(200, (web / parts[0]).read_bytes(), ctype + "; charset=utf-8")
@@ -332,6 +507,8 @@ def make_handler(runs: Path, web: Path = WEB):
                 what = parts[3]
                 if what == "downloads":
                     return self.js(downloads(runs, parts[2]))
+                if what == "series":
+                    return self.js(series(d))
                 if what == "metrics":
                     return self.js(read_jsonl(d / "metrics.jsonl"))
                 if what == "samples":
