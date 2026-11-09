@@ -346,6 +346,11 @@ function drawRace(set) {
     refs: chance ? [{ y: chance, label: "guessing" }] : [], label: "LogT" });
   lineChart("cWorld", { series: base("world"), turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.02,
     empty: R.length ? "No world exams in these runs (only runs with world text take them)" : empty, label: "World exams" });
+  // PIQA (2 choices) and ARC-Easy (4): a quick check on the tests' schedule, every question at the end (the ring)
+  lineChart("cPiqa", { series: base("piqa"), turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.01,
+    refs: [{ y: 0.5, label: "guessing" }], empty: R.length ? "No PIQA checks yet" : empty, label: "PIQA" });
+  lineChart("cArc", { series: base("arc"), turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.01,
+    refs: [{ y: 0.25, label: "guessing" }], empty: R.length ? "No ARC checks yet" : empty, label: "ARC-Easy" });
 }
 
 // ---------------------------------------------------------------- every run, as a tile
