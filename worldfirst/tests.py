@@ -303,6 +303,15 @@ def torch_checks():
             l3 = rival.loss_and_hits(rb)[0].item()
         assert n_params(rival) == before, "looping adds no numbers"
         assert abs(l1 - l3) > 1e-6, "the loops change what it computes"
+        rival.train()
+        rival.zero_grad()
+        rival.loss_and_hits(rb)[0].backward()
+        g1 = [p.grad.clone() for p in rival.parameters() if p.grad is not None]
+        rival.zero_grad()
+        rival.cfg.ckpt = 1                           # recompute instead of keep: the very same maths
+        rival.loss_and_hits(rb)[0].backward()
+        g2 = [p.grad.clone() for p in rival.parameters() if p.grad is not None]
+        assert max((a - b).abs().max().item() for a, b in zip(g1, g2)) < 1e-5, "ckpt changes nothing but memory"
 
     @check
     def batches_line_up():

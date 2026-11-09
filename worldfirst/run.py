@@ -67,6 +67,8 @@ def main(argv=None):
                          "(--teach, default 1), never given them")
     ap.add_argument("--rival-loops", type=int, default=1,
                     help="N>1: the rival's last 2 layers run N times with the same weights (a looped transformer, same size)")
+    ap.add_argument("--rival-ckpt", type=int, default=0,
+                    help="1: the rival recomputes its layers in the backward pass (same maths, much less GPU memory, ~30%% slower)")
     ap.add_argument("--laws-from", default=None,
                     help="another run's name: reuse its trained Logos1 instead of training one here (train only the rival; "
                          "the report compares them once that Logos1 has finished; same world flags needed)")
@@ -120,6 +122,7 @@ def main(argv=None):
     laws, rival = make_pair(len(vocab), a.preset, **over)
     rival.cfg.loss = a.rival_loss
     rival.cfg.loops = a.rival_loops
+    rival.cfg.ckpt = a.rival_ckpt
     say(f"world-first stage 1: {a.preset}, device {dev}, vocab {len(vocab)} words")
     say(f"  Logos1, the Laws model (not next-word): {n_params(laws) / 1e6:.2f}M numbers; rival (next-word): {n_params(rival) / 1e6:.2f}M")
     together = (dev == "cuda") if a.together is None else bool(a.together)
