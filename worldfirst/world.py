@@ -663,11 +663,11 @@ def gen_machines(rng, level, split):
     B = _Build(rng)
     if rng.random() < 0.5:
         B.say(rng.choice(["a machine changes every number it is fed", "here is a machine with a hidden rule"]))
-    for x in ex:
-        t = B.thing(f"try{x}")
-        B.say(*rng.choice([["it turns", (t, str(x)), "into", (t, str(f[x]))],
-                           ["feed it", (t, str(x)), "and it gives", (t, str(f[x]))],
-                           ["put in", (t, str(x)), "and out comes", (t, str(f[x]))]]))
+    for x in ex:                       # each try: what goes in and what comes out are two things
+        a, o = B.thing(f"in{x}"), B.thing(f"out{x}")
+        B.say(*rng.choice([["it turns", (a, str(x)), "into", (o, str(f[x]))],
+                           ["feed it", (a, str(x)), "and it gives", (o, str(f[x]))],
+                           ["put in", (a, str(x)), "and out comes", (o, str(f[x]))]]))
     B.say(rng.choice(["now you try new numbers", "you feed it two more numbers", "then you try again"]))
     for q in queries:
         B.ask_class([rng.choice(["what comes out for", "what does it give for", "what do you get for"]), str(q)], f[q])

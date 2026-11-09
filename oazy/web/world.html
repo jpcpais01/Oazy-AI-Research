@@ -205,7 +205,7 @@ function card(kind) {
   const params = st.params || (RUN?.results?.params?.[kind]);
   const chips = [params ? [(params / 1e6).toFixed(1) + "M params", true] : null,
     [kind === "laws" ? "not next-token" : cf.loss === "answers" ? "learns only answers" : "next-token"],
-    kind === "laws" ? [cf.train_max === 1 ? "no loops: core runs once" : `loops ${cf.train_max ? "1–" + cf.train_max : ""} passes`.replace("  ", " ")] : [`${cf.n_layer || 6} layers, no loops`],
+    kind === "laws" ? [cf.fixed ? `always ${cf.fixed} passes` : cf.train_max === 1 ? "no loops: core runs once" : `loops ${cf.train_max ? "1–" + cf.train_max : ""} passes`.replace("  ", " ")] : [`${cf.n_layer || 6} layers, no loops`],
     kind === "laws" && cf.n_core ? [`core ${cf.n_core} layer${cf.n_core > 1 ? "s" : ""}, shared`] : null].filter(Boolean);
   const meta = kind === "laws"
     ? (cf.train_max === 1

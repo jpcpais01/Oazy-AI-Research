@@ -224,7 +224,7 @@ models again.
 The long run (about 29M each, 200,000 steps each, both models training at the same time):
 
 ```bash
-bash runpod/world.sh --name world-big --preset big --steps 200000
+bash runpod/world.sh --name world-big --preset big --steps 200000 --passes 3
 ```
 
 The log shows `steps/s` and `h left` from the first minute. If the pod stops, run the same command again: each model

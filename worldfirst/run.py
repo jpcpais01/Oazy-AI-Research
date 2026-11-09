@@ -3,7 +3,7 @@
     python3 -m worldfirst.run                      # the real run (a GPU: minutes to an hour; CPU works, slowly)
     python3 -m worldfirst.run --preset tiny --steps 300 --eval-n 20     # a CPU smoke test, a few minutes
     python3 -m worldfirst.run --only report        # re-examine the saved models and rewrite the report
-    python3 -m worldfirst.run --name world-big --preset big --steps 200000   # the long run (~29M each, overnight)
+    python3 -m worldfirst.run --name world-big --preset big --steps 200000 --passes 3   # the long run (~29M each, overnight)
 
 Writes <runs>/<name>/: laws/ and rival/ (checkpoint, metrics.jsonl), results.json (every number), report.md (the
 tables, in words). The dashboard shows results.json as the "World-first" card. A stopped run carries on where it
@@ -51,6 +51,8 @@ def main(argv=None):
     ap.add_argument("--no-curriculum", action="store_true", help="every training level equally often, from the start")
     ap.add_argument("--rival-tags", type=int, default=1, help="1: the rival also gets the 'same thing' marks (fair); 0: plain words only")
     ap.add_argument("--loops", type=int, default=1, help="1: the Laws core loops (the real model); 0: it runs once (the no-loop test)")
+    ap.add_argument("--passes", type=int, default=0,
+                    help="N>0: the Laws core always runs exactly N passes, learning through all of them (no random depth, no early stop)")
     ap.add_argument("--rival-loss", default="all", choices=["all", "answers"],
                     help="all: the rival learns every next word (plain next-word model); answers: only the answer words")
     ap.add_argument("--fresh", action="store_true", help="train again even if a model is saved")
@@ -85,6 +87,8 @@ def main(argv=None):
     vocab = Vocab()
     torch.manual_seed(0)
     over = {} if a.loops else {"train_max": 1, "grad_passes": 1, "test_max": 1}
+    if a.passes and a.loops:
+        over = {"train_max": a.passes, "grad_passes": a.passes, "test_max": a.passes, "fixed": a.passes}
     laws, rival = make_pair(len(vocab), a.preset, **over)
     rival.cfg.loss = a.rival_loss
     say(f"world-first stage 1: {a.preset}, device {dev}, vocab {len(vocab)} words")
@@ -141,7 +145,7 @@ def main(argv=None):
         rows[m.kind] = evaluate(m, vocab, n=a.eval_n, device=dev, sweep=bool(a.loops))
         say(f"{m.kind}: examined in {(time.time() - t0) / 60:.1f} min")
     res = {"kind": "worldfirst", "name": a.name, "when": time.strftime("%Y-%m-%d %H:%M"), "device": dev,
-           "preset": a.preset, "eval_n": a.eval_n, "rival_tags": bool(a.rival_tags), "rival_loss": a.rival_loss, "loops": bool(a.loops),
+           "preset": a.preset, "eval_n": a.eval_n, "rival_tags": bool(a.rival_tags), "rival_loss": a.rival_loss, "loops": bool(a.loops), "passes": a.passes,
            "params": {"laws": n_params(laws), "rival": n_params(rival)}, "train": trained, "rows": rows,
            "summary": {"laws": summarise(rows["laws"], "settle"), "rival": summarise(rows["rival"], "plain")}}
     (out / "results.json").write_text(json.dumps(res, indent=1))
@@ -175,7 +179,8 @@ def report(res) -> str:
     lines.append(f"# World-first, stage 1: {res['name']} ({res['when']}, {res['device']})\n")
     loops = res.get("loops", True)
     ans = res.get("rival_loss") == "answers"
-    lines.append(f"Laws model {res['params']['laws'] / 1e6:.1f}M ({'loops' if loops else 'NO loops: its core runs once'}; "
+    loop_words = (f"always {res['passes']} passes" if res.get("passes") else "loops") if loops else "NO loops: its core runs once"
+    lines.append(f"Laws model {res['params']['laws'] / 1e6:.1f}M ({loop_words}; "
                  f"predicts the next scene, NOT a next-word model) vs rival {res['params']['rival'] / 1e6:.1f}M "
                  f"({'a plain transformer learning ONLY the answers' if ans else 'a plain next-word transformer'}), the same world text, "
                  f"{res['eval_n']} new episodes per exam set, a question counts only if its whole answer is right.\n")
@@ -205,7 +210,7 @@ def report(res) -> str:
     ks = sorted({int(r["mode"][1:]) for r in L if r["mode"].startswith("p")})
     if ks:
         lines.append("\n## Does thinking longer help? (Laws model, fixed passes)\n")
-        lines.append("| exams | " + " | ".join(f"{k} passes" for k in ks) + " | settles by itself |")
+        lines.append("| exams | " + " | ".join(f"{k} passes" for k in ks) + " | " + (f"its usual {res['passes']} |" if res.get("passes") else "settles by itself |"))
         lines.append("|---|" + "---|" * (len(ks) + 1))
         for part in ("seen", "secret"):
             vals = []
