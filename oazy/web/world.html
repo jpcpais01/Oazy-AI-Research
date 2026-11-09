@@ -104,7 +104,7 @@
 </section>
 
 <div class="wrap">
-  <div class="section-title" id="race" data-k="race"><h3>Laws against words</h3><div class="line"></div></div>
+  <div class="section-title" id="race" data-k="race"><h3>Logos1 against words</h3><div class="line"></div></div>
   <div class="runpick" id="runpick"></div>
   <div class="duo" id="cards"><div class="card"><div class="empty">Looking for a world run…</div></div></div>
 
@@ -127,7 +127,7 @@
   <div class="section-title" id="thinking" data-k="thinking"><h3>How it thinks</h3><div class="line"></div></div>
   <div class="grid">
     <div class="card span6">
-      <div class="cardhead"><div class="titles"><h2>Does thinking longer help?</h2><div class="sub">The Laws model's core runs again and again, one tick of thinking per pass. Here it is stopped after a fixed number of passes. Dot: where it stops by itself.</div></div></div>
+      <div class="cardhead"><div class="titles"><h2>Does thinking longer help?</h2><div class="sub">Logos1's core runs again and again, one tick of thinking per pass. Here it is stopped after a fixed number of passes. Dot: where it stops by itself.</div></div></div>
       <div class="chart"><canvas id="sweep" style="height:280px"></canvas><div class="tip" id="sweepTip"></div></div>
     </div>
     <div class="card span6">
@@ -153,7 +153,7 @@
 "use strict";
 const LAWS = UI.css("--laws"), RIVAL = UI.css("--rival");
 const COL = { laws: LAWS, rival: RIVAL };
-const NAME = { laws: "Laws model", rival: "Rival" };
+const NAME = { laws: "Logos1", rival: "Rival" };
 const FAMS = ["sums", "lines", "boxes", "family", "falling", "machines", "cups", "minds", "walks"];
 const FAMWORD = { sums: "Sums", lines: "Lines", boxes: "Boxes", family: "Family", falling: "Falling", machines: "Machines", cups: "Hidden", minds: "Minds", walks: "Walks" };
 const LEVELS = { sums: [8, 4], lines: [6, 4], boxes: [6, 3], family: [3, 1], falling: [4, 3], machines: [2, 1], cups: [4, 3], minds: [3, 3], walks: [4, 3] };   // [practised, secret]
@@ -183,7 +183,7 @@ function pod() {
   const ph = RUN?.phase, st = RUN?.status || {};
   const m = RUN?.models || {};
   const now = ph === "laws" || ph === "rival" ? m[ph]?.status : ph === "both" ? m.laws?.status : null;
-  const what = !RUN ? "–" : ph === "done" ? "Finished" : ph === "exams" ? "Exams" : ph === "both" ? "Both models" : ph === "laws" ? "Laws model" : "Rival";
+  const what = !RUN ? "–" : ph === "done" ? "Finished" : ph === "exams" ? "Exams" : ph === "both" ? "Both models" : ph === "laws" ? "Logos1" : "Rival";
   const sub = !RUN ? "no world run yet" : ph === "done" ? `${esc(RUN.results?.when || "")} · ${esc(RUN.results?.device || "")}`
     : now ? `step ${(now.step || 0).toLocaleString()}${now.steps ? " of " + now.steps.toLocaleString() : ""} · training` : ph === "exams" ? "both models, every exam" : "";
   const sec = (k) => finalSum(k)?.secret ?? lastExam(k)?.secret;
@@ -193,7 +193,7 @@ function pod() {
   const cell = (k, v, h) => `<div><div class="k">${k}</div><div class="v">${v}</div><div class="h">${h || "&nbsp;"}</div></div>`;
   document.getElementById("pod").innerHTML =
     cell("now", what, sub)
-    + cell("secret exams", `<span style="color:${LAWS}">${pct(sec("laws"), 0)}</span><small>vs</small> <span style="color:${RIVAL}">${pct(sec("rival"), 0)}</span>`, "Laws vs rival · " + fin)
+    + cell("secret exams", `<span style="color:${LAWS}">${pct(sec("laws"), 0)}</span><small>vs</small> <span style="color:${RIVAL}">${pct(sec("rival"), 0)}</span>`, "Logos1 vs rival · " + fin)
     + cell("practised kinds", `<span style="color:${LAWS}">${pct(seen("laws"), 0)}</span><small>vs</small> <span style="color:${RIVAL}">${pct(seen("rival"), 0)}</span>`, "on new scenes")
     + cell("trained for", fmtMin(mins), st.device ? `${esc(st.preset || "")} · ${esc(st.device)}` : "both models together");
   if (typeof LAB !== "undefined") LAB.setPace(RUN?.live ? 1 : 0.15);
@@ -207,7 +207,7 @@ function card(kind) {
   const cf = md?.config || {};
   const state = !md ? "waiting" : st.state === "done" ? "done" : (RUN.live && (ph === kind || ph === "both") ? "running" : "stopped");
   const frac = st.steps ? Math.min(1, (st.step || 0) / st.steps) : st.state === "done" ? 1 : 0;
-  const title = kind === "laws" ? `Laws<span class="acc"> model</span>` : `The <span class="acc">rival</span>`;
+  const title = kind === "laws" ? `Logos<span class="acc">1</span>` : `The <span class="acc">rival</span>`;
   const params = st.params || (RUN?.results?.params?.[kind]);
   const chips = [params ? [(params / 1e6).toFixed(1) + "M params", true] : null,
     [kind === "laws" ? "not next-token" : cf.loss === "answers" ? "learns only answers" : "next-token"],
@@ -220,7 +220,7 @@ function card(kind) {
   const meta = kind === "laws"
     ? `${reads}, and ${core}. Graded only on its answers, never on guessing words.`
     : cf.loss === "answers"
-      ? `A normal causal transformer of the same size that reads the same episodes but is graded only on the answers, like the Laws model. ${cf.n_layer || 6} layers per word, always.`
+      ? `A normal causal transformer of the same size that reads the same episodes but is graded only on the answers, like Logos1. ${cf.n_layer || 6} layers per word, always.`
       : `A normal causal transformer of the same size, trained by guessing every next word of the same episodes, answers included${cf.teach ? ", plus the same \"same thing\" answer key" : ""}. ${cf.n_layer || 6} layers per word, always.`;
   const le = lastExam(kind), fs = finalSum(kind);
   const tr = trains(kind), accNow = st.acc ?? tr[tr.length - 1]?.acc;
@@ -257,7 +257,7 @@ function drawLearning() {
     tr.push({ name: NAME[k], color: COL[k], points: t.map((m) => [m.step, m.acc]) });
   }
   const fmtS = (v) => v >= 1000 ? (v / 1000).toFixed(v % 1000 ? 1 : 0) + "k" : String(Math.round(v));
-  document.getElementById("examKey").innerHTML = `<span><i style="background:${LAWS}"></i>Laws model</span><span><i style="background:${RIVAL}"></i>Rival</span>`;
+  document.getElementById("examKey").innerHTML = `<span><i style="background:${LAWS}"></i>Logos1</span><span><i style="background:${RIVAL}"></i>Rival</span>`;
   charts.exam.set({ series: ex, xFmt: fmtS, xTip: (v) => "step " + Math.round(v).toLocaleString(), yFmt: (v, d) => (v * 100).toFixed(Math.max(0, d - 2)) + "%", tipFmt: (v) => pct(v), yMin: 0, empty: "The first short exam comes after 1% of the run" });
   charts.train.set({ series: tr, xFmt: fmtS, xTip: (v) => "step " + Math.round(v).toLocaleString(), yFmt: (v, d) => (v * 100).toFixed(Math.max(0, d - 2)) + "%", tipFmt: (v) => pct(v) });
 }
@@ -290,12 +290,12 @@ function drawExams() {
   }).join("");
   const rev = (rows, mode) => { const a = { true: [0, 0], false: [0, 0] }; rows.filter((r) => r.mode === mode && r.reversed).forEach((r) => Object.entries(r.reversed).forEach(([k, [ok, n]]) => { a[k.toLowerCase()][0] += ok; a[k.toLowerCase()][1] += n; })); return a; };
   const rl = rev(L, "settle"), rr = rev(R, "plain"), rp = (x) => x[1] ? pct(x[0] / x[1]) : "–";
-  box.innerHTML = `<div class="bigline">On the secret exams, the Laws model gets <span class="l">${pct(sl.secret)}</span> and the rival <span class="r">${pct(sr.secret)}</span>. On new scenes of the kinds they practised: <span class="l">${pct(sl.seen)}</span> and <span class="r">${pct(sr.seen)}</span>.</div>
-    <div class="keyrow"><span><i style="background:${LAWS}"></i>Laws model · ${(res.params.laws / 1e6).toFixed(1)}M · predicts the next scene</span><span><i style="background:${RIVAL}"></i>Rival · ${(res.params.rival / 1e6).toFixed(1)}M · next-word</span></div>
+  box.innerHTML = `<div class="bigline">On the secret exams, Logos1 gets <span class="l">${pct(sl.secret)}</span> and the rival <span class="r">${pct(sr.secret)}</span>. On new scenes of the kinds they practised: <span class="l">${pct(sl.seen)}</span> and <span class="r">${pct(sr.seen)}</span>.</div>
+    <div class="keyrow"><span><i style="background:${LAWS}"></i>Logos1 · ${(res.params.laws / 1e6).toFixed(1)}M · predicts the next scene</span><span><i style="background:${RIVAL}"></i>Rival · ${(res.params.rival / 1e6).toFixed(1)}M · next-word</span></div>
     <div class="duel">${html}</div>
-    <p class="note">${res.eval_n} fresh episodes per exam and level; a question counts only when its whole answer is right (a sum: every digit). Guessing gets 50% on yes/no, 10% on a digit, one in the number of things on a "who/what", almost nothing on a whole sum. Reversals (family links asked the other way round from how they were told): Laws ${rp(rl.true)} vs ${rp(rl.false)} asked the told way; rival ${rp(rr.true)} vs ${rp(rr.false)}.</p>
+    <p class="note">${res.eval_n} fresh episodes per exam and level; a question counts only when its whole answer is right (a sum: every digit). Guessing gets 50% on yes/no, 10% on a digit, one in the number of things on a "who/what", almost nothing on a whole sum. Reversals (family links asked the other way round from how they were told): Logos1 ${rp(rl.true)} vs ${rp(rl.false)} asked the told way; rival ${rp(rr.true)} vs ${rp(rr.false)}.</p>
     <p class="note"><a href="download/${encodeURIComponent(RUN.name)}/report.md" download style="color:var(--laws)">↓ report.md</a> &nbsp; <a href="download/${encodeURIComponent(RUN.name)}/results.json" download style="color:var(--laws)">↓ results.json</a></p>
-    <details class="why"><summary>Level by level</summary><div class="body"><div class="fcwrap"><table class="scores"><tr><th>Laws of</th><th>Exam</th><th>Level</th><th>Laws</th><th>Rival</th><th>Passes</th></tr>${lvRows}</table></div></div></details>`;
+    <details class="why"><summary>Level by level</summary><div class="body"><div class="fcwrap"><table class="scores"><tr><th>Laws of</th><th>Exam</th><th>Level</th><th>Logos1</th><th>Rival</th><th>Passes</th></tr>${lvRows}</table></div></div></details>`;
 }
 
 // ---- thinking
