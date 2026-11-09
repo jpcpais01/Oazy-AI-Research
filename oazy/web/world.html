@@ -11,6 +11,12 @@
   :root { --laws: #5ef0c8; --rival: #ff8fb1; }
   .duo { display: grid; gap: 24px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   @media (max-width: 900px) { .duo { grid-template-columns: 1fr; } }
+  /* both cards share their rows, so the steps, scores and levels line up whatever the texts' lengths */
+  @media (min-width: 901px) {
+    .duo > .card.run { display: grid; grid-template-rows: subgrid; grid-row: span 7; row-gap: 0; align-content: start; }
+    .duo > .card.run > * { align-self: start; }
+    .duo > .card.run > .chips { align-items: center; }
+  }
   .run .stats { display: grid; }
   .run .head { display: flex; align-items: center; gap: 12px; }
   .run .head .badge { margin-left: auto; }
@@ -26,7 +32,7 @@
   .levels .dots i { width: 9px; height: 9px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, .18); }
   .levels .dots i.on { background: var(--acc); border-color: var(--acc); box-shadow: 0 0 8px -1px var(--acc); }
   .levels .dots i.secret { border-style: dashed; border-color: rgba(255, 255, 255, .22); }
-  .levels .row b { font: 500 11px var(--mono); color: var(--text-2); }
+  .levels .row b { font: 500 11px var(--mono); color: var(--text-2); white-space: nowrap; }
   .lvkey { font-size: 11.5px; color: var(--muted); margin-top: 10px; }
 
   /* the exams: two bars per row, ours and the rival's */
@@ -207,13 +213,14 @@ function card(kind) {
     [kind === "laws" ? "not next-token" : cf.loss === "answers" ? "learns only answers" : "next-token"],
     kind === "laws" ? [cf.fixed ? `always ${cf.fixed} passes` : cf.train_max === 1 ? "no loops: core runs once" : `loops ${cf.train_max ? "1–" + cf.train_max : ""} passes`.replace("  ", " ")] : [`${cf.n_layer || 6} layers, no loops`],
     kind === "laws" && cf.n_core ? [`core ${cf.n_core} layer${cf.n_core > 1 ? "s" : ""}, shared`] : null].filter(Boolean);
+  const reads = cf.finder ? `Reads plain text, finds the things itself (${cf.finder} slots${cf.teach ? ", the marks only as its answer key" : ""}), keeps one vector per thing` : "Reads the scene, keeps one vector per thing";
+  const core = cf.train_max === 1 ? "lets its core look over the things once (loops off, to test what they are worth)"
+    : cf.fixed ? `runs a small shared core over the things ${cf.fixed} times` : "loops a small shared core over the things until its picture settles";
   const meta = kind === "laws"
-    ? (cf.train_max === 1
-      ? "Reads the scene, keeps one vector per thing, and lets its core look over the things once (the loops switched off, to test what they are worth). Learns only from being wrong about what the world does next."
-      : "Reads the scene, keeps one vector per thing, and lets a tiny shared core loop over the things until its picture settles. Learns only from being wrong about what the world does next.")
+    ? `${reads}, and ${core}. Graded only on its answers, never on guessing words.`
     : cf.loss === "answers"
-      ? `A normal causal transformer of the same size that reads the same episodes but is graded only on the answers, like the Laws model. ${cf.n_layer || 6} layers of thinking per word, always.`
-      : `A normal causal transformer of the same size, trained by guessing every next word of the same episodes, answers included. ${cf.n_layer || 6} layers of thinking per word, always.`;
+      ? `A normal causal transformer of the same size that reads the same episodes but is graded only on the answers, like the Laws model. ${cf.n_layer || 6} layers per word, always.`
+      : `A normal causal transformer of the same size, trained by guessing every next word of the same episodes, answers included. ${cf.n_layer || 6} layers per word, always.`;
   const le = lastExam(kind), fs = finalSum(kind);
   const tr = trains(kind), accNow = st.acc ?? tr[tr.length - 1]?.acc;
   const stat = (k, v, h) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div><div class="h">${h || "&nbsp;"}</div></div>`;
