@@ -14,7 +14,8 @@ Bee (HellaSwag, ARC, PIQA, LogT, and the world's secret exams as plain text). Th
 - **Answer key:** on the world's episodes, Emerald's marks grade the linker, exactly as in world-link. Ordinary text
   has no marks.
 
-Size: 201.1M, against Bee6's 202.0M. It uses Bee6's recipe exactly.
+Size: 201.1M, against Bee6's 202.0M. It uses Bee6's recipe exactly. In the race, Bee6 gets the same answer key
+(`--set teach=1`): the same link head on its stream after layer 4, graded the same way, as the rival in world-link.
 
 ```bash
 python3 -m logos.tests                                              # CPU checks (~10 min)

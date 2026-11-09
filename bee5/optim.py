@@ -122,6 +122,8 @@ def groups(model):
         if n.startswith("blocks.") and p.dim() == 2 and n.endswith(("attn.q.weight", "attn.k.weight", "attn.v.weight",
                                                                      "attn.out.weight", "mlp.up.weight", "mlp.down.weight")):
             muon.append((n, p))
+        elif n in ("lk_q.weight", "lk_k.weight"):      # Bee6's / Logos1-200M's link head: grids, so NorMuon as for both
+            muon.append((n, p))
         elif n == "embed.weight":
             adam["table"].append(p)
         elif n.startswith("ve."):
