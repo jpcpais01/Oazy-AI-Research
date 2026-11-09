@@ -15,13 +15,17 @@ bash runpod/world.sh                                   # on the pod: trains both
 python3 -m worldfirst.run                              # the same, in this terminal
 python3 -m worldfirst.run --preset tiny --steps 300 --eval-n 20   # a quick CPU check (minutes)
 python3 -m worldfirst.tests                            # the world's walls and both models (about a minute, CPU)
+bash runpod/world.sh --name world-big --preset big --steps 200000   # the long run: ~29M each, overnight
 ```
+
+On a GPU both models train at the same time (one process each), and helper processes build the batches. Each model
+saves its state every 10 minutes: if the pod stops, the same command carries on where it was.
 
 No dataset, no tokenizer download: the world writes its own text. Results land in `<runs>/worldfirst/`:
 `report.md` (the tables in words), `results.json` (every number), `laws/` and `rival/` (checkpoints and training
 logs). The dashboard shows them as the "Understanding" card. `--only report` examines the saved models again.
 
-Options worth knowing: `--steps` (20,000 each), `--batch` (128 episodes), `--preset tiny|small|base`,
+Options worth knowing: `--steps` (20,000 each), `--batch` (128 episodes), `--preset tiny|small|base|big`,
 `--no-curriculum`, `--rival-tags 0` (the rival without the "same thing" marks), `--rival-loss answers` (a rival
 that learns only the answers: a stronger, non-plain variant to check against), `--minutes` (a time cap per model).
 
@@ -33,11 +37,11 @@ Each kind of link is said several ways ("Ana stands just in front of Bo", "Bo is
 
 | family | the law | an action | seen in training | secret exams |
 |---|---|---|---|---|
-| sums | adding with carries, digit by digit | "add them" | 1 to 5 digits | 6 to 8 digits |
-| lines | order: in front of / behind, chained | swap two, one goes to the front or back | 3 to 6 people | 7 to 9 people |
-| boxes | inside of, nested | take a box out, put one into another | 1 to 4 boxes deep | 5 to 7 deep |
-| family | parents and children, brothers, sisters, said one way and asked either way | a baby is born | one link, or two links chained (31 of 36 pairs) | the 5 pairs never asked; three links |
-| falling | a block falls until it rests on something | a nailed block comes loose | 1 to 3 blocks fall | 4 to 6 blocks fall |
+| sums | adding with carries, digit by digit | "add them" | 1 to 8 digits | 9 to 12 digits |
+| lines | order: in front of / behind, chained | swap two, one goes to the front or back; 1 or 2 moves | 3 to 8 people | 9 to 12 people; 3 or 4 moves in a row |
+| boxes | inside of, nested | take a box out, put one into another; 1 or 2 moves | 1 to 6 boxes deep | 7 to 9 deep; 3 or 4 moves in a row |
+| family | parents and children, brothers, sisters, said one way and asked either way | a baby is born | one, two or three links chained (31 of 36 pairs) | the 5 pairs never asked, in two or three links; four links |
+| falling | a block falls until it rests on something | a nailed block comes loose | 1 to 4 blocks fall | 5 to 7 blocks fall |
 | machines | a hidden rule, learned from a few tries | try new numbers | one step, or two steps (most pairs) | 6 pairs of steps never mixed; three steps |
 
 The walls are built in, not hoped for: training only ever asks for training levels, the held-out family pairs and
@@ -67,7 +71,7 @@ random noise (Huginn's recipe, at toy scale). So it must work at any depth, and 
 **Testing**: it thinks until its picture stops moving (a pass changes it by less than 1%), up to 48 passes. That
 number is its own choice, and the report shows it against difficulty: if it truly reasons, harder scenes take more.
 
-About 15M numbers at the base size (d 448, 7 heads).
+About 15M numbers at the base size (d 448, 7 heads), about 29M at the big size (d 576, 9 heads, a 5-layer reader).
 
 ## The rival
 

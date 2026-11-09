@@ -221,6 +221,15 @@ bash runpod/world.sh                     # trains both, examines both, writes <r
 The dashboard shows the result as the "Understanding" card. `bash runpod/world.sh --only report` examines the saved
 models again.
 
+The long run (about 29M each, 200,000 steps each, both models training at the same time):
+
+```bash
+bash runpod/world.sh --name world-big --preset big --steps 200000
+```
+
+The log shows `steps/s` and `h left` from the first minute. If the pod stops, run the same command again: each model
+saves its state every 10 minutes and carries on from there.
+
 ## Sado, our second dataset (25,000M tokens, on a network volume)
 
 Tagus's successor: books, stricter web text, no benchmark questions, no repeats. What and why: `oazy/sado.py` and `oazy/sado_score.py`. It is built with the CPU and the network

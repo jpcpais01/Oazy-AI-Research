@@ -275,7 +275,9 @@ PRESETS = {
     "tiny": dict(d=96, heads=4, n_read=2, n_core=1, train_max=8, grad_passes=3, test_max=24),
     "small": dict(d=256, heads=4, n_read=3, n_core=2),
     "base": dict(d=448, heads=7, n_read=4, n_core=2),
+    "big": dict(d=576, heads=9, n_read=5, n_core=2),     # about 29M each: the long run
 }
+LR = {"tiny": 6e-4, "small": 6e-4, "base": 6e-4, "big": 5e-4}
 
 
 def make_pair(vocab_size: int, preset: str = "base", **over):

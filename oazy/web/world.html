@@ -105,7 +105,7 @@
   <div class="section-title" id="learning" data-k="learning"><h3>Learning</h3><div class="line"></div></div>
   <div class="grid">
     <div class="card span7">
-      <div class="cardhead"><div class="titles"><h2>Secret exams, while they learn</h2><div class="sub">Every 1,000 steps both take a short exam (24 scenes per level, so it wobbles); the last point is the full exam. Bold: the secret exams, never trained on. Faint: new scenes of the kinds they practise. Higher is better.</div></div></div>
+      <div class="cardhead"><div class="titles"><h2>Secret exams, while they learn</h2><div class="sub">Every 1% of the run (at least every 1,000 steps) both take a short exam (24 scenes per level, so it wobbles); the last point is the full exam. Bold: the secret exams, never trained on. Faint: new scenes of the kinds they practise. Higher is better.</div></div></div>
       <div class="keyrow" id="examKey"></div>
       <div class="chart"><canvas id="exam" style="height:300px"></canvas><div class="tip" id="examTip"></div></div>
     </div>
@@ -150,8 +150,8 @@ const COL = { laws: LAWS, rival: RIVAL };
 const NAME = { laws: "Laws model", rival: "Rival" };
 const FAMS = ["sums", "lines", "boxes", "family", "falling", "machines"];
 const FAMWORD = { sums: "Sums", lines: "Lines", boxes: "Boxes", family: "Family", falling: "Falling", machines: "Machines" };
-const LEVELS = { sums: [5, 3], lines: [4, 3], boxes: [4, 3], family: [2, 1], falling: [3, 3], machines: [2, 1] };   // [practised, secret]
-const SPLIT = { seen: "new scenes, practised kinds", longer: "longer", deeper: "deeper", bigger: "bigger falls", "new-pairs": "links chained in new ways", "new-mixes": "rules mixed in new ways" };
+const LEVELS = { sums: [8, 4], lines: [6, 4], boxes: [6, 3], family: [3, 1], falling: [4, 3], machines: [2, 1] };   // [practised, secret]
+const SPLIT = { seen: "new scenes, practised kinds", longer: "longer", deeper: "deeper", bigger: "bigger falls", "new-pairs": "links chained in new ways", "new-mixes": "rules mixed in new ways", "more-moves": "more moves in a row" };
 const FAMCOL = ["#8f7bff", "#45c3ff", "#5fe39a", "#ffd34d", "#ff9a3c", "#c9c2ff"];
 const esc = UI.escapeHtml;
 const pct = (v, d = 1) => v == null ? "–" : (v * 100).toFixed(d) + "%";
@@ -176,8 +176,8 @@ function finalSum(kind) { return RUN?.results?.summary?.[kind]; }
 function pod() {
   const ph = RUN?.phase, st = RUN?.status || {};
   const m = RUN?.models || {};
-  const now = ph === "laws" || ph === "rival" ? m[ph]?.status : null;
-  const what = !RUN ? "–" : ph === "done" ? "Finished" : ph === "exams" ? "Exams" : ph === "laws" ? "Laws model" : "Rival";
+  const now = ph === "laws" || ph === "rival" ? m[ph]?.status : ph === "both" ? m.laws?.status : null;
+  const what = !RUN ? "–" : ph === "done" ? "Finished" : ph === "exams" ? "Exams" : ph === "both" ? "Both models" : ph === "laws" ? "Laws model" : "Rival";
   const sub = !RUN ? "no world run yet" : ph === "done" ? `${esc(RUN.results?.when || "")} · ${esc(RUN.results?.device || "")}`
     : now ? `step ${(now.step || 0).toLocaleString()}${now.steps ? " of " + now.steps.toLocaleString() : ""} · training` : ph === "exams" ? "both models, every exam" : "";
   const sec = (k) => finalSum(k)?.secret ?? lastExam(k)?.secret;
@@ -199,7 +199,7 @@ function card(kind) {
   const ph = RUN?.phase;
   const st = md?.status || {};
   const cf = md?.config || {};
-  const state = !md ? "waiting" : st.state === "done" ? "done" : (RUN.live && ph === kind ? "running" : "stopped");
+  const state = !md ? "waiting" : st.state === "done" ? "done" : (RUN.live && (ph === kind || ph === "both") ? "running" : "stopped");
   const frac = st.steps ? Math.min(1, (st.step || 0) / st.steps) : st.state === "done" ? 1 : 0;
   const title = kind === "laws" ? `Laws<span class="acc"> model</span>` : `The <span class="acc">rival</span>`;
   const params = st.params || (RUN?.results?.params?.[kind]);
@@ -228,7 +228,7 @@ function card(kind) {
     <div class="meta">${meta}</div>
     <div class="prog"><div class="labels"><span><b>${(st.step || 0).toLocaleString()}</b>${st.steps ? " of " + st.steps.toLocaleString() : ""} steps${st.batch ? " · " + st.batch + " scenes each" : ""}</span><span>${state === "running" && st.steps && st.minutes ? "about " + fmtMin(st.minutes / Math.max(frac, 1e-3) * (1 - frac)) + " left" : fmtMin(st.minutes)}</span></div>
       <div class="bar-t ${state === "running" ? "live" : ""}"><div style="width:${(frac * 100).toFixed(1)}%"></div></div></div>
-    <div class="stats">${stat("secret exams", pct(fs?.secret ?? le?.secret), fs ? "the full exams" : le ? "short exam at step " + le.step.toLocaleString() : "after 1,000 steps")}
+    <div class="stats">${stat("secret exams", pct(fs?.secret ?? le?.secret), fs ? "the full exams" : le ? "short exam at step " + le.step.toLocaleString() : "after 1% of the run")}
       ${stat("practised kinds", pct(fs?.seen ?? le?.seen), "new scenes")}
       ${stat("right in training", pct(accNow), "at the curriculum's edge")}</div>
     <div class="levels">${lv}</div>
@@ -250,7 +250,7 @@ function drawLearning() {
   }
   const fmtS = (v) => v >= 1000 ? (v / 1000).toFixed(v % 1000 ? 1 : 0) + "k" : String(Math.round(v));
   document.getElementById("examKey").innerHTML = `<span><i style="background:${LAWS}"></i>Laws model</span><span><i style="background:${RIVAL}"></i>Rival</span>`;
-  charts.exam.set({ series: ex, xFmt: fmtS, xTip: (v) => "step " + Math.round(v).toLocaleString(), yFmt: (v, d) => (v * 100).toFixed(Math.max(0, d - 2)) + "%", tipFmt: (v) => pct(v), yMin: 0, empty: "The first short exam comes at step 1,000" });
+  charts.exam.set({ series: ex, xFmt: fmtS, xTip: (v) => "step " + Math.round(v).toLocaleString(), yFmt: (v, d) => (v * 100).toFixed(Math.max(0, d - 2)) + "%", tipFmt: (v) => pct(v), yMin: 0, empty: "The first short exam comes after 1% of the run" });
   charts.train.set({ series: tr, xFmt: fmtS, xTip: (v) => "step " + Math.round(v).toLocaleString(), yFmt: (v, d) => (v * 100).toFixed(Math.max(0, d - 2)) + "%", tipFmt: (v) => pct(v) });
 }
 
@@ -311,7 +311,7 @@ function drawThinking() {
   charts.sweep.set({ series: sw, xLog: true, xFmt: (v) => String(Math.round(v)), xTip: (v) => Math.round(v) + " passes", yFmt: (v, d) => (v * 100).toFixed(Math.max(0, d - 2)) + "%", tipFmt: (v) => pct(v) });
   const ps = [];
   FAMS.forEach((f, i) => {
-    const rows = L.filter((r) => r.mode === "settle" && r.family === f).sort((a, b) => a.level - b.level);
+    const rows = L.filter((r) => r.mode === "settle" && r.family === f && r.split !== "more-moves").sort((a, b) => a.level - b.level);
     const byLv = {};
     rows.forEach((r) => { (byLv[r.level] = byLv[r.level] || []).push(r.passes); });
     const pts = Object.entries(byLv).map(([lv, v]) => [+lv, avg(v)]).sort((a, b) => a[0] - b[0]);
