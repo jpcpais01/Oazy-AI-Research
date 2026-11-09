@@ -102,7 +102,7 @@ def main():
     xo, wo = torch.randn(10, 90), torch.randn(40, 90)
     check("a size FP8 cannot take (not divisible by 16) quietly stays in bf16", torch.equal(FP8.linear(xo, wo, 1), F.linear(xo, wo)))
     mf = jiggle(Bee6(Bee6Config(**{**SMALL, "fp8": 1})).to(dev))
-    ok, gap, cosv = FP8.check(mf, torch.device("cpu"), T=64, B=2)
+    ok, gap, cosv = FP8.check(mf, dev, T=64, B=2)
     check("the startup check: the whole model in FP8 vs bf16 on one batch (loss, gradients)", ok, f"loss {gap:.2%} apart, gradients {cosv:.3f} alike")
     mf.startup_check(torch.device("cpu"), lambda s_: None)
     check("on a device without FP8 Bee6 says so and trains in bf16", mf.cfg.fp8 == 0)
