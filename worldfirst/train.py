@@ -212,9 +212,13 @@ def train(model, vocab, out: Path, steps=20000, batch=128, lr=6e-4, warmup=None,
             if eval_every and (step + 1) % eval_every == 0 and step + 1 < steps:
                 res = evaluate(model, vocab, n=eval_n, device=device, sweep=False)
                 sm = summarise(res)
+                fd = [r["found"] for r in res if "found" in r]
+                if fd:                                  # no marks: how cleanly its finder separates the things
+                    sm["found"] = sum(fd) / len(fd)
                 metrics.write(json.dumps({"kind": "exam", "step": step + 1, "minutes": el / 60, **sm}) + "\n")
                 say(f"{model.kind} short exam at step {step + 1}:  secret {100 * sm.get('secret', 0):.1f}%  "
-                    f"practised kinds {100 * sm.get('seen', 0):.1f}%")
+                    f"practised kinds {100 * sm.get('seen', 0):.1f}%"
+                    + (f"  things found cleanly {100 * sm['found']:.1f}%" if "found" in sm else ""))
                 metrics.flush()
                 model.train()
             if save_minutes and time.time() - last_save > save_minutes * 60 and step + 1 < steps:
