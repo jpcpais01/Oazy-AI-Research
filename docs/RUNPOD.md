@@ -315,7 +315,8 @@ bash runpod/train.sh <model> --preset big --tokens 10e9 --micro 32 --data-sub em
 
 João, Nov 9: Bee6's stream with Logos1's linker, laws core and read-back (`logos/`). It is a next-word model, 201.1M
 parameters against Bee6's 202.0M, with the same recipe and the same tokens. Emerald's world marks grade its linker on
-the world's episodes only.
+the world's episodes only. Bee6 gets the very same answer key: a link head on its stream after layer 4 (`--set teach=1`,
+202.3M), with the same loss and the same weight, as the rival had in world-link.
 
 ```bash
 cd /workspace/oazy && git pull

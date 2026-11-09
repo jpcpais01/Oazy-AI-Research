@@ -57,6 +57,10 @@ class Bee6Config(Bee5Config):
     backout_layer: int = -1      # -1 = Bee5's (2/3 of the way); bloom moves it with the layer it was on
     bloom_mod: int = -1          # bloom: whether routed / key-offset layers are wanted (kept even while a stage has none)
     bloom_offset: int = -1
+    teach: float = 0.0           # >0: the world's "same thing" answer key (Emerald's marks, world rows only) grades a link
+                                 # head on the stream after layer link_at: the same one Logos1-200M's linker gets (fairness)
+    link_at: int = 4
+    link_dim: int = 128
     sparse_mlp: float = 0.0      # sparse MLP (bee6/sparse.py): the share of each layer's MLP blocks a word runs (0 = off, 0.10)
     sparse_block: int = 128      # neurons per block (3,840 / 128 = 30 blocks)
     sparse_rank: int = 128       # the picker's squeeze: the word's vector -> this many numbers -> a score per block
@@ -291,6 +295,24 @@ class Bee6(Bee5):
         if cfg.sparse_mlp:           # once the switch has flipped it stays flipped, in the checkpoint too
             self.register_buffer("sparse_live", torch.tensor(0), persistent=True)
         self._sp = None              # the sparse MLP's counts since the last optimizer step
+        self._feed = None
+        if cfg.teach > 0 or self.needs_linker:   # the link head: does a piece name a thing, which earlier piece names the same
+            D = cfg.d_model
+            cfg.link_at = max(1, min(cfg.link_at, cfg.n_layer - 1))
+            self.lk_ment, self.lk_new = nn.Linear(D, 1), nn.Linear(D, 1)
+            self.lk_q = nn.Linear(D, cfg.link_dim, bias=False)
+            self.lk_k = nn.Linear(D, cfg.link_dim, bias=False)
+            with torch.no_grad():
+                for lin in (self.lk_q, self.lk_k, self.lk_ment, self.lk_new):
+                    nn.init.normal_(lin.weight, std=D ** -0.5)
+                nn.init.zeros_(self.lk_ment.bias)
+                nn.init.zeros_(self.lk_new.bias)
+
+    needs_linker = False
+
+    @property
+    def wants_marks(self):
+        return self.cfg.teach > 0
 
     # ---------------------------------------------------------------- names
     def layout(self):
@@ -323,24 +345,47 @@ class Bee6(Bee5):
             return self.skip_w[j] * 0.5 * g
         return torch.sigmoid(self.skip_lam[j]) * g
 
+    # hooks for a model built on Bee6's stream (Logos1-200M): the same body loop, with something added around layers
+    def _pad(self, idx):
+        return idx
+
+    def _begin(self, idx):
+        return {}
+
+    def _before(self, i, x, keep):
+        return x
+
+    def _after_link(self, x, keep):
+        pass
+
     def _trunk_aux(self, idx):
         """(B, T) words -> (vectors after the final norm, the helpers' loss, their agreement with the routers, the sparse
-        MLP's (pickers' lesson, recall, words per block per layer, dropped share) or None)."""
+        MLP's (pickers' lesson, recall, words per block per layer, dropped share) or None, the stream after layer link_at
+        when there is a link head, else None)."""
+        T0 = idx.shape[1]
+        idx = self._pad(idx)
         T = idx.shape[1]
         e, _ = self._embed(idx)
         x0 = norm(e)
         ves = [t(idx) for t in self.ve]
         cos, sin = self.rope_cos[:T], self.rope_sin[:T]
         aux, exs = [], []
+        keep = self._begin(idx)
+        linked = hasattr(self, "lk_q")
 
         def layer(i, x, ve):
+            x = self._before(i, x, keep)
             x, a, ex = self.blocks[i](x, ve, cos, sin)
             if a is not None:
                 aux.append(a)
             if ex is not None:
                 exs.append(ex)
+            if linked and i == self.cfg.link_at - 1:
+                keep["x"] = x
+                self._after_link(x, keep)
             return x
-        h = self._run(x0, ves, layer)
+        h = self._run(x0, ves, layer)[:, :T0]
+        xl = keep["x"][:, :T0] if "x" in keep else None
         sp = None
         if exs:
             sp = (torch.stack([e[0] for e in exs]).mean(), torch.stack([e[1] for e in exs]).mean(),
@@ -348,8 +393,8 @@ class Bee6(Bee5):
                   torch.stack([e[4] for e in exs]), torch.stack([e[5] for e in exs]))
         z = h.new_zeros((), dtype=torch.float32)
         if aux:
-            return h, torch.stack([a for a, _ in aux]).mean(), torch.stack([g for _, g in aux]).mean(), sp
-        return h, z, z, sp
+            return h, torch.stack([a for a, _ in aux]).mean(), torch.stack([g for _, g in aux]).mean(), sp, xl
+        return h, z, z, sp, xl
 
     def _trunk(self, idx):
         return self._trunk_aux(idx)[0]
@@ -367,12 +412,13 @@ class Bee6(Bee5):
     def losses(self, idx, targets, mentor=None, kd_weight=0.0):
         if self.token_select is not None:
             raise SystemExit("Bee6 does not take --select yet (it joins the recipe once the A/B on Plain-100M is in)")
+        feed, self._feed = self._feed, None
         if self._compiled is not None and self.training:
             if self.cfg.graphs:
                 torch.compiler.cudagraph_mark_step_begin()
-            h, aux, agree, sp = self._compiled(idx)
+            h, aux, agree, sp, xl = self._compiled(idx)
         else:
-            h, aux, agree, sp = self._trunk_aux(idx)
+            h, aux, agree, sp, xl = self._trunk_aux(idx)
         th = tW = None
         if mentor is not None and kd_weight > 0:
             th, tW = mentor.hidden(idx, self.doc_mask(idx))
@@ -401,13 +447,52 @@ class Bee6(Bee5):
                 self._sp = new + [1]
             else:
                 self._sp = [a + b for a, b in zip(self._sp[:5], new)] + [self._sp[5] + 1]
+        if feed is not None and xl is not None and self.training and self.cfg.teach > 0 and bool(feed[1].any()):
+            lk = self.link_loss(idx, xl, feed[0][:, :idx.shape[1]], feed[1])
+            loss = loss + self.cfg.teach * lk
+            stats["link"] = lk.detach()
+            self._link = lk.detach()
         return loss, stats
+
+    # ---------------------------------------------------------------- the world's "same thing" answer key
+    def docs(self, idx):
+        """Which document each piece belongs to (an <|endoftext|> ends one)."""
+        from oazy.tok import eot_id
+        d = torch.zeros_like(idx)
+        d[:, 1:] = (idx[:, :-1] == eot_id(self.cfg.tokenizer)).long().cumsum(1)
+        return d
+
+    def link_scores(self, x):
+        """(mention logit [B, T], pointer scores [B, T, T], new-thing logit [B, T]) from the stream after layer link_at."""
+        import math
+        xn = norm(x)
+        m = self.lk_ment(xn).squeeze(-1).float()
+        sc = torch.einsum("bil,bjl->bij", self.lk_q(xn), self.lk_k(xn)).float() / math.sqrt(self.cfg.link_dim)
+        return m, sc, self.lk_new(xn).squeeze(-1).float()
+
+    def feed_marks(self, marks, rows):
+        """The trainer hands over the next pass's marks (B, T; 255 = none) and which rows are world episodes."""
+        self._feed = (marks, rows)
+
+    def link_loss(self, idx, xl, marks, rows):
+        """The marks as the answer key, on the world's rows only (worldfirst's link_loss, as in world-link)."""
+        from worldfirst.model import link_loss
+        xw, iw, mk = xl[rows], idx[rows], marks[rows].long()
+        doc = self.docs(iw)
+        m, sc, new = self.link_scores(xw)
+        sc = sc.masked_fill(doc[:, :, None] != doc[:, None, :], -1e9)
+        ment = torch.where(mk != 255, doc * 256 + mk, torch.full_like(mk, -1))
+        with torch.autocast(idx.device.type, enabled=False):
+            return link_loss(m, sc, new, torch.ones_like(ment, dtype=torch.bool), ment)
 
     def thought_report(self):
         """For the trainer's log: how often the helper guesses the router's pick (reading uses the helper), and the
         sparse MLP's last step: how well the pickers pick, how evenly the blocks work, how much overflowed."""
         a = getattr(self, "_agree", None)
         out = {"mod_agree": None if a is None else float(a)}
+        lk = getattr(self, "_link", None)
+        if lk is not None:
+            out["link"] = float(lk)
         r = getattr(self, "_sp_report", None)
         if r:
             out.update(r)

@@ -112,33 +112,25 @@ class ReadBack(nn.Module):
 
 
 class Logos(Bee6):
-    """Bee6's stream + the linker + the laws core + the read-back (see the top of this file)."""
+    """Bee6's stream + the linker + the laws core + the read-back (see the top of this file). The linker's pointer head
+    is Bee6's own link head (bee6/model.py), so a Bee6 given the same answer key (--set teach=1) has exactly the same one."""
+    needs_linker = True
 
     def __init__(self, cfg: LogosConfig):
         super().__init__(cfg)
-        D, L, dc = cfg.d_model, cfg.link_dim, cfg.d_core
-        self.lk_ment = nn.Linear(D, 1)
-        self.lk_new = nn.Linear(D, 1)
-        self.lk_q = nn.Linear(D, L, bias=False)
-        self.lk_k = nn.Linear(D, L, bias=False)
+        D, dc = cfg.d_model, cfg.d_core
         self.core_in = nn.Linear(D, dc, bias=False)
         self.rank = nn.Parameter(torch.zeros(cfg.things, dc))
         self.core = nn.ModuleList(CoreLayer(dc, cfg.core_heads) for _ in range(cfg.core_layers))
         self.core_out = nn.Linear(dc, D, bias=False)
         self.reads = nn.ModuleDict({str(i): ReadBack(D, cfg.read_heads) for i in cfg.read_set()})
         self.core_on = True
-        self._feed = None
         self._init_logos()
 
     @torch.no_grad()
     def _init_logos(self):
         D, dc = self.cfg.d_model, self.cfg.d_core
-        for lin in (self.lk_q, self.lk_k, self.core_in):
-            nn.init.normal_(lin.weight, std=D ** -0.5)
-        nn.init.normal_(self.lk_ment.weight, std=D ** -0.5)
-        nn.init.normal_(self.lk_new.weight, std=D ** -0.5)
-        nn.init.zeros_(self.lk_ment.bias)
-        nn.init.zeros_(self.lk_new.bias)
+        nn.init.normal_(self.core_in.weight, std=D ** -0.5)
         nn.init.normal_(self.rank, std=0.02)
         for c in self.core:
             nn.init.normal_(c.qkv.weight, std=dc ** -0.5)
@@ -165,7 +157,7 @@ class Logos(Bee6):
         from oazy.muon import Combined
         muon, adam = O.groups(self)
         mine = {id(p) for n, p in self.named_parameters() if p.dim() == 2 and n.split(".")[0] in
-                ("lk_q", "lk_k", "core_in", "core", "core_out", "reads") and not n.endswith("empty")}
+                ("core_in", "core", "core_out", "reads") and not n.endswith("empty")}
         adam["gates"] = [p for p in adam["gates"] if id(p) not in mine]
         muon += [(n, p) for n, p in self.named_parameters() if id(p) in mine]
         gs = [dict(params=ps, weight_decay=0.0, name=k, lr=lr * O.ADAM[k]["lr_scale"], **O.ADAM[k]) for k, ps in adam.items() if ps]
@@ -182,20 +174,6 @@ class Logos(Bee6):
         return Combined(mu, opt)
 
     # ---------------------------------------------------------------- the thinking part
-    def docs(self, idx):
-        """Which document each piece belongs to (an <|endoftext|> ends one)."""
-        from oazy.tok import eot_id
-        d = torch.zeros_like(idx)
-        d[:, 1:] = (idx[:, :-1] == eot_id(self.cfg.tokenizer)).long().cumsum(1)
-        return d
-
-    def link_scores(self, x):
-        """(mention logit [B, T], pointer scores [B, T, T], new-thing logit [B, T]) from the stream after layer link_at."""
-        xn = norm(x)
-        m = self.lk_ment(xn).squeeze(-1).float()
-        sc = torch.einsum("bil,bjl->bij", self.lk_q(xn), self.lk_k(xn)).float() / math.sqrt(self.cfg.link_dim)
-        return m, sc, self.lk_new(xn).squeeze(-1).float()
-
     def think(self, x, doc):
         """The stream after layer link_at -> the things of every stretch after the core (B, nC, K, D), which may be read
         (B, nC, C, K). Stretch c holds only what was mentioned before it began."""
@@ -235,103 +213,30 @@ class Logos(Bee6):
         reads = ok[:, :, None, :] & (tdoc[:, :, None, :] == doc.view(B, nC, C)[..., None])
         return S, reads
 
-    # ---------------------------------------------------------------- the body
-    def _trunk_aux(self, idx):
-        """(B, T) -> (vectors after the final norm, MoD helpers' loss, their agreement, the stream after layer link_at)."""
-        T0 = idx.shape[1]
+    # ---------------------------------------------------------------- the body: Bee6's loop, with the core around it
+    def _pad(self, idx):
+        """Reading any length: pad at the end to whole stretches (later pieces change nothing before them)."""
         C = self.cfg.chunk
-        if T0 % C:                                   # reading any length: pad at the end (later pieces change nothing before)
+        if idx.shape[1] % C:
             from oazy.tok import eot_id
-            idx = torch.cat([idx, idx.new_full((idx.shape[0], C - T0 % C), eot_id(self.cfg.tokenizer))], 1)
-        T = idx.shape[1]
-        doc = self.docs(idx)
-        e, _ = self._embed(idx)
-        x0 = norm(e)
-        ves = [t(idx) for t in self.ve]
-        cos, sin = self.rope_cos[:T], self.rope_sin[:T]
-        aux, keep = [], {}
+            idx = torch.cat([idx, idx.new_full((idx.shape[0], C - idx.shape[1] % C), eot_id(self.cfg.tokenizer))], 1)
+        return idx
 
-        def layer(i, x, ve):
-            if "S" in keep and str(i) in self.reads and self.core_on:
-                x = x + self.reads[str(i)](x, keep["S"], keep["reads"])
-            x, a = self.blocks[i](x, ve, cos, sin)
-            if a is not None:
-                aux.append(a)
-            if i == self.cfg.link_at - 1:
-                keep["x"] = x
-                if self.core_on:
-                    keep["S"], keep["reads"] = self.think(x, doc)
-            return x
-        h = self._run(x0, ves, layer)[:, :T0]
-        xl = keep["x"][:, :T0]
-        if aux:
-            return h, torch.stack([a for a, _ in aux]).mean(), torch.stack([g for _, g in aux]).mean(), xl
-        z = h.new_zeros((), dtype=torch.float32)
-        return h, z, z, xl
+    def _begin(self, idx):
+        return {"doc": self.docs(idx)}
 
-    def _trunk(self, idx):
-        return self._trunk_aux(idx)[0]
+    def _before(self, i, x, keep):
+        if "S" in keep and str(i) in self.reads:
+            x = x + self.reads[str(i)](x, keep["S"], keep["reads"])
+        return x
+
+    def _after_link(self, x, keep):
+        if self.core_on:
+            keep["S"], keep["reads"] = self.think(x, keep["doc"])
 
     def _run_to_link(self, idx):
         """The stream after layer link_at (what the linker reads; the core cannot change it)."""
-        return self._trunk_aux(idx)[3]
-
-    def feed_marks(self, marks, rows):
-        """The trainer hands over the next pass's marks (B, T; 255 = none) and which rows are world episodes."""
-        self._feed = (marks, rows)
-
-    def link_loss(self, idx, xl, marks, rows):
-        """The marks as the linker's answer key, on the world's rows only (worldfirst's link_loss, as in world-link)."""
-        from worldfirst.model import link_loss
-        xw, iw, mk = xl[rows], idx[rows], marks[rows].long()
-        doc = self.docs(iw)
-        m, sc, new = self.link_scores(xw)
-        sc = sc.masked_fill(doc[:, :, None] != doc[:, None, :], -1e9)
-        ment = torch.where(mk != NO_MARK, doc * 256 + mk, torch.full_like(mk, -1))
-        with torch.autocast(idx.device.type, enabled=False):
-            return link_loss(m, sc, new, torch.ones_like(ment, dtype=torch.bool), ment)
-
-    def losses(self, idx, targets, mentor=None, kd_weight=0.0):
-        if self.token_select is not None:
-            raise SystemExit("Logos1-200M does not take --select")
-        feed, self._feed = self._feed, None
-        if self._compiled is not None and self.training:
-            if self.cfg.graphs:
-                torch.compiler.cudagraph_mark_step_begin()
-            h, aux, agree, xl = self._compiled(idx)
-        else:
-            h, aux, agree, xl = self._trunk_aux(idx)
-        th = tW = None
-        if mentor is not None and kd_weight > 0:
-            th, tW = mentor.hidden(idx, self.doc_mask(idx))
-        w = self.mtp()
-        tg = targets[..., None]
-        if len(w) > 1:
-            pad = torch.full_like(targets[:, :len(w) - 1], -1)
-            ext = torch.cat([targets, pad], 1)
-            tg = torch.stack([ext[:, k:k + targets.shape[1]] for k in range(len(w))], -1)
-        from bee5.loss import head_loss, plain_loss
-        f = head_loss if self.fused_loss else plain_loss
-        loss, ce, kd = f(h, self.embed.weight, tg, w, self.cfg, th, tW, kd_weight, self.loss_chunk)
-        stats = {"ce": ce}
-        if th is not None:
-            stats["kd"] = kd
-        if self.cfg.mod_set() and self.training:
-            loss = loss + self.cfg.mod_aux * aux
-            stats["mod_agree"] = agree
-            self._agree = agree
-        if feed is not None and self.training and self.cfg.teach > 0 and bool(feed[1].any()):
-            lk = self.link_loss(idx, xl, feed[0][:, :idx.shape[1]], feed[1])
-            loss = loss + self.cfg.teach * lk
-            stats["link"] = lk.detach()
-            self._link = lk.detach()
-        return loss, stats
-
-    def thought_report(self):
-        r = super().thought_report()
-        lk = getattr(self, "_link", None)
-        r["link"] = None if lk is None else float(lk)
-        return r
+        return self._trunk_aux(idx)[4]
 
     # ---------------------------------------------------------------- the trainer's hooks
     @torch.no_grad()

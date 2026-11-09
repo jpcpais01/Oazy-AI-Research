@@ -1080,7 +1080,7 @@ def main():
                 from .mix import with_share
                 args.mix = with_share(args.mix, src, getattr(args, src))
         train = Mix(data, args.mix, T, micro, seed=args.seed,
-                    lengths=[t for _, t in ctx_plan(cfg)], log=say, marks=hasattr(model, "feed_marks"))
+                    lengths=[t for _, t in ctx_plan(cfg)], log=say, marks=getattr(model, "wants_marks", False))
         xval = {n: val_set(source_path(data, n, "val"), Tv, 32) for n in train.src
                 if n != "fwe" and source_path(data, n, "val").exists()}
     else:

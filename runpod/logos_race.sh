@@ -2,7 +2,8 @@
 # The Logos race (João, Nov 9): Logos1-200M against Bee6, both on Emerald (Sado + 10% World 2), the same recipe and the
 # same tokens (2B by default), one run after the other on one GPU, then one table:
 #   1. Emerald's world text (World 2) and its marks are built on the CPU, if they are not there yet
-#   2. bee6-emerald-<T>   Bee6 on Emerald              (kept if the Emerald race already trained it)
+#   2. bee6-teach-emerald-<T>  Bee6 on Emerald, with the same answer key Logos1 gets: a link head on its stream after
+#                              layer 4, graded by the marks on the world's episodes (as the rival in world-link)
 #   3. logos-emerald-<T>  Logos1-200M on Emerald       (the marks grade its linker on the world's episodes only)
 #   4. the world's secret exams as plain text for both, then the table: held-out Sado loss, HellaSwag, ARC, PIQA,
 #      LogT and the world exams (python3 -m bee6.world_race)  ->  <runs>/logos-race-<T>.md
@@ -20,17 +21,19 @@ DATA="$(python3 -c "from oazy.data import default_dir; print(default_dir('data')
 RUNS="$(python3 -c "from oazy.data import default_dir; print(default_dir('runs'))")"
 mkdir -p "$RUNS"
 COMMON=(--preset big --micro 32 --data "$DATA" --runs "$RUNS" --tokens "$TOK" --data-sub emerald)
-BEE="bee6-emerald-$TAG"
+BEE="bee6-teach-emerald-$TAG"
 LOGOS="logos-emerald-$TAG"
 finished() { python3 -c "import json, sys; sys.exit(0 if json.load(open('$RUNS/$1/status.json')).get('state') == 'done' else 1)" 2>/dev/null; }
-run() {     # run <model> <name>
+run() {     # run <model> <name> <more trainer options...>
     if finished "$2"; then echo "$2 already finished: kept"; return; fi
     echo "== $2 =="
-    python3 -m oazy.train --model "$1" "${COMMON[@]}" --name "$2" 2>&1 | tee -a "$RUNS/$2.log"
+    local m="$1" n="$2"
+    shift 2
+    python3 -m oazy.train --model "$m" "${COMMON[@]}" --name "$n" "$@" 2>&1 | tee -a "$RUNS/$n.log"
 }
 echo "Emerald's world and its marks (built once; a world built before the marks only gets the marks added)"
 nice -n 10 python3 -m oazy.emerald build --data "$DATA" 2>&1 | tee -a "$RUNS/emerald-build.log"
-run bee6 "$BEE"
+run bee6 "$BEE" --set teach=1
 run logos "$LOGOS"
 python3 -m oazy.worldmix exam --runs "$RUNS" --run "$BEE" "$LOGOS"
 python3 -m bee6.world_race --runs "$RUNS" --arms "$BEE" "$LOGOS" --out "logos-race-$TAG.md"
