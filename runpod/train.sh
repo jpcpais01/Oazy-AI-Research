@@ -53,7 +53,7 @@ EXTRA="${ARGS[*]:-}"
 DATA="$(python3 -c "from oazy.data import default_dir; print(default_dir('data'))")"
 RUNS="$(python3 -c "from oazy.data import default_dir; print(default_dir('runs'))")"
 mkdir -p "$RUNS"
-if [ ! -f "$DATA/train.bin" ] && [[ "$EXTRA" != *--data-sub* ]]; then
+if [ ! -f "$DATA/train.bin" ] && [[ "$EXTRA" != *--data-sub* ]] && [ "$MODEL" != bee5 ]; then   # Bee5 reads Sado (checked below)
     echo "no training data in $DATA yet: run  bash runpod/setup.sh  first"
     exit 1
 fi
