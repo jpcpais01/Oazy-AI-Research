@@ -327,6 +327,12 @@ def main():
             loss, _ = mg.losses(xg, xg)
         loss.backward()
         check("bf16 / FP8 training step on the GPU", torch.isfinite(loss).item())
+        mg.eval()
+        wo, _ = mg.generate([5, 6, 7], max_new_tokens=4, eos=None)       # outside autocast, as the trainer's samples
+        with torch.no_grad():
+            lw, _ = mg.read(xg[:1, :32])
+        mg.train()
+        check("with FP8 on, it writes and reads outside autocast (the trainer's samples)", len(wo) == 4 and lw.dtype == torch.float32)
         mg.zero_grad(set_to_none=True)
         mg.enable_compile()
         with torch.autocast("cuda", dtype=torch.bfloat16):
