@@ -33,17 +33,17 @@ from memtrix.model import Memtrix, MemtrixConfig
 from memtrix import memory
 from . import hellaswag, probes, term
 
-KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "seed", "smol", "smolbee", "black", "blackt", "gpt"]
+KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "seed", "smol", "smolbee", "black", "blackt", "logos", "gpt"]
 NICE = {"memtrix": "Memtrix", "tide": "Tide", "fern": "Fern", "ember": "Ember", "fern2": "Fern2", "fern3": "Fern3",
         "bee": "Bee0.2B", "bee2": "Bee_v2_0.2B", "bee3": "Bee3", "frog": "Frog", "coral": "Coral", "bee4": "Bee4-200M", "coralmini": "Coral Mini",
-        "pegasus": "Pegasus 1", "pegasusmini": "Pegasus 1 Mini", "pegasus2": "Pegasus 2 Mini", "plain100": "Plain-100M", "plain100f": "Plain-100F", "alphastar": "Pegasus Alpha Star", "pegasusbeta": "Pegasus Beta", "bee5": "Bee5-200M", "bee6": "Bee6-200M", "seed": "Seed", "smol": "SmolLM2 (their recipe)", "smolbee": "SmolLM2 (our recipe)", "black": "Code Black",
+        "pegasus": "Pegasus 1", "pegasusmini": "Pegasus 1 Mini", "pegasus2": "Pegasus 2 Mini", "plain100": "Plain-100M", "plain100f": "Plain-100F", "alphastar": "Pegasus Alpha Star", "pegasusbeta": "Pegasus Beta", "bee5": "Bee5-200M", "bee6": "Bee6-200M", "logos": "Logos1-200M", "seed": "Seed", "smol": "SmolLM2 (their recipe)", "smolbee": "SmolLM2 (our recipe)", "black": "Code Black",
         "blackt": "Black-T", "gpt": "GPT"}
-FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "seed", "smolbee", "black", "blackt")    # raised the fast way: Muon (and a mentor, where MENTOR names one)
+FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "logos", "seed", "smolbee", "black", "blackt")    # raised the fast way: Muon (and a mentor, where MENTOR names one)
 # default mentor (the others: gpt2-medium). Code Black and Black-T race without one, so the architectures are compared alone.
 MENTOR = {"bee": "gpt2-large", "bee2": "smollm2-360m", "bee3": "smollm2-360m", "frog": "smollm2-360m", "coral": "smollm2-360m",
           "bee4": "smollm2-360m", "coralmini": "smollm2-360m", "pegasus": "smollm2-360m", "pegasusmini": "smollm2-360m", "pegasus2": "smollm2-360m",
-          "plain100": "smollm2-360m", "plain100f": "smollm2-360m", "alphastar": "smollm2-360m", "pegasusbeta": "smollm2-360m", "bee5": "smollm2-360m", "bee6": "smollm2-360m", "seed": "smollm2-360m", "smolbee": "smollm2-360m", "black": "none", "blackt": "none"}
-BEES = ("bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "seed", "smol", "smolbee", "black", "blackt")    # the text mix (Tagus), WSD, growing windows
+          "plain100": "smollm2-360m", "plain100f": "smollm2-360m", "alphastar": "smollm2-360m", "pegasusbeta": "smollm2-360m", "bee5": "smollm2-360m", "bee6": "smollm2-360m", "logos": "smollm2-360m", "seed": "smollm2-360m", "smolbee": "smollm2-360m", "black": "none", "blackt": "none"}
+BEES = ("bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "logos", "seed", "smol", "smolbee", "black", "blackt")    # the text mix (Tagus), WSD, growing windows
 # Bee3's recipe (bee3/README.md): the mentor stays the whole run, weight decay on the Muon grids, a batch ramp,
 # a 1-minus-square-root cool-down, twice Bee2's learning rates (the presets' lr_bee3 / muon_lr_bee3)
 RECIPE = {"bee3": dict(mentor_floor=0.25, mentor_off=0.1, muon_wd=0.1, batch_ramp="65536:0.1", decay_shape="sqrt")}
@@ -97,6 +97,9 @@ RECIPE["bee5"] = dict(RECIPE["bee4"], data_sub="sado")
 # Bee6 (bee6/README.md, Nov 9): Bee5 made fast (one q/k/v product, FP8 layer products, Mixture of Depths in every other
 # layer, bloom as a switch). Bee5's recipe exactly; its FP8 is its own (bee6/fp8.py), not the trainer's --fp8.
 RECIPE["bee6"] = dict(RECIPE["bee5"])
+# Logos1-200M (logos/model.py, Nov 9): Bee6's stream (10 layers) + Logos1's linker, laws core and read-back. Bee6's
+# recipe exactly, so the race against Bee6 on Emerald differs only in the body.
+RECIPE["logos"] = dict(RECIPE["bee6"])
 # Seed (seed/README.md, Nov 9): a small core that grows 4x384 -> 6x512 -> 9x640 -> 12x768 (20/20/20/40% of the run,
 # keeping its function) + a 1.3M-row library it looks facts up in. Bee5's recipe exactly (the latest best: windows
 # 512 -> 2,048, the batch ramp, WSD over the last 30%, bf16, the SmolLM2-360M mentor on a share of the passes, Sado with
@@ -259,6 +262,11 @@ def _bee6():
     return Bee6, Bee6Config
 
 
+def _logos():
+    from logos.model import Logos, LogosConfig        # logos/ = Bee6's stream + Logos1's linker, laws core, read-back
+    return Logos, LogosConfig
+
+
 def _smol():
     from smol.model import Smol, SmolConfig        # smol/ = SmolLM2's body (Hugging Face Llama), random weights
     return Smol, SmolConfig
@@ -371,6 +379,10 @@ PRESETS = {
         val_windows=128, hs_quick=1000, evals_quick=500, sample_len=80,
     ),
 }
+for _p in PRESETS.values():           # Logos1-200M: Bee6's batch and learning rates
+    for _k in [k for k in _p if k.endswith("_bee6")]:
+        _p[_k[:-4] + "logos"] = _p[_k]
+
 
 # what every run writes at each check (the dashboard's "What they write", one box each). The fourth, a story, came
 # Nov 7 2026; a run that started before it writes it from its next restart (or now: python3 -m oazy.writenow).
@@ -511,6 +523,15 @@ def build(kind, preset, overrides=None):
             small["ctx"] = f"{small['max_len']}:0"
         cfg = Bee6Config(**{**small, **p.get("bee5", {}), **p.get("bee6", {}), **(overrides or {})})
         return Bee6(cfg), cfg
+    if kind == "logos":
+        Logos, LogosConfig = _logos()
+        small = {k: v for k, v in p.get("bee", {}).items() if k in ("d_model", "n_layer", "attn_heads", "attn_kv_heads",
+                                                                     "attn_head_dim", "mlp_hidden", "max_len")}
+        if small:                       # a test preset: Bee's small body, one window length, a small core
+            small["ctx"] = f"{small['max_len']}:0"
+            small.update(d_core=small["d_model"], core_heads=max(1, small["d_model"] // 32), link_dim=16, chunk=16, things=8)
+        cfg = LogosConfig(**{**small, **p.get("bee5", {}), **p.get("bee6", {}), **p.get("logos", {}), **(overrides or {})})
+        return Logos(cfg), cfg
     if kind == "seed":
         Seed, SeedConfig = _seed()
         cfg = SeedConfig(**{**p.get("seed", {}), **(overrides or {})})
@@ -597,6 +618,9 @@ def load_model(ckpt: Path, device, mmap=False):
     elif kind == "bee6":
         Bee6, Bee6Config = _bee6()
         model = Bee6(Bee6Config.from_dict(st["config"]))      # (it grows to the checkpoint's bloom stage as it loads)
+    elif kind == "logos":
+        Logos, LogosConfig = _logos()
+        model = Logos(LogosConfig.from_dict(st["config"]))
     elif kind == "seed":
         Seed, SeedConfig = _seed()
         model = Seed(SeedConfig.from_dict(st["config"]))      # (it grows to the checkpoint's stage as it loads)
@@ -1056,7 +1080,7 @@ def main():
                 from .mix import with_share
                 args.mix = with_share(args.mix, src, getattr(args, src))
         train = Mix(data, args.mix, T, micro, seed=args.seed,
-                    lengths=[t for _, t in ctx_plan(cfg)], log=say)
+                    lengths=[t for _, t in ctx_plan(cfg)], log=say, marks=hasattr(model, "feed_marks"))
         xval = {n: val_set(source_path(data, n, "val"), Tv, 32) for n in train.src
                 if n != "fwe" and source_path(data, n, "val").exists()}
     else:
@@ -1346,6 +1370,19 @@ def main():
                 say(f"[plan] Speaker loss {r['on']:.3f} with the plan, {r['plan_off']:.3f} without (gap {r['plan_gap']:+.3f}), "
                     f"{r['notebook_off']:.3f} without the notebook (gap {r['notebook_gap']:+.3f})"
                     + (f" | meanings in use {r['codes_used']:.0f} of {model.cfg.n_codes()}" if "codes_used" in r else ""), flush=True)
+            if hasattr(model, "core_report"):        # Logos1-200M: does the stream use the laws core?
+                try:
+                    r = model.core_report(pwin, device, batch=min(micro, 16))
+                    if "world" in xval:
+                        rw = model.core_report(xval["world"][:16], device, batch=min(micro, 16))
+                        r.update({"world_on": rw["on"], "world_core_off": rw["core_off"], "world_core_gap": rw["core_gap"]})
+                    run.log("metrics.jsonl", {"kind": "core", **base, **r})
+                    latest["core_gap"] = r["core_gap"]
+                    say(f"[core] text loss {r['on']:.3f} with the core, {r['core_off']:.3f} without (gap {r['core_gap']:+.3f})"
+                        + (f" | world {r['world_on']:.3f} vs {r['world_core_off']:.3f} (gap {r['world_core_gap']:+.3f})"
+                           if "world_on" in r else ""), flush=True)
+                except Exception as e:      # a new check must never stop a run
+                    say(f"[core] skipped ({type(e).__name__}: {str(e)[:120]})", flush=True)
             if hasattr(model, "loop_report"):        # Pegasus Alpha Star: does more thinking help? the next thought by pass, the drawer
                 r = model.loop_report(pwin, device, batch=min(micro, 16))
                 for key in ("pass_loss", "pass_loss_filler", "pass_loss_content"):
@@ -1567,6 +1604,9 @@ def main():
                 # w = 0.25, one pass in four); those learn only its guesses (weight 1), the others only the real next
                 # word (weight 0). On average the lesson is Bee3's; the mentor reads a share w of the text, not all of it.
                 pw, share_credit = mentor_pass(share_credit, mw)
+            feed = (lambda: model.feed_marks(train.last_marks[:, :-1].to(device), train.last_rows.to(device))) \
+                if getattr(train, "last_marks", None) is not None and hasattr(model, "feed_marks") else (lambda: None)
+            feed()                                  # Logos1-200M: the world's marks, its linker's answer key
             try:
                 loss, st = lesson(x, y, pw)
             except Exception as e:
@@ -1574,6 +1614,7 @@ def main():
                     raise
                 say(f"torch.compile failed ({type(e).__name__}: {e}); continuing without compile", flush=True)
                 model._compiled = None
+                feed()
                 loss, st = lesson(x, y, pw)
             if replay is not None:                  # score this pass's passages; the buffer keeps the best
                 rr = row_reads if row_reads is not None else torch.zeros(x.shape[0], dtype=torch.long, device=x.device)
