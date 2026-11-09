@@ -44,8 +44,8 @@ TRAIN_SEED0 = 1_000_000                    # practice episodes use seeds from he
 PER_JOB = 256                              # episodes per helper job
 EXAM_VERSION = 2                           # 2: World 2 (fifteen families); older exam results are taken again
 PUNCT = {".", "?", ",", ":"}
-REFS = ("smollm2-135m", "smollm2-360m")    # trained SmolLM2 from Hugging Face, examined as yardsticks (no ckpt.pt)
-REF_PARAMS = {"smollm2-135m": 134_515_008, "smollm2-360m": 361_821_120}
+REFS = ("smollm2-135m", "smollm2-360m", "smollm2-1.7b")    # trained SmolLM2 from Hugging Face, examined as yardsticks (no ckpt.pt)
+REF_PARAMS = {"smollm2-135m": 134_515_008, "smollm2-360m": 361_821_120, "smollm2-1.7b": 1_711_376_384}
 
 
 def ref_files(d: Path):

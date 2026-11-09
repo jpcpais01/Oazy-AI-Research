@@ -30,8 +30,9 @@ from . import hellaswag, probes
 from .train import PRESETS, Run, val_loss
 
 SMOL_INFO = {"smollm2-135m": "~2,000,000M tokens (SmolLM2 corpus: FineWeb-Edu, DCLM, The Stack, math; 2024)",
-             "smollm2-360m": "~4,000,000M tokens (SmolLM2 corpus: FineWeb-Edu, DCLM, The Stack, math; 2024)"}
-SMOL_TOKENS = {"smollm2-135m": 2e12, "smollm2-360m": 4e12}
+             "smollm2-360m": "~4,000,000M tokens (SmolLM2 corpus: FineWeb-Edu, DCLM, The Stack, math; 2024)",
+             "smollm2-1.7b": "~11,000,000M tokens (SmolLM2 corpus: FineWeb-Edu, DCLM, The Stack, math; 2024)"}
+SMOL_TOKENS = {"smollm2-135m": 2e12, "smollm2-360m": 4e12, "smollm2-1.7b": 11e12}
 
 
 def smol(name, device):

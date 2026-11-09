@@ -49,7 +49,7 @@ const savePick = () => { try { localStorage.setItem("oazy.v.pick", JSON.stringif
 const runOf = (n) => RUNS.find((r) => r.name === n);
 const ours = () => RUNS.filter((r) => !r.reference);
 // published models measured on the pod (SmolLM2, GPT-2): no tile, a labelled line on the tests they took
-const REF_NAMES = { "smollm2-135m": "SmolLM2-135M", "smollm2-360m": "SmolLM2-360M", "openai-gpt2": "OpenAI GPT-2" };
+const REF_NAMES = { "smollm2-135m": "SmolLM2-135M", "smollm2-360m": "SmolLM2-360M", "smollm2-1.7b": "SmolLM2-1.7B", "openai-gpt2": "OpenAI GPT-2" };
 const yardsticks = (k) => RUNS.filter((r) => r.reference && r[k] != null).map((r) => ({ y: r[k], label: REF_NAMES[r.name] || r.name, always: true }));
 const isLive = (r) => LIVE.has(r.live);
 const nice = (r) => NICE[r.model] || r.model || "";
