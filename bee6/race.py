@@ -4,7 +4,7 @@
     python3 -m bee6.race --bee6 bee6bloom         # the bloom race: bee6bloom-race, bee6bloom-hours
 
 Lower held-out loss is better (per GPT-2 token, on the same 1,024-word windows for every model); higher HellaSwag
-(per letter) and LogRes are better. A 500M-token race is a quick filter: a gap under ~0.02 in held-out loss is a tie
+(per letter) and LogT are better. A 500M-token race is a quick filter: a gap under ~0.02 in held-out loss is a tie
 to confirm at ~2B tokens.
 """
 from __future__ import annotations
@@ -44,7 +44,7 @@ def main(argv=None):
                      term.rate(tok / max(sec, 1e-9)), "–" if s["val"] is None else f"{s['val']:.3f}",
                      pct(s["hs"]) + ("" if s["hs_full"] or s["hs"] is None else "*"), pct(s["logres"])])
     term.header("Bee6 vs Bee5", "0.5B-token race on Sado · next-word models")
-    term.table(["", "run", "tokens", "training time", "speed", "held-out loss", "HellaSwag", "LogRes"], body,
+    term.table(["", "run", "tokens", "training time", "speed", "held-out loss", "HellaSwag", "LogT"], body,
                right=(2, 3, 4, 5, 6, 7))
     term.info("held-out loss: lower is better. * HellaSwag on part of the questions. "
               f"At 0.5B tokens a held-out gap under {TIE} is a tie (confirm at ~2B).")

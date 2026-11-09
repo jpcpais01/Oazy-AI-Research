@@ -1,7 +1,7 @@
 """Seed: a small thinking core that grows (Seed & Bloom), and a big library of facts it looks things up in.
 
 Still a NEXT-WORD model, a plain one: it reads text and guesses the very next token, like GPT-2 and every Bee, and it
-is scored the same way (held-out loss per GPT-2 token, HellaSwag, ARC-Easy, PIQA, LAMBADA, LogRes).
+is scored the same way (held-out loss per GPT-2 token, HellaSwag, ARC-Easy, PIQA, LAMBADA, LogT).
 
 João's design (Special Lab, Nov 9). The idea: a normal model spends its weights both remembering things and working
 things out. Seed splits the two. Facts go into a library that is cheap to read; the core is left to learn rules.

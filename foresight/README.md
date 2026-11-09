@@ -19,7 +19,7 @@ learning that makes the trunk plan a little further ahead, and that helps the ne
 - **The loss**: a softmax over the content words, averaged over every (read point, bag word) pair, in nats per bag
   word. Weight 0.1 next to the next-word loss, growing from 0 over the first 5% of the run. Its gradient reaches the
   whole trunk.
-- **Removed after training**: the held-out loss, HellaSwag, LogRes, chat and the phone read only the trunk and the word
+- **Removed after training**: the held-out loss, HellaSwag, LogT, chat and the phone read only the trunk and the word
   table, so the size and speed there are Plain-100M's. The head's weights stay in the checkpoint so a run can resume.
 - **Read points per pass**: about one in ten pieces; at most 8,192 per pass (a pass of 65k pieces has about 6k), so the
   extra work is roughly 5% of the word-table work.
@@ -39,6 +39,6 @@ OAZY_DATA=/root/data bash runpod/train.sh plain100f --preset big --tokens 0.5e9 
 ```
 
 Compare against the existing `plain100-race` (the same command with `plain100`): held-out loss, loss by position (the
-`[memory]` probe), HellaSwag and LogRes (`python3 -m oazy.logres --run plain100-race --run plain100f-race`).
+`[memory]` probe), HellaSwag and LogT (`python3 -m oazy.logres --run plain100-race --run plain100f-race`).
 
 It is kept apart from the in-training data selection build, so each idea is tested alone.

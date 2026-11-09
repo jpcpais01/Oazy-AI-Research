@@ -687,7 +687,7 @@ function scoreboard() {
     ["arc_easy", "ARC-Easy", "guessing 25%", 1, pct],
     ["piqa", "PIQA", "guessing 50%", 1, pct],
     ["lambada", "LAMBADA", "exact last word · guessing ~0%", 1, pct],
-    ["logres", "LogRes", "reasoning · guessing 44%", 1, pct],
+    ["logres", "LogT", "reasoning · guessing 44%", 1, pct],
   ].filter(([k]) => rows.concat(refs).some((r) => r[k] != null));
   const costCell = (r) => {
     const c = r.cost; if (!c) return `<td class="na">–</td>`;
@@ -742,7 +742,7 @@ function scoreboard() {
   box.querySelectorAll("details > summary").forEach((x) => { if (wasOpen.has(x.textContent)) x.parentElement.open = true; });
 }
 
-// LogRes (oazy/logres.py): 1,600 reasoning puzzles whose facts are in the question, 8 kinds at 5 levels (level =
+// LogT (oazy/logres.py): 1,600 reasoning puzzles whose facts are in the question, 8 kinds at 5 levels (level =
 // steps of reasoning). Folded under the scores: one table by level, one by kind, the guessing level as the last row.
 const LR_KINDS = [["order", "Order"], ["time", "Time"], ["place", "Place"], ["sums", "Sums"], ["rules", "If-then"],
   ["sets", "All / some"], ["negation", "Negation"], ["family", "Family"]];
@@ -761,10 +761,10 @@ function logresHtml(names) {
   const lv = ["all", "1", "2", "3", "4", "5"];
   const byLevel = grid(lv, (r, c) => c === "all" ? r.acc_char : r.levels[c]?.acc, (r, c) => c === "all" ? r.chance : r.levels[c]?.chance);
   const byKind = grid(LR_KINDS.map(([k]) => k), (r, c) => r.families?.[c]?.acc, (r, c) => r.families?.[c]?.chance);
-  return `<details class="why"><summary>LogRes by level and by kind of puzzle</summary><div class="body">
+  return `<details class="why"><summary>LogT by level and by kind of puzzle</summary><div class="body">
       <div class="fcwrap"><table class="scores"><tr><th></th>${lv.map((c) => `<th>${c === "all" ? "All" : "Level " + c}</th>`).join("")}</tr>${byLevel}</table></div>
       <div class="fcwrap" style="margin-top:22px"><table class="scores"><tr><th></th>${LR_KINDS.map(([, t]) => `<th>${t}</th>`).join("")}</tr>${byKind}</table></div>
-      <p class="note">LogRes (logic and reasoning): every question gives its own facts with made-up names and asks for something that follows but is never written, e.g. "Bo is taller than Cy. Ana is taller than Bo. Who is shorter, Ana or Cy?". Level = how many steps of reasoning the answer needs (1 to 5), 40 questions of each kind at each level. Scored like HellaSwag (the answer that surprises the model least, per letter). Guessing is 50% on most, 25% on sums, 1 in 2 to 1 in 6 on negation. Nothing is trained on it.</p></div></details>`;
+      <p class="note">LogT (logic and thinking): every question gives its own facts with made-up names and asks for something that follows but is never written, e.g. "Bo is taller than Cy. Ana is taller than Bo. Who is shorter, Ana or Cy?". Level = how many steps of reasoning the answer needs (1 to 5), 40 questions of each kind at each level. Scored like HellaSwag (the answer that surprises the model least, per letter). Guessing is 50% on most, 25% on sums, 1 in 2 to 1 in 6 on negation. Nothing is trained on it.</p></div></details>`;
 }
 
 // Faith probes (oazy/faith_probe.py): does a model hold its quiet belief ("God loves me, and I love God") when asked,

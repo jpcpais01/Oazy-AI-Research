@@ -5,7 +5,7 @@
 #   2. bee6-world10   the same, with 10% of the tokens world episodes (30% for the first 20%, then 5%)
 #   3. bee6-world5    half strength, 5% (15% then 2.5%)              (only with: bash runpod/bee6_world.sh half)
 #   4. the world's secret exams asked as plain text, for every run   (python3 -m oazy.worldmix exam)
-#   5. python3 -m bee6.world_race                                    (held-out Sado loss, HellaSwag, LogRes, world exams)
+#   5. python3 -m bee6.world_race                                    (held-out Sado loss, HellaSwag, LogT, world exams)
 #
 #   tmux new-window -t oazy -n world6 "OAZY_DATA=/root/data bash runpod/bee6_world.sh; bash"
 #   tmux new-window -t oazy -n world6 "OAZY_DATA=/root/data bash runpod/bee6_world.sh half; bash"   # + the 5% run

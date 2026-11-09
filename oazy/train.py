@@ -1085,7 +1085,7 @@ def main():
         step, tokens, elapsed, nxt = state["step"], state["tokens"], state["elapsed"], state["next"]
         nxt.setdefault("evals", tokens)                  # a checkpoint from before the periodic extra tests: the next check has them
         for k in nxt:                                    # tests made more frequent since: the next one comes sooner
-            every = p.get(k + "_every", p["evals_every"])     # LogRes runs on the three tests' schedule
+            every = p.get(k + "_every", p["evals_every"])     # LogT runs on the three tests' schedule
             nxt[k] = min(nxt[k], math.ceil(tokens / every) * every)
         train.set_state(state["data"])
         if growing_ctx:
@@ -1275,7 +1275,7 @@ def main():
                                            for k, v in r.items() if not k.endswith(("_n", "_char"))), flush=True)
             nxt["evals"] += p["evals_every"]
         if final or tokens >= nxt.setdefault("logres", 0):
-            # LogRes (oazy/logres.py): 1,600 reasoning puzzles whose facts are in the question; all of them every time
+            # LogT (oazy/logres.py): 1,600 reasoning puzzles whose facts are in the question; all of them every time
             # (a few seconds on a GPU), on the same schedule as the three tests above. The small test presets (CPU
             # self-tests) score a few of each kind and level instead.
             try:

@@ -1,4 +1,4 @@
-"""Self-tests for LogRes (oazy/logres.py): the question file is exactly what the seeded generator makes, every right
+"""Self-tests for LogT (oazy/logres.py): the question file is exactly what the seeded generator makes, every right
 answer is checked by a separate little solver that works it out from the facts alone, the answer is never written
 in the facts, shallow tricks score about the guessing level, and the scorer gives the same numbers however the
 questions are batched (on tiny Bee4, Pegasus 1 Mini and Plain-100M models).
@@ -141,7 +141,7 @@ def main():
     ap.add_argument("--device", default="cpu")
     import torch
     dev = torch.device(ap.parse_args().device)
-    term.tests_start("LogRes", dev)
+    term.tests_start("LogT", dev)
 
     # ---- the questions
     rows = logres.load()
@@ -229,7 +229,7 @@ def main():
                   and abs(h["acc_norm"] - a["acc_norm"]) < 1e-9, f"{h['acc_char'] * 100:.1f}% both ways")
         check(f"{name}: a score for every level and kind", set(a["levels"]) == {"1", "2", "3", "4", "5"}
               and all(a["families"][f]["n"] == 10 for f in logres.FAMILIES) and all(len(v) == 5 for v in a["grid"].values()))
-    term.tests_passed("LogRes")
+    term.tests_passed("LogT")
 
 
 if __name__ == "__main__":

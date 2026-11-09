@@ -32,7 +32,7 @@ Training (Huginn's way, all switchable with --set):
   - Gradients flow only through the last 2 passes (truncated backprop): the earlier passes run without keeping their
     work, so memory and the backward pass cost the same whatever N is.
 
-Reading (held-out loss, HellaSwag, LogRes): it thinks until each word's thought stops changing (the change from one
+Reading (held-out loss, HellaSwag, LogT): it thinks until each word's thought stops changing (the change from one
 pass to the next is below exit_eps of its size), at most 16 passes; a word that is done keeps its thought while the
 others go on. test_passes=N forces N passes. Writing (chat, samples) uses a fixed gen_passes (8) word by word.
 """

@@ -268,7 +268,7 @@ def main():
           [(g["depth"], g["width"]) for g in grows] == [(6, 96), (9, 128), (12, 160)] and all("stage_tok_s" in g for g in grows),
           " ".join(f"{g['tokens']:,}" for g in grows))
     kinds = {r_["kind"] for r_ in recs}
-    check("held-out loss, HellaSwag, LogRes and the library probe were logged", {"eval", "hellaswag", "logres", "library"} <= kinds,
+    check("held-out loss, HellaSwag, LogT and the library probe were logged", {"eval", "hellaswag", "logres", "library"} <= kinds,
           ", ".join(sorted(kinds)))
     st = json.loads((rd / "status.json").read_text())
     check("the run finished", st["state"] == "done" and "val_loss" in st["latest"],
