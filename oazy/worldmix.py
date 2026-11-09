@@ -45,6 +45,21 @@ PER_JOB = 256                              # episodes per helper job
 EXAM_VERSION = 2                           # 2: World 2 (fifteen families); older exam results are taken again
 PUNCT = {".", "?", ",", ":"}
 REFS = ("smollm2-135m", "smollm2-360m")    # trained SmolLM2 from Hugging Face, examined as yardsticks (no ckpt.pt)
+REF_PARAMS = {"smollm2-135m": 134_515_008, "smollm2-360m": 361_821_120}
+
+
+def ref_files(d: Path):
+    """A yardstick's folder gets the config.json / status.json the dashboard needs for its tile (oazy.compare writes
+    fuller ones when it is run; those are kept)."""
+    import time
+    from .compare import SMOL_INFO, SMOL_TOKENS
+    d.mkdir(parents=True, exist_ok=True)
+    if not (d / "config.json").exists():
+        (d / "config.json").write_text(json.dumps({"model": d.name, "params": REF_PARAMS[d.name], "tokenizer": "smollm2",
+                                                   "trained_tokens": SMOL_TOKENS[d.name],
+                                                   "trained_tokens_note": SMOL_INFO[d.name]}, indent=1))
+    if not (d / "status.json").exists():
+        (d / "status.json").write_text(json.dumps({"state": "done", "updated": time.time(), "latest": {}}))
 
 
 def share_at(progress: float, w: float) -> float:
@@ -468,6 +483,8 @@ def exam_run(d: Path, device, n=100, say=print):
             r = json.loads(out.read_text())
             ck = d / "ckpt.pt"
             if r.get("version") == EXAM_VERSION and r.get("n") == n and r.get("ckpt_mtime") == (ck.stat().st_mtime if ck.exists() else None):
+                if d.name in REFS:
+                    ref_files(d)
                 say(f"{d.name}: world exam already done (secret {r['secret'] * 100:.1f}%): kept")
                 return r
         except Exception:
@@ -489,6 +506,7 @@ def exam_run(d: Path, device, n=100, say=print):
     d.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(r, indent=1))
     if ref:                                  # a metrics line too, so the dashboard shows the yardstick's world score
+        ref_files(d)
         from .logres import _records
         from .train import Run
         recs = _records(d)
