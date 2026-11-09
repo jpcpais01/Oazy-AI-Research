@@ -65,6 +65,11 @@ def main(argv=None):
                     help="with --natural 1: the Laws model finds the things with the linker (each mention points back to "
                          "an earlier word of the same thing, or starts a new one) instead of slots; taught by the marks "
                          "(--teach, default 1), never given them")
+    ap.add_argument("--rival-loops", type=int, default=1,
+                    help="N>1: the rival's last 2 layers run N times with the same weights (a looped transformer, same size)")
+    ap.add_argument("--laws-from", default=None,
+                    help="another run's name: reuse its trained Logos1 instead of training one here (train only the rival; "
+                         "the report compares them once that Logos1 has finished; same world flags needed)")
     ap.add_argument("--finder", type=int, default=None, help="slots for the Laws model's thing finder (default 32 with --natural 1)")
     ap.add_argument("--fresh", action="store_true", help="train again even if a model is saved")
     ap.add_argument("--threads", type=int, default=0)
@@ -114,10 +119,12 @@ def main(argv=None):
             over["finder_kind"] = "link"
     laws, rival = make_pair(len(vocab), a.preset, **over)
     rival.cfg.loss = a.rival_loss
+    rival.cfg.loops = a.rival_loops
     say(f"world-first stage 1: {a.preset}, device {dev}, vocab {len(vocab)} words")
     say(f"  Logos1, the Laws model (not next-word): {n_params(laws) / 1e6:.2f}M numbers; rival (next-word): {n_params(rival) / 1e6:.2f}M")
     together = (dev == "cuda") if a.together is None else bool(a.together)
-    todo = [m.kind for m in (laws, rival) if (a.fresh or not (out / m.kind / "ckpt.pt").exists()) and a.only in ("all", m.kind)]
+    todo = [m.kind for m in (laws, rival) if (a.fresh or not (out / m.kind / "ckpt.pt").exists()) and a.only in ("all", m.kind)
+            and not (m.kind == "laws" and a.laws_from)]
     if together and a.only == "all" and len(todo) == 2:
         say("training both models at the same time (one process each)")
         phase("both")
@@ -134,6 +141,16 @@ def main(argv=None):
     for m in (laws, rival):
         d = out / m.kind
         ck = d / "ckpt.pt"
+        if m.kind == "laws" and a.laws_from:                    # Logos1 comes from another run, never trained here
+            src = out.parent / a.laws_from / "laws" / "ckpt.pt"
+            if src.exists():
+                sd = torch.load(src, map_location="cpu", weights_only=False)
+                m.load_state_dict(sd["model"])
+                trained["laws"] = sd.get("info", {})
+                say(f"laws: loaded from {a.laws_from} ({src})")
+            else:
+                say(f"laws: {a.laws_from} has not finished yet; the report waits for it (rerun with --only report later)")
+            continue
         if ck.exists() and not a.fresh:
             sd = torch.load(ck, map_location="cpu", weights_only=False)
             m.load_state_dict(sd["model"])
@@ -179,7 +196,8 @@ def main(argv=None):
         say(f"{m.kind}: examined in {(time.time() - t0) / 60:.1f} min")
     res = {"kind": "worldfirst", "name": a.name, "when": time.strftime("%Y-%m-%d %H:%M"), "device": dev,
            "preset": a.preset, "eval_n": a.eval_n, "rival_tags": bool(a.rival_tags), "rival_loss": a.rival_loss, "loops": bool(a.loops), "passes": a.passes,
-           "natural": bool(a.natural), "finder": a.finder or 0, "teach": a.teach if a.finder else 0, "linker": bool(a.linker), "rival_teach": rival.cfg.teach,
+           "natural": bool(a.natural), "finder": a.finder or 0, "teach": a.teach if a.finder else 0, "linker": bool(a.linker), "rival_teach": rival.cfg.teach, "rival_loops": rival.cfg.loops,
+           "laws_from": a.laws_from,
            "params": {"laws": n_params(laws), "rival": n_params(rival)}, "train": trained, "rows": rows,
            "summary": {"laws": summarise(rows["laws"], "settle"), "rival": summarise(rows["rival"], "plain")}}
     (out / "results.json").write_text(json.dumps(res, indent=1))
@@ -216,8 +234,12 @@ def report(res) -> str:
     loop_words = (f"always {res['passes']} passes" if res.get("passes") else "loops") if loops else "NO loops: its core runs once"
     lines.append(f"Logos1 (the Laws model) {res['params']['laws'] / 1e6:.1f}M ({loop_words}; "
                  f"predicts the next scene, NOT a next-word model) vs rival {res['params']['rival'] / 1e6:.1f}M "
-                 f"({'a plain transformer learning ONLY the answers' if ans else 'a plain next-word transformer'}), the same world text, "
-                 f"{res['eval_n']} new episodes per exam set, a question counts only if its whole answer is right.\n")
+                 f"({'a plain transformer learning ONLY the answers' if ans else 'a plain next-word transformer'}"
+                 + (f", its last 2 layers looped {res['rival_loops']} times" if res.get("rival_loops", 1) > 1 else "")
+                 + "), the same world text, "
+                 + (f"Logos1 taken from the run {res['laws_from']}, "
+                    if res.get("laws_from") else "")
+                 + f"{res['eval_n']} new episodes per exam set, a question counts only if its whole answer is right.\n")
     if res.get("finder"):
         fd = [r["found"] for r in L if r["mode"] == "settle" and "found" in r]
         lines.append(f"**No marks**: {'the world speaks naturally (she/he/her/him, sums smallest digit first), ' if res.get('natural') else ''}"

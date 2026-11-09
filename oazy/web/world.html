@@ -211,7 +211,7 @@ function card(kind) {
   const params = st.params || (RUN?.results?.params?.[kind]);
   const chips = [params ? [(params / 1e6).toFixed(1) + "M params", true] : null,
     [kind === "laws" ? "not next-token" : cf.loss === "answers" ? "learns only answers" : "next-token"],
-    kind === "laws" ? [cf.fixed ? `always ${cf.fixed} passes` : cf.train_max === 1 ? "no loops: core runs once" : `loops ${cf.train_max ? "1–" + cf.train_max : ""} passes`.replace("  ", " ")] : [`${cf.n_layer || 6} layers, no loops`],
+    kind === "laws" ? [cf.fixed ? `always ${cf.fixed} passes` : cf.train_max === 1 ? "no loops: core runs once" : `loops ${cf.train_max ? "1–" + cf.train_max : ""} passes`.replace("  ", " ")] : [cf.loops > 1 ? `${(cf.n_layer || 6) - (cf.loop_layers || 2)} layers + ${cf.loop_layers || 2} looped ×${cf.loops}` : `${cf.n_layer || 6} layers, no loops`],
     kind === "laws" && cf.n_core ? [`core ${cf.n_core} layer${cf.n_core > 1 ? "s" : ""}, shared`] : null].filter(Boolean);
   const how = cf.finder_kind === "link" ? "linking each mention back to the last one of the same thing" : `${cf.finder} slots`;
   const reads = cf.finder ? `Reads plain text, finds the things itself (${how}${cf.teach ? "; the marks only as its answer key" : ""}), keeps one vector per thing` : "Reads the scene, keeps one vector per thing";
@@ -221,7 +221,7 @@ function card(kind) {
     ? `${reads}, and ${core}. Graded only on its answers, never on guessing words.`
     : cf.loss === "answers"
       ? `A normal causal transformer of the same size that reads the same episodes but is graded only on the answers, like Logos1. ${cf.n_layer || 6} layers per word, always.`
-      : `A normal causal transformer of the same size, trained by guessing every next word of the same episodes, answers included${cf.teach ? ", plus the same \"same thing\" answer key" : ""}. ${cf.n_layer || 6} layers per word, always.`;
+      : `A normal causal transformer of the same size, trained by guessing every next word of the same episodes, answers included${cf.teach ? ", plus the same \"same thing\" answer key" : ""}. ${cf.loops > 1 ? `Its last ${cf.loop_layers || 2} layers run ${cf.loops} times with the same weights (a looped transformer): ${(cf.n_layer || 6) + (cf.loop_layers || 2) * (cf.loops - 1)} layers of thinking per word.` : `${cf.n_layer || 6} layers per word, always.`}`;
   const le = lastExam(kind), fs = finalSum(kind);
   const tr = trains(kind), accNow = st.acc ?? tr[tr.length - 1]?.acc;
   const stat = (k, v, h) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div><div class="h">${h || "&nbsp;"}</div></div>`;
