@@ -1089,6 +1089,11 @@ def main():
     vwin = val_set(data / "val.bin", Tv, p["val_windows"])
     pwin = vwin[: min(32, len(vwin))]
     hs_path = root / "hellaswag_val.jsonl"
+    missing = [n for n, q in (("HellaSwag", hs_path), ("ARC/PIQA/LAMBADA", root / "evals")) if not q.exists()]
+    if missing and args.preset not in ("smoke", "tiny"):
+        say(term.c(f"[warning] {' and '.join(missing)} not found in {root}: these tests are skipped until the files are there "
+                   f"(python3 -m oazy.data --hellaswag-only --out {root}; python3 -m oazy.evals --prepare --data {root})", "red"),
+            flush=True)
     if tk != "gpt2":                                  # training loss: weigh each source's own ratio by the mix
         from .retok import ratio
         from .mix import source_path
