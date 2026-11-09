@@ -1,6 +1,6 @@
 # World-first, stage 1: a model that learns the laws of a small world
 
-**The Laws model is not a next-word model.** It never learns to continue text. It reads a scene, sees an action, and
+**Logos1 (the Laws model) is not a next-word model.** It never learns to continue text. It reads a scene, sees an action, and
 predicts what is true afterwards, and it learns only from being wrong about that. Its rival **is** a plain next-word
 model of the same size, trained on the very same world text.
 
@@ -87,7 +87,7 @@ A curriculum serves each learner the edge of what it can do: per family, it star
 learner gets 85% right there; half its episodes come from the newest level and half from the ones before. Each model
 gets its own curriculum, by the same rule.
 
-## The Laws model (`model.py`)
+## Logos1, the Laws model (`model.py`)
 
 1. **Reader**: a small transformer (4 layers) reads the scene, the action and the questions, never the answers.
 2. **One vector per thing**: the world marks which words name the same thing (like pointing at it), and those words

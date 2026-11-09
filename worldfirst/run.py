@@ -115,7 +115,7 @@ def main(argv=None):
     laws, rival = make_pair(len(vocab), a.preset, **over)
     rival.cfg.loss = a.rival_loss
     say(f"world-first stage 1: {a.preset}, device {dev}, vocab {len(vocab)} words")
-    say(f"  Laws model (not next-word): {n_params(laws) / 1e6:.2f}M numbers; rival (next-word): {n_params(rival) / 1e6:.2f}M")
+    say(f"  Logos1, the Laws model (not next-word): {n_params(laws) / 1e6:.2f}M numbers; rival (next-word): {n_params(rival) / 1e6:.2f}M")
     together = (dev == "cuda") if a.together is None else bool(a.together)
     todo = [m.kind for m in (laws, rival) if (a.fresh or not (out / m.kind / "ckpt.pt").exists()) and a.only in ("all", m.kind)]
     if together and a.only == "all" and len(todo) == 2:
@@ -214,14 +214,14 @@ def report(res) -> str:
     loops = res.get("loops", True)
     ans = res.get("rival_loss") == "answers"
     loop_words = (f"always {res['passes']} passes" if res.get("passes") else "loops") if loops else "NO loops: its core runs once"
-    lines.append(f"Laws model {res['params']['laws'] / 1e6:.1f}M ({loop_words}; "
+    lines.append(f"Logos1 (the Laws model) {res['params']['laws'] / 1e6:.1f}M ({loop_words}; "
                  f"predicts the next scene, NOT a next-word model) vs rival {res['params']['rival'] / 1e6:.1f}M "
                  f"({'a plain transformer learning ONLY the answers' if ans else 'a plain next-word transformer'}), the same world text, "
                  f"{res['eval_n']} new episodes per exam set, a question counts only if its whole answer is right.\n")
     if res.get("finder"):
         fd = [r["found"] for r in L if r["mode"] == "settle" and "found" in r]
         lines.append(f"**No marks**: {'the world speaks naturally (she/he/her/him, sums smallest digit first), ' if res.get('natural') else ''}"
-                     f"the rival gets no tags, and the Laws model finds the things itself "
+                     f"the rival gets no tags, and Logos1 finds the things itself "
                      + (f"with its linker (each mention points back to an earlier word of the same thing, or starts a new one; up to {res['finder']} things). "
                         if res.get("linker") else f"with {res['finder']} slots. ")
                      + (f"In training only, the world's marks were its finder's answer key (marks as a teacher, weight {res['teach']:g}); "
@@ -229,9 +229,9 @@ def report(res) -> str:
                      + ("The rival gets the very same answer key, the same way: a link head on its last layer learns which "
                         "earlier word names the same thing (same loss, same weight, sizes still matched). " if res.get("rival_teach") else "")
                      + f"Things it found cleanly (all of a thing's words in one group of their own): {_pct(sum(fd) / len(fd)) if fd else '-'}.\n")
-    lines.append(f"**Secret exams (never trained on): Laws {_pct(sl.get('secret'))}, rival {_pct(sr.get('secret'))}.** "
-                 f"Practised kinds on new scenes: Laws {_pct(sl.get('seen'))}, rival {_pct(sr.get('seen'))}.\n")
-    lines.append("| family | exam | levels | Laws | rival | Laws passes |")
+    lines.append(f"**Secret exams (never trained on): Logos1 {_pct(sl.get('secret'))}, rival {_pct(sr.get('secret'))}.** "
+                 f"Practised kinds on new scenes: Logos1 {_pct(sl.get('seen'))}, rival {_pct(sr.get('seen'))}.\n")
+    lines.append("| family | exam | levels | Logos1 | rival | Logos1 passes |")
     lines.append("|---|---|---|---|---|---|")
     for fam in W.FAMILIES:
         for sp in ["seen"] + list(W.SECRET[fam]):
@@ -245,7 +245,7 @@ def report(res) -> str:
             secret = "" if sp == "seen" else "**secret**: "
             lines.append(f"| {fam} | {secret}{SPLIT_WORDS.get(sp, sp)} | {min(lv)}-{max(lv)} | {_pct(la)} | {_pct(ra)} | {ps:.1f} |")
     lines.append("\n## Level by level\n")
-    lines.append("| family | level | exam | Laws | rival | Laws passes used |")
+    lines.append("| family | level | exam | Logos1 | rival | Logos1 passes used |")
     lines.append("|---|---|---|---|---|---|")
     for fam in W.FAMILIES:
         for r in [r for r in L if r["mode"] == "settle" and r["family"] == fam]:
@@ -254,7 +254,7 @@ def report(res) -> str:
                          f"{_pct(rr[0]['right'] if rr else None)} | {r['passes']:.1f} |")
     ks = sorted({int(r["mode"][1:]) for r in L if r["mode"].startswith("p")})
     if ks:
-        lines.append("\n## Does thinking longer help? (Laws model, fixed passes)\n")
+        lines.append("\n## Does thinking longer help? (Logos1, fixed passes)\n")
         lines.append("| exams | " + " | ".join(f"{k} passes" for k in ks) + " | " + (f"its usual {res['passes']} |" if res.get("passes") else "settles by itself |"))
         lines.append("|---|" + "---|" * (len(ks) + 1))
         for part in ("seen", "secret"):
@@ -264,7 +264,7 @@ def report(res) -> str:
                 vals.append(_pct(sum(rs) / len(rs)) if rs else "-")
             lines.append(f"| {part} | " + " | ".join(vals) + " |")
     lines.append("\n## Reversals (family questions asked the other way round from how the link was told)\n")
-    for name, rows, mode in (("Laws", L, "settle"), ("rival", R, "plain")):
+    for name, rows, mode in (("Logos1", L, "settle"), ("rival", R, "plain")):
         agg = {"True": [0, 0], "False": [0, 0]}
         for r in rows:
             if r["mode"] == mode and r.get("reversed"):
@@ -274,7 +274,7 @@ def report(res) -> str:
         f = lambda k: _pct(agg[k][0] / agg[k][1]) if agg[k][1] else "-"  # noqa: E731
         lines.append(f"- {name}: asked the way it was told {f('False')}, asked the other way round {f('True')}")
     lines.append("\n## False beliefs (where does someone think a thing is, when it was moved while they were away)\n")
-    for name, rows, mode in (("Laws", L, "settle"), ("rival", R, "plain")):
+    for name, rows, mode in (("Logos1", L, "settle"), ("rival", R, "plain")):
         agg = {"True": [0, 0], "False": [0, 0]}
         for r in rows:
             if r["mode"] == mode and r.get("belief"):
@@ -284,8 +284,8 @@ def report(res) -> str:
         f = lambda k: _pct(agg[k][0] / agg[k][1]) if agg[k][1] else "-"  # noqa: E731
         lines.append(f"- {name}: they saw it last where it is {f('False')}, they believe something false {f('True')}")
     tl, tr = res["train"].get("laws", {}), res["train"].get("rival", {})
-    early = [k for k, t in (("Laws", tl), ("rival", tr)) if t.get("stopped_early")]
-    lines.append(f"\nTraining: Laws {tl.get('steps')} steps in {tl.get('minutes', 0):.1f} min, rival {tr.get('steps')} steps "
+    early = [k for k, t in (("Logos1", tl), ("rival", tr)) if t.get("stopped_early")]
+    lines.append(f"\nTraining: Logos1 {tl.get('steps')} steps in {tl.get('minutes', 0):.1f} min, rival {tr.get('steps')} steps "
                  f"in {tr.get('minutes', 0):.1f} min" + (f" (stopped early: {' and '.join(early)}, examined at the last saved state)" if early
                  else ", the same number of episodes each") + ". Guessing gets 50% on yes/no, "
                  f"10% on a digit, 1 in the number of things on a 'who/what', and almost nothing on a whole sum.")
