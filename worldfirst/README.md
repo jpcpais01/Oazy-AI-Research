@@ -82,7 +82,7 @@ What it does not get is loops: 6 layers of thinking per word, always. That is th
 
 ## How it is judged
 
-- **Secret exams vs seen kinds**, per family and level, both models, a question right only if its whole answer is.
+- **Secret exams vs practised kinds**, per family and level, both models, a question right only if its whole answer is.
 - **Passes against difficulty** (the Laws model's own choice when to stop), and accuracy at 1, 2, 4, ... 32 forced
   passes: does thinking longer help, and does it hold up past the 16 it trained with?
 - **Reversals**: family questions asked the other way round from how the link was told ("Rui is the son of Paulo",
