@@ -20,6 +20,12 @@ Everything runs on one RunPod GPU: **[docs/RUNPOD.md](docs/RUNPOD.md)** has ever
 |---|---|---|---|
 | **Code Black** | two clocks: a narrow fast stream reads every token, a deep slow stream thinks once per 4 tokens, and a hashed table of 2- and 3-token phrases adds knowledge for almost no arithmetic; ~0.6x a 125M transformer's arithmetic per token. Raced against **Black-T** (a 2026 transformer at 125M / 250M / 500M) for the same 30 GPU minutes each | yes | [`codeblack/`](codeblack/) |
 
+**Understanding** (the north star: a model that learns laws, judged on cases it was never shown):
+
+| model | idea | next-word? | code |
+|---|---|---|---|
+| **World-first, stage 1** | a reader turns a scene into one vector per thing, and a tiny shared laws core loops over the things until its picture settles, predicting the world after an action; raced against a plain next-word transformer of the same size on secret exams (longer sums, deeper nesting, unseen link chains, unseen rule mixes) | **no** | [`worldfirst/`](worldfirst/) |
+
 **Experiments** (smaller, ~120M, each testing one idea against GPT-2 small):
 
 | model | idea | next-word? | code |

@@ -207,6 +207,20 @@ bash runpod/train.sh plain100 --preset big --tokens 5e9 --micro 32      # option
 The log line also shows `thoughts 15.8 tok` (tokens per thought; the spring pulls it to 16) and `meaning 4.20` (the
 meaning loss, nats per piece; blind guessing is 6.9). If it runs out of memory: `--micro 16`. Speed is unmeasured.
 
+## World-first, stage 1 (a model that learns the laws of a small world; not next-word)
+
+The Laws model (reader + a tiny looped laws core, ~15M) against a plain next-word transformer of the same size, on
+a world of scenes and actions it writes itself (`worldfirst/README.md`). No dataset needed; one GPU or none.
+
+```bash
+cd /workspace/oazy && git pull
+python3 -m worldfirst.tests              # the world's walls and both models (~1 min)
+bash runpod/world.sh                     # trains both, examines both, writes <runs>/worldfirst/report.md
+```
+
+The dashboard shows the result as the "Understanding" card. `bash runpod/world.sh --only report` examines the saved
+models again.
+
 ## Sado, our second dataset (25,000M tokens, on a network volume)
 
 Tagus's successor: books, stricter web text, no benchmark questions, no repeats. What and why: `oazy/sado.py` and `oazy/sado_score.py`. It is built with the CPU and the network

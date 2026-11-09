@@ -56,6 +56,9 @@
   table.scores td.size, table.scores td.cost { color: var(--text-2); } table.scores td.cost small { color: var(--muted); } table.scores td.size small { color: var(--muted); }
   table.scores td.top { color: var(--good); font-weight: 700; }
   table.scores td.na { color: var(--muted); }
+  table.scores.world th:nth-child(2), table.scores.world td:nth-child(2) { text-align: left; white-space: normal; }
+  table.scores.world .na { color: var(--muted); }
+  table.scores.world tr.secret td { background: rgba(255, 255, 255, .025); }
   table.scores tr.ref td { color: var(--muted); font-style: italic; }
   table.scores sup { color: var(--muted); font-size: 9px; margin-left: 1px; }
   .score details.why { margin-top: 14px; }
@@ -155,6 +158,11 @@
 
   <div class="section-title" id="scores" data-k="scores"><h3>The finish line</h3><div class="line"></div></div>
   <div class="board" id="board"></div>
+
+  <div id="worldWrap" style="display:none">
+    <div class="section-title" id="world" data-k="understanding"><h3>Understanding: the world-first model</h3><div class="line"></div></div>
+    <div class="board" id="worldBox"></div>
+  </div>
 
   <div class="section-title" id="learning" data-k="learning"><h3>Learning</h3><div class="line"></div></div>
   <div class="grid">
@@ -1205,8 +1213,61 @@ function draw() {
   scoreboard(); drawLearning(); foreCheck(); drawMemoryUse(); drawDrafts(); drawRounds(); drawSamples(); library(); loadDownloads();
 }
 
+// World-first, stage 1 (worldfirst/): the Laws model (predicts the next scene, not a next-word model) against a plain
+// next-word transformer of the same size, on scenes it has seen the kind of and on secret exams it never trained on.
+const WORLD_SPLIT = { seen: "seen kinds, new scenes", longer: "longer", deeper: "deeper", bigger: "bigger falls", "new-pairs": "links chained in new ways", "new-mixes": "rules mixed in new ways" };
+function worldHtml(res) {
+  const p0 = (v) => v == null ? "–" : (v * 100).toFixed(1) + "%";
+  const avg = (xs) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+  const L = res.rows.laws || [], R = res.rows.rival || [];
+  const fams = [...new Set(L.map((r) => r.family))];
+  const rowsOf = (rows, mode, fam, sp) => rows.filter((r) => r.mode === mode && r.family === fam && r.split === sp);
+  let body = "";
+  for (const fam of fams) {
+    for (const sp of [...new Set(L.filter((r) => r.family === fam).map((r) => r.split))]) {
+      const l = rowsOf(L, "settle", fam, sp), r = rowsOf(R, "plain", fam, sp);
+      if (!l.length) continue;
+      const la = avg(l.map((x) => x.right)), ra = avg(r.map((x) => x.right)), ps = avg(l.map((x) => x.passes));
+      const lv = l.map((x) => x.level);
+      const top = (a, b) => a != null && b != null && a > b + 0.005 ? "top" : "";
+      body += `<tr class="${sp === "seen" ? "" : "secret"}"><td class="who">${UI.escapeHtml(fam)}</td><td>${sp === "seen" ? "" : "<b>secret</b> · "}${UI.escapeHtml(WORLD_SPLIT[sp] || sp)}<span class="na"> (level ${Math.min(...lv)}${lv.length > 1 ? "–" + Math.max(...lv) : ""})</span></td>`
+        + `<td class="${top(la, ra)}">${p0(la)}</td><td class="${top(ra, la)}">${p0(ra)}</td><td>${ps == null ? "–" : ps.toFixed(1)}</td></tr>`;
+    }
+  }
+  const sl = res.summary?.laws || {}, sr = res.summary?.rival || {};
+  const ks = [...new Set(L.filter((r) => /^p\d+$/.test(r.mode)).map((r) => +r.mode.slice(1)))].sort((a, b) => a - b);
+  const sweep = ["seen", "secret"].map((part) => `<tr><td class="who">${part}</td>${ks.map((k) => `<td>${p0(avg(L.filter((r) => r.mode === "p" + k && ((r.split === "seen") === (part === "seen"))).map((r) => r.right)))}</td>`).join("")}<td>${p0(avg(L.filter((r) => r.mode === "settle" && ((r.split === "seen") === (part === "seen"))).map((r) => r.right)))}</td></tr>`).join("");
+  const mb = (n) => (n / 1e6).toFixed(1) + "M";
+  return `<div class="card score">
+      <div class="big">Secret exams, never trained on: the Laws model ${p0(sl.secret)}, the rival ${p0(sr.secret)}. On new scenes of kinds it has seen: ${p0(sl.seen)} and ${p0(sr.seen)}.</div>
+      <div class="fcwrap"><table class="scores world">
+        <tr><th>Laws of</th><th>Exam</th><th>Laws model<span>${mb(res.params.laws)} · predicts the next scene</span></th><th>Rival<span>${mb(res.params.rival)} · next-word</span></th><th>Passes<span>it chose to think</span></th></tr>
+        ${body}
+      </table></div>
+      <p class="note">Each episode is a scene told in simple English with fresh random names, one action that changes it, and questions about the scene after the action; a question counts only when its whole answer is right (a sum: every digit). The secret exams are walled off by construction: longer sums and lines, deeper boxes, bigger falls, family links chained in ways never asked, hidden machines mixing steps never mixed in training. Green is the better of the two. Run ${UI.escapeHtml(res.name)}, ${UI.escapeHtml(res.when)}, ${res.eval_n} episodes per exam.</p>
+      <details class="why"><summary>Does thinking longer help?</summary><div class="body">
+        <div class="fcwrap"><table class="scores"><tr><th></th>${ks.map((k) => `<th>${k} pass${k > 1 ? "es" : ""}</th>`).join("")}<th>stops by itself</th></tr>${sweep}</table></div>
+        <p class="note">The Laws model's core runs again and again, one tick of thinking per pass. Here it is forced to stop after a fixed number of passes; "stops by itself" is the real test, where it thinks until its picture of the scene stops moving. The last column of the table above is how many passes that took.</p></div></details>
+    </div>`;
+}
+
+async function drawWorld() {
+  let res = [];
+  try { res = await getJSON("api/world"); } catch (e) { res = []; }
+  const wrap = document.getElementById("worldWrap"), box = document.getElementById("worldBox");
+  if (!res.length) { wrap.style.display = "none"; return; }
+  wrap.style.display = "";
+  const html = res.map(worldHtml).join("");
+  if (html === box.dataset.html) return;
+  const wasOpen = new Set([...box.querySelectorAll("details[open] > summary")].map((x) => x.textContent));
+  box.innerHTML = html;
+  box.dataset.html = html;
+  box.querySelectorAll("details > summary").forEach((x) => { if (wasOpen.has(x.textContent)) x.parentElement.open = true; });
+}
+
 async function refresh() {
   const pill = document.getElementById("updated");
+  drawWorld();
   try {
     RUNS = await getJSON("api/runs");
     const ORDER = ["bee5", "pegasusbeta", "alphastar", "plain100f", "pegasus2", "pegasus", "pegasusmini", "plain100", "coralmini", "bee4", "coral", "frog", "bee3", "bee2", "bee", "fern3", "fern2", "ember", "fern", "tide", "memtrix", "gpt", "openai-gpt2", "smollm2-360m", "smollm2-135m"];
