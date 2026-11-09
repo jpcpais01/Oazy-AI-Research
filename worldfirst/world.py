@@ -1058,6 +1058,7 @@ def gen_carry(rng, level, split):
             sents.append(rng.choice([["the", nm(x), "is in the", nm(p)], ["the", nm(p), "holds the", nm(x)],
                                      ["inside the", nm(p), "is the", nm(x)]]))
     sents += [[nm(p), "is in the", nm(pos[p])] for p in people]
+    B.say("the house has", *_and_list([["a", nm(r)] for r in rooms]))
     for snt in _shuffled(rng, sents):
         B.say(*snt)
     deepest = max(nest(x) for x in parent)
