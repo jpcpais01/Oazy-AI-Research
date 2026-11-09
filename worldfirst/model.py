@@ -455,6 +455,8 @@ class RivalConfig:
     ff: int = 1536
     n_layer: int = 6
     loss: str = "all"          # "all": every next word (plain next-word learning); "answers": only the answer words
+    loops: int = 1             # >1: its last `loop_layers` layers run this many times (shared weights), like Logos1's core
+    loop_layers: int = 2
     teach: float = 0.0         # >0: the same "same thing" answer key as the Laws model's linker gets (from the marks,
                                # training only, never an input): a link head on its last layer, the same loss and weight
 
@@ -482,8 +484,12 @@ class Rival(nn.Module):
         mask = torch.ones(T, T, dtype=torch.bool, device=tok.device).tril()[None, None]
         pos = torch.arange(T, device=tok.device)[None].expand(B, T)
         h = self.emb(tok) + self.tag(b["tag"])
-        for blk in self.blocks:
+        cut = len(self.blocks) - (self.cfg.loop_layers if self.cfg.loops > 1 else 0)
+        for blk in self.blocks[:cut]:
             h = blk(h, pos, mask)
+        for _ in range(self.cfg.loops if self.cfg.loops > 1 else 0):     # the looped layers: same weights, again
+            for blk in self.blocks[cut:]:
+                h = blk(h, pos, mask)
         self._h = h
         return self.norm(h) @ self.emb.weight.T                 # tied word table
 

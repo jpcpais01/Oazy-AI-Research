@@ -257,6 +257,14 @@ weight, sizes still matched. At the exams both read plain text.
 bash runpod/world.sh --name world-link --preset big --steps 200000 --passes 3 --natural 1 --linker 1
 ```
 
+A looped rival (`--rival-loops 3`): the same rival, but its last 2 layers run 3 times with the same weights, like
+Logos1's core. Same size, about 1.6x the work per step. `--laws-from world-link` trains only this rival and reuses
+world-link's Logos1 for the report (if world-link is still training, rerun with `--only report` when it is done).
+
+```bash
+bash runpod/world.sh --name world-loop --preset big --steps 200000 --passes 3 --natural 1 --linker 1 --rival-loops 3 --laws-from world-link
+```
+
 ## Sado, our second dataset (25,000M tokens, on a network volume)
 
 Tagus's successor: books, stricter web text, no benchmark questions, no repeats. What and why: `oazy/sado.py` and `oazy/sado_score.py`. It is built with the CPU and the network

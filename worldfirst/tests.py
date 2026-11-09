@@ -291,6 +291,20 @@ def torch_checks():
             assert abs(a - b) / a < 0.01, (preset, a, b)
 
     @check
+    def looped_rival_same_size_more_depth():
+        _, rival = make_pair(len(v), "tiny")
+        rb = rival_batch(eps[:4], v)
+        torch.manual_seed(0)
+        before = n_params(rival)
+        rival.eval()
+        with torch.no_grad():
+            l1 = rival.loss_and_hits(rb)[0].item()
+            rival.cfg.loops = 3                      # its last 2 layers run 3 times, same weights
+            l3 = rival.loss_and_hits(rb)[0].item()
+        assert n_params(rival) == before, "looping adds no numbers"
+        assert abs(l1 - l3) > 1e-6, "the loops change what it computes"
+
+    @check
     def batches_line_up():
         lb, rb = laws_batch(eps, v), rival_batch(eps, v)
         assert len(lb["meta"]) == len(rb["meta"])
