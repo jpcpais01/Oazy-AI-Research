@@ -235,7 +235,7 @@ the schedule.
 ### Evaluation cost
 
 **What it does.** During training we stop to check the model: held-out loss every 100M words (128 windows),
-HellaSwag on 1,000 questions every 200M, samples every 200M, ARC-Easy, PIQA and LAMBADA (500 questions each) and LogRes
+HellaSwag on 1,000 questions every 200M, samples every 200M, ARC-Easy, PIQA and LAMBADA (500 questions each) and LogT
 every 500M, and the full tests at the end. The time spent on checks is **not** counted in the run's clock or its
 words per second, so speed numbers compare training only.
 
@@ -397,7 +397,7 @@ Seed (`seed/README.md`) is Bee5's body and recipe, plus four things of its own. 
 | **Grokfast + extra decay on the core** | the slow average of the core's gradients (alpha 0.98) is added back twice, and the core's decay is 0.2 (Bee5: 0.1), to favour simple general rules. `--set grokfast=0` turns both off |
 
 **Gain.** Not measured yet. The checks, in order: `--tokens 0.5e9 --name seed-smoke` (nothing breaks, the loss is
-smooth at each growth), `--tokens 5e9 --set hold=1 --name seed-hold` (the tiny core alone: does LogRes jump late?),
+smooth at each growth), `--tokens 5e9 --set hold=1 --name seed-hold` (the tiny core alone: does LogT jump late?),
 then a 90-minute race against Bee5 with Grokfast on and off (`seed/README.md` has the lines).
 
 ---

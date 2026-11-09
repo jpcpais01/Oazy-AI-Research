@@ -1,7 +1,7 @@
 # Seed: a small core that grows, and a big library of facts
 
 **Next-word model**, a plain one, like GPT-2 and every Bee: it reads text and guesses the very next token, and it is
-scored the same way (held-out loss per GPT-2 token, HellaSwag, ARC-Easy, PIQA, LAMBADA, LogRes).
+scored the same way (held-out loss per GPT-2 token, HellaSwag, ARC-Easy, PIQA, LAMBADA, LogT).
 
 João's design from the Special Lab (Nov 9). A normal model spends its weights both on remembering things and on working
 things out. Seed splits the two: the facts go into a library that is cheap to read, so the small core is free to
@@ -109,7 +109,7 @@ could not start a new pair at exactly 0).
 ## Honest limits
 
 - It will know like a big model but reason like a ~100M one. Grokking on real, messy text is a hope, not a proven
-  thing. The sign we hope for is a late jump on LogRes, not just a lower loss.
+  thing. The sign we hope for is a late jump on LogT, not just a lower loss.
 - Product-key memories can crowd onto a few rows. The questions are batch-normed for that (Lample's fix), and
   `[library]` shows how many rows are read.
 - GPU speed is **not measured yet**: the library's 1B weights mean ~16 GB of optimizer state and a 4 GB gradient each

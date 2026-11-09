@@ -6,7 +6,7 @@ run folders (runpod/bee6_world.sh trains them and runs the world exams first).
 
 Every run is a NEXT-WORD model with the same body, recipe and token count; a world run's tokens include its episodes,
 so it read less Sado text at the same compute. Held-out loss is on Sado's held-out text only (no world text in it):
-lower is better. HellaSwag (per letter), LogRes and the world exams: higher is better. A 500M-token race is a quick
+lower is better. HellaSwag (per letter), LogT and the world exams: higher is better. A 500M-token race is a quick
 filter: a held-out gap under 0.02, or a HellaSwag gap under ~1 point, is a tie to confirm at ~2B tokens.
 """
 from __future__ import annotations
@@ -73,7 +73,7 @@ def main(argv=None):
                      pct(s["hs"]) + ("" if s["hs_full"] or s["hs"] is None else "*"), pct(s["logres"]),
                      pct(ex.get("secret")), pct(ex.get("seen"))])
     term.header("Bee6 with world practice", "0.5B tokens · Sado · next-word models")
-    head = ["", "world", "text + world tokens", "training time", "held-out Sado", "HellaSwag", "LogRes", "world secret",
+    head = ["", "world", "text + world tokens", "training time", "held-out Sado", "HellaSwag", "LogT", "world secret",
             "world practised"]
     term.table(head, body, right=(2, 3, 4, 5, 6, 7, 8))
     term.info("held-out Sado: lower is better (per GPT-2 token, Sado text only). * HellaSwag on part of the questions. "
@@ -97,7 +97,7 @@ def main(argv=None):
                 d = x["hs"] - base["hs"]
                 parts.append(("better" if d > HS_TIE else "worse" if d < -HS_TIE else "a tie") + f" on HellaSwag ({d * 100:+.1f} pts)")
             if base["logres"] is not None and x["logres"] is not None:
-                parts.append(f"LogRes {(x['logres'] - base['logres']) * 100:+.1f} pts")
+                parts.append(f"LogT {(x['logres'] - base['logres']) * 100:+.1f} pts")
             if base["ex"].get("secret") is not None and x["ex"].get("secret") is not None:
                 parts.append(f"world secret {(x['ex']['secret'] - base['ex']['secret']) * 100:+.1f} pts")
             lines.append((rn, ", ".join(parts) or "no numbers yet"))

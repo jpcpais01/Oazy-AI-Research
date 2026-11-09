@@ -158,7 +158,7 @@ class Block6(nn.Module):
 
     Picking the top 25% of a window looks at the whole window, later words included. That is fine for learning but not
     for reading, so a small helper learns, on the side, to guess from each word alone (and causally) whether the
-    router would pick it. Reading (eval mode: the held-out loss, HellaSwag, LogRes, chat) uses the helper's guess."""
+    router would pick it. Reading (eval mode: the held-out loss, HellaSwag, LogT, chat) uses the helper's guess."""
 
     def __init__(self, cfg: Bee6Config, layer: int):
         super().__init__()

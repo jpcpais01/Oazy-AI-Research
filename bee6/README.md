@@ -1,7 +1,7 @@
 # Bee6-200M: Bee5 made fast
 
 **Next-word model**, exactly like GPT-2 and every Bee: it reads text and guesses the very next token, and it is scored
-the same way (held-out loss per GPT-2 token, HellaSwag, ARC-Easy, PIQA, LAMBADA, LogRes).
+the same way (held-out loss per GPT-2 token, HellaSwag, ARC-Easy, PIQA, LAMBADA, LogT).
 
 João's ask (Nov 9): *"a 200M parameter model training at 3M tokens a second"*, then *"build idea 2 3 4 5. 200M params.
 Call it Bee6."*
@@ -76,7 +76,7 @@ The catch, and how Bee6 handles it: "top 25% of the window" depends on later wor
 (the model would peek at the future). As in the paper, each routed layer has a small helper (1,024 -> 128 -> 1) that
 learns, on the side, to guess from each word alone whether the router would pick it (`mod_aux=0.01`; the helper reads a
 detached copy, so it never pulls on the model). **Everything that reads uses the helper's guess**: the held-out loss,
-HellaSwag, LogRes, the samples and chat. So every score is honest and causal (tested: changing later words never
+HellaSwag, LogT, the samples and chat. So every score is honest and causal (tested: changing later words never
 changes earlier scores). The trainer's log shows `mod_agree`, how often the helper agrees with the router. Routed
 layers never shift their keys (the key-offset layers are 4, 8, 12).
 
@@ -131,7 +131,7 @@ Then the same with bloom on (reuses the Bee5 run):
     tmux new-window -t oazy -n race6b "OAZY_DATA=/root/data bash runpod/bee6_race.sh bloom; bash"
 
 The table again any time: `python3 -m bee6.race` (or `--bee6 bee6bloom`). It shows tokens, training time, speed,
-held-out loss, HellaSwag and LogRes side by side, and a verdict at equal tokens and at equal hours. At 0.5B tokens a
+held-out loss, HellaSwag and LogT side by side, and a verdict at equal tokens and at equal hours. At 0.5B tokens a
 held-out gap under 0.02 is a tie, to confirm at ~2B.
 
 To measure one idea's quality alone, add `--set` to a race, for example `--set mod_layers= --name bee6-nomod` (Bee6

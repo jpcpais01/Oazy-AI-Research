@@ -3,7 +3,7 @@
 #   1. Bee5, 500M tokens of Sado            (bee5-race; kept if it already finished)
 #   2. Bee6, the same 500M tokens           (bee6-race: equal tokens, so quality per word)
 #   3. Bee6 for exactly Bee5's training time (bee6-hours: equal hours, so quality per GPU-hour)
-#   4. python3 -m bee6.race                 (held-out loss, HellaSwag, LogRes, speed, side by side)
+#   4. python3 -m bee6.race                 (held-out loss, HellaSwag, LogT, speed, side by side)
 #
 #   tmux new-window -t oazy -n race6 "OAZY_DATA=/root/data bash runpod/bee6_race.sh; bash"
 #   tmux new-window -t oazy -n race6b "OAZY_DATA=/root/data bash runpod/bee6_race.sh bloom; bash"   # Bee6 with bloom on

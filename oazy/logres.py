@@ -1,4 +1,4 @@
-"""LogRes (logic and reasoning): can a model work out an answer the text never says?
+"""LogT (logic and thinking): can a model work out an answer the text never says?
 
 Every question puts its own facts in front of the model, with made-up names and words, and asks for something
 that follows from them but is never written down. Nothing can be looked up or remembered from training text:
@@ -29,14 +29,14 @@ headline score) and per token. Guessing scores 50% on most questions and less wh
 25%; negation: 1 in 2 to 1 in 6); the guessing level is always printed next to the score. Nothing is trained on it:
 the training text is unchanged.
 
-    python3 -m oazy.logres                                  # score Coral, Bee4, Pegasus 1 Mini, Plain-100M (+ SmolLM2)
-    python3 -m oazy.logres --run pegasusmini --run plain100 # just these
-    python3 -m oazy.logres --ckpt /path/ckpt.pt             # any checkpoint, print only
-    python3 -m oazy.logres --show 3                         # print 3 example questions of every kind and level
-    python3 -m oazy.logres --build                          # remake the question file (only if the generator changes)
+    python3 -m oazy.logt                                    # score Coral, Bee4, Pegasus 1 Mini, Plain-100M (+ SmolLM2)
+    python3 -m oazy.logt   --run pegasusmini --run plain100 # just these
+    python3 -m oazy.logt   --ckpt /path/ckpt.pt             # any checkpoint, print only
+    python3 -m oazy.logt   --show 3                         # print 3 example questions of every kind and level
+    python3 -m oazy.logt --build                            # remake the question file (only if the generator changes)
 
-Each scored run gets one {"kind": "logres"} line in its metrics.jsonl (the dashboard's LogRes column and its
-"LogRes by level" table read it) and, once finished, "logres" in its status.json. The trainer runs it with the
+Each scored run gets one {"kind": "logres"} line in its metrics.jsonl (the dashboard's LogT column and its
+"LogT by level" table read it) and, once finished, "logres" in its status.json. The trainer runs it with the
 other tests (oazy/train.py), so new runs get it on their own.
 """
 from __future__ import annotations
@@ -313,7 +313,7 @@ def write(path: Path = FILE):
 
 # ---------------------------------------------------------------------------------------------------- scoring
 def evaluate(model, device, items=None, batch: int = 64):
-    """Score a model on LogRes. Works for any model with _body(idx) -> logits and a cfg.tokenizer (every Oazy model,
+    """Score a model on LogT. Works for any model with _body(idx) -> logits and a cfg.tokenizer (every Oazy model,
     Pegasus included, and the SmolLM2 / GPT-2 yardsticks).
 
     The questions are run in groups of exactly the same length, so there is never any padding: a model's answer
@@ -438,7 +438,7 @@ def table(results):
     from . import term
     names = list(results)
     chance = next(iter(results.values()))
-    term.header("LogRes · logic and reasoning", f"{chance['n']} questions · per letter · higher is better")
+    term.header("LogT · logic and thinking", f"{chance['n']} questions · per letter · higher is better")
     body = [[term.c(NICE.get(n, n), "bold"), pct(results[n]["acc_char"])] + [pct(results[n]["levels"][str(L)]["acc"]) for L in LEVELS]
             for n in names]
     body.append([term.c("guessing", "dim"), pct(chance["chance"])] + [pct(chance["levels"][str(L)]["chance"]) for L in LEVELS])

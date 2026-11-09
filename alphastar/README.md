@@ -1,7 +1,7 @@
 # Pegasus Alpha Star: a 100M model that thinks in loops
 
 **Next-word model.** It reads text and guesses the very next token, and it is scored exactly like Plain-100M
-(held-out loss, HellaSwag, LogRes, ARC/PIQA/LAMBADA). What is new is *how much thinking* each word gets.
+(held-out loss, HellaSwag, LogT, ARC/PIQA/LAMBADA). What is new is *how much thinking* each word gets.
 
 ## The idea, in plain words
 
@@ -52,7 +52,7 @@ backward pass. Expect roughly **0.6-0.7x Plain-100M's tokens per second** (the G
 
 ## Reading
 
-- **Held-out loss, HellaSwag, LogRes, ...**: it thinks until each word's thought settles (moves less than 3% of its
+- **Held-out loss, HellaSwag, LogT, ...**: it thinks until each word's thought settles (moves less than 3% of its
   size from one pass to the next, `exit_eps`), at most 16 passes. A word that is done keeps its thought while the
   others go on. `--set test_passes=N` forces N passes.
 - **Writing** (chat, samples): a fixed 8 passes per word (`gen_passes`), word by word with every pass's keys kept.
@@ -73,7 +73,7 @@ At every probe the log shows three `[loop]` lines (also in metrics.jsonl, kind `
    one (the Pegasus failure mode) uses a handful.
 
 And the race itself: held-out loss at 500M tokens against `plain100-race` (3.385) and `plain100f-race`, HellaSwag and
-LogRes (`python3 -m oazy.logres --run plain100-race --run plain100f-race --run alphastar-race`).
+LogT (`python3 -m oazy.logres --run plain100-race --run plain100f-race --run alphastar-race`).
 
 ## Run it (on the B200 pod)
 
