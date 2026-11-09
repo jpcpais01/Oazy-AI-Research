@@ -27,6 +27,8 @@ FACTS = {
                  what="a small attention-only language model"),
     "seed": dict(name="Seed", size="about 1.2 billion parameters, about 110 million at work for each word",
                  what="a small language model with a compact thinking core and a large library of facts it looks things up in"),
+    "bee6": dict(name="Bee6", size="about 200 million parameters",
+                 what="a small attention-only language model that sends only the harder words through some of its layers"),
     "bee3": dict(name="Bee3", size="about 200 million parameters",
                  what="a small hybrid language model with a fast-weight memory (Memtrix) and attention"),
     "bee2": dict(name="Bee", size="about 200 million parameters",

@@ -264,6 +264,7 @@ class Bee5(nn.Module):
     micro_at_full = True        # --micro N = N sequences per pass at the longest window (Bee4's rule)
     fused_loss = True           # the loss in slices (bee5/loss.py); False = full 32-bit scores
     loss_chunk = 1024
+    Block = Block               # the layer class (Bee6 brings its own)
 
     def __init__(self, cfg: Bee5Config):
         super().__init__()
@@ -272,7 +273,7 @@ class Bee5(nn.Module):
         kvd = cfg.attn_kv_heads * cfg.attn_head_dim
         self.embed = nn.Embedding(cfg.vocab_size, D)                     # tied: also the score head
         self.ve = nn.ModuleList(nn.Embedding(cfg.vocab_size, kvd) for _ in range(cfg.n_ve))
-        self.blocks = nn.ModuleList(Block(cfg, i) for i in range(n))
+        self.blocks = nn.ModuleList(type(self).Block(cfg, i) for i in range(n))
         self.lam = nn.Parameter(torch.ones(n))                           # the stream's weight at each layer's input
         self.mu = nn.Parameter(torch.zeros(n))                           # the first input's weight there (x0)
         n_skip = n // 2 if cfg.unet else 0
@@ -282,6 +283,8 @@ class Bee5(nn.Module):
         self.smear_gate = nn.Linear(GATE_IN, 1, bias=False) if cfg.smear else None
         self.backout_lam = nn.Parameter(torch.full((1,), 0.5 if cfg.backout else 0.0), requires_grad=bool(cfg.backout))
         self.backout_at = max(0, round(2 * n / 3) - 1)                   # the 8th of 12 layers
+        if getattr(cfg, "backout_layer", -1) >= 0:                       # Bee6's bloom keeps it on the layer it grew from
+            self.backout_at = cfg.backout_layer
         cos, sin = rope_table(ROPE_TABLE, cfg.attn_head_dim, cfg.rope_wave, cfg.rope_frac)
         self.register_buffer("rope_cos", cos, persistent=False)
         self.register_buffer("rope_sin", sin, persistent=False)

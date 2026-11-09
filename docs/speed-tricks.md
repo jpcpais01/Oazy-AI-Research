@@ -1,6 +1,6 @@
 # Our speed-up and optimization tricks
 
-Every trick our models use to train faster or learn more from each word, in one place. Written Nov 9 2026, from the
+Every trick our models use to train faster or learn more from each word, in one place. Written Nov 9 2026 (Bee6 added the same day), from the
 code on `main` and the PR history (up to #160; Seed added with its own PR).
 
 There are two kinds of trick:
@@ -26,6 +26,7 @@ All on one B200, `--preset big`, micro 32.
 | Pegasus 1 | about 30% slower than Bee4 | |
 | Bee5 | **not measured yet** | `python3 -m bee5.speedcheck` measures it; the race against Bee4 is the real test |
 | Seed | **not measured yet** | `python3 -m seed.speedcheck` measures each bloom stage; runs print each stage's real speed at every growth |
+| Bee6 | **not measured yet** | aim ~2.3-2.6M with all four ideas (the lab's estimate); `python3 -m bee6.speedcheck` gives one row per idea |
 
 "Share of the chip" is MFU: how much of the GPU's top arithmetic speed we really use. Big labs reach 35-50%.
 
@@ -33,21 +34,24 @@ All on one B200, `--preset big`, micro 32.
 
 A quick map. ✓ = on by default, `·` = off or not there.
 
-| trick | Coral | Bee4 | Coral Mini | Plain-100, Pegasus, Alpha Star, Beta | Bee5 | Seed |
-|---|---|---|---|---|---|---|
-| compile, bf16, fused loss in slices | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Muon (batched) | ✓ | ✓ | ✓ | ✓ | NorMuon | NorMuon + Grokfast (core) |
-| short windows first | · | ✓ | ✓ | ✓ | ✓ | ✓ |
-| growing depth | ✓ | ✓ | ✓ | · | · | depth **and width**, function kept |
-| FP8 | ✓ (attention + shared MLP) | · | · | · | · | switch (`--fp8 1`) |
-| plain causal attention (no document mask) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| batch ramp | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| WSD cool-down | last 20% | last 30% | last 30% | last 30% | last 30% | last 30% |
-| the mentor | 1 in 4, gone by 30% | 1 in 4 -> 1 in 10, kept | as Bee4 | as Bee4 | as Bee4 | as Bee4 |
-| speedrun body tricks (value tables, U-net, ReLU², ...) | · | · | · | · | ✓ | ✓ |
-| next-3-words early lesson | · | · | · | · | ✓ | ✓ |
-| product-key library (sparse rows) | · | · | · | Alpha Star's small drawer | · | ✓ 1.3M rows |
-| data selection `--select` | · | · | · | off until its A/B | refused until its A/B | refused until its A/B |
+| trick | Coral | Bee4 | Coral Mini | Plain-100, Pegasus, Alpha Star, Beta | Bee5 | Seed | Bee6 |
+|---|---|---|---|---|---|---|---|
+| compile, bf16, fused loss in slices | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ (4,096-word slices, fixed shapes) |
+| Muon (batched) | ✓ | ✓ | ✓ | ✓ | NorMuon | NorMuon + Grokfast (core) | NorMuon |
+| short windows first | · | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| growing depth | ✓ | ✓ | ✓ | · | · | depth **and width**, function kept | bloom (depth and width, function kept), a switch, off |
+| FP8 | ✓ (attention + shared MLP) | · | · | · | · | switch (`--fp8 1`) | ✓ its own, layers only, checked at start |
+| plain causal attention (no document mask) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| batch ramp | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| WSD cool-down | last 20% | last 30% | last 30% | last 30% | last 30% | last 30% | last 30% |
+| the mentor | 1 in 4, gone by 30% | 1 in 4 -> 1 in 10, kept | as Bee4 | as Bee4 | as Bee4 | as Bee4 | as Bee4 |
+| speedrun body tricks (value tables, U-net, ReLU², ...) | · | · | · | · | ✓ | ✓ | ✓ |
+| next-3-words early lesson | · | · | · | · | ✓ | ✓ | ✓ |
+| product-key library (sparse rows) | · | · | · | Alpha Star's small drawer | · | ✓ 1.3M rows | · |
+| data selection `--select` | · | · | · | off until its A/B | refused until its A/B | refused until its A/B | refused until its A/B |
+| one q/k/v product | · | · | · | · | · | · | ✓ |
+| Mixture of Depths (top 25% of words in 5 layers) | · | · | · | · | · | · | ✓ |
+| CUDA graphs | · | · | · | · | · | · | switch, kept only if the speed check says so |
 
 ---
 
@@ -255,6 +259,47 @@ Not a trick but the tool that tells us which tricks pay:
 
 Bigger micro batches (48, 64) were within 1% of 32 on Bee4, so 32 stays.
 
+### Bee6: Bee5 made fast (ideas 2-5 of the Special Lab, Nov 9)
+
+Bee6 (`bee6/README.md`) is Bee5's body and recipe with four speed ideas, each a `--set` switch so its speed and its
+quality cost can be measured alone. None of it is timed on the B200 yet: `python3 -m bee6.speedcheck` gives one row per
+idea (Bee5, Bee6 with everything off, + idea 2, + 3, + 4, + 5), and `bash runpod/bee6_race.sh` races Bee5 at equal tokens
+and equal hours.
+
+**One q/k/v product** (`fuse_qkv=1`, idea 2). The three input products of attention become one (1,024 -> 1,536). The
+weights stay three grids, so NorMuon treats them as before. Same numbers (tested).
+
+**Bigger loss slices** (`loss_chunk=4096`, idea 2). 16 slices a pass instead of 64, so the 49,152 x 1,024 gradient of
+the word table is added up 16 times instead of 64. A few GB more memory. Same numbers (tested).
+
+**Fixed shapes, no padding** (idea 2). Bee6 compiles with fixed shapes (one version per window length and bloom stage),
+and Mixture of Depths takes a fixed number of words per layer. There was no padding to cut: whole documents are packed
+and 49,152 divides by 128.
+
+**CUDA graphs** (`graphs=1`, idea 2). Retried: Bee6 marks the start of each pass, which is what the old crash needed.
+Off unless the speed check finds it runs and is 2%+ faster.
+
+**A kernel list** (idea 2). `python3 -m bee6.profile`: a pass split into layers / word table + loss / optimizer, chip
+use, GPU time by kind of kernel, and the slowest kernels by name.
+
+**FP8, the speedrun's way** (`fp8=1`, idea 3; `bee6/fp8.py`). Not torchao: Bee6's own FP8 product, only on the layers'
+big products (q/k/v, attention output, MLP up and down), one scale per tensor per pass (e4m3 for inputs and weights,
+e5m2 for gradients), and the weight gradient kept in bf16 (`fp8=2` puts it in FP8 too). Norms, word table, score head,
+value tables, gates, router, loss: bf16 or 32-bit. A startup check compares one batch in bf16 and FP8 (loss within 2%,
+gradients 0.9+ alike) and falls back to bf16 if not. Scales are fresh each pass, so bloom has nothing to grow.
+
+**Mixture of Depths** (`mod_layers=2,4,6,8,10 mod_cap=0.25`, idea 4). Skipping work: in layers 3, 5, 7, 9, 11 a router
+picks the top 25% of each window's words and only they go through (the rest skip the layer). Those five layers do a
+quarter of the work. Learning uses the router's top 25%; everything that reads (held-out loss, tests, chat) uses a small
+helper that guesses the router's pick from each word alone, so nothing looks ahead (tested). This one changes the model,
+so it is the one the race is really about. `mod_layers=` turns it off, `mod_cap=0.125` is the paper's best setting.
+
+**Bloom** (`bloom=on`, idea 5, off by default). 4 layers of 512 (0-20%), 6 of 768 (20-40%), 9 of 1,024 (40-60%), then
+12 of 1,024. Each growth keeps the model's answers exactly (tested to 1e-13 in 64-bit): new width starts at zero with
+every product rescaled, new layers go in the middle as exact no-ops, routers grow with the width. The trainer starts a
+fresh optimizer after each growth. Seed (#165) grows the same way; Bee6 keeps its own copy because its layers
+also carry routers, and unlike Seed it does not carry the optimizer's memory across a growth yet. Plain Bee6 is measured first, then `bash runpod/bee6_race.sh bloom`.
+
 ---
 
 ## Part 2: learning efficiency
@@ -361,8 +406,8 @@ then a 90-minute race against Bee5 with Grokfast on and off (`seed/README.md` ha
 
 | trick | why we dropped it |
 |---|---|
-| **FP8 matrix products** | On the B200 with Bee4 (Nov 7) it was *slower*, 445k vs 475k words a second, and it moved the gradients (cosine 0.953). At width 1,024 the products are too small for FP8's scaling cost to pay. Off since PR #113. `--fp8 1` still works; Coral used it on attention and the shared MLP. A fused FP8 score head is the one worth building next |
-| **CUDA graphs** (`compile_mode=reduce-overhead`) | crash with our training step |
+| **FP8 matrix products (torchao)** | On the B200 with Bee4 (Nov 7) it was *slower*, 445k vs 475k words a second, and it moved the gradients (cosine 0.953). Off since PR #113. `--fp8 1` still works; Coral used it on attention and the shared MLP. Bee6 tries again its own way (Part 1, Bee6), layers only, checked at start. A fused FP8 score head is still unbuilt |
+| **CUDA graphs** (`compile_mode=reduce-overhead`) | crash with our training step. Bee6 retries them with the pass start marked (`--set graphs=1`) |
 | **autotuned compile, cuDNN attention, micro 48/64** | all within 1% on Bee4. Still available as switches |
 | **flex attention** | used for the per-document rule (~40% of a pass, see Part 1). Pegasus tried it again for its local window (PR #142): every setting failed to compile on the B200's Triton. Pegasus runs ~15% faster without it. Retry after a torch upgrade |
 | **sliding attention windows** (long/short) | a speedrun trick that needs FlashAttention-3 on H100. On the B200 we only have the fused kernel (no windows) or flex attention (slower). Attention is about a quarter of the work at 2,048, so even a perfect window would save ~15% |
@@ -407,3 +452,9 @@ These sped up models we have retired (Bee0.2B to Frog), and they still work if t
 | `--set bloom=12x768:0` | Seed full size from the start |
 | `OAZY_DATA=/root/data` | read data from the pod's local copy |
 | `OAZY_LOSS_COMPILE=0` | loss slices uncompiled |
+| `--set fuse_qkv=0` | Bee6: three q/k/v products |
+| `--set loss_chunk=1024` | Bee6: Bee5's loss slices |
+| `--set graphs=1` | Bee6: CUDA graphs |
+| `--set fp8=0` / `fp8=2` | Bee6: bf16 layers / FP8 weight gradient too |
+| `--set mod_layers=` | Bee6: no Mixture of Depths (`mod_cap=0.125` for the paper's share) |
+| `--set bloom=on` | Bee6: grow 4x512 -> 12x1,024 |

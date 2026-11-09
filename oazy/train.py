@@ -33,17 +33,17 @@ from memtrix.model import Memtrix, MemtrixConfig
 from memtrix import memory
 from . import hellaswag, probes, term
 
-KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "seed", "smol", "smolbee", "black", "blackt", "gpt"]
+KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "seed", "smol", "smolbee", "black", "blackt", "gpt"]
 NICE = {"memtrix": "Memtrix", "tide": "Tide", "fern": "Fern", "ember": "Ember", "fern2": "Fern2", "fern3": "Fern3",
         "bee": "Bee0.2B", "bee2": "Bee_v2_0.2B", "bee3": "Bee3", "frog": "Frog", "coral": "Coral", "bee4": "Bee4-200M", "coralmini": "Coral Mini",
-        "pegasus": "Pegasus 1", "pegasusmini": "Pegasus 1 Mini", "pegasus2": "Pegasus 2 Mini", "plain100": "Plain-100M", "plain100f": "Plain-100F", "alphastar": "Pegasus Alpha Star", "pegasusbeta": "Pegasus Beta", "bee5": "Bee5-200M", "seed": "Seed", "smol": "SmolLM2 (their recipe)", "smolbee": "SmolLM2 (our recipe)", "black": "Code Black",
+        "pegasus": "Pegasus 1", "pegasusmini": "Pegasus 1 Mini", "pegasus2": "Pegasus 2 Mini", "plain100": "Plain-100M", "plain100f": "Plain-100F", "alphastar": "Pegasus Alpha Star", "pegasusbeta": "Pegasus Beta", "bee5": "Bee5-200M", "bee6": "Bee6-200M", "seed": "Seed", "smol": "SmolLM2 (their recipe)", "smolbee": "SmolLM2 (our recipe)", "black": "Code Black",
         "blackt": "Black-T", "gpt": "GPT"}
-FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "seed", "smolbee", "black", "blackt")    # raised the fast way: Muon (and a mentor, where MENTOR names one)
+FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "seed", "smolbee", "black", "blackt")    # raised the fast way: Muon (and a mentor, where MENTOR names one)
 # default mentor (the others: gpt2-medium). Code Black and Black-T race without one, so the architectures are compared alone.
 MENTOR = {"bee": "gpt2-large", "bee2": "smollm2-360m", "bee3": "smollm2-360m", "frog": "smollm2-360m", "coral": "smollm2-360m",
           "bee4": "smollm2-360m", "coralmini": "smollm2-360m", "pegasus": "smollm2-360m", "pegasusmini": "smollm2-360m", "pegasus2": "smollm2-360m",
-          "plain100": "smollm2-360m", "plain100f": "smollm2-360m", "alphastar": "smollm2-360m", "pegasusbeta": "smollm2-360m", "bee5": "smollm2-360m", "seed": "smollm2-360m", "smolbee": "smollm2-360m", "black": "none", "blackt": "none"}
-BEES = ("bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "seed", "smol", "smolbee", "black", "blackt")    # the text mix (Tagus), WSD, growing windows
+          "plain100": "smollm2-360m", "plain100f": "smollm2-360m", "alphastar": "smollm2-360m", "pegasusbeta": "smollm2-360m", "bee5": "smollm2-360m", "bee6": "smollm2-360m", "seed": "smollm2-360m", "smolbee": "smollm2-360m", "black": "none", "blackt": "none"}
+BEES = ("bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "seed", "smol", "smolbee", "black", "blackt")    # the text mix (Tagus), WSD, growing windows
 # Bee3's recipe (bee3/README.md): the mentor stays the whole run, weight decay on the Muon grids, a batch ramp,
 # a 1-minus-square-root cool-down, twice Bee2's learning rates (the presets' lr_bee3 / muon_lr_bee3)
 RECIPE = {"bee3": dict(mentor_floor=0.25, mentor_off=0.1, muon_wd=0.1, batch_ramp="65536:0.1", decay_shape="sqrt")}
@@ -94,6 +94,9 @@ RECIPE["pegasusbeta"] = dict(RECIPE["plain100"])
 # (Bee4's: windows 512 -> 2,048, the batch ramp, WSD over the last 30%, bf16, the SmolLM2-360M mentor on a share of
 # the passes; no growing: the U-net ties early layers to late ones), reading Sado (oazy/sado.py), our newest text.
 RECIPE["bee5"] = dict(RECIPE["bee4"], data_sub="sado")
+# Bee6 (bee6/README.md, Nov 9): Bee5 made fast (one q/k/v product, FP8 layer products, Mixture of Depths in every other
+# layer, bloom as a switch). Bee5's recipe exactly; its FP8 is its own (bee6/fp8.py), not the trainer's --fp8.
+RECIPE["bee6"] = dict(RECIPE["bee5"])
 # Seed (seed/README.md, Nov 9): a small core that grows 4x384 -> 6x512 -> 9x640 -> 12x768 (20/20/20/40% of the run,
 # keeping its function) + a 1.3M-row library it looks facts up in. Bee5's recipe exactly (the latest best: windows
 # 512 -> 2,048, the batch ramp, WSD over the last 30%, bf16, the SmolLM2-360M mentor on a share of the passes, Sado with
@@ -247,6 +250,11 @@ def _bee5():
     return Bee5, Bee5Config
 
 
+def _bee6():
+    from bee6.model import Bee6, Bee6Config          # bee6/ = Bee5 made fast (fused q/k/v, FP8, Mixture of Depths, bloom)
+    return Bee6, Bee6Config
+
+
 def _smol():
     from smol.model import Smol, SmolConfig        # smol/ = SmolLM2's body (Hugging Face Llama), random weights
     return Smol, SmolConfig
@@ -333,19 +341,19 @@ PRESETS = {
     ),
     # GPT-2 small size (Memtrix 117M vs GPT-2 124M), ~2 h for both models on one B200 (check with --bench)
     "full": dict(
-        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576, batch_bee4=524288, batch_coralmini=524288, batch_pegasus=524288, batch_pegasusmini=524288, batch_pegasus2=524288, batch_plain100=524288, batch_plain100f=524288, batch_alphastar=524288, batch_pegasusbeta=524288, batch_bee5=524288, batch_seed=524288, batch_smol=524288, batch_smolbee=524288,
+        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576, batch_bee4=524288, batch_coralmini=524288, batch_pegasus=524288, batch_pegasusmini=524288, batch_pegasus2=524288, batch_plain100=524288, batch_plain100f=524288, batch_alphastar=524288, batch_pegasusbeta=524288, batch_bee5=524288, batch_bee6=524288, batch_seed=524288, batch_smol=524288, batch_smolbee=524288,
         micro=32, accum=8, lr=1.2e-3, lr_bee3=2.4e-3, muon_lr_bee3=0.04, lr_frog=1.8e-3, muon_lr_frog=0.03,
         lr_coral=1.8e-3, muon_lr_coral=0.03, lr_bee4=1.8e-3, muon_lr_bee4=0.03, lr_coralmini=1.8e-3, muon_lr_coralmini=0.03,
-        lr_pegasus=1.8e-3, muon_lr_pegasus=0.03, lr_pegasusmini=1.8e-3, muon_lr_pegasusmini=0.03, lr_pegasus2=1.8e-3, muon_lr_pegasus2=0.03, lr_plain100=1.8e-3, muon_lr_plain100=0.03, lr_plain100f=1.8e-3, muon_lr_plain100f=0.03, lr_alphastar=1.8e-3, muon_lr_alphastar=0.03, lr_pegasusbeta=1.8e-3, muon_lr_pegasusbeta=0.03, lr_bee5=1.8e-3, muon_lr_bee5=0.03, lr_seed=1.8e-3, muon_lr_seed=0.03, lr_smol=3e-3, lr_smolbee=1.8e-3, muon_lr_smolbee=0.03, warmup=400, tokens=2_000_000_000,
+        lr_pegasus=1.8e-3, muon_lr_pegasus=0.03, lr_pegasusmini=1.8e-3, muon_lr_pegasusmini=0.03, lr_pegasus2=1.8e-3, muon_lr_pegasus2=0.03, lr_plain100=1.8e-3, muon_lr_plain100=0.03, lr_plain100f=1.8e-3, muon_lr_plain100f=0.03, lr_alphastar=1.8e-3, muon_lr_alphastar=0.03, lr_pegasusbeta=1.8e-3, muon_lr_pegasusbeta=0.03, lr_bee5=1.8e-3, muon_lr_bee5=0.03, lr_bee6=1.8e-3, muon_lr_bee6=0.03, lr_seed=1.8e-3, muon_lr_seed=0.03, lr_smol=3e-3, lr_smolbee=1.8e-3, muon_lr_smolbee=0.03, warmup=400, tokens=2_000_000_000,
         eval_every=50_000_000, probe_every=250_000_000, hs_every=250_000_000, sample_every=250_000_000, evals_every=500_000_000,
         val_windows=128, hs_quick=1000, evals_quick=500, sample_len=120,
     ),
     # the same models, 2.5x the text (e.g. a 2 x B200 pod for ~2.5 h, one model per GPU)
     "big": dict(
-        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576, batch_bee4=524288, batch_coralmini=524288, batch_pegasus=524288, batch_pegasusmini=524288, batch_pegasus2=524288, batch_plain100=524288, batch_plain100f=524288, batch_alphastar=524288, batch_pegasusbeta=524288, batch_bee5=524288, batch_seed=524288, batch_smol=524288, batch_smolbee=524288,
+        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576, batch_bee4=524288, batch_coralmini=524288, batch_pegasus=524288, batch_pegasusmini=524288, batch_pegasus2=524288, batch_plain100=524288, batch_plain100f=524288, batch_alphastar=524288, batch_pegasusbeta=524288, batch_bee5=524288, batch_bee6=524288, batch_seed=524288, batch_smol=524288, batch_smolbee=524288,
         micro=32, accum=8, lr=1.2e-3, lr_bee3=2.4e-3, muon_lr_bee3=0.04, lr_frog=1.8e-3, muon_lr_frog=0.03,
         lr_coral=1.8e-3, muon_lr_coral=0.03, lr_bee4=1.8e-3, muon_lr_bee4=0.03, lr_coralmini=1.8e-3, muon_lr_coralmini=0.03,
-        lr_pegasus=1.8e-3, muon_lr_pegasus=0.03, lr_pegasusmini=1.8e-3, muon_lr_pegasusmini=0.03, lr_pegasus2=1.8e-3, muon_lr_pegasus2=0.03, lr_plain100=1.8e-3, muon_lr_plain100=0.03, lr_plain100f=1.8e-3, muon_lr_plain100f=0.03, lr_alphastar=1.8e-3, muon_lr_alphastar=0.03, lr_pegasusbeta=1.8e-3, muon_lr_pegasusbeta=0.03, lr_bee5=1.8e-3, muon_lr_bee5=0.03, lr_seed=1.8e-3, muon_lr_seed=0.03, lr_smol=3e-3, lr_smolbee=1.8e-3, muon_lr_smolbee=0.03, warmup=600, tokens=5_000_000_000,
+        lr_pegasus=1.8e-3, muon_lr_pegasus=0.03, lr_pegasusmini=1.8e-3, muon_lr_pegasusmini=0.03, lr_pegasus2=1.8e-3, muon_lr_pegasus2=0.03, lr_plain100=1.8e-3, muon_lr_plain100=0.03, lr_plain100f=1.8e-3, muon_lr_plain100f=0.03, lr_alphastar=1.8e-3, muon_lr_alphastar=0.03, lr_pegasusbeta=1.8e-3, muon_lr_pegasusbeta=0.03, lr_bee5=1.8e-3, muon_lr_bee5=0.03, lr_bee6=1.8e-3, muon_lr_bee6=0.03, lr_seed=1.8e-3, muon_lr_seed=0.03, lr_smol=3e-3, lr_smolbee=1.8e-3, muon_lr_smolbee=0.03, warmup=600, tokens=5_000_000_000,
         eval_every=100_000_000, probe_every=200_000_000, hs_every=200_000_000, sample_every=200_000_000, evals_every=500_000_000,
         val_windows=128, hs_quick=1000, evals_quick=500, sample_len=120,
     ),
@@ -491,6 +499,14 @@ def build(kind, preset, overrides=None):
             small["ctx"] = f"{small['max_len']}:0"
         cfg = Bee5Config(**{**small, **p.get("bee5", {}), **(overrides or {})})
         return Bee5(cfg), cfg
+    if kind == "bee6":
+        Bee6, Bee6Config = _bee6()
+        small = {k: v for k, v in p.get("bee", {}).items() if k in ("d_model", "n_layer", "attn_heads", "attn_kv_heads",
+                                                                     "attn_head_dim", "mlp_hidden", "max_len")}
+        if small:                       # a test preset: Bee's small body, one window length
+            small["ctx"] = f"{small['max_len']}:0"
+        cfg = Bee6Config(**{**small, **p.get("bee5", {}), **p.get("bee6", {}), **(overrides or {})})
+        return Bee6(cfg), cfg
     if kind == "seed":
         Seed, SeedConfig = _seed()
         cfg = SeedConfig(**{**p.get("seed", {}), **(overrides or {})})
@@ -574,6 +590,9 @@ def load_model(ckpt: Path, device, mmap=False):
     elif kind == "bee5":
         Bee5, Bee5Config = _bee5()
         model = Bee5(Bee5Config.from_dict(st["config"]))
+    elif kind == "bee6":
+        Bee6, Bee6Config = _bee6()
+        model = Bee6(Bee6Config.from_dict(st["config"]))      # (it grows to the checkpoint's bloom stage as it loads)
     elif kind == "seed":
         Seed, SeedConfig = _seed()
         model = Seed(SeedConfig.from_dict(st["config"]))      # (it grows to the checkpoint's stage as it loads)
@@ -925,6 +944,8 @@ def main():
     torch.manual_seed(args.seed)
     model, cfg = build(args.model, args.preset, parse_overrides(args.set))
     model.to(device)
+    if hasattr(model, "startup_check"):              # Bee6: its own FP8, checked against bf16 on one batch first
+        model.startup_check(device, say)
     fp8 = False
     if want_fp8:                                       # Frog: the big matrix products in FP8 (oazy/fp8.py; checked first)
         from . import fp8 as fp8_mod
@@ -1383,7 +1404,8 @@ def main():
 
         if hasattr(model, "grow_to") and model.grow_to(prog()):     # Ember, Fern2, Seed: time to grow
             old, opt = opt, new_opt()
-            carry_state(old, opt)
+            if not getattr(model, "fresh_opt_on_grow", False):     # Bee6's bloom: new tensors, a new optimizer
+                carry_state(old, opt)
             if hasattr(model, "carry_opt"):        # Seed: its grown (wider) parameters inherit their old memory
                 model.carry_opt(old, opt)
             del old

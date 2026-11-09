@@ -126,7 +126,7 @@ def groups(model):
             adam["table"].append(p)
         elif n.startswith("ve."):
             adam["ve"].append(p)
-        elif n in ("lam", "mu", "skip_lam", "smear_lam", "backout_lam"):
+        elif n in ("lam", "mu", "skip_lam", "skip_w", "smear_lam", "backout_lam"):
             adam["scalars"].append(p)
         else:
             adam["gates"].append(p)
