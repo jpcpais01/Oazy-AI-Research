@@ -33,17 +33,17 @@ from memtrix.model import Memtrix, MemtrixConfig
 from memtrix import memory
 from . import hellaswag, probes, term
 
-KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "black", "blackt", "gpt"]
+KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "black", "blackt", "gpt"]
 NICE = {"memtrix": "Memtrix", "tide": "Tide", "fern": "Fern", "ember": "Ember", "fern2": "Fern2", "fern3": "Fern3",
         "bee": "Bee0.2B", "bee2": "Bee_v2_0.2B", "bee3": "Bee3", "frog": "Frog", "coral": "Coral", "bee4": "Bee4-200M", "coralmini": "Coral Mini",
-        "pegasus": "Pegasus 1", "pegasusmini": "Pegasus 1 Mini", "pegasus2": "Pegasus 2 Mini", "plain100": "Plain-100M", "plain100f": "Plain-100F", "black": "Code Black",
+        "pegasus": "Pegasus 1", "pegasusmini": "Pegasus 1 Mini", "pegasus2": "Pegasus 2 Mini", "plain100": "Plain-100M", "plain100f": "Plain-100F", "alphastar": "Pegasus Alpha Star", "black": "Code Black",
         "blackt": "Black-T", "gpt": "GPT"}
-FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "black", "blackt")    # raised the fast way: Muon (and a mentor, where MENTOR names one)
+FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "black", "blackt")    # raised the fast way: Muon (and a mentor, where MENTOR names one)
 # default mentor (the others: gpt2-medium). Code Black and Black-T race without one, so the architectures are compared alone.
 MENTOR = {"bee": "gpt2-large", "bee2": "smollm2-360m", "bee3": "smollm2-360m", "frog": "smollm2-360m", "coral": "smollm2-360m",
           "bee4": "smollm2-360m", "coralmini": "smollm2-360m", "pegasus": "smollm2-360m", "pegasusmini": "smollm2-360m", "pegasus2": "smollm2-360m",
-          "plain100": "smollm2-360m", "plain100f": "smollm2-360m", "black": "none", "blackt": "none"}
-BEES = ("bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "black", "blackt")    # the text mix (Tagus), WSD, growing windows
+          "plain100": "smollm2-360m", "plain100f": "smollm2-360m", "alphastar": "smollm2-360m", "black": "none", "blackt": "none"}
+BEES = ("bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "black", "blackt")    # the text mix (Tagus), WSD, growing windows
 # Bee3's recipe (bee3/README.md): the mentor stays the whole run, weight decay on the Muon grids, a batch ramp,
 # a 1-minus-square-root cool-down, twice Bee2's learning rates (the presets' lr_bee3 / muon_lr_bee3)
 RECIPE = {"bee3": dict(mentor_floor=0.25, mentor_off=0.1, muon_wd=0.1, batch_ramp="65536:0.1", decay_shape="sqrt")}
@@ -84,6 +84,9 @@ RECIPE["pegasus2"] = dict(RECIPE["plain100"])
 # Plain-100F (foresight/model.py, Nov 8): Plain-100M exactly, plus a training-only head that guesses the next sentence's
 # content words. The very same recipe, mentor and text, so a race measures the side lesson alone.
 RECIPE["plain100f"] = dict(RECIPE["plain100"])
+# Pegasus Alpha Star (alphastar/model.py, Nov 8): reader 2 + a core of 4 layers run again and again (Huginn) + speaker 2,
+# a fact drawer, and the next-thought lesson on every pass. The very same recipe, mentor and text as Plain-100M.
+RECIPE["alphastar"] = dict(RECIPE["plain100"])
 # Code Black (codeblack/README.md) and Black-T, the transformer it races: the same recipe for both, so a race measures
 # the architecture. Bee3's polish (Muon weight decay, a batch ramp, the square-root cool-down) and FP8, no mentor. Races
 # run on the clock: --preset race --minutes 30 (every schedule follows the training time instead of the token count).
@@ -211,6 +214,11 @@ def _plain100f():
     return Plain100F, Plain100FConfig
 
 
+def _alphastar():
+    from alphastar.model import AlphaStar, AlphaStarConfig   # alphastar/ = Pegasus Alpha Star: a looped core, a fact drawer
+    return AlphaStar, AlphaStarConfig
+
+
 def _black():
     from codeblack.model import Black, BlackConfig   # codeblack/ = two clocks: a fast token stream, a slow stream once per 4 tokens
     return Black, BlackConfig
@@ -247,6 +255,8 @@ PRESETS = {
                    window=64, slow_d=256, slow_layers=2, slow_heads=4, slow_kv_heads=2, slow_head_dim=64, slow_mlp=512,
                    phrase_rows=8192, phrase_dim=32, max_len=512, ctx="512:0"),
         plain100f=dict(fore_top=20),       # a test tokenizer has few pieces: leave only the 20 most common out of the bags
+        alphastar=dict(fore_top=20, drawer_keys=16, drawer_heads=2, drawer_k=4, drawer_qdim=32, test_max=6, gen_passes=3,
+                       passes_max=4, passes_mean=3.0, fore_hidden=128),
         micro=16, accum=1, lr=3e-3, warmup=50, tokens=3_000_000,
         eval_every=250_000, probe_every=1_000_000, hs_every=1_000_000, sample_every=1_000_000, evals_every=1_000_000,
         val_windows=64, hs_quick=200, evals_quick=50, sample_len=40,
@@ -271,25 +281,27 @@ PRESETS = {
                    window=32, slow_d=128, slow_layers=2, slow_heads=2, slow_kv_heads=1, slow_head_dim=64, slow_mlp=256,
                    phrase_rows=1024, phrase_dim=16, max_len=128, ctx="128:0"),
         plain100f=dict(fore_top=20),
+        alphastar=dict(fore_top=20, drawer_keys=8, drawer_heads=2, drawer_k=4, drawer_qdim=16, test_max=4, gen_passes=2,
+                       passes_max=3, passes_mean=2.0, passes_start=1.0, fore_hidden=64),
         micro=8, accum=2, lr=3e-3, warmup=10, tokens=60_000,
         eval_every=20_000, probe_every=30_000, hs_every=30_000, sample_every=30_000, evals_every=30_000,
         val_windows=16, hs_quick=20, evals_quick=10, sample_len=10,
     ),
     # GPT-2 small size (Memtrix 117M vs GPT-2 124M), ~2 h for both models on one B200 (check with --bench)
     "full": dict(
-        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576, batch_bee4=524288, batch_coralmini=524288, batch_pegasus=524288, batch_pegasusmini=524288, batch_pegasus2=524288, batch_plain100=524288, batch_plain100f=524288,
+        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576, batch_bee4=524288, batch_coralmini=524288, batch_pegasus=524288, batch_pegasusmini=524288, batch_pegasus2=524288, batch_plain100=524288, batch_plain100f=524288, batch_alphastar=524288,
         micro=32, accum=8, lr=1.2e-3, lr_bee3=2.4e-3, muon_lr_bee3=0.04, lr_frog=1.8e-3, muon_lr_frog=0.03,
         lr_coral=1.8e-3, muon_lr_coral=0.03, lr_bee4=1.8e-3, muon_lr_bee4=0.03, lr_coralmini=1.8e-3, muon_lr_coralmini=0.03,
-        lr_pegasus=1.8e-3, muon_lr_pegasus=0.03, lr_pegasusmini=1.8e-3, muon_lr_pegasusmini=0.03, lr_pegasus2=1.8e-3, muon_lr_pegasus2=0.03, lr_plain100=1.8e-3, muon_lr_plain100=0.03, lr_plain100f=1.8e-3, muon_lr_plain100f=0.03, warmup=400, tokens=2_000_000_000,
+        lr_pegasus=1.8e-3, muon_lr_pegasus=0.03, lr_pegasusmini=1.8e-3, muon_lr_pegasusmini=0.03, lr_pegasus2=1.8e-3, muon_lr_pegasus2=0.03, lr_plain100=1.8e-3, muon_lr_plain100=0.03, lr_plain100f=1.8e-3, muon_lr_plain100f=0.03, lr_alphastar=1.8e-3, muon_lr_alphastar=0.03, warmup=400, tokens=2_000_000_000,
         eval_every=50_000_000, probe_every=250_000_000, hs_every=250_000_000, sample_every=250_000_000, evals_every=500_000_000,
         val_windows=128, hs_quick=1000, evals_quick=500, sample_len=120,
     ),
     # the same models, 2.5x the text (e.g. a 2 x B200 pod for ~2.5 h, one model per GPU)
     "big": dict(
-        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576, batch_bee4=524288, batch_coralmini=524288, batch_pegasus=524288, batch_pegasusmini=524288, batch_pegasus2=524288, batch_plain100=524288, batch_plain100f=524288,
+        memtrix=dict(), gpt=dict(), micro_fern2=16, micro_fern3=4, batch_bee=524288, batch_bee3=262144, batch_frog=524288, batch_coral=1048576, batch_bee4=524288, batch_coralmini=524288, batch_pegasus=524288, batch_pegasusmini=524288, batch_pegasus2=524288, batch_plain100=524288, batch_plain100f=524288, batch_alphastar=524288,
         micro=32, accum=8, lr=1.2e-3, lr_bee3=2.4e-3, muon_lr_bee3=0.04, lr_frog=1.8e-3, muon_lr_frog=0.03,
         lr_coral=1.8e-3, muon_lr_coral=0.03, lr_bee4=1.8e-3, muon_lr_bee4=0.03, lr_coralmini=1.8e-3, muon_lr_coralmini=0.03,
-        lr_pegasus=1.8e-3, muon_lr_pegasus=0.03, lr_pegasusmini=1.8e-3, muon_lr_pegasusmini=0.03, lr_pegasus2=1.8e-3, muon_lr_pegasus2=0.03, lr_plain100=1.8e-3, muon_lr_plain100=0.03, lr_plain100f=1.8e-3, muon_lr_plain100f=0.03, warmup=600, tokens=5_000_000_000,
+        lr_pegasus=1.8e-3, muon_lr_pegasus=0.03, lr_pegasusmini=1.8e-3, muon_lr_pegasusmini=0.03, lr_pegasus2=1.8e-3, muon_lr_pegasus2=0.03, lr_plain100=1.8e-3, muon_lr_plain100=0.03, lr_plain100f=1.8e-3, muon_lr_plain100f=0.03, lr_alphastar=1.8e-3, muon_lr_alphastar=0.03, warmup=600, tokens=5_000_000_000,
         eval_every=100_000_000, probe_every=200_000_000, hs_every=200_000_000, sample_every=200_000_000, evals_every=500_000_000,
         val_windows=128, hs_quick=1000, evals_quick=500, sample_len=120,
     ),
@@ -415,6 +427,12 @@ def build(kind, preset, overrides=None):
         cfg = Plain100FConfig(**{**small, **({"ctx": f"{small['max_len']}:0"} if "max_len" in small else {}),
                                  **p.get("plain100", {}), **p.get("plain100f", {}), **(overrides or {})})
         return Plain100F(cfg), cfg
+    if kind == "alphastar":
+        AlphaStar, AlphaStarConfig = _alphastar()
+        small = {k: v for k, v in p.get("bee", {}).items() if k not in ("ctx", "n_layer")}   # the test presets' small layers
+        cfg = AlphaStarConfig(**{**small, **({"ctx": f"{small['max_len']}:0"} if "max_len" in small else {}),
+                                 **p.get("alphastar", {}), **(overrides or {})})
+        return AlphaStar(cfg), cfg
     cfg = GPTConfig(**{**p["gpt"], **(overrides or {})})
     return GPT(cfg), cfg
 
@@ -475,6 +493,9 @@ def load_model(ckpt: Path, device, mmap=False):
     elif kind == "plain100f":
         Plain100F, Plain100FConfig = _plain100f()
         model = Plain100F(Plain100FConfig.from_dict(st["config"]))
+    elif kind == "alphastar":
+        AlphaStar, AlphaStarConfig = _alphastar()
+        model = AlphaStar(AlphaStarConfig.from_dict(st["config"]))
     elif kind in ("black", "blackt"):
         cls, Cfg = _black() if kind == "black" else _blackt()
         model = cls(Cfg.from_dict(st["config"]))
@@ -529,7 +550,8 @@ def batch_at(progress, batch_tokens, ramp):
 MUON_GRIDS = ("mem.qkv.weight", "mem.gate.weight", "mem.out.weight", "mlp.up.weight", "mlp.down.weight",
               "glance.qkv.weight", "glance.out.weight", ".up.weight", ".down.weight",    # (these four: Fern's unfolder)
               "attn.q.weight", "attn.k.weight", "attn.v.weight", "attn.gate.weight", "attn.out.weight",   # Bee's attention
-              "pack.weight")                                       # Code Black's pack and unpack (between the clocks)
+              "pack.weight",                                       # Code Black's pack and unpack (between the clocks)
+              "adapt.weight")                                      # Pegasus Alpha Star: [thought, reader] -> the core
 
 
 MUON_STACKS = ("moe.w_up", "moe.w_down")      # Coral's experts: a stack of grids (E, out, in), each straightened alone
@@ -544,7 +566,7 @@ def make_optimizer(model, lr, device, kind="adamw", muon_lr=0.02, muon_wd=0.0):
                                                          or (p.dim() == 3 and n.endswith(MUON_STACKS)))]
     gids = {id(p) for _, p in grids}
     rest = [(n, p) for n, p in named if id(p) not in gids]
-    keep = lambda n, p: p.dim() < 2 or "conv_w" in n or (getattr(model, "embed_no_decay", False) and n.startswith("embed"))  # noqa: E731
+    keep = lambda n, p: p.dim() < 2 or "conv_w" in n or getattr(p, "no_decay", False) or (getattr(model, "embed_no_decay", False) and n.startswith("embed"))  # noqa: E731
     decay = [p for n, p in rest if not keep(n, p)]
     no_decay = [p for n, p in rest if keep(n, p)]
     kw = dict(lr=lr, betas=(0.9, 0.95), eps=1e-8)
@@ -1147,6 +1169,22 @@ def main():
                 say(f"[plan] Speaker loss {r['on']:.3f} with the plan, {r['plan_off']:.3f} without (gap {r['plan_gap']:+.3f}), "
                     f"{r['notebook_off']:.3f} without the notebook (gap {r['notebook_gap']:+.3f})"
                     + (f" | meanings in use {r['codes_used']:.0f} of {model.cfg.n_codes()}" if "codes_used" in r else ""), flush=True)
+            if hasattr(model, "loop_report"):        # Pegasus Alpha Star: does more thinking help? the next thought by pass, the drawer
+                r = model.loop_report(pwin, device, batch=min(micro, 16))
+                r["pass_loss"] = {k: v * val_scale for k, v in r["pass_loss"].items()}
+                r["adaptive_loss"] *= val_scale
+                run.log("metrics.jsonl", {"kind": "loop", **base, **r})
+                latest["adaptive_passes"] = r["adaptive_passes"]
+                say("[loop] held-out loss by passes " + "  ".join(f"{k}: {v:.3f}" for k, v in r["pass_loss"].items())
+                    + f" | stops by itself after {r['adaptive_passes']:.1f} passes: {r['adaptive_loss']:.3f}"
+                    + f" | thought still moves {r['move_last'] * 100:.1f}% at the last pass", flush=True)
+                if "thought_by_pass" in r:
+                    tb = r["thought_by_pass"]
+                    say(f"[loop] next thought by pass " + " ".join(f"{v:.2f}" for v in tb[:8]) + (" ..." if len(tb) > 8 else "")
+                        + f" {tb[-1]:.2f} (blind {r['thought_blind']:.2f})", flush=True)
+                if "drawer_used" in r:
+                    say(f"[loop] fact drawer: {r['drawer_used'] * 100:.1f}% of the facts picked at least once; half the picks "
+                        f"go to {r['drawer_half'] * 100:.1f}% of them", flush=True)
             if hasattr(model, "foresight_report"):   # Plain-100F: does the head see the next sentence on held-out text?
                 r = model.foresight_report(pwin, device, batch=min(micro, 16))
                 if r:
@@ -1270,7 +1308,7 @@ def main():
         for g in opt.param_groups:
             g["lr"] = cur_lr * g.get("lr_scale", 1.0)
         loss_sum, kd_sum, rd_sum, hs_sum, n_kd = 0.0, 0.0, 0.0, 0.0, 0
-        fore_sum = 0.0
+        fore_sum, pass_sum = 0.0, 0.0
 
         def lesson(x, y, mw):
             with amp(device):
@@ -1325,6 +1363,8 @@ def main():
                 hs_sum += st["recall_hindsight"]
             if "fore" in st:                        # Plain-100F: the foresight head's loss
                 fore_sum += st["fore"]
+            if "passes" in st:                      # Pegasus Alpha Star: passes through the core this time
+                pass_sum += float(st["passes"])
         if mentor_share and n_kd:
             kd_log, kd_log_n = kd_log + float(kd_sum), kd_log_n + n_kd
         gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -1375,6 +1415,8 @@ def main():
                 rec["recall_hindsight"] = float(hs_sum) / accum
             if hasattr(model, "foresight_report"):
                 rec["fore_loss"], rec["fore_w"] = float(fore_sum) / accum, model._fore_w
+            if pass_sum:
+                rec["passes"] = pass_sum / accum
             acc_loss, acc_n = 0.0, 0
             run.log("metrics.jsonl", rec)
             eta = (total - tokens) / max(tps, 1)
@@ -1394,6 +1436,7 @@ def main():
                 f"eta {term.pad(term.duration(eta), 7, True)}"
                 + (f"{sep}experts {rec['moe_uneven']:.2f} uneven, {rec['moe_dropped'] * 100:.1f}% dropped" if "moe_uneven" in rec else "")
                 + (f"{sep}thoughts {rec['thought_len']:.1f} tok{sep}meaning {rec['meaning_loss']:.2f}" if "thought_len" in rec else "")
+                + (f"{sep}passes {rec['passes']:.1f}" if "passes" in rec else "")
                 + (f"{sep}foresight {rec['fore_loss']:.2f} (x{rec['fore_w']:.2g})" if "fore_loss" in rec else "")
                 + (f"{sep}picks {rec['select_kept'] * 100:.0f}% (w {rec['select_w']:.2f})"
                    + (f" · reread {rec['replay_share'] * 100:.0f}%" if "replay_share" in rec else "") if "select_kept" in rec else ""),

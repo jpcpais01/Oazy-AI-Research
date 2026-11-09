@@ -102,11 +102,11 @@ class ForesightHead(nn.Module):
         return self.down(F.gelu(self.up(self.norm(h))))
 
 
-class Plain100F(Plain100):
-    """Plain-100M + the training-only foresight head."""
+class Foresight:
+    """The next-sentence lesson, for any model with `cfg` (the fore_* settings), `embed` (the tied word table) and a
+    token-vector trunk: the tables, where it reads, the bags, and the loss. Plain-100F and Pegasus Alpha Star use it."""
 
-    def __init__(self, cfg: Plain100FConfig):
-        super().__init__(cfg)                       # the trunk first, so its starting weights are Plain-100M's
+    def init_foresight(self, cfg):
         self.fore = ForesightHead(cfg.d_model, cfg.fore_hidden)
         self.fore.apply(self._init)
         nn.init.normal_(self.fore.down.weight, std=0.02 / math.sqrt(2))
@@ -119,17 +119,8 @@ class Plain100F(Plain100):
         self._fore_w = cfg.fore_weight
         self._ready = False
 
-    # ---------------------------------------------------------------- sizes: the head is not part of the model
     def head_params(self):
         return sum(p.numel() for p in self.fore.parameters())
-
-    def num_params(self, non_embedding=False):
-        return super().num_params(non_embedding) - self.head_params()
-
-    def layout(self):
-        c = self.cfg
-        return (super().layout() + f" + foresight head for training only ({self.head_params() / 1e6:.1f}M, next sentence's "
-                f"content words, weight {c.fore_weight:g})")
 
     # ---------------------------------------------------------------- set-up
     def foresight_ready(self):
@@ -197,11 +188,16 @@ class Plain100F(Plain100):
         top, at = score.topk(n)
         return at // T, at % T, top >= 0
 
-    def foresight_loss(self, h, idx, targets, prior=False):
-        """The head's loss (nats per bag word). prior=True: also the blind guess's loss (content words' shares)."""
+    def fore_points(self, idx, targets):
+        """The read points of a pass and their bags: (b, t, bag, mask), shared by every state the head reads."""
         b, t, live = self.pick(idx)
         bag = self.bags(idx, targets, b, t)
-        mask = (bag >= 0) & live[:, None]
+        return b, t, bag, (bag >= 0) & live[:, None]
+
+    def fore_nll(self, h, pts, prior=False):
+        """The head's loss (nats per bag word) on the token vectors h at the read points pts. prior=True: also the
+        blind guess's loss (content words' shares)."""
+        b, t, bag, mask = pts
         z = F.linear(self.fore(h[b, t]), self.embed.weight).float()
         z = z.masked_fill(self.fore_skip, float("-inf"))             # a softmax over content words only
         lse = z.logsumexp(-1, keepdim=True)
@@ -212,6 +208,27 @@ class Plain100F(Plain100):
             return loss, n
         blind = -(self.fore_prior[bag.clamp(min=0)] * mask).sum() / n
         return loss, n, blind
+
+    def foresight_loss(self, h, idx, targets, prior=False):
+        """The head's loss (nats per bag word). prior=True: also the blind guess's loss (content words' shares)."""
+        return self.fore_nll(h, self.fore_points(idx, targets), prior)
+
+
+class Plain100F(Foresight, Plain100):
+    """Plain-100M + the training-only foresight head."""
+
+    def __init__(self, cfg: Plain100FConfig):
+        super().__init__(cfg)                       # the trunk first, so its starting weights are Plain-100M's
+        self.init_foresight(cfg)
+
+    # ---------------------------------------------------------------- sizes: the head is not part of the model
+    def num_params(self, non_embedding=False):
+        return super().num_params(non_embedding) - self.head_params()
+
+    def layout(self):
+        c = self.cfg
+        return (super().layout() + f" + foresight head for training only ({self.head_params() / 1e6:.1f}M, next sentence's "
+                f"content words, weight {c.fore_weight:g})")
 
     def losses(self, idx, targets, mentor=None, kd_weight=0.0):
         """Plain-100M's lesson (Bee.losses, unchanged) + the foresight loss while training."""
