@@ -43,6 +43,9 @@ Each kind of link is said several ways ("Ana stands just in front of Bo", "Bo is
 | family | parents and children, brothers, sisters, said one way and asked either way | a baby is born | one, two or three links chained (31 of 36 pairs) | the 5 pairs never asked, in two or three links; four links |
 | falling | a block falls until it rests on something | a nailed block comes loose | 1 to 4 blocks fall | 5 to 7 blocks fall |
 | machines | a hidden rule, learned from a few tries | try new numbers | one step, or two steps (most pairs) | 6 pairs of steps never mixed; three steps |
+| cups (hidden) | a thing goes on existing when hidden, and moves with its cup | cups swap by place or by colour; a thing moved to another cup | 1 to 4 moves | 6 to 8 moves |
+| minds | people believe what they last saw, not what is true now | people leave and come back; things are moved while they are away | 1 to 3 moves | 4 to 6 moves |
+| walks | where you are and which way you face | turn left, right or around, walk some steps | 1 to 4 legs | 5 to 7 legs |
 
 The walls are built in, not hoped for: training only ever asks for training levels, the held-out family pairs and
 machine mixes are never generated for training (a held-out machine rule is one that no training rule equals), and

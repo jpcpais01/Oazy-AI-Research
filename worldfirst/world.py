@@ -4,7 +4,7 @@ Every episode is one scene (sentences about things and how they are linked, with
 one action that changes it, and a few questions about the scene *after* the action. The world knows the true new
 scene, so every answer is right by construction.
 
-Six families of laws sit underneath:
+Nine families of laws sit underneath:
 
     sums      adding two numbers, with carries                  ("The first number is 0 4 7 2 . ...")
     lines     who stands in front of whom (order chains)         ("Ana stands just in front of Bo .")
@@ -12,6 +12,9 @@ Six families of laws sit underneath:
     family    parents, children, brothers, sisters, both ways    ("Paulo is the father of João .")
     falling   blocks fall until they rest on something           ("The red block is nailed at level 6 .")
     machines  a hidden rule, learned from a few tries            ("Feed it 3 and it gives 5 .")
+    cups      things go on existing when hidden and moved        ("The ring is under the red cup .")
+    minds     people believe what they last saw, not what is     ("Ana leaves the room . Bo moves the ball ...")
+    walks     where you are and which way you face after a walk  ("Rui turns left and walks 2 steps .")
 
 Each family has levels (difficulty) used for training, and SECRET EXAMS that no training episode can come from, by
 construction: longer sums, longer lines, deeper nesting, bigger falls, family links chained in ways never asked,
@@ -25,7 +28,7 @@ import itertools
 import random
 from dataclasses import dataclass, field
 
-FAMILIES = ("sums", "lines", "boxes", "family", "falling", "machines")
+FAMILIES = ("sums", "lines", "boxes", "family", "falling", "machines", "cups", "minds", "walks")
 
 # Levels the model may train on.
 TRAIN_LEVELS = {
@@ -35,6 +38,9 @@ TRAIN_LEVELS = {
     "family": [1, 2, 3],                   # links chained: one, two, three
     "falling": [1, 2, 3, 4],               # blocks that move when something lets go
     "machines": [1, 2],                    # one hidden step / two hidden steps
+    "cups": [1, 2, 3, 4],                  # moves of the cups (or of what hides under them)
+    "minds": [1, 2, 3],                    # things moved while people come and go
+    "walks": [1, 2, 3, 4],                 # legs of a walk (turn, then walk)
 }
 # The secret exams: split name -> levels. Never trained on.
 SECRET = {
@@ -46,6 +52,9 @@ SECRET = {
     "family": {"new-pairs": [2, 3], "deeper": [4]},   # new-pairs: two links (or three) chained in a way never asked
     "falling": {"bigger": [5, 6, 7]},
     "machines": {"new-mixes": [2], "deeper": [3]},
+    "cups": {"more-moves": [6, 7, 8]},
+    "minds": {"more-moves": [4, 5, 6]},
+    "walks": {"longer": [5, 6, 7]},
 }
 TRAIN_MOVES = (1, 2)            # lines and boxes: how many actions a training episode has
 MOVES_PEOPLE, MOVES_DEPTH = 6, 4   # the size of the scene in the "more-moves" exams
@@ -665,8 +674,207 @@ def gen_machines(rng, level, split):
     return B.episode("machines", level, split, " ".join(f"{x}->{f[x]}" for x in range(10)), {"rule": list(f)})
 
 
+# ---------------------------------------------------------------- cups: hidden things keep existing
+def gen_cups(rng, level, split):
+    moves = level
+    n = rng.randint(3, 5)
+    B = _Build(rng)
+    cups = [B.thing(c) for c in rng.sample(COLOURS, n)]
+    items = [B.thing(w) for w in rng.sample(ITEMS, rng.randint(1, 2))]
+    at = {c: i + 1 for i, c in enumerate(_shuffled(rng, cups))}          # cup -> place 1..n
+    under = {it: rng.choice(cups) for it in items}
+    cup = lambda c: ["the", (c, B.things[c]), "cup"]  # noqa: E731
+    it_ = lambda i: ["the", (i, B.things[i])]  # noqa: E731
+    sents = [[*cup(c), "is at place", str(at[c])] for c in cups]
+    sents += [[*it_(i), rng.choice(["is under", "hides under"]), *cup(under[i])] for i in items]
+    B.say("there are", str(n), "cups in a row")
+    for x in _shuffled(rng, sents):
+        B.say(*x)
+    for m in range(moves):
+        pre = [rng.choice(["then", "after that"])] if m else []
+        kind = rng.choice(["places", "places", "cups", "item"])
+        if kind == "places":
+            p, q = rng.sample(range(1, n + 1), 2)
+            cp = next(c for c in cups if at[c] == p)
+            cq = next(c for c in cups if at[c] == q)
+            B.say(*pre, "the cups at place", str(p), "and place", str(q), "swap")
+            at[cp], at[cq] = q, p
+        elif kind == "cups":
+            a, b = rng.sample(cups, 2)
+            B.say(*pre, *cup(a), "and", *cup(b), "swap places")
+            at[a], at[b] = at[b], at[a]
+        else:
+            i = rng.choice(items)
+            to = rng.choice([c for c in cups if c != under[i]])
+            B.say(*pre, "someone lifts", *cup(under[i]), "and moves", *it_(i), "under", *cup(to))
+            under[i] = to
+    for _ in range(20):
+        if len(B.qs) == 3:
+            break
+        q = rng.choice(["which", "place", "place", "is", "atplace"])
+        i = rng.choice(items)
+        if q == "which":
+            B.ask_pointer(["which cup hides", *it_(i), "now"], under[i])
+        elif q == "place":
+            B.ask_class(["at which place is", *it_(i), "now"], at[under[i]])
+        elif q == "is":
+            c = under[i] if rng.random() < 0.5 else rng.choice(cups)
+            B.ask_class(["is", *it_(i), "under", *cup(c), "now"], under[i] == c)
+        else:
+            k = rng.randint(1, n)
+            B.ask_pointer(["which cup is at place", str(k), "now"], next(c for c in cups if at[c] == k))
+    new = " ; ".join(f"{B.things[c]} at {at[c]}" for c in cups) + " ; " + " ; ".join(f"{B.things[i]} under {B.things[under[i]]}" for i in items)
+    return B.episode("cups", level, split, new, {"moves": moves, "at": {B.things[c]: at[c] for c in cups},
+                                                 "under": {B.things[i]: B.things[under[i]] for i in items}})
+
+
+# ---------------------------------------------------------------- minds: people believe what they last saw
+PLACES = "box basket drawer cupboard bag chest shelf jar".split()
+
+
+def gen_minds(rng, level, split):
+    moves = level
+    B = _Build(rng)
+    people = [B.thing(x) for x in rng.sample(NAMES, rng.randint(2, 4))]
+    places = [B.thing(w) for w in rng.sample(PLACES, rng.randint(3, 4))]
+    objs = [B.thing(w) for w in rng.sample(ITEMS, rng.randint(1, 2))]
+    nm = lambda t: (t, B.things[t])  # noqa: E731
+    where = {}
+    thinks = {p: {} for p in people}
+    present = set(people)
+    names = [nm(p) for p in people]
+    joined = []
+    for i, x in enumerate(names):
+        joined += ([","] if 0 < i < len(names) - 1 else ["and"] if i else []) + [x]
+    B.say(*joined, "are in the room")
+    there = []
+    for i, pl in enumerate(places):
+        there += ([","] if 0 < i < len(places) - 1 else ["and"] if i else []) + ["a", nm(pl)]
+    B.say("in the room there is", *there)
+    for o in objs:
+        p, pl = rng.choice(people), rng.choice(places)
+        B.say(nm(p), "puts the", nm(o), "in the", nm(pl))
+        where[o] = pl
+        for q in present:
+            thinks[q][o] = pl
+    for m in range(moves):
+        if rng.random() < 0.75:                     # someone comes or goes first
+            gone = [p for p in people if p not in present]
+            if gone and (rng.random() < 0.4 or len(present) == 1):
+                p = rng.choice(gone)
+                B.say(nm(p), rng.choice(["comes back", "comes back into the room", "returns"]))
+                present.add(p)
+            elif len(present) > 1:
+                p = rng.choice(sorted(present))
+                B.say(nm(p), rng.choice(["leaves the room", "goes out", "walks out of the room"]))
+                present.discard(p)
+        mover = rng.choice(sorted(present))
+        o = rng.choice(objs)
+        to = rng.choice([pl for pl in places if pl != where[o]])
+        if rng.random() < 0.5:
+            B.say(nm(mover), "moves the", nm(o), "from the", nm(where[o]), "to the", nm(to))
+        else:
+            B.say(nm(mover), *rng.choice([["moves the", nm(o), "to the"], ["puts the", nm(o), "into the"]]), nm(to))
+        where[o] = to
+        for q in present:
+            thinks[q][o] = to
+    wrong = [(p, o) for p in people for o in objs if thinks[p][o] != where[o]]
+    for _ in range(30):
+        if len(B.qs) == 3:
+            break
+        q = rng.choice(["thinks", "thinks", "where", "knows"])
+        p, o = rng.choice(wrong) if (wrong and rng.random() < 0.6) else (rng.choice(people), rng.choice(objs))
+        if q == "thinks":
+            B.ask_pointer(["where does", nm(p), "think the", nm(o), "is"], thinks[p][o], belief=thinks[p][o] != where[o])
+        elif q == "where":
+            B.ask_pointer(["where is the", nm(o), "really"], where[o])
+        else:
+            B.ask_class(["does", nm(p), "know where the", nm(o), "is"], thinks[p][o] == where[o])
+    new = " ; ".join(f"{B.things[o]} in {B.things[where[o]]}" for o in objs)
+    return B.episode("minds", level, split, new, {"moves": moves, "where": {B.things[o]: B.things[where[o]] for o in objs},
+                                                  "thinks": {B.things[p]: {B.things[o]: B.things[v] for o, v in d.items()}
+                                                             for p, d in thinks.items()}})
+
+
+# ---------------------------------------------------------------- walks: where you are and which way you face
+DIRS = ("north", "east", "south", "west")
+STEP = {0: (0, 1), 1: (1, 0), 2: (0, -1), 3: (-1, 0)}
+HORIZON = ("mountains", "sea", "forest", "desert")
+LANDMARKS = "bakery church school bridge tower farm mill shop inn gate fountain barn".split()
+
+
+def gen_walks(rng, level, split):
+    legs = level
+    for _ in range(1000):
+        head = rng.randrange(4)
+        h, x, y, plan, path = head, 0, 0, [], [(0, 0)]
+        for i in range(legs):
+            turn = rng.choice(["left", "right", "around"] + ([None] if i == 0 else []))
+            h = (h + {"left": 3, "right": 1, "around": 2, None: 0}[turn]) % 4
+            k = rng.randint(1, 3)
+            x, y = x + STEP[h][0] * k, y + STEP[h][1] * k
+            plan.append((turn, k))
+            path.append((x, y))
+        if all(abs(a) <= 9 and abs(b) <= 9 for a, b in path):
+            break
+    B = _Build(rng)
+    walker = B.thing(rng.choice(NAMES))
+    well = B.thing("well")
+    hz = [B.thing(w) for w in HORIZON]
+    side = dict(zip(_shuffled(rng, range(4)), hz))     # direction -> what lies that way
+    end = (x, y)
+    spots = {(0, 0): well}
+    marks = rng.sample(LANDMARKS, 4)
+    cands = [p for p in set(path[1:]) if p != (0, 0)]
+    if end != (0, 0):
+        spots[end] = B.thing(marks.pop())
+        cands = [p for p in cands if p != end]
+    for p in rng.sample(cands, min(len(cands), rng.randint(1, 2))):
+        spots[p] = B.thing(marks.pop())
+    while len(spots) < 3:
+        p = (rng.randint(-4, 4), rng.randint(-4, 4))
+        if p not in spots:
+            spots[p] = B.thing(marks.pop())
+    nm = lambda t: (t, B.things[t])  # noqa: E731
+    sents = [["the", nm(side[d]), "lie" if B.things[side[d]] == "mountains" else "lies", "to the", DIRS[d]] for d in range(4)]
+    for (px, py), t in spots.items():
+        if t == well:
+            continue
+        parts = []
+        if py:
+            parts += [str(abs(py)), "step" if abs(py) == 1 else "steps", "north" if py > 0 else "south"]
+        if px:
+            parts += (["and"] if parts else []) + [str(abs(px)), "step" if abs(px) == 1 else "steps", "east" if px > 0 else "west"]
+        sents.append(["the", nm(t), "is", *parts, "of the", nm(well)])
+    for snt in _shuffled(rng, sents):
+        B.say(*snt)
+    B.say(nm(walker), "stands at the", nm(well), "facing", *(rng.choice([[DIRS[head]], ["the", nm(side[head])]])))
+    for i, (turn, k) in enumerate(plan):
+        pre = [rng.choice(["then", "after that"])] if i else []
+        go = ["walks", str(k), "step" if k == 1 else "steps", rng.choice(["forward", "ahead"])]
+        if turn is None:
+            B.say(*pre, nm(walker), *go)
+        else:
+            B.say(*pre, nm(walker), "turns", turn, "and", *go)
+    where_ = spots.get(end)
+    for _ in range(30):
+        if len(B.qs) == 3:
+            break
+        q = rng.choice(["where", "where", "face", "dir"])
+        if q == "where" and where_ is not None:
+            B.ask_pointer(["where is", nm(walker), "now"], where_)
+        elif q == "face":
+            B.ask_pointer(["what does", nm(walker), "face now"], side[h])
+        else:
+            (px, py), t = rng.choice(list(spots.items()))
+            d = rng.randrange(4)
+            ahead = {0: y > py, 1: x > px, 2: y < py, 3: x < px}[d]
+            B.ask_class(["is", nm(walker), DIRS[d], "of the", nm(t), "now"], ahead)
+    return B.episode("walks", level, split, f"at {end}, facing {DIRS[h]}", {"legs": legs, "end": list(end), "facing": DIRS[h]})
+
+
 GEN = {"sums": gen_sums, "lines": gen_lines, "boxes": gen_boxes, "family": gen_family,
-       "falling": gen_falling, "machines": gen_machines}
+       "falling": gen_falling, "machines": gen_machines, "cups": gen_cups, "minds": gen_minds, "walks": gen_walks}
 
 
 def make(family: str, level: int, split: str = "train", seed: int = 0) -> Episode:

@@ -124,6 +124,12 @@ def secret_exams_are_walled_off():
             return f["movers"] >= 5
         if e.family == "machines":
             return tuple(f["rule"]) in set(W.MACHINES["new-mixes"]) | set(W.MACHINES["deeper"])
+        if e.family == "cups":
+            return f["moves"] >= 6
+        if e.family == "minds":
+            return f["moves"] >= 4
+        if e.family == "walks":
+            return f["legs"] >= 5
     n = 0
     for e in train_eps(150):
         assert not secret_like(e), e.text()
@@ -171,6 +177,50 @@ def more_moves_are_followed():
             n_moves = sum(any(k in x for k in ("swap places", "front of the line", "very front", "back of the line", "very back"))
                           for x in t)
             assert n_moves == e.facts["moves"], e.text()
+
+
+@check
+def walks_replay_to_the_answer():
+    """Replay each walk from its words alone: the place and the facing match the world's answers."""
+    turn = {"left": 3, "right": 1, "around": 2}
+    for lv, sp in [(lv, "train") for lv in W.TRAIN_LEVELS["walks"]] + [(7, "longer")]:
+        for s in range(100):
+            e = W.make("walks", lv, sp, s)
+            words = e.tokens
+            side, spots = {}, {}
+            for snt in " ".join(words).split(" . "):
+                t = snt.split()
+                if t[0] == "the" and t[2] in ("lie", "lies"):
+                    side[W.DIRS.index(t[-1])] = t[1]
+            i = words.index("facing")
+            h = W.DIRS.index(words[i + 1]) if words[i + 1] in W.DIRS else [d for d, w in side.items() if w == words[i + 2]][0]
+            x = y = 0
+            for j, w in enumerate(words):
+                if w == "turns":
+                    h = (h + turn[words[j + 1]]) % 4
+                if w == "walks":
+                    k = int(words[j + 1])
+                    x, y = x + W.STEP[h][0] * k, y + W.STEP[h][1] * k
+            assert [x, y] == e.facts["end"] and W.DIRS[h] == e.facts["facing"], e.text()
+            for q in e.questions:
+                if "face" in q.tokens:
+                    assert q.answer == [side[h]], e.text()
+
+
+@check
+def minds_follow_who_saw_what():
+    """Someone who never left the room always knows where things are; false beliefs do happen."""
+    false = 0
+    for s in range(300):
+        e = W.make("minds", 3, "train", s)
+        left = {t.split()[0] for t in " ".join(e.tokens).split(" . ") if "leaves" in t or "goes out" in t or "walks out" in t}
+        for p, d in e.facts["thinks"].items():
+            if p not in left:
+                assert d == e.facts["where"], e.text()
+            false += d != e.facts["where"]
+        for q in e.questions:
+            false += 0
+    assert false > 50, false
 
 
 @check
