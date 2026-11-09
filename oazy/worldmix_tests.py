@@ -106,8 +106,9 @@ def main():
     s2.close()
     check("two helper processes make the very same windows as the trainer alone", np.array_equal(a0, b0) and np.array_equal(a1, b1))
     eot = enc.eot_token
-    n_eot = int((np.concatenate([a0, a1]) == eot).sum())
-    check("episodes back to back, <|endoftext|> between them", n_eot >= 2, f"{n_eot} ends in 8 windows of 64")
+    more = s0.rows(16, 64)                       # World 2's episodes are longer: look at a few more windows
+    n_eot = int((np.concatenate([a0, a1, more]) == eot).sum())
+    check("episodes back to back, <|endoftext|> between them", n_eot >= 2, f"{n_eot} ends in 24 windows of 64")
     st = s0.state()
     s3 = M.WorldStream("smollm2", seed=0, workers=0, state=st)
     c0 = s3.rows(4, 64)
@@ -119,8 +120,8 @@ def main():
     check("get() gives (x, y) like the text reader: y is x moved by one", x.shape == (3, 32) and torch.equal(x[:, 1:], y[:, :-1]))
 
     # ---- the exam: a model that knows the answers gets them all; a blank one about chance
-    sets = [("lines", 7, "longer"), ("sums", 9, "longer"), ("family", 4, "deeper"), ("minds", 4, "more-moves"),
-            ("walks", 5, "longer"), ("lines", 1, "train")]
+    sets = [("lines", 9, "longer"), ("sums", 11, "longer"), ("family", 4, "deeper"), ("minds", 5, "more-moves"),
+            ("walks", 7, "longer"), ("house", 3, "three-way"), ("lines", 1, "train")]
     seqs = []
     for s in sets:
         for i in range(3):

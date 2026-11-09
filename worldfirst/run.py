@@ -73,6 +73,9 @@ def main(argv=None):
                     help="another run's name: reuse its trained Logos1 instead of training one here (train only the rival; "
                          "the report compares them once that Logos1 has finished; same world flags needed)")
     ap.add_argument("--finder", type=int, default=None, help="slots for the Laws model's thing finder (default 32 with --natural 1)")
+    ap.add_argument("--world", type=int, default=None, choices=sorted(W.WORLDS),
+                    help="which world: 2 (World 2, the default for a new run) or 1 (the first nine families). A run "
+                         "started on World 1 stays on it by itself, so it can be carried on and examined as it was")
     ap.add_argument("--fresh", action="store_true", help="train again even if a model is saved")
     ap.add_argument("--threads", type=int, default=0)
     ap.add_argument("--together", type=int, default=None,
@@ -89,6 +92,8 @@ def main(argv=None):
     out = Path(a.runs or runs_dir()) / a.name
     out.mkdir(parents=True, exist_ok=True)
     log = open(out / "log.txt", "a")
+    a.world = pick_world(out, a)
+    W.use(a.world)
 
     def say(msg):
         print(msg, flush=True)
@@ -123,7 +128,7 @@ def main(argv=None):
     rival.cfg.loss = a.rival_loss
     rival.cfg.loops = a.rival_loops
     rival.cfg.ckpt = a.rival_ckpt
-    say(f"world-first stage 1: {a.preset}, device {dev}, vocab {len(vocab)} words")
+    say(f"world-first stage 1: World {a.world} ({len(W.FAMILIES)} families), {a.preset}, device {dev}, vocab {len(vocab)} words")
     say(f"  Logos1, the Laws model (not next-word): {n_params(laws) / 1e6:.2f}M numbers; rival (next-word): {n_params(rival) / 1e6:.2f}M")
     together = (dev == "cuda") if a.together is None else bool(a.together)
     todo = [m.kind for m in (laws, rival) if (a.fresh or not (out / m.kind / "ckpt.pt").exists()) and a.only in ("all", m.kind)
@@ -197,7 +202,7 @@ def main(argv=None):
         m.to(dev)
         rows[m.kind] = evaluate(m, vocab, n=a.eval_n, device=dev, sweep=bool(a.loops))
         say(f"{m.kind}: examined in {(time.time() - t0) / 60:.1f} min")
-    res = {"kind": "worldfirst", "name": a.name, "when": time.strftime("%Y-%m-%d %H:%M"), "device": dev,
+    res = {"kind": "worldfirst", "name": a.name, "when": time.strftime("%Y-%m-%d %H:%M"), "device": dev, "world": a.world,
            "preset": a.preset, "eval_n": a.eval_n, "rival_tags": bool(a.rival_tags), "rival_loss": a.rival_loss, "loops": bool(a.loops), "passes": a.passes,
            "natural": bool(a.natural), "finder": a.finder or 0, "teach": a.teach if a.finder else 0, "linker": bool(a.linker), "rival_teach": rival.cfg.teach, "rival_loops": rival.cfg.loops,
            "laws_from": a.laws_from,
@@ -211,6 +216,30 @@ def main(argv=None):
     say(f"written: {out / 'results.json'} and {out / 'report.md'}")
 
 
+def pick_world(out: Path, a) -> int:
+    """The world a run lives in, kept in <run>/world.json. A run folder made before World 2 (models there, no
+    world.json) is World 1; a run that reuses another run's Logos1 takes that run's world; a new run gets the latest."""
+    f = out / "world.json"
+
+    def of(d: Path):
+        if (d / "world.json").exists():
+            return int(json.loads((d / "world.json").read_text())["version"])
+        if any((d / k).exists() for k in ("laws", "rival", "results.json")):
+            return 1
+        return None
+
+    saved = None if a.fresh else of(out)
+    src = of(out.parent / a.laws_from) if a.laws_from else None
+    v = a.world or saved or src or W.LATEST
+    if saved is not None and v != saved:
+        raise SystemExit(f"{out.name} was trained on World {saved}: use another --name for World {v} (or --fresh to start over)")
+    if src is not None and v != src:
+        raise SystemExit(f"--laws-from {a.laws_from} is a World {src} run: its Logos1 cannot race on World {v}")
+    if not os.environ.get("WORLD_CHILD"):
+        f.write_text(json.dumps({"version": v}))
+    return v
+
+
 def _no_tags(rival):
     """The rival without the 'same thing' marks: its tag table is zeroed and frozen."""
     with torch.no_grad():
@@ -219,7 +248,8 @@ def _no_tags(rival):
 
 
 SPLIT_WORDS = {"seen": "practised kinds, new scenes", "longer": "longer", "deeper": "deeper", "bigger": "bigger falls",
-               "new-pairs": "links chained in new ways", "new-mixes": "rules mixed in new ways", "more-moves": "more moves in a row"}
+               "new-pairs": "links chained in new ways", "new-mixes": "rules mixed in new ways", "more-moves": "more moves in a row",
+              "farther": "farther away", "three-way": "three families in one question"}
 
 
 def _pct(x):
@@ -231,7 +261,7 @@ def report(res) -> str:
     get = lambda rows, mode, fam, sp: [r for r in rows if r["mode"] == mode and r["family"] == fam and r["split"] == sp]  # noqa: E731
     lines = []
     sl, sr = res["summary"]["laws"], res["summary"]["rival"]
-    lines.append(f"# World-first, stage 1: {res['name']} ({res['when']}, {res['device']})\n")
+    lines.append(f"# World-first, stage 1: {res['name']} ({res['when']}, {res['device']}, World {res.get('world', 1)})\n")
     loops = res.get("loops", True)
     ans = res.get("rival_loss") == "answers"
     loop_words = (f"always {res['passes']} passes" if res.get("passes") else "loops") if loops else "NO loops: its core runs once"
@@ -308,6 +338,23 @@ def report(res) -> str:
                     agg[k][1] += n
         f = lambda k: _pct(agg[k][0] / agg[k][1]) if agg[k][1] else "-"  # noqa: E731
         lines.append(f"- {name}: they saw it last where it is {f('False')}, they believe something false {f('True')}")
+    if any(r.get("mix") for r in L):
+        lines.append("\n## Mixed questions (the house: C containers, M who saw what, W the way to what someone wants, N counting)\n")
+        lines.append("Training only ever asks questions that need one or two of these at once; the secret exam asks ones that "
+                     "need three (CMW: which room someone walks into first to look for what they want, when its container was "
+                     "moved while they were away; CMN: how many coins someone thinks are in a room).\n")
+        lines.append("| needs | asked in | Logos1 | rival |")
+        lines.append("|---|---|---|---|")
+        for k in W.HOUSE_TRAIN_KINDS + W.HOUSE_SECRET_KINDS:
+            cell = []
+            for rows, mode in ((L, "settle"), (R, "plain")):
+                ok = n = 0
+                for r in rows:
+                    if r["mode"] == mode and k in r.get("mix", {}):
+                        ok, n = ok + r["mix"][k][0], n + r["mix"][k][1]
+                cell.append(_pct(ok / n) if n else "-")
+            where = "**secret**" if k in W.HOUSE_SECRET_KINDS else "practice"
+            lines.append(f"| {k} | {where} | {cell[0]} | {cell[1]} |")
     tl, tr = res["train"].get("laws", {}), res["train"].get("rival", {})
     early = [k for k, t in (("Logos1", tl), ("rival", tr)) if t.get("stopped_early")]
     lines.append(f"\nTraining: Logos1 {tl.get('steps')} steps in {tl.get('minutes', 0):.1f} min, rival {tr.get('steps')} steps "

@@ -154,11 +154,17 @@
 const LAWS = UI.css("--laws"), RIVAL = UI.css("--rival");
 const COL = { laws: LAWS, rival: RIVAL };
 const NAME = { laws: "Logos1", rival: "Rival" };
-const FAMS = ["sums", "lines", "boxes", "family", "falling", "machines", "cups", "minds", "walks"];
-const FAMWORD = { sums: "Sums", lines: "Lines", boxes: "Boxes", family: "Family", falling: "Falling", machines: "Machines", cups: "Hidden", minds: "Minds", walks: "Walks" };
-const LEVELS = { sums: [8, 4], lines: [6, 4], boxes: [6, 3], family: [3, 1], falling: [4, 3], machines: [2, 1], cups: [4, 3], minds: [3, 3], walks: [4, 3] };   // [practised, secret]
-const SPLIT = { seen: "new scenes, practised kinds", longer: "longer", deeper: "deeper", bigger: "bigger falls", "new-pairs": "links chained in new ways", "new-mixes": "rules mixed in new ways", "more-moves": "more moves in a row" };
-const FAMCOL = ["#8f7bff", "#45c3ff", "#5fe39a", "#ffd34d", "#ff9a3c", "#c9c2ff", "#ff7a7a", "#4fe0d2", "#e7a6ff"];
+const FAMS1 = ["sums", "lines", "boxes", "family", "falling", "machines", "cups", "minds", "walks"];
+const FAMS_ALL = FAMS1.concat(["carry", "time", "cause", "wants", "count", "house"]);   // World 2 added six
+const FAMWORD = { sums: "Sums", lines: "Lines", boxes: "Boxes", family: "Family", falling: "Falling", machines: "Machines", cups: "Hidden", minds: "Minds", walks: "Walks",
+  carry: "Carried", time: "Time", cause: "Cause", wants: "Wants", count: "Counting", house: "Mixed" };
+const LEVELS1 = { sums: [8, 4], lines: [6, 4], boxes: [6, 3], family: [3, 1], falling: [4, 3], machines: [2, 1], cups: [4, 3], minds: [3, 3], walks: [4, 3] };   // [practised, secret]
+// the run's own world (the server reads <run>/world.json); a run from before World 2 has none and is World 1
+const famsOf = () => RUN?.world?.families || FAMS1;
+const levelsOf = (f) => (RUN?.world?.levels || LEVELS1)[f] || [0, 0];
+const SPLIT = { seen: "new scenes, practised kinds", longer: "longer", deeper: "deeper", bigger: "bigger falls", "new-pairs": "links chained in new ways", "new-mixes": "rules mixed in new ways", "more-moves": "more moves in a row", farther: "farther away", "three-way": "three families in one question" };
+const FAMCOL = ["#8f7bff", "#45c3ff", "#5fe39a", "#ffd34d", "#ff9a3c", "#c9c2ff", "#ff7a7a", "#4fe0d2", "#e7a6ff",
+  "#b8e35f", "#ff6fb5", "#7aa8ff", "#f2c18d", "#5fd0a0", "#d7d7d7"];
 const esc = UI.escapeHtml;
 const pct = (v, d = 1) => v == null ? "–" : (v * 100).toFixed(d) + "%";
 const avg = (xs) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
@@ -226,8 +232,8 @@ function card(kind) {
   const tr = trains(kind), accNow = st.acc ?? tr[tr.length - 1]?.acc;
   const stat = (k, v, h) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div><div class="h">${h || "&nbsp;"}</div></div>`;
   const fr = st.frontier || {};
-  const lv = FAMS.map((f) => {
-    const [n, s] = LEVELS[f], at = fr[f] || 0;
+  const lv = famsOf().map((f) => {
+    const [n, s] = levelsOf(f), at = fr[f] || 0;
     const dots = Array.from({ length: n }, (_, i) => `<i class="${i < at ? "on" : ""}"></i>`).join("") + Array.from({ length: s }, () => `<i class="secret"></i>`).join("");
     return `<div class="row"><span class="fam">${FAMWORD[f]}</span><span class="dots">${dots}</span><b>${at ? at + " of " + n : "–"}</b></div>`;
   }).join("");
@@ -270,7 +276,7 @@ function drawExams() {
   const L = res.rows.laws, R = res.rows.rival;
   const pick = (rows, mode, f, sp) => rows.filter((r) => r.mode === mode && r.family === f && r.split === sp);
   let html = "";
-  for (const f of FAMS) {
+  for (const f of famsOf()) {
     const splits = [...new Set(L.filter((r) => r.family === f).map((r) => r.split))];
     for (const sp of splits) {
       const l = pick(L, "settle", f, sp), r = pick(R, "plain", f, sp);
@@ -318,22 +324,22 @@ function drawThinking() {
   }
   charts.sweep.set({ series: sw, xLog: true, xFmt: (v) => String(Math.round(v)), xTip: (v) => Math.round(v) + " passes", yFmt: (v, d) => (v * 100).toFixed(Math.max(0, d - 2)) + "%", tipFmt: (v) => pct(v) });
   const ps = [];
-  FAMS.forEach((f, i) => {
+  famsOf().forEach((f, i) => {
     const rows = L.filter((r) => r.mode === "settle" && r.family === f && r.split !== "more-moves").sort((a, b) => a.level - b.level);
     const byLv = {};
     rows.forEach((r) => { (byLv[r.level] = byLv[r.level] || []).push(r.passes); });
     const pts = Object.entries(byLv).map(([lv, v]) => [+lv, avg(v)]).sort((a, b) => a[0] - b[0]);
-    const n = LEVELS[f][0];
+    const n = levelsOf(f)[0];
     ps.push({ name: FAMWORD[f], color: FAMCOL[i], points: pts.filter((p) => p[0] <= n) });
     ps.push({ name: FAMWORD[f] + " · secret", color: FAMCOL[i], dash: [4, 4], points: pts.filter((p) => p[0] >= n), noTip: true });
   });
-  document.getElementById("passKey").innerHTML = FAMS.map((f, i) => `<span><i style="background:${FAMCOL[i]}"></i>${FAMWORD[f]}</span>`).join("");
+  document.getElementById("passKey").innerHTML = famsOf().map((f, i) => `<span><i style="background:${FAMCOL[i]}"></i>${FAMWORD[f]}</span>`).join("");
   charts.passes.set({ series: ps, xFmt: (v) => String(Math.round(v)), xTip: (v) => "level " + Math.round(v), yMin: 0, yFmt: (v, d) => v.toFixed(d), tipFmt: (v) => v.toFixed(1) + " passes" });
 }
 
 // ---- the world
 let FAM = "sums", SPL = "seen";
-document.getElementById("famSeg").innerHTML = FAMS.map((f) => `<button data-f="${f}" class="${f === FAM ? "on" : ""}">${FAMWORD[f]}</button>`).join("");
+document.getElementById("famSeg").innerHTML = FAMS_ALL.map((f) => `<button data-f="${f}" class="${f === FAM ? "on" : ""}">${FAMWORD[f]}</button>`).join("");
 async function drawEpisode() {
   const box = document.getElementById("episode");
   let e;

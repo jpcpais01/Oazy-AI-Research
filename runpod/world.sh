@@ -12,6 +12,8 @@
 #   bash runpod/world.sh --name world-link --preset big --steps 200000 --passes 3 --natural 1 --linker 1   # the linker: mentions point back to the same thing
 #   bash runpod/world.sh --name world-loop --preset big --steps 200000 --passes 3 --natural 1 --linker 1 --rival-loops 3 --laws-from world-link
 #       # only a rival whose last 2 layers loop 3 times (same size, ~1.6x the work); Logos1 is reused from world-link for the report
+#   bash runpod/world.sh --name w2-link --preset big --steps 200000 --passes 3 --natural 1 --linker 1   # World 2 (a new name = World 2)
+#       # runs made before World 2 stay on World 1 by themselves (<run>/world.json says which); --world 1 forces the old one
 # Results: <runs>/worldfirst/report.md and results.json; the dashboard (port 8000) shows them as a card.
 set -euo pipefail
 cd "$(dirname "$0")/.."

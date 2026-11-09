@@ -149,8 +149,9 @@ NEXT-WORD model: the episodes are just more text, learned word by word, answers 
 
     There is a line. Vasco is right behind Cora. ... Simao and Zoe swap places. Is Vasco ahead of Simao? Answer: no.
 
-- **What**: `worldfirst/world.py`'s nine families (sums, lines, boxes, family, falling, machines, cups, minds, walks),
-  practice levels only, made fresh on the fly by 3 CPU helper processes (`--world-workers`), never stored, never a
+- **What**: `worldfirst/world.py`'s World 2, fifteen families (sums, lines, boxes, family, falling, machines, cups,
+  minds, walks, carry, time, cause, wants, count, and the mixed house; a run started on World 1 stays on it), practice
+  levels only, made fresh on the fly by 3 CPU helper processes (`--world-workers`), never stored, never a
   secret exam's. Cut into SmolLM2's pieces, `<|endoftext|>` between episodes, packed into the same windows.
 - **How much**: `--world w` = 3w of the passes for the first 20% of the run, then w/2 to the end (cool-down included),
   w on average. `--world 0.10` = 30% then 5%; `--world 0.05` (half) = 15% then 2.5%; 0 = off. Whole passes go to the

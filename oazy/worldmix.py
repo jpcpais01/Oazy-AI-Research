@@ -5,7 +5,9 @@ guesses word by word, answers included, exactly as the worldfirst rival learns (
     python3 -m oazy.train --model bee6 ... --world 0.10       # 10% of the run's tokens are world episodes (0 = off)
     python3 -m oazy.worldmix exam --run bee6-race bee6-world10 # the world's secret exams, asked as plain text
 
-What it reads. worldfirst/world.py's nine families (sums, lines, boxes, family, falling, machines, cups, minds, walks):
+What it reads. worldfirst/world.py's World 2: fifteen families (sums, lines, boxes, family, falling, machines, cups,
+minds, walks, and since Nov 9 evening carry, time, cause, wants, count and the mixed "house"). A run started on World 1
+stays on it when resumed (the stream's saved state says which world):
 a scene, an action, questions about the scene after it, and their answers, written as ordinary sentences:
 
     There is a line. Vasco is right behind Cora. ... Simao and Zoe swap places. Is Vasco ahead of Simao? Answer: no.
@@ -39,7 +41,7 @@ import numpy as np
 EARLY, EARLY_X, LATE_X = 0.2, 3.0, 0.5     # the first 20% of the run at 3x the average share, then half of it
 TRAIN_SEED0 = 1_000_000                    # practice episodes use seeds from here up; exam episodes 0 .. n-1
 PER_JOB = 256                              # episodes per helper job
-EXAM_VERSION = 1
+EXAM_VERSION = 2                           # 2: World 2 (fifteen families); older exam results are taken again
 PUNCT = {".", "?", ",", ":"}
 
 
@@ -127,10 +129,13 @@ def encode_episodes(enc, eps):
 _ENC = None
 
 
-def _init(tk):
+def _init(tk, version=None):
     global _ENC
     from . import tok
+    from worldfirst import world as W
     _ENC = tok.get(tk)
+    if version is not None:
+        W.use(version)                  # a helper starts fresh: it must make the same world as the run
 
 
 def picks(seed, k):
@@ -166,7 +171,10 @@ class WorldStream:
     run carries on with new episodes (the half-used job at a stop is dropped)."""
 
     def __init__(self, tk="smollm2", seed=0, workers=2, ahead=8, state=None):
+        from worldfirst import world as W
         self.tk, self.seed, self.workers, self.ahead = tk, seed, workers, ahead
+        self.version = int((state or {}).get("world", 1 if state else W.LATEST))   # a run from before World 2 stays on 1
+        W.use(self.version)
         self.k = int((state or {}).get("job", 0))      # the next job to hand out
         self.used = self.k                             # jobs consumed (what a resume restarts from)
         self.buf = np.zeros(0, dtype=np.int32)
@@ -174,7 +182,7 @@ class WorldStream:
         self.pool = None
         if workers > 0:
             import multiprocessing as mp
-            self.pool = mp.get_context("spawn").Pool(workers, initializer=_init, initargs=(tk,))
+            self.pool = mp.get_context("spawn").Pool(workers, initializer=_init, initargs=(tk, self.version))
         self.tokens = 0
 
     def _fill(self, need):
@@ -204,7 +212,7 @@ class WorldStream:
         return r[:, :-1], r[:, 1:]
 
     def state(self):
-        return {"job": self.used}
+        return {"job": self.used, "world": self.version}
 
     def close(self):
         if self.pool is not None:
@@ -348,7 +356,8 @@ def summarise(rows, n):
         p = "seen" if r["split"] == "seen" else "secret"
         fam.setdefault(f"{r['family']}/{p}", []).append(r["right"])
         part.setdefault(p, []).append(r["right"])
-    out = {"version": EXAM_VERSION, "n": n, "rows": rows,
+    from worldfirst import world as W
+    out = {"version": EXAM_VERSION, "world": W.VERSION, "n": n, "rows": rows,
            "families": {k: sum(v) / len(v) for k, v in fam.items()}}
     for p, v in part.items():
         out[p] = sum(v) / len(v)
