@@ -28,7 +28,8 @@ N_TAGS = 64
 
 def build_vocab(seeds: int = 60):
     words = set(W.NAMES) | set(W.COLOURS) | set(W.CONTAINERS) | set(W.ITEMS) | set(W.CLASSES) | {"answer", ":", ".", "?"}
-    words |= set(W.PRONOUNS) | {",", "smallest", "digit", "first"}         # the natural way of speaking
+    if W.STYLE["natural"]:                                                 # the natural way of speaking
+        words |= set(W.PRONOUNS) | {",", "smallest", "digit", "first"}
     for fam, lv, sp in W.exam_sets():
         for s in range(seeds):
             e = W.make(fam, lv, sp, 10_000_000 + s)
