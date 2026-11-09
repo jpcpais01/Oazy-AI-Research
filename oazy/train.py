@@ -116,6 +116,8 @@ RECIPE["blackt"] = dict(RECIPE["black"])
 # Choosing what to learn from (oazy/select.py; João, Nov 8): each word counts by how much it is still worth learning
 # (the model's loss minus the mentor's), and the passages closest to clicking are reread. --select 1 turns it on; once
 # the A/B on Plain-100M (with / without, Sado, 0.5B tokens each) is in, select=1 joins the latest best recipe.
+# World practice (oazy/worldmix.py; João, Nov 9): --world 0.10 makes 10% of the run's tokens worldfirst episodes (30% of
+# the passes for the first 20%, then 5%), read as plain next-word text. Off (0) in every recipe until a race says so.
 VAL_T = 1024                                   # held-out windows are always this long: every model, every run, same text
 
 
@@ -151,6 +153,8 @@ def summary(info, run_dir, resumed=None):
         *([("picks", f"top {info['select_keep']:.0%} of words by excess count fully, the rest x{info['select_floor']:g} "
                      f"(from {info['select_start']:.0%}) · reread {info['replay']:.0%} of rows, up to {info['replay_reads']}x")]
           if info.get("select") else []),
+        ("world", f"{info['world_plan']} · 9 kinds of practice scene, made fresh, never the secret exams · mentor off on them"
+                  if info.get("world") else None),
         ("grows", info.get("grow")),
         ("speed", " · ".join(x for x in ["FP8" if info.get("fp8") else ("bf16 (FP8 off)" if "fp8" in info else "bf16"),
                                          "document mask" if info.get("doc_mask") else None] if x)),
@@ -894,6 +898,10 @@ def main():
     ap.add_argument("--replay", type=float, default=None, help="share of every pass's rows that are rereads (0.15; 0 = no rereading)")
     ap.add_argument("--replay-reads", type=int, default=None, help="rereads per passage at most (2: three readings in all)")
     ap.add_argument("--replay-size", type=int, default=None, help="passages kept for rereading (512)")
+    ap.add_argument("--world", type=float, default=None,
+                    help="average share of the run's tokens that are world practice episodes (oazy/worldmix.py): 3x that "
+                         "share of the passes for the first 20%%, then half of it to the end; 0.10 = 30%% then 5%%; 0 = off")
+    ap.add_argument("--world-workers", type=int, default=None, help="helper processes making world episodes (3; 0 = in the trainer)")
     ap.add_argument("--schedule", choices=["cos", "wsd"], default=None,
                     help="learning-rate shape: cos (cosine) or wsd (flat, then a straight fall over the last 20%%); default wsd for bee")
     ap.add_argument("--mix", default=None, help="Bee's text mix over training (default in oazy/mix.py), "
@@ -934,6 +942,10 @@ def main():
     from .select import DEFAULTS as SEL
     use_select = bool(recipe.get("select", 0) if args.select is None else args.select)
     sel_cfg = {k: (getattr(args, k) if getattr(args, k) is not None else recipe.get(k, v)) for k, v in SEL.items()}
+    from . import worldmix
+    world_w = float(recipe.get("world", 0.0) if args.world is None else args.world)
+    if not 0.0 <= world_w <= 0.3:
+        raise SystemExit("--world is the average share of the run's tokens, between 0 and 0.3 (0.10 = 10%)")
     if args.mentor_weight is None:
         args.mentor_weight = recipe.get("mentor_weight", 0.6)
     if args.mentor_until is None:
@@ -952,6 +964,13 @@ def main():
         model, fp8 = fp8_mod.convert(model, device, say)
     tk = tok.name_of(model)
     enc = tok.get(tk)
+    if world_w > 0:                                    # world practice (oazy/worldmix.py): checked before anything starts
+        if args.model not in BEES or tk != "smollm2":
+            raise SystemExit("--world is for the SmolLM2-piece Bees (Bee5, Bee6, Seed, ...): the episodes are cut into SmolLM2's pieces")
+        if use_select:
+            raise SystemExit("--world and --select do not go together (the race measures the world alone)")
+        if getattr(cfg, "bloom", ""):
+            raise SystemExit("--world runs with bloom off (the race measures the world alone)")
     # a model that reads another tokenizer than GPT-2's reads the same text, re-cut (oazy/retok.py)
     data = root
     val_scale = 1.0
@@ -1056,6 +1075,7 @@ def main():
     def done():
         return (elapsed >= budget or tokens >= total) if budget else tokens >= total
     old_total, anchor = None, None
+    world_state = {}
     ck = run.dir / "ckpt.pt"
     if ck.exists() and not args.fresh:
         state = torch.load(ck, map_location=device, weights_only=False)
@@ -1076,6 +1096,7 @@ def main():
         torch.set_rng_state(state["torch_rng"].cpu())
         old_total = state.get("total") or (state.get("info") or {}).get("total_tokens")
         anchor = state.get("mentor_anchor")
+        world_state = state.get("world") or {}
         say(f"[done] resumed from the checkpoint: step {step:,}, {term.tokens(tokens)} tokens, {term.duration(elapsed)} of training")
         if old_total and old_total != total and tokens < total:
             say(f"[length] the run's length changes: {old_total / 1e9:.2f}B -> {total / 1e9:.2f}B tokens. Every "
@@ -1105,6 +1126,7 @@ def main():
         **({"mentor_weight": args.mentor_weight, "mentor_until": args.mentor_until, "mentor_floor": mentor_floor,
             "mentor_off": mentor_off, "mentor_share": mentor_share} if mentor_name != "none" else {}),
         **({"select": True, **sel_cfg} if use_select else {}),
+        **({"world": world_w, "world_plan": worldmix.plan_text(world_w)} if world_w > 0 else {}),
         **({"fp8": fp8} if want_fp8 else {}), **({"grow": cfg.grow} if hasattr(model, "grow_to") and hasattr(cfg, "grow") else {}),
         **({"loss": args.loss, "doc_mask": bool(getattr(cfg, "doc_mask", 0)), "val_context": Tv} if args.model in BEES else {}),
         "layout": model.layout() if hasattr(model, "layout") else None,
@@ -1182,6 +1204,14 @@ def main():
                 replay.load_state_dict(state["replay"])
         model.token_select = select
 
+    world = None
+    world_credit, world_tokens = float(world_state.get("credit", 0.0)), int(world_state.get("tokens", 0))
+    if world_w > 0:                                    # world practice: helper processes start making episodes now
+        workers = 3 if args.world_workers is None else args.world_workers
+        world = worldmix.WorldStream(tk, seed=args.seed, workers=workers, state=world_state.get("stream"))
+        say(f"[world] {worldmix.plan_text(world_w)}; {workers} helper processes make the episodes"
+            + (f" (resumed: {term.tokens(world_tokens)} world tokens so far)" if world_tokens else ""), flush=True)
+
     stop = {"flag": False}
 
     def handler(sig, frame):
@@ -1204,6 +1234,7 @@ def main():
         return {"step": step, "tokens": tokens, "elapsed": elapsed, "next": nxt, "data": train.state(),
                 "torch_rng": torch.get_rng_state(), "info": info, "kind": args.model, "config": cfg.to_dict(),
                 "total": total, "mentor_anchor": anchor,
+                **({"world": {"credit": world_credit, "tokens": world_tokens, "stream": world.state()}} if world is not None else {}),
                 **({"select": select.state_dict(), "replay": replay.state_dict() if replay is not None else None}
                    if select is not None else {})}
 
@@ -1269,6 +1300,25 @@ def main():
             except Exception as e:          # a new test must never stop a run
                 say(f"[faith] skipped ({type(e).__name__}: {str(e)[:120]})", flush=True)
             nxt["faith"] += p["evals_every"]
+        if world is not None and (final or tokens >= nxt.setdefault("world", 0)):
+            # the world's exams as plain text (oazy/worldmix.py): a quick look at the secret ones on the tests' schedule,
+            # every exam (practised and secret, n episodes per set) at the end
+            try:
+                big = p["evals_quick"] >= 500
+                r = worldmix.exam(model, device, n=(100 if big else 2) if final else (20 if big else 1), secret_only=not final)
+                run.log("metrics.jsonl", {"kind": "world", **base, **{k: v for k, v in r.items() if k != "rows"},
+                                          "full": final})
+                latest["world_secret"] = r["secret"]
+                if final:
+                    latest["world_seen"] = r["seen"]
+                    ckf = run.dir / "ckpt.pt"
+                    (run.dir / "world_exam.json").write_text(json.dumps(
+                        {**r, "tokens": tokens, "ckpt_mtime": ckf.stat().st_mtime if ckf.exists() else None}, indent=1))
+                say(f"[world] secret exams {r['secret'] * 100:.1f}%" + (f", practised {r['seen'] * 100:.1f}%" if "seen" in r else "")
+                    + f" ({r['n']} episodes per exam set)", flush=True)
+            except Exception as e:          # a new test must never stop a run
+                say(f"[world] exam skipped ({type(e).__name__}: {str(e)[:120]})", flush=True)
+            nxt["world"] += p["evals_every"]
         if final or tokens >= nxt["probe"]:
             r = probes.memory_report(model, pwin, device, batch=min(micro, 16))
             run.log("metrics.jsonl", {"kind": "memory", **base, **r})
@@ -1373,6 +1423,7 @@ def main():
     last_ckpt = time.time()
     t_log, tok_log, acc_loss, acc_n = time.time(), tokens, 0.0, 0
     log_every = 10
+    world_log, world_log_n = 0.0, 0                   # world practice: its loss since the last log line
     share_credit, kd_log, kd_log_n = 0.0, 0.0, 0      # Frog's mentor share: the running tally; its KL since the last log
     run_steps = 0                                     # steps taken by this process (a race does not count its first 3)
     stage_mark = (tokens, elapsed)                    # Seed: where this growth stage started (its speed is logged at the next)
@@ -1450,6 +1501,8 @@ def main():
             g["lr"] = cur_lr * g.get("lr_scale", 1.0)
         loss_sum, kd_sum, rd_sum, hs_sum, n_kd = 0.0, 0.0, 0.0, 0.0, 0
         fore_sum, pass_sum = 0.0, 0.0
+        n_text, world_sum, n_world = 0, 0.0, 0
+        wshare = worldmix.share_at(prog(), world_w) if world is not None else 0.0
 
         def lesson(x, y, mw):
             with amp(device):
@@ -1472,7 +1525,24 @@ def main():
             return loss, st
 
         for _ in range(accum):
+            if world is not None:                   # world practice: whole passes, evenly spread by a running tally
+                world_credit += wshare
+                if world_credit >= 1.0 - 1e-9:
+                    world_credit -= 1.0
+                    x, y = world.get(micro, T, device)
+                    try:
+                        loss, st = lesson(x, y, 0.0)    # the mentor never reads a world pass
+                    except Exception as e:
+                        if model._compiled is None:
+                            raise
+                        say(f"torch.compile failed ({type(e).__name__}: {e}); continuing without compile", flush=True)
+                        model._compiled = None
+                        loss, st = lesson(x, y, 0.0)
+                    world_sum += st.get("ce", loss).detach()
+                    n_world += 1
+                    continue
             x, y = train.get(device)
+            n_text += 1
             if replay is not None and select.on():  # a share of the rows: passages closest to clicking, read again
                 x, y, row_reads = replay.mix_in(x, y)
             else:
@@ -1515,8 +1585,12 @@ def main():
             model.after_step()
         step += 1
         tokens += B * T
-        acc_loss += loss_sum / accum
-        acc_n += 1
+        if n_text:                                  # the training loss is the text's (a world pass is logged on its own)
+            acc_loss += loss_sum / n_text
+            acc_n += 1
+        if n_world:
+            world_tokens += n_world * micro * T
+            world_log, world_log_n = world_log + float(world_sum), world_log_n + n_world
         run_steps += 1
         if not (budget and run_steps <= 3):         # a race: the first steps of a start compile, they are not counted
             elapsed += time.time() - t0 - t_eval    # training time only
@@ -1525,7 +1599,7 @@ def main():
             now = time.time()
             tps = (tokens - tok_log) / max(1e-6, now - t_log)
             t_log, tok_log = now, tokens
-            own_loss = float(acc_loss) / acc_n
+            own_loss = float(acc_loss) / max(acc_n, 1)
             rec = {"kind": "train", "step": step, "tokens": tokens, "elapsed": elapsed,
                    "loss": own_loss * loss_scale_at(prog()), "lr": cur_lr, "tok_s": tps, "grad_norm": float(gnorm)}
             if tk != "gpt2":
@@ -1558,6 +1632,11 @@ def main():
                 rec["fore_loss"], rec["fore_w"] = float(fore_sum) / accum, model._fore_w
             if pass_sum:
                 rec["passes"] = pass_sum / accum
+            if world is not None:
+                rec["world_share"], rec["world_tokens"] = wshare, world_tokens
+                if world_log_n:                     # per SmolLM2 piece of world text (not comparable with the text's loss)
+                    rec["world_loss_own"] = world_log / world_log_n
+                world_log, world_log_n = 0.0, 0
             acc_loss, acc_n = 0.0, 0
             run.log("metrics.jsonl", rec)
             eta = (total - tokens) / max(tps, 1)
@@ -1578,6 +1657,8 @@ def main():
                 + (f"{sep}experts {rec['moe_uneven']:.2f} uneven, {rec['moe_dropped'] * 100:.1f}% dropped" if "moe_uneven" in rec else "")
                 + (f"{sep}thoughts {rec['thought_len']:.1f} tok{sep}meaning {rec['meaning_loss']:.2f}" if "thought_len" in rec else "")
                 + (f"{sep}passes {rec['passes']:.1f}" if "passes" in rec else "")
+                + (f"{sep}world {rec['world_share'] * 100:.0f}%" + (f" loss {rec['world_loss_own']:.2f}" if "world_loss_own" in rec else "")
+                   if "world_share" in rec else "")
                 + (f"{sep}foresight {rec['fore_loss']:.2f} (x{rec['fore_w']:.2g})" if "fore_loss" in rec else "")
                 + (f"{sep}picks {rec['select_kept'] * 100:.0f}% (w {rec['select_w']:.2f})"
                    + (f" · reread {rec['replay_share'] * 100:.0f}%" if "replay_share" in rec else "") if "select_kept" in rec else ""),
@@ -1588,6 +1669,8 @@ def main():
             last_ckpt = time.time()
 
     save_ckpt(run, model, opt, ckpt_meta())
+    if world is not None:
+        world.close()
     if done() or end_early:
         if end_early:
             say(f"ended early from the app at {tokens / 1e6:.0f}M tokens (checkpoint saved).", flush=True)
