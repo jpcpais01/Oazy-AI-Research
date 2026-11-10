@@ -101,11 +101,10 @@ function draw() {
 }
 
 // ---------------------------------------------------------------- what they write
-// one prompt at a time (the trainer's four, oazy/train.py SAMPLE_PROMPTS); under it, each charted run's newest writing,
-// three lines long until tapped
+// one prompt at a time (oazy/train.py SAMPLE_PROMPTS); under it, each charted run's newest writing, in full
 let WRITE = {}, PROMPT = null, OPEN = new Set();
 try { PROMPT = localStorage.getItem("oazy.v.prompt"); } catch (e) { PROMPT = null; }
-const SHORT = (p) => { const w = p.replace(/[,.]+$/, "").split(" "); return w.length > 4 ? w.slice(0, 4).join(" ") + "…" : w.join(" "); };
+const SHORT = (p) => { const w = p.replace(/[,.]+$/, "").split(" "); return w.length > 4 ? w.slice(0, 4).join(" ").replace(/[,.]+$/, "") + "…" : w.join(" "); };
 async function loadWriting(set) {
   await Promise.all(set.map(async (n) => {
     const r = runOf(n);

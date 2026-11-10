@@ -368,7 +368,7 @@ PRESETS = {
         lr_coral=1.8e-3, muon_lr_coral=0.03, lr_bee4=1.8e-3, muon_lr_bee4=0.03, lr_coralmini=1.8e-3, muon_lr_coralmini=0.03,
         lr_pegasus=1.8e-3, muon_lr_pegasus=0.03, lr_pegasusmini=1.8e-3, muon_lr_pegasusmini=0.03, lr_pegasus2=1.8e-3, muon_lr_pegasus2=0.03, lr_plain100=1.8e-3, muon_lr_plain100=0.03, lr_plain100f=1.8e-3, muon_lr_plain100f=0.03, lr_alphastar=1.8e-3, muon_lr_alphastar=0.03, lr_pegasusbeta=1.8e-3, muon_lr_pegasusbeta=0.03, lr_bee5=1.8e-3, muon_lr_bee5=0.03, lr_bee6=1.8e-3, muon_lr_bee6=0.03, lr_seed=1.8e-3, muon_lr_seed=0.03, lr_smol=3e-3, lr_smolbee=1.8e-3, muon_lr_smolbee=0.03, warmup=400, tokens=2_000_000_000,
         eval_every=50_000_000, probe_every=200_000_000, hs_every=200_000_000, sample_every=200_000_000, evals_every=200_000_000,   # every test each 200M (João, Nov 10)
-        val_windows=128, hs_quick=1000, evals_quick=500, sample_len=120,
+        val_windows=128, hs_quick=1000, evals_quick=500, sample_len=160,
     ),
     # the same models, 2.5x the text (e.g. a 2 x B200 pod for ~2.5 h, one model per GPU)
     "big": dict(
@@ -377,7 +377,7 @@ PRESETS = {
         lr_coral=1.8e-3, muon_lr_coral=0.03, lr_bee4=1.8e-3, muon_lr_bee4=0.03, lr_coralmini=1.8e-3, muon_lr_coralmini=0.03,
         lr_pegasus=1.8e-3, muon_lr_pegasus=0.03, lr_pegasusmini=1.8e-3, muon_lr_pegasusmini=0.03, lr_pegasus2=1.8e-3, muon_lr_pegasus2=0.03, lr_plain100=1.8e-3, muon_lr_plain100=0.03, lr_plain100f=1.8e-3, muon_lr_plain100f=0.03, lr_alphastar=1.8e-3, muon_lr_alphastar=0.03, lr_pegasusbeta=1.8e-3, muon_lr_pegasusbeta=0.03, lr_bee5=1.8e-3, muon_lr_bee5=0.03, lr_bee6=1.8e-3, muon_lr_bee6=0.03, lr_seed=1.8e-3, muon_lr_seed=0.03, lr_smol=3e-3, lr_smolbee=1.8e-3, muon_lr_smolbee=0.03, warmup=600, tokens=5_000_000_000,
         eval_every=100_000_000, probe_every=200_000_000, hs_every=200_000_000, sample_every=200_000_000, evals_every=200_000_000,   # every test each 200M (João, Nov 10)
-        val_windows=128, hs_quick=1000, evals_quick=500, sample_len=120,
+        val_windows=128, hs_quick=1000, evals_quick=500, sample_len=160,
     ),
     # Code Black's races (codeblack/README.md): every run gets the same training time (--minutes 30), and the held-out
     # loss is taken often, so loss-against-minutes curves can be compared at any point. 262k-token steps.
@@ -397,8 +397,13 @@ for _p in PRESETS.values():           # Logos1-200M and Bee6-MoE: Bee6's batch a
 
 # what every run writes at each check (the dashboard's "What they write", one box each). The fourth, a story, came
 # Nov 7 2026; a run that started before it writes it from its next restart (or now: python3 -m oazy.writenow).
+# Nov 10: three simple logic questions, each a different kind (order, counting, a syllogism), asked João's way: the
+# question, then the start of the answer, so a model that only continues text still answers it.
 SAMPLE_PROMPTS = ["The water cycle is", "In 1905, Albert Einstein", "The most important thing about learning is",
-                  "Once upon a time, in a small village by the sea,"]
+                  "Once upon a time, in a small village by the sea,",
+                  "Tom is taller than Sam, and Sam is taller than Ben. So the shortest of the three is",
+                  "Anna has 3 apples. She gives 1 to her brother and then buys 4 more. Now Anna has",
+                  "All birds have feathers. A robin is a bird. So a robin"]
 
 
 def parse_overrides(items):

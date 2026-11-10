@@ -7,7 +7,7 @@
 The trainer writes the prompts of oazy/train.py SAMPLE_PROMPTS at each check, but a running trainer keeps the list it
 started with. When a prompt is added mid-run, this writes it straight away, from the checkpoint the trainer saves every
 few minutes, so the dashboard's "What they write" box for it fills without a restart. Same sampling as the trainer
-(temperature 0.8, top 40, repetition guard 1.1, seed 1234, 80 words by default), labelled with the checkpoint's token count, and added to the
+(temperature 0.8, top 40, repetition guard 1.1, seed 1234, 160 words by default), labelled with the checkpoint's token count, and added to the
 run's samples.jsonl next to the trainer's own lines. On the CPU with a few threads by default, so the GPU is not
 disturbed; the checkpoint is read straight from the file (memory-mapped), so its optimizer state never fills the RAM.
 """
@@ -45,7 +45,7 @@ def main():
     ap.add_argument("--run", required=True, help="the run folder's name, e.g. coral")
     ap.add_argument("--runs", default=None, help="where the runs live (default: the trainer's)")
     ap.add_argument("--all", action="store_true", help="write every prompt, not only the missing ones")
-    ap.add_argument("--tokens", type=int, default=80, help="how many words (tokens) each sample runs to")
+    ap.add_argument("--tokens", type=int, default=160, help="how many words (tokens) each sample runs to")
     ap.add_argument("--seed", type=int, default=1234, help="the sampling seed (1234 = the trainer's, so samples compare "
                     "across checks; another number writes a different sample from the same checkpoint)")
     ap.add_argument("--device", default="cpu")
