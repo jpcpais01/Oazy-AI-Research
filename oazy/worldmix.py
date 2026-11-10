@@ -28,6 +28,10 @@ steps chained in ways never practised, more moves of cups and minds, longer walk
 asked as the same plain text: the episode, then each question and "Answer:", and the model's guess among the same
 candidates the rival chooses from (yes/no, a digit, or a name or thing of the scene), with the earlier answers given.
 A question counts only if every word of its answer is right; every exam set weighs the same (as worldfirst).
+
+The Real World Exams (João, Nov 10; oazy/realworld.py): the practised scenes again, told in wording no practice episode
+ever uses ("is directly ahead of", "who is last in the queue?"). Practised minus Real World = how much a model leans on
+the exact words instead of their meaning.
 """
 from __future__ import annotations
 
@@ -42,7 +46,7 @@ import numpy as np
 EARLY, EARLY_X, LATE_X = 0.2, 3.0, 0.5     # the first 20% of the run at 3x the average share, then half of it
 TRAIN_SEED0 = 1_000_000                    # practice episodes use seeds from here up; exam episodes 0 .. n-1
 PER_JOB = 256                              # episodes per helper job
-EXAM_VERSION = 2                           # 2: World 2 (fifteen families); older exam results are taken again
+EXAM_VERSION = 3                           # 2: World 2 (fifteen families); 3: + the Real World Exams. Older results are taken again
 PUNCT = {".", "?", ",", ":"}
 REFS = ("smollm2-135m", "smollm2-360m", "smollm2-1.7b")    # trained SmolLM2 from Hugging Face, examined as yardsticks (no ckpt.pt)
 REF_PARAMS = {"smollm2-135m": 134_515_008, "smollm2-360m": 361_821_120, "smollm2-1.7b": 1_711_376_384}
@@ -75,12 +79,12 @@ def plan_text(w: float) -> str:
 
 
 # ---------------------------------------------------------------- an episode as plain text
-def episode_parts(e):
+def episode_parts(e, real=False):
     """The episode with its answers as plain sentences: (text, [(start, end, kind, target, candidates, question)]).
 
     Each answer word's span starts at its space (" no"), so the text can be cut there and every piece tokenized alone
     (training and the exam cut it the same way). Candidates are what the worldfirst rival chooses among."""
-    text, spans, _ = _layout(e)
+    text, spans, _ = _layout(e, real)
     return text, spans
 
 
@@ -91,13 +95,19 @@ def episode_words(e):
     return text, marks
 
 
-def _layout(e):
+def _layout(e, real=False):
+    """real: the Real World Exams' wording (oazy/realworld.py), never used in practice."""
     from worldfirst import world as W
-    words = [(w, None, m) for w, m in zip(e.tokens, e.mentions)]
+    if real:
+        from .realworld import rewrite
+        say = lambda ws, ms: list(zip(*rewrite(e.family, list(ws), list(ms)))) or []      # noqa: E731
+    else:
+        say = lambda ws, ms: list(zip(ws, ms))                                            # noqa: E731
+    words = [(w, None, m) for w, m in say(e.tokens, e.mentions)]
     scene = set(e.tokens)
     names = sorted({k for k in e.things if k in scene})
     for qi, q in enumerate(e.questions):
-        words += [(w, None, m) for w, m in zip(q.tokens, q.mentions)] + [("answer", None, -1), (":", None, -1)]
+        words += [(w, None, m) for w, m in say(q.tokens, q.mentions)] + [("answer", None, -1), (":", None, -1)]
         for (kind, tgt), w in zip(q.specs, q.answer):
             if kind == "class":
                 cands = ["yes", "no"] if tgt in W.YESNO else [str(i) for i in range(10)]
@@ -314,14 +324,24 @@ class WorldStream:
 
 # ---------------------------------------------------------------- the exam, asked as plain text
 def exam_sets(secret_only=False):
+    """Every exam set: the practised ones ("train"), the secret ones, and the Real World Exams ("real": the practised
+    scenes in wording never used in practice). secret_only (the quick look during training): all but the practised."""
     from worldfirst import world as W
-    return [s for s in W.exam_sets() if not (secret_only and s[2] == "train")]
+    sets = W.exam_sets()
+    sets += [(f, lv, "real") for f, lv, sp in sets if sp == "train"]
+    return [s for s in sets if not (secret_only and s[2] == "train")]
 
 
-def _items(enc, e):
+def _make(s, i):
+    """An exam set's episode i (a Real World episode is the practised one, told in other words)."""
+    from worldfirst import world as W
+    return W.make(s[0], s[1], "train" if s[2] == "real" else s[2], i)
+
+
+def _items(enc, e, real=False):
     """One exam episode -> (ids with a leading <|endoftext|>, [(start of the answer word's pieces, candidates' pieces,
     the true candidate's index, question)])."""
-    text, spans = episode_parts(e)
+    text, spans = episode_parts(e, real)
     pieces = cut(text, spans)
     ids_p = enc.encode_ordinary_batch(pieces)
     ids = [enc.eot_token]
@@ -394,13 +414,13 @@ def exam(model, device, n=100, secret_only=False, sets=None):
     import torch
     from worldfirst import world as W
     sets = sets or exam_sets(secret_only)
-    eps_by_set = [(s, [W.make(s[0], s[1], s[2], i) for i in range(n)]) for s in sets]
+    eps_by_set = [(s, [_make(s, i) for i in range(n)]) for s in sets]
     jobs = []                                # (set index, episode, question, how it is scored, data)
     cand_seqs, cand_of = [], []
     truth, wants = [], {}
     for si, (s, eps) in enumerate(eps_by_set):
         for ei, e in enumerate(eps):
-            ids, items = _items(enc, e)
+            ids, items = _items(enc, e, real=s[2] == "real")
             ti = len(truth)
             truth.append(ids)
             for start, cc, right, qi in items:
@@ -445,7 +465,7 @@ def exam(model, device, n=100, secret_only=False, sets=None):
 def summarise(rows, n):
     fam, part = {}, {}
     for r in rows:
-        p = "seen" if r["split"] == "seen" else "secret"
+        p = r["split"] if r["split"] in ("seen", "real") else "secret"
         fam.setdefault(f"{r['family']}/{p}", []).append(r["right"])
         part.setdefault(p, []).append(r["right"])
     from worldfirst import world as W
@@ -463,8 +483,8 @@ def chance(sets=None, n=40):
     for s in sets or exam_sets():
         tot = []
         for i in range(n):
-            e = W.make(s[0], s[1], s[2], i)
-            _, spans = episode_parts(e)
+            e = _make(s, i)
+            _, spans = episode_parts(e, real=s[2] == "real")
             per_q = {}
             for *_, cands, qi in spans:
                 per_q[qi] = per_q.get(qi, 1.0) / len(cands)
@@ -512,7 +532,8 @@ def exam_run(d: Path, device, n=100, say=print):
         recs = _records(d)
         base = {k: recs[-1].get(k, 0) for k in ("step", "tokens", "elapsed")} if recs else {"step": 0, "tokens": 0, "elapsed": 0}
         Run(d).log("metrics.jsonl", {"kind": "world", **base, **{k: v for k, v in r.items() if k != "rows"}, "full": True})
-    say(f"{d.name}: world exam secret {r['secret'] * 100:.1f}%, practised {r['seen'] * 100:.1f}% "
+    say(f"{d.name}: world exam secret {r['secret'] * 100:.1f}%, practised {r['seen'] * 100:.1f}%, "
+        f"Real World {r.get('real', 0) * 100:.1f}% "
         f"({n} episodes per exam set, {time.time() - t0:.0f} s)")
     return r
 
