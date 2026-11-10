@@ -82,7 +82,7 @@ def values(r: dict) -> dict:
         out["ctx"] = _num(r.get("context"))
         w = _num(r.get("world_share"))
         if w is None and isinstance(r.get("mix"), dict):     # Emerald: the world is one of the mix's sources
-            w = _num(r["mix"].get("world"))
+            w = _num(r["mix"].get("world", r["mix"].get("field1")))
         out["world"] = w
     elif k == "eval":
         out["val"] = _num(r.get("val_loss"))

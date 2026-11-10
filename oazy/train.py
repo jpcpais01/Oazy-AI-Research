@@ -161,6 +161,8 @@ def summary(info, run_dir, resumed=None):
           if info.get("select") else []),
         ("world", f"{info['world_plan']} · 9 kinds of practice scene, made fresh, never the secret exams · mentor off on them"
                   if info.get("world") else None),
+        ("Opal", (f"Field1 {info['opal_plan']}" + (" · mentor off on Field1 rows" if info.get("mentor_skip_world") else ""))
+                 if info.get("opal_plan") else None),
         ("Emerald", (f"world text {info['emerald_plan']}" + (" · mentor off on world rows" if info.get("mentor_skip_world") else ""))
                     if info.get("emerald_plan") else None),
         ("grows", info.get("grow")),
@@ -962,6 +964,10 @@ def main():
                     help="Emerald with the world's share over the run written out (oazy/mix.py emerald_plan): "
                          "'0.30:0.2,0.05' = 30%% until 20%% of the run, then 5%% (the default); 'flat:0.20' = 20%% throughout; "
                          "'0.30:0.1,0.15' = 30%% for the first 10%%, then 15%%")
+    ap.add_argument("--opal-plan", default=None,
+                    help="Opal (oazy/opal.py: our text + Field1, the world told in natural speech) with Field1's share over "
+                         "the run, written as --emerald-plan is: 'flat:0.20' (the default with --data-sub opal) = 20%% throughout; "
+                         "'0.30:0.1,0.15' = 30%% for the first 10%%, then 15%%")
     ap.add_argument("--world-exams", type=int, default=0,
                     help="1 = take the world's exams on the tests' schedule even when the run reads no world text "
                          "(a plain baseline scored the same way as the Emerald runs)")
@@ -1015,6 +1021,20 @@ def main():
         if args.data_sub not in (None, "emerald"):
             raise SystemExit("--emerald-plan reads Emerald: leave out --data-sub or use --data-sub emerald")
         args.data_sub = "emerald"
+    if args.opal_plan is not None or args.data_sub == "opal":    # Opal: Field1's share over the run (oazy/mix.py)
+        from .mix import emerald_plan, OPAL_PLAN
+        if args.emerald_plan is not None or args.emerald is not None:
+            raise SystemExit("Opal holds Field1, not Emerald's world: give --opal-plan, not --emerald / --emerald-plan")
+        if args.data_sub not in (None, "opal"):
+            raise SystemExit("--opal-plan reads Opal: leave out --data-sub or use --data-sub opal")
+        args.opal_plan = args.opal_plan or OPAL_PLAN
+        if ":" not in args.opal_plan:
+            args.opal_plan = "flat:" + args.opal_plan
+        try:
+            emerald_plan(args.opal_plan)
+        except ValueError as e:
+            raise SystemExit(str(e).replace("emerald plan", "opal plan"))
+        args.data_sub = "opal"
     want_fp8 = bool(recipe.get("fp8", 0) if args.fp8 is None else args.fp8)
     from .select import DEFAULTS as SEL
     use_select = bool(recipe.get("select", 0) if args.select is None else args.select)
@@ -1055,7 +1075,13 @@ def main():
         from .retok import target_dir, ratio
         data = target_dir(root, tk)
         sub = args.data_sub or recipe.get("data_sub")
-        if sub == "emerald" or args.emerald is not None:   # Emerald (oazy/emerald.py) = Sado + the world's text, in Sado's folder
+        if sub == "opal":                                  # Opal (oazy/opal.py) = our text + Field1, in <data>/opal (old name sado)
+            sub = "opal" if (root / "opal" / "train.bin").exists() else "sado"
+            if not (root / sub / "field1" / "train.bin").exists():
+                raise SystemExit("Opal's Field1 is not built yet: run  python3 -m oazy.opal build  first")
+            if world_w > 0:
+                raise SystemExit("Opal already holds the world (Field1): leave out --world")
+        elif sub == "emerald" or args.emerald is not None:   # Emerald (oazy/emerald.py) = Sado + the world's text, in Sado's folder
             sub = "sado"
             if not (root / "sado" / "world" / "train.bin").exists():
                 raise SystemExit(f"Emerald's world is not built yet: run  python3 -m oazy.emerald build  first")
@@ -1117,7 +1143,8 @@ def main():
         mix_default = args.mix is None
         if args.mix is None:      # SmolLM2-tokenizer Bees read Tagus when it is there (oazy/tagus.py)
             emerald = args.data_sub == "emerald" or args.emerald is not None
-            args.mix = (f"emerald:{args.emerald_plan}" if args.emerald_plan is not None else
+            args.mix = (f"opal:{args.opal_plan}" if args.opal_plan is not None else
+                        f"emerald:{args.emerald_plan}" if args.emerald_plan is not None else
                         f"emerald:{0.10 if args.emerald is None else args.emerald:g}" if emerald else
                         "sado-best" if tk == "smollm2" and (data / "best" / "train.bin").exists() else   # Sado (oazy/sado.py)
                         "sado" if tk == "smollm2" and (data / "books" / "train.bin").exists() else
@@ -1144,10 +1171,15 @@ def main():
         from .mix import emerald_plan, plan_text
         emerald_text = plan_text(emerald_plan(args.emerald_plan if args.emerald_plan is not None else
                                               (0.10 if args.emerald is None else args.emerald)))
+    opal_text = None
+    if args.model in BEES and args.opal_plan is not None and "field1:" in str(args.mix):
+        from .mix import emerald_plan, plan_text
+        opal_text = plan_text(emerald_plan(args.opal_plan))
     skip_world = bool(args.mentor_skip_world) and mentor_name != "none"
     if skip_world and not hasattr(model, "kd_rows"):
         raise SystemExit(f"--mentor-skip-world is for Bee6 and its kin (Bee6-MoE, Logos): {NICE[args.model]} has no row switch")
-    if skip_world and "world" not in getattr(train, "src", {}):
+    from .mix import WORLD_SOURCES
+    if skip_world and not any(n in getattr(train, "src", {}) for n in WORLD_SOURCES):
         say("[mentor] --mentor-skip-world: this run reads no world rows, so the mentor teaches every row as usual")
         skip_world = False
     vwin = val_set(data / "val.bin", Tv, p["val_windows"])
@@ -1232,6 +1264,7 @@ def main():
         **({"select": True, **sel_cfg} if use_select else {}),
         **({"world": world_w, "world_plan": worldmix.plan_text(world_w)} if world_w > 0 else {}),
         **({"emerald_plan": emerald_text} if emerald_text else {}),
+        **({"opal_plan": opal_text} if opal_text else {}),
         **({"mentor_skip_world": True} if skip_world else {}),
         **({"fp8": fp8} if want_fp8 else {}), **({"grow": cfg.grow} if hasattr(model, "grow_to") and hasattr(cfg, "grow") else {}),
         **({"loss": args.loss, "doc_mask": bool(getattr(cfg, "doc_mask", 0)), "val_context": Tv} if args.model in BEES else {}),
@@ -1317,10 +1350,12 @@ def main():
         world = worldmix.WorldStream(tk, seed=args.seed, workers=workers, state=world_state.get("stream"))
         say(f"[world] {worldmix.plan_text(world_w)}; {workers} helper processes make the episodes"
             + (f" (resumed: {term.tokens(world_tokens)} world tokens so far)" if world_tokens else ""), flush=True)
-    world_exams = world is not None or "world" in getattr(train, "src", {})   # Emerald: the world is part of the text
+    world_exams = world is not None or any(n in getattr(train, "src", {}) for n in WORLD_SOURCES)   # Opal / Emerald
     world_exams = world_exams or bool(args.world_exams)  # --world-exams 1: a run without world text, scored the same way
     if world is None and world_exams and not args.world_exams:
-        say("[world] Emerald: the world's practice text is part of the mix; its secret exams run on the tests' schedule", flush=True)
+        say("[world] " + ("Opal: Field1, the world in natural speech" if "field1" in getattr(train, "src", {}) else
+                          "Emerald: the world's practice text") + " is part of the mix; the world's exams (secret, practised, "
+            "Real World, Real World Pro) run on the tests' schedule", flush=True)
 
     stop = {"flag": False}
 
@@ -1688,7 +1723,7 @@ def main():
                 if getattr(train, "last_marks", None) is not None and hasattr(model, "feed_marks") else (lambda: None)
             feed()                                  # Logos1-200M: the world's marks, its linker's answer key
             if skip_world:                          # --mentor-skip-world: the world's rows learn the real next word only
-                kr = [n != "world" for n in train.last_names]
+                kr = [n not in WORLD_SOURCES for n in train.last_names]
                 model.kd_rows = None if all(kr) or pw <= 0 else torch.tensor(kr, device=device)
             try:
                 loss, st = lesson(x, y, pw)

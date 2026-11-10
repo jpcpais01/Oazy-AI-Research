@@ -57,9 +57,11 @@ SADO_BEST_MIX = SADO_MIX.rsplit(";", 1)[0] + (";fwe:0.1599,dclm:0.05,cosmo:0.11,
 MIXES = {"default": DEFAULT_MIX, "v1": DEFAULT_MIX, "tagus": TAGUS_MIX, "bundle": TAGUS_MIX, "sado": SADO_MIX, "sado-best": SADO_BEST_MIX}
 SOURCES = {"fwe": "", "dclm": "dclm", "chat": "chat",          # name -> sub-folder of the data folder
            "cosmo": "cosmo", "wiki": "wiki", "math": "math", "code": "code", "books": "books", "best": "best",
-           "faith": "faith", "religion": "religion", "creed": "creed", "world": "world"}
+           "faith": "faith", "religion": "religion", "creed": "creed", "world": "world", "field1": "field1"}
+WORLD_SOURCES = ("world", "field1")       # the world's text: Emerald's old practice text, or Opal's Field1 (oazy/field1/)
 PREPARE = {"faith": "python3 -m oazy.faith build", "religion": "python3 -m oazy.religion fetch, then build",
-           "creed": "python3 -m oazy.religion creed", "world": "python3 -m oazy.emerald build"}     # how a source that is not made by this file is made
+           "creed": "python3 -m oazy.religion creed", "world": "python3 -m oazy.emerald build",
+           "field1": "python3 -m oazy.opal build"}     # how a source that is not made by this file is made
 
 
 def with_cooldown(mix: str, start: float) -> str:
@@ -129,7 +131,17 @@ def plan_text(plan) -> str:
     return ", then ".join(bits + [f"{plan[-1][1]:.0%}"]) + f" ({plan_average(plan):.1%} on average)"
 
 
-def emerald_mix(w=EMERALD_SHARE, base: str = SADO_MIX) -> str:
+OPAL_TEXT_MIX = SADO_MIX                    # Opal's text part: books, web, maths, code, chat, religion (built as "Sado")
+OPAL_PLAN = "flat:0.20"                    # Opal's default: Field1 is 20% of every phase (the reference run bee6-w20-emerald-10b)
+
+
+def opal_mix(plan=OPAL_PLAN) -> str:
+    """Opal (oazy/opal.py): the text part with Field1, its world part, at the share `plan` gives over the run (the same
+    plans as Emerald's: "flat:0.20", "0.30:0.1,0.15", or an average share w = 3w for the first 20%, then w/2)."""
+    return emerald_mix(plan, OPAL_TEXT_MIX, name="field1")
+
+
+def emerald_mix(w=EMERALD_SHARE, base: str = SADO_MIX, name: str = "world") -> str:
     """Emerald (oazy/emerald.py): Sado with the world's practice text. w = the average share (3w for the first 20%,
     then w/2 to the end, cool-down included: 0.10 -> 30% then 5%; 0 = plain Sado; like --world, oazy/worldmix.py),
     or a plan written out (emerald_plan: "flat:0.20", "0.30:0.1,0.15"). Each phase of Sado keeps its own proportions;
@@ -143,12 +155,19 @@ def emerald_mix(w=EMERALD_SHARE, base: str = SADO_MIX) -> str:
     for t in marks:
         ws, at = [p for a, p in parts if a <= t][-1]
         share = [s for a, s in plan if a <= t][-1]
-        out.append(with_share(f"{ws}@{at if float(at) == t else f'{t:g}'}", "world", share))
+        out.append(with_share(f"{ws}@{at if float(at) == t else f'{t:g}'}", name, share))
     return ";".join(out)
 
 
 def resolve_mix(text):
-    """A mix by name ("tagus", "v1", "emerald", "emerald:0.05", "emerald:flat:0.20", "emerald:0.30:0.1,0.15") or written out."""
+    """A mix by name ("tagus", "v1", "opal", "opal:0.30:0.1,0.15", "emerald", "emerald:0.05", "emerald:flat:0.20") or written out."""
+    if text and (text == "opal" or text.startswith("opal:")):
+        spec = text.split(":", 1)[1] if ":" in text else OPAL_PLAN
+        try:
+            spec = float(spec)
+        except ValueError:
+            pass
+        return opal_mix(spec)
     if text and (text == "emerald" or text.startswith("emerald:")):
         spec = text.split(":", 1)[1] if ":" in text else EMERALD_SHARE
         try:
@@ -241,7 +260,7 @@ class Mix:
         self.seen = {n: 0 for n in self.src}
         self.want_marks = marks and any(s.marks is not None for s in self.src.values())
         self.last_marks = self.last_rows = None    # with marks: (B, T + 1) bytes (255 = none) and which rows have them
-        if marks and not self.want_marks and "world" in self.src:
+        if marks and not self.want_marks and "world" in self.src:      # (Field1 has no marks: Logos is parked)
             log("[mix] the world has no marks yet: python3 -m oazy.emerald marks  adds them (the linker learns without its answer key)")
 
     def weights(self, progress: float):

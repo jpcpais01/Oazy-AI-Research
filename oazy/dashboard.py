@@ -292,8 +292,9 @@ def series(d: Path):
                 share.append([t, x["world_share"]])
         elif k == "eval" and _fin(x.get("val_loss")):
             val.append([t, x["val_loss"]])
-            if _fin(x.get("val_loss_world")):          # held-out world practice text (Emerald runs)
-                wval.append([t, x["val_loss_world"]])
+            wv = x.get("val_loss_world") if _fin(x.get("val_loss_world")) else x.get("val_loss_field1")
+            if _fin(wv):                               # held-out world text (Emerald's practice text, or Opal's Field1)
+                wval.append([t, wv])
         elif k == "hellaswag" and _fin(x.get("acc_char")) and (x.get("full") or x.get("sample") == "spread" or (x.get("n") or 0) < 1000):
             hs.append([t, x["acc_char"], 1 if x.get("full") else 0])
         elif k == "logres" and _fin(x.get("acc_char")):

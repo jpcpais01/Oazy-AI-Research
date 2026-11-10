@@ -25,6 +25,8 @@
 #   OAZY_DATA=/root/data bash runpod/train.sh bee6 --preset big --tokens 0.5e9 --micro 32 --name bee6-race   # Bee6-200M (bee6/), Bee5 made fast
 #     (Bee6 vs Bee5 at equal tokens and equal hours in one line: bash runpod/bee6_race.sh)
 #     (Bee6 with 10% world practice, oazy/worldmix.py: add --world 0.10; the race in one line: bash runpod/bee6_world.sh)
+#   OAZY_DATA=/root/data bash runpod/train.sh bee6 --preset big --tokens 10e9 --micro 32 --data-sub opal --mentor none --name bee6-opal-10b
+#     (Opal, our training set: our text + Field1, the world told in natural speech, 20%; build: python3 -m oazy.opal build)
 #   OAZY_DATA=/root/data bash runpod/train.sh seed --preset big --tokens 0.5e9 --micro 32 --name seed-smoke   # Seed (seed/): growing core + library, reads Sado
 #   OAZY_DATA=/root/data bash runpod/train.sh smol --preset big --tokens 0.5e9 --micro 32 --name smol-race      # SmolLM2-135M from scratch, their recipe (smol/)
 #   OAZY_DATA=/root/data bash runpod/train.sh smolbee --preset big --tokens 0.5e9 --micro 32 --name smolbee-race   # the same body, our recipe
