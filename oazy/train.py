@@ -962,6 +962,9 @@ def main():
                     help="Emerald with the world's share over the run written out (oazy/mix.py emerald_plan): "
                          "'0.30:0.2,0.05' = 30%% until 20%% of the run, then 5%% (the default); 'flat:0.20' = 20%% throughout; "
                          "'0.30:0.1,0.15' = 30%% for the first 10%%, then 15%%")
+    ap.add_argument("--world-exams", type=int, default=0,
+                    help="1 = take the world's exams on the tests' schedule even when the run reads no world text "
+                         "(a plain baseline scored the same way as the Emerald runs)")
     ap.add_argument("--world-workers", type=int, default=None, help="helper processes making world episodes (3; 0 = in the trainer)")
     ap.add_argument("--schedule", choices=["cos", "wsd"], default=None,
                     help="learning-rate shape: cos (cosine) or wsd (flat, then a straight fall over the last 20%%); default wsd for bee")
@@ -1315,7 +1318,8 @@ def main():
         say(f"[world] {worldmix.plan_text(world_w)}; {workers} helper processes make the episodes"
             + (f" (resumed: {term.tokens(world_tokens)} world tokens so far)" if world_tokens else ""), flush=True)
     world_exams = world is not None or "world" in getattr(train, "src", {})   # Emerald: the world is part of the text
-    if world is None and world_exams:
+    world_exams = world_exams or bool(args.world_exams)  # --world-exams 1: a run without world text, scored the same way
+    if world is None and world_exams and not args.world_exams:
         say("[world] Emerald: the world's practice text is part of the mix; its secret exams run on the tests' schedule", flush=True)
 
     stop = {"flag": False}
