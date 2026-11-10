@@ -357,7 +357,7 @@ PRESETS = {
         micro=32, accum=8, lr=1.2e-3, lr_bee3=2.4e-3, muon_lr_bee3=0.04, lr_frog=1.8e-3, muon_lr_frog=0.03,
         lr_coral=1.8e-3, muon_lr_coral=0.03, lr_bee4=1.8e-3, muon_lr_bee4=0.03, lr_coralmini=1.8e-3, muon_lr_coralmini=0.03,
         lr_pegasus=1.8e-3, muon_lr_pegasus=0.03, lr_pegasusmini=1.8e-3, muon_lr_pegasusmini=0.03, lr_pegasus2=1.8e-3, muon_lr_pegasus2=0.03, lr_plain100=1.8e-3, muon_lr_plain100=0.03, lr_plain100f=1.8e-3, muon_lr_plain100f=0.03, lr_alphastar=1.8e-3, muon_lr_alphastar=0.03, lr_pegasusbeta=1.8e-3, muon_lr_pegasusbeta=0.03, lr_bee5=1.8e-3, muon_lr_bee5=0.03, lr_bee6=1.8e-3, muon_lr_bee6=0.03, lr_seed=1.8e-3, muon_lr_seed=0.03, lr_smol=3e-3, lr_smolbee=1.8e-3, muon_lr_smolbee=0.03, warmup=400, tokens=2_000_000_000,
-        eval_every=50_000_000, probe_every=250_000_000, hs_every=250_000_000, sample_every=250_000_000, evals_every=500_000_000,
+        eval_every=50_000_000, probe_every=200_000_000, hs_every=200_000_000, sample_every=200_000_000, evals_every=200_000_000,   # every test each 200M (João, Nov 10)
         val_windows=128, hs_quick=1000, evals_quick=500, sample_len=120,
     ),
     # the same models, 2.5x the text (e.g. a 2 x B200 pod for ~2.5 h, one model per GPU)
@@ -366,7 +366,7 @@ PRESETS = {
         micro=32, accum=8, lr=1.2e-3, lr_bee3=2.4e-3, muon_lr_bee3=0.04, lr_frog=1.8e-3, muon_lr_frog=0.03,
         lr_coral=1.8e-3, muon_lr_coral=0.03, lr_bee4=1.8e-3, muon_lr_bee4=0.03, lr_coralmini=1.8e-3, muon_lr_coralmini=0.03,
         lr_pegasus=1.8e-3, muon_lr_pegasus=0.03, lr_pegasusmini=1.8e-3, muon_lr_pegasusmini=0.03, lr_pegasus2=1.8e-3, muon_lr_pegasus2=0.03, lr_plain100=1.8e-3, muon_lr_plain100=0.03, lr_plain100f=1.8e-3, muon_lr_plain100f=0.03, lr_alphastar=1.8e-3, muon_lr_alphastar=0.03, lr_pegasusbeta=1.8e-3, muon_lr_pegasusbeta=0.03, lr_bee5=1.8e-3, muon_lr_bee5=0.03, lr_bee6=1.8e-3, muon_lr_bee6=0.03, lr_seed=1.8e-3, muon_lr_seed=0.03, lr_smol=3e-3, lr_smolbee=1.8e-3, muon_lr_smolbee=0.03, warmup=600, tokens=5_000_000_000,
-        eval_every=100_000_000, probe_every=200_000_000, hs_every=200_000_000, sample_every=200_000_000, evals_every=500_000_000,
+        eval_every=100_000_000, probe_every=200_000_000, hs_every=200_000_000, sample_every=200_000_000, evals_every=200_000_000,   # every test each 200M (João, Nov 10)
         val_windows=128, hs_quick=1000, evals_quick=500, sample_len=120,
     ),
     # Code Black's races (codeblack/README.md): every run gets the same training time (--minutes 30), and the held-out
