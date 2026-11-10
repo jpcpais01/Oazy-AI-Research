@@ -275,7 +275,9 @@ const HOV = {};    // chart id -> its hover state, so a refresh keeps the readou
 // crop (leave the first stretch out of the y range: early losses are huge), pctAxis
 function lineChart(id, opt) {
   const el = $(id), W = el.clientWidth, H = el.clientHeight;
-  const S = opt.series.filter((s) => s.pts.length || (s.faint && s.faint.length));
+  // the check at 0 tokens is an untrained model (loss ~10.8, chance-level tests): it only squashes the picture
+  const S = opt.series.map((s) => ({ ...s, pts: s.pts.filter((p) => p[0] > 0), faint: (s.faint || []).filter((p) => p[0] > 0) }))
+    .filter((s) => s.pts.length || s.faint.length);
   if (!S.length) { el.innerHTML = `<div class="empty">${opt.empty || "No checks yet"}</div>`; HOV[id] = null; return; }
   const m = { l: 44, r: 52, t: 20, b: 24 };
   const xmax = opt.xmax || Math.max(...S.flatMap((s) => s.pts.concat(s.faint || []).map((p) => p[0])));
@@ -310,7 +312,9 @@ function lineChart(id, opt) {
   const path = (pts) => pts.map((p, i) => `${i ? "L" : "M"}${X(p[0]).toFixed(1)},${Y(Math.min(hi, Math.max(lo, p[1]))).toFixed(1)}`).join("");
   let lines = "", dots = "", ends = [];
   for (const s of S) {
-    if (s.faint && s.faint.length) lines += `<path d="${path(s.faint)}" fill="none" stroke="${s.color}" stroke-width="1.1" stroke-opacity=".3" stroke-linejoin="round"/>`;
+    // the training line starts where it comes into the picture (no wall dropping from far above the chart)
+    if (s.faint.length) { const k = s.faint.findIndex((p) => p[1] >= lo && p[1] <= hi); if (k >= 0) s.faint = s.faint.slice(k); else s.faint = []; }
+    if (s.faint.length) lines += `<path d="${path(s.faint)}" fill="none" stroke="${s.color}" stroke-width="1.1" stroke-opacity=".3" stroke-linejoin="round"/>`;
     if (!s.pts.length) continue;
     lines += `<path d="${path(s.pts)}" fill="none" stroke="${s.color}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>`;
     if (s.pts.length < 30) dots += s.pts.filter((p) => !p[2]).map((p) => `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="2.6" fill="${s.color}"/>`).join("");
@@ -319,10 +323,12 @@ function lineChart(id, opt) {
     if (s.live) dots += `<circle class="pulse" cx="${X(L[0])}" cy="${Y(L[1])}" r="4" fill="${s.color}"/><circle cx="${X(L[0])}" cy="${Y(L[1])}" r="4" fill="${s.color}" stroke="#050507" stroke-width="1.5"/>`;
     ends.push({ y: Y(Math.min(hi, Math.max(lo, L[1]))), x: X(L[0]), v: opt.fmt(L[1]), c: s.color });
   }
-  // the newest value at the right end of each line, nudged apart so they never sit on top of each other
+  // the newest value written just after the end of each line (no line out to the edge: that read as a forecast),
+  // nudged apart so two never sit on top of each other
   ends.sort((a, b) => a.y - b.y);
   for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 14) ends[i].y = ends[i - 1].y + 14;
-  const endT = ends.map((e) => `<line x1="${e.x + 4}" x2="${W - m.r + 3}" y1="${e.y}" y2="${e.y}" stroke="${e.c}" stroke-opacity=".35" stroke-dasharray="1 3"/><rect x="${W - m.r + 4}" y="${e.y - 4}" width="4" height="8" rx="1.5" fill="${e.c}"/><text class="endv" x="${W - m.r + 11}" y="${e.y + 4}">${esc(e.v)}</text>`).join("");
+  const endT = ends.map((e) => { const tx = Math.min(e.x + 10, W - m.r + 6);
+    return `<text class="endv" x="${tx}" y="${e.y + 4}" fill="${e.c}">${esc(e.v)}</text>`; }).join("");
   el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opt.label || "")}"><defs><clipPath id="${id}clip"><rect x="${m.l - 6}" y="${m.t - 6}" width="${W - m.l - m.r + 14}" height="${H - m.t - m.b + 12}"/></clipPath></defs>
     ${g}<g clip-path="url(#${id}clip)">${lines}${dots}</g>${endT}<g class="hov"></g><rect x="${m.l}" y="0" width="${W - m.l - m.r}" height="${H}" fill="transparent" class="hit"/></svg>`;
   HOV[id] = { S, X, Y, xmax, m, W, H, fmt: opt.fmt, inv: (px) => (px - m.l) / (W - m.l - m.r) * xmax, lo, hi };
