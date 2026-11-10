@@ -92,7 +92,8 @@ class Experts(nn.Module):
     def route(self, x):
         """x (N, D) -> picks (N, k) in 0..E-1, their weights (N, k) float32, the balance loss, words per expert (E,),
         and the scores' mean and mean square over the words (E,) for the running averages."""
-        logits = F.linear(x.float(), self.router.weight.float())
+        with torch.autocast(x.device.type, enabled=False):              # the choice in float32 (autocast would make it bf16:
+            logits = F.linear(x.float(), self.router.weight.float())    # near-ties between 80 experts, rounded)
         s = torch.sigmoid(logits)                                       # (N, E)
         lg = logits.detach()
         if self.training and lg.shape[0] > 1:
