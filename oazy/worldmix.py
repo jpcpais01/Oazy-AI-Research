@@ -31,7 +31,8 @@ A question counts only if every word of its answer is right; every exam set weig
 
 The Real World Exams (João, Nov 10; oazy/realworld.py): the practised scenes again, told in wording no practice episode
 ever uses ("is directly ahead of", "who is last in the queue?"). Practised minus Real World = how much a model leans on
-the exact words instead of their meaning.
+the exact words instead of their meaning. Real World Pro: that wording, and every name and kind of thing new too
+(new people, colours, containers, rooms...; in a line the people become vehicles: "The car is directly ahead of the moto").
 """
 from __future__ import annotations
 
@@ -46,7 +47,7 @@ import numpy as np
 EARLY, EARLY_X, LATE_X = 0.2, 3.0, 0.5     # the first 20% of the run at 3x the average share, then half of it
 TRAIN_SEED0 = 1_000_000                    # practice episodes use seeds from here up; exam episodes 0 .. n-1
 PER_JOB = 256                              # episodes per helper job
-EXAM_VERSION = 3                           # 2: World 2 (fifteen families); 3: + the Real World Exams. Older results are taken again
+EXAM_VERSION = 4                           # 2: World 2 (fifteen families); 3: + the Real World Exams; 4: + Pro. Older results are taken again
 PUNCT = {".", "?", ",", ":"}
 REFS = ("smollm2-135m", "smollm2-360m", "smollm2-1.7b")    # trained SmolLM2 from Hugging Face, examined as yardsticks (no ckpt.pt)
 REF_PARAMS = {"smollm2-135m": 134_515_008, "smollm2-360m": 361_821_120, "smollm2-1.7b": 1_711_376_384}
@@ -98,7 +99,20 @@ def episode_words(e):
 def _layout(e, real=False):
     """real: the Real World Exams' wording (oazy/realworld.py), never used in practice."""
     from worldfirst import world as W
-    if real:
+    if real == "pro":                   # Real World Pro: the new wording, and new names and things on top
+        from .realworld import rewrite, pro_word
+
+        def say(ws, ms):
+            out = []
+            for w, m in zip(*rewrite(e.family, list(ws), list(ms))):
+                if e.family == "lines" and w in W.NAMES:
+                    out += [("the", -1), (pro_word(e.family, w), m)]     # "the car is directly ahead of the moto"
+                elif e.family == "lines" and w == "who":
+                    out += [("which", -1), ("one", -1)]
+                else:
+                    out.append((pro_word(e.family, w), m))
+            return out
+    elif real:
         from .realworld import rewrite
         say = lambda ws, ms: list(zip(*rewrite(e.family, list(ws), list(ms)))) or []      # noqa: E731
     else:
@@ -115,6 +129,9 @@ def _layout(e, real=False):
                 cands = names if w in names else sorted(set(names) | {w})
             else:
                 cands = [str(i) for i in range(10)]
+            if real == "pro":
+                from .realworld import pro_word
+                w, cands = pro_word(e.family, w), [pro_word(e.family, c) for c in cands]
             words.append((w, (kind, cands, qi), -1))
         words.append((".", None, -1))
     out, spans, marks, cap = [], [], [], True
@@ -328,14 +345,14 @@ def exam_sets(secret_only=False):
     scenes in wording never used in practice). secret_only (the quick look during training): all but the practised."""
     from worldfirst import world as W
     sets = W.exam_sets()
-    sets += [(f, lv, "real") for f, lv, sp in sets if sp == "train"]
+    sets += [(f, lv, k) for k in ("real", "pro") for f, lv, sp in W.exam_sets() if sp == "train"]
     return [s for s in sets if not (secret_only and s[2] == "train")]
 
 
 def _make(s, i):
     """An exam set's episode i (a Real World episode is the practised one, told in other words)."""
     from worldfirst import world as W
-    return W.make(s[0], s[1], "train" if s[2] == "real" else s[2], i)
+    return W.make(s[0], s[1], "train" if s[2] in ("real", "pro") else s[2], i)
 
 
 def _items(enc, e, real=False):
@@ -420,7 +437,7 @@ def exam(model, device, n=100, secret_only=False, sets=None):
     truth, wants = [], {}
     for si, (s, eps) in enumerate(eps_by_set):
         for ei, e in enumerate(eps):
-            ids, items = _items(enc, e, real=s[2] == "real")
+            ids, items = _items(enc, e, real={"real": True, "pro": "pro"}.get(s[2], False))
             ti = len(truth)
             truth.append(ids)
             for start, cc, right, qi in items:
@@ -465,7 +482,7 @@ def exam(model, device, n=100, secret_only=False, sets=None):
 def summarise(rows, n):
     fam, part = {}, {}
     for r in rows:
-        p = r["split"] if r["split"] in ("seen", "real") else "secret"
+        p = r["split"] if r["split"] in ("seen", "real", "pro") else "secret"
         fam.setdefault(f"{r['family']}/{p}", []).append(r["right"])
         part.setdefault(p, []).append(r["right"])
     from worldfirst import world as W
@@ -484,7 +501,7 @@ def chance(sets=None, n=40):
         tot = []
         for i in range(n):
             e = _make(s, i)
-            _, spans = episode_parts(e, real=s[2] == "real")
+            _, spans = episode_parts(e, real={"real": True, "pro": "pro"}.get(s[2], False))
             per_q = {}
             for *_, cands, qi in spans:
                 per_q[qi] = per_q.get(qi, 1.0) / len(cands)
@@ -533,7 +550,7 @@ def exam_run(d: Path, device, n=100, say=print):
         base = {k: recs[-1].get(k, 0) for k in ("step", "tokens", "elapsed")} if recs else {"step": 0, "tokens": 0, "elapsed": 0}
         Run(d).log("metrics.jsonl", {"kind": "world", **base, **{k: v for k, v in r.items() if k != "rows"}, "full": True})
     say(f"{d.name}: world exam secret {r['secret'] * 100:.1f}%, practised {r['seen'] * 100:.1f}%, "
-        f"Real World {r.get('real', 0) * 100:.1f}% "
+        f"Real World {r.get('real', 0) * 100:.1f}%, Real World Pro {r.get('pro', 0) * 100:.1f}% "
         f"({n} episodes per exam set, {time.time() - t0:.0f} s)")
     return r
 

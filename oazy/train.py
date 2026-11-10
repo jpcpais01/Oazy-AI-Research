@@ -1354,6 +1354,8 @@ def main():
                 latest["world_secret"] = r["secret"]
                 if "real" in r:
                     latest["world_real"] = r["real"]
+                if "pro" in r:
+                    latest["world_pro"] = r["pro"]
                 if final:
                     latest["world_seen"] = r["seen"]
                     ckf = run.dir / "ckpt.pt"
@@ -1361,6 +1363,7 @@ def main():
                         {**r, "tokens": tokens, "ckpt_mtime": ckf.stat().st_mtime if ckf.exists() else None}, indent=1))
                 say(f"[world] secret exams {r['secret'] * 100:.1f}%" + (f", practised {r['seen'] * 100:.1f}%" if "seen" in r else "")
                     + (f", Real World {r['real'] * 100:.1f}% (practised scenes, words never seen)" if "real" in r else "")
+                    + (f", Real World Pro {r['pro'] * 100:.1f}% (new names and things too)" if "pro" in r else "")
                     + f" ({r['n']} episodes per exam set)", flush=True)
             except Exception as e:          # a new test must never stop a run
                 say(f"[world] exam skipped ({type(e).__name__}: {str(e)[:120]})", flush=True)
