@@ -36,6 +36,12 @@ VAL_SEED, TRAIN_SEED = 7, 0          # held-out episodes come from their own see
 DEFAULT_TOKENS = 2.5e9
 
 
+def _cpus() -> int:
+    """The CPUs this pod may really use (a RunPod pod reports the whole host's cores in os.cpu_count())."""
+    from .sado import cpu_limit
+    return cpu_limit()
+
+
 def build(data: Path, tokens: float = DEFAULT_TOKENS, val_tokens: float = 2e6, workers: int = 0, tk: str = "smollm2"):
     """Write <data>/sado/world/{val,train}.bin (+ meta.json). A finished build is left alone; a bigger --tokens restarts it."""
     import os
@@ -55,7 +61,7 @@ def build(data: Path, tokens: float = DEFAULT_TOKENS, val_tokens: float = 2e6, w
             if not old.get("marks"):
                 add_marks(data, workers, tk)
             return out
-    workers = workers or max(1, (os.cpu_count() or 2) - 1)
+    workers = workers or max(1, _cpus() - 1)
     t0 = time.time()
     sizes = {}
     with get_context("spawn").Pool(workers, initializer=worldmix._init, initargs=(tk, W.VERSION)) as pool:
@@ -106,7 +112,7 @@ def add_marks(data: Path, workers: int = 0, tk: str = "smollm2"):
     out = data / "sado" / "world"
     meta = json.loads((out / "meta.json").read_text())
     W.use(meta.get("world", 1))
-    workers = workers or max(1, (os.cpu_count() or 2) - 1)
+    workers = workers or max(1, _cpus() - 1)
     t0 = time.time()
     print(f"adding the world's marks to {out} (the same episodes again; the pieces are checked against the file)")
     with get_context("spawn").Pool(workers, initializer=worldmix._init, initargs=(tk, W.VERSION)) as pool:
