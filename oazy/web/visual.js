@@ -45,6 +45,9 @@ const colorOf = (n) => PAL[SLOT[n]] || PAL[0];
 
 let RUNS = [], WORLD = [], SER = {}, PICK = null, FILTER = "all", MORE = false, NOW = Date.now() / 1000;
 try { PICK = JSON.parse(localStorage.getItem("oazy.v.pick") || "null"); } catch (e) { PICK = null; }
+// smoothing for every race chart at once (João's toggle), remembered in this browser
+let SMOOTH = false;
+try { SMOOTH = localStorage.getItem("oazy.v.smooth") === "1"; } catch (e) { SMOOTH = false; }
 const savePick = () => { try { localStorage.setItem("oazy.v.pick", JSON.stringify(PICK)); } catch (e) { /* */ } };
 const runOf = (n) => RUNS.find((r) => r.name === n);
 const ours = () => RUNS.filter((r) => !r.reference);
@@ -256,6 +259,8 @@ document.addEventListener("click", async (e) => {
   if (w) { const n = w.dataset.w; OPEN.has(n) ? OPEN.delete(n) : OPEN.add(n); w.classList.toggle("open"); return; }
   const f = e.target.closest("#filter button");
   if (f) { FILTER = f.dataset.f; MORE = false; document.querySelectorAll("#filter button").forEach((x) => x.classList.toggle("on", x === f)); drawTiles(compareSet()); return; }
+  const sm = e.target.closest("#smooth button");
+  if (sm) { SMOOTH = sm.dataset.s === "1"; try { localStorage.setItem("oazy.v.smooth", SMOOTH ? "1" : "0"); } catch (err) { /* */ } drawRace(compareSet()); return; }
   if (e.target.closest("#raceReset")) { PICK = null; savePick(); refresh(); return; }
   if (e.target.closest(".vmore")) { MORE = true; drawTiles(compareSet()); }
 });
@@ -270,6 +275,20 @@ function ticks(lo, hi, n) {
 const dec = (step) => { for (let d = 0; d < 5; d++) if (Math.abs(Math.round(step * 10 ** d) - step * 10 ** d) < 1e-6) return d; return 5; };
 const HOV = {};    // chart id -> its hover state, so a refresh keeps the readout working
 
+// smoothing: an EMA over tokens, not over points, so a run checked every 200M and the training loss logged every few
+// million smooth over a like stretch (tau = 8% of the tokens read so far, at least 4 checks' worth); debiased like TensorBoard's, so the line starts
+// on the first check instead of climbing out of zero. The final score (the ring) is the full test: kept as it is.
+// Every smoothed point keeps its measured value in .raw for the hover readout.
+function smooth(pts, tau) {
+  let m = 0, w = 0, px = null;
+  return pts.map((p) => {
+    if (p[2]) return p;
+    const a = px == null ? 0 : Math.exp(-(p[0] - px) / tau);
+    m = a * m + (1 - a) * p[1]; w = a * w + (1 - a); px = p[0];
+    const q = p.slice(); q[1] = m / w; q.raw = p[1]; return q;
+  });
+}
+
 // opt: series [{name, color, pts [[x, y, final?]], faint [[x, y]], live}], turns [{at, short}], xmax, fmt, refs [{y, label}],
 // crop (leave the first stretch out of the y range: early losses are huge), pctAxis
 function lineChart(id, opt) {
@@ -277,6 +296,12 @@ function lineChart(id, opt) {
   // the check at 0 tokens is an untrained model (loss ~10.8, chance-level tests): it only squashes the picture
   const S = opt.series.map((s) => ({ ...s, pts: s.pts.filter((p) => p[0] > 0), faint: (s.faint || []).filter((p) => p[0] > 0) }))
     .filter((s) => s.pts.length || s.faint.length);
+  if (SMOOTH && S.length) {
+    const span = Math.max(...S.flatMap((s) => s.pts.concat(s.faint).map((p) => p[0])));
+    const tau = (P) => { const d = P.slice(1).map((p, i) => p[0] - P[i][0]).sort((a, b) => a - b);
+      return Math.max(0.08 * span, 4 * (d[d.length >> 1] || 0)) || 1; };
+    for (const s of S) { s.pts = smooth(s.pts, tau(s.pts)); s.faint = smooth(s.faint, tau(s.faint)); }
+  }
   if (!S.length) { el.innerHTML = `<div class="empty">${opt.empty || "No checks yet"}</div>`; HOV[id] = null; return; }
   const m = { l: 44, r: 52, t: 20, b: 24 };
   const xmax = opt.xmax || Math.max(...S.flatMap((s) => s.pts.concat(s.faint || []).map((p) => p[0])));
@@ -347,7 +372,7 @@ function hookHover(id) {
       if (!P || !P.length || P[0][0] > x + h.xmax * 0.02) continue;
       let best = P[0]; for (const p of P) if (Math.abs(p[0] - x) < Math.abs(best[0] - x)) best = p;
       if (Math.abs(best[0] - x) > h.xmax * 0.12) continue;
-      rows.push(`<div class="r"><i style="background:${s.color}"></i><span>${esc(s.name)}</span><b>${esc(h.fmt(best[1]))}${best[2] ? " ✓" : ""}</b></div>`);
+      rows.push(`<div class="r"><i style="background:${s.color}"></i><span>${esc(s.name)}</span><b>${esc(h.fmt(best[1]))}${best[2] ? " ✓" : ""}${best.raw != null ? `<small> · raw ${esc(h.fmt(best.raw))}</small>` : ""}</b></div>`);
       mark += `<circle class="tipdot" cx="${h.X(best[0])}" cy="${h.Y(Math.min(h.hi, Math.max(h.lo, best[1])))}" r="4.5" fill="${s.color}"/>`;
     }
     hov.innerHTML = mark;
@@ -372,6 +397,7 @@ function drawRace(set) {
   const R = set.map(runOf).filter(Boolean);
   const auto = !PICK;
   $("raceReset").hidden = auto;
+  document.querySelectorAll("#smooth button").forEach((b) => b.classList.toggle("on", (b.dataset.s === "1") === SMOOTH));
   const groups = auto ? autoSet().groups : [];
   $("raceTitle").textContent = auto && groups.length === 1 && R.length > 1 ? `The race · ${groups[0]}` : R.length > 1 ? "Side by side" : "The run";
   const lineKey = (dash) => `<svg viewBox="0 0 22 8"><line x1="1" x2="21" y1="4" y2="4" stroke="#b4b3c4" stroke-width="${dash ? 1.2 : 2.4}" stroke-opacity="${dash ? 0.5 : 1}"/></svg>`;

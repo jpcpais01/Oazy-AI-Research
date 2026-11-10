@@ -135,7 +135,7 @@
 .vplot .tipdot { stroke: #050507; stroke-width: 2; }
 .vplot .pulse { animation: pulse 1.8s ease-out infinite; transform-box: fill-box; transform-origin: center; }
 @keyframes pulse { 0% { opacity: .7; transform: scale(1); } 100% { opacity: 0; transform: scale(3.2); } }
-.vtip { position: fixed; z-index: 60; pointer-events: none; min-width: 160px; max-width: 270px; padding: 11px 13px; font-size: 13px;
+.vtip { position: fixed; z-index: 60; pointer-events: none; min-width: 160px; max-width: 340px; padding: 11px 13px; font-size: 13px;
   background: var(--glass), rgba(8, 8, 12, .82); border: 1px solid var(--glass-edge); border-radius: 14px;
   box-shadow: var(--glass-shadow), 0 24px 60px -20px rgba(0, 0, 0, .9); backdrop-filter: blur(14px) saturate(150%); -webkit-backdrop-filter: blur(14px) saturate(150%); }
 .vtip .h { font: 500 10.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
@@ -187,3 +187,4 @@
 #prompts { display: flex; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
 #prompts::-webkit-scrollbar { display: none; }
 #prompts button { flex: none; white-space: nowrap; }
+.vtip .r b small { color: var(--muted); font-size: 11px; white-space: nowrap; }
