@@ -32,6 +32,18 @@ Or copy a `.oazy` file to the phone any other way and use **Add a model file**. 
 `--quant q4` makes a smaller, faster copy (Coral about 0.7 GB): the MLP and expert grids in 4 bits, the rest in 8.
 It is a little less exact; the app's **Check** shows how close a file stays to PyTorch.
 
+## Getting a model back off the phone
+
+The app's Models list has a **save** button (the down arrow) on each model: it copies the file to the phone's
+Downloads (`Download/Oazy/`), where a USB cable, a file manager or the share sheet can reach it. On the pod (or any
+PC with the repo), `phone.import` turns it back into a normal checkpoint:
+
+    python3 -m phone.import --file Coral_1B-chat-q8.oazy      # -> <runs>/coral-chat-q8/ckpt.pt, then checks itself
+    python3 -m oazy.evals --run coral-chat-q8                  # score it like any run
+
+The weights are the phone's rounded ones (8-bit), turned back into float32; the self-check compares PyTorch's scores
+with the rebuilt weights to the ones the exporter stored from the original.
+
 ## How it works
 
 | part | file | what it does |

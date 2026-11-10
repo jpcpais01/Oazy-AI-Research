@@ -155,6 +155,71 @@ public class Bridge {
         return f.delete();
     }
 
+    /**
+     * Save a copy of a model file in the phone's Downloads (Download/Oazy), where a file manager, a USB cable or a
+     * share sheet can reach it: the app's own model folder is private on recent Android. Android 10+: straight into
+     * Downloads (MediaStore, no permission needed); older: the phone asks where to save it.
+     */
+    @JavascriptInterface
+    public void saveCopy(final String name) {
+        final File src = new File(modelDir(), new File(name).getName());
+        if (!src.isFile()) { send("transfer", "state", "error", "what", "save", "message", "That model file is gone."); return; }
+        if (android.os.Build.VERSION.SDK_INT < 29) {
+            act.runOnUiThread(new Runnable() { public void run() { act.createDocument(src.getName()); } });
+            return;
+        }
+        cancelImport = false;
+        new Thread(new Runnable() {
+            public void run() {
+                Uri item = null;
+                try {
+                    android.content.ContentResolver cr = act.getContentResolver();
+                    android.content.ContentValues v = new android.content.ContentValues();
+                    v.put("_display_name", src.getName());                 // MediaStore.MediaColumns.DISPLAY_NAME
+                    v.put("mime_type", "application/octet-stream");
+                    v.put("relative_path", "Download/Oazy");             // API 29+
+                    v.put("is_pending", 1);
+                    item = cr.insert(Uri.parse("content://media/external/downloads"), v);   // MediaStore.Downloads
+                    if (item == null) throw new Exception("Android refused a new file in Downloads");
+                    InputStream in = new FileInputStream(src);
+                    OutputStream out = cr.openOutputStream(item);
+                    copy(in, out, 0, src.length(), "save", src.getName());
+                    in.close();
+                    out.close();
+                    if (cancelImport) { cr.delete(item, null, null); send("transfer", "state", "cancelled", "what", "save"); return; }
+                    android.content.ContentValues done = new android.content.ContentValues();
+                    done.put("is_pending", 0);
+                    cr.update(item, done, null, null);
+                    send("transfer", "state", "done", "what", "save", "file", src.getName(), "where", "Download/Oazy");
+                } catch (Exception e) {
+                    try { if (item != null) act.getContentResolver().delete(item, null, null); } catch (Exception x) { /* gone */ }
+                    send("transfer", "state", "error", "what", "save", "message", "Could not save the copy: " + e.getMessage());
+                }
+            }
+        }).start();
+    }
+
+    /** Android 8-9: the place the user picked (ACTION_CREATE_DOCUMENT). */
+    void saveTo(final Uri dst, final String name) {
+        cancelImport = false;
+        new Thread(new Runnable() {
+            public void run() {
+                try {
+                    File src = new File(modelDir(), name);
+                    InputStream in = new FileInputStream(src);
+                    OutputStream out = act.getContentResolver().openOutputStream(dst);
+                    copy(in, out, 0, src.length(), "save", name);
+                    in.close();
+                    out.close();
+                    if (cancelImport) { send("transfer", "state", "cancelled", "what", "save"); return; }
+                    send("transfer", "state", "done", "what", "save", "file", name, "where", "the folder you picked");
+                } catch (Exception e) {
+                    send("transfer", "state", "error", "what", "save", "message", "Could not save the copy: " + e.getMessage());
+                }
+            }
+        }).start();
+    }
+
     @JavascriptInterface
     public void pickModel() {
         act.runOnUiThread(new Runnable() { public void run() { act.pickModel(); } });
@@ -213,7 +278,7 @@ public class Bridge {
         long last = 0;
         int r;
         while ((r = in.read(buf)) > 0) {
-            if ((what.equals("import") && cancelImport) || (what.equals("download") && cancelDownload)) return;
+            if ((!what.equals("download") && cancelImport) || (what.equals("download") && cancelDownload)) return;
             out.write(buf, 0, r);
             done += r;
             long now = System.currentTimeMillis();
