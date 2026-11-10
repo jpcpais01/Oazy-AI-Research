@@ -183,5 +183,6 @@ class Experts(nn.Module):
                 self.mu_route.lerp_(mean, 1 - keep)
                 self.sd_route.lerp_(sd, 1 - keep)
             self.seen_route.add_(1)
+        load = load.to(self.bias_route.device)
         if load.sum() > 0:
             self.bias_route.add_(self.cfg.expert_balance * torch.sign(load.mean() - load))

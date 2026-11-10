@@ -73,7 +73,7 @@ def main():
     cfg = Bee6MoEConfig(**SMALL)
     ex = jiggle(Experts(cfg).to(dev), 0.1)
     x = torch.randn(200, 64, device=dev)
-    ex.balance(torch.ones(8), torch.randn(8, device=dev) * 0.1, torch.ones(8, device=dev))   # some running averages
+    ex.balance(torch.ones(8, device=dev), torch.randn(8, device=dev) * 0.1, torch.ones(8, device=dev))   # some running averages
     ex.eval()
     ref = reference(ex, x)
     e_read = (ex(x) - ref).abs().max().item()
