@@ -118,7 +118,7 @@ RULES = {
     },
     "cups": {
         "cup is at place": "cup sits in spot",
-        "cups in a row": "cups stand side by side",
+        "cups in a row": "cups lined up side by side",
         "at which place is the": "in which spot is the",
         "hides under the": "is concealed beneath the",
         "is under the": "is beneath the",
@@ -294,4 +294,71 @@ def check_held_back(per_level=40):
             for _, new in _table(f2):
                 if " ".join(new) not in SHORTER and " " + " ".join(new) + " " in " " + text + " ":
                     found.append((fam, " ".join(new)))
+        words = set(text.split())
+        for w in (PRO_FEMALE + PRO_MALE + VEHICLES + [x for v in PRO_WORDS.values() for x in v]):
+            for form in (w.lower(), w.lower() + "s"):
+                if form in words:
+                    found.append((fam, "Pro: " + form))
     return sorted(set(found))
+
+
+# ---------------------------------------------------------------- Real World Pro (João, Nov 10)
+# The Real World wording, and on top of it every name and every kind of thing is one no practice episode ever uses:
+# new people (same sex, so "she", "son" and "daughter" still fit), new colours, containers, small things, rooms, places,
+# events, devices, horizons. In a line the people become vehicles: "The car is directly ahead of the moto."
+PRO_FEMALE = ("Abigail Beatrice Charlotte Daphne Eleanor Florence Gwendolyn Harriet Isabel Josephine Katherine "
+              "Lucille Margaret Nadine Octavia Penelope Rosalind Scarlett Theodora Ursula Victoria Winifred Yvonne "
+              "Agatha Bernadette Cecilia Delphine Evelyn Felicity Georgina Henrietta Imogen Juliet Lavinia Matilda "
+              "Natalie Ophelia Philippa Rebecca Susannah Tabitha").split()
+PRO_MALE = ("Ambrose Bartholomew Cornelius Desmond Ebenezer Frederick Gideon Horatio Ignatius Jasper Kenneth "
+            "Leopold Montgomery Nathaniel Oswald Percival Quentin Reginald Sebastian Theodore Ulysses Valentine "
+            "Wilfred Alistair Benedict Clarence Dominic Edmund Fitzgerald Gregory Humphrey Isaac Jeremiah Lancelot "
+            "Mortimer Norbert Philip Rupert Thomas Barnaby Cuthbert").split()
+VEHICLES = ("car moto bus van truck bike tram taxi jeep scooter lorry coach wagon cart sledge buggy "
+            "camper trailer limousine minibus").split()
+PRO_WORDS = {
+    "COLOURS": "crimson navy olive amber ivory teal maroon beige lilac tan cyan plum khaki".split(),
+    "CONTAINERS": "carton tub urn mug trunk hamper keg flask canister pail barrel locker purse satchel tray kettle".split(),
+    "ITEMS": "acorn feather token badge chip cork bolt nut pin cube".split(),
+    "PLACES": "cabinet closet wardrobe dresser suitcase larder safe sideboard".split(),
+    "LANDMARKS": "chapel castle lighthouse harbour stadium museum temple windmill quarry station hospital prison".split(),
+    "ROOMS": "lounge den nursery workshop gym office laundry studio veranda foyer balcony gallery sunroom playroom "
+             "storeroom ballroom".split(),
+    "EVENTS": "brunch supper fair recital seminar match festival stroll lecture rehearsal banquet parade quiz workout "
+              "ceremony tea".split(),
+    "DEVICES": "radiator blender speaker drill toaster printer router projector chime beacon whistle monitor".split(),
+    "HORIZON": "peaks ocean jungle wasteland".split(),
+}
+
+
+def _pro_map(family):
+    """world word -> Real World Pro word, for this family's episodes (lower-case keys; names keep their capital)."""
+    from worldfirst import world as W
+    m = {}
+    if family == "lines":
+        for a, b in zip(W.NAMES, VEHICLES * 5):
+            m[a.lower()] = b
+    else:
+        for a, b in zip(W.FEMALE, PRO_FEMALE):
+            m[a.lower()] = b
+        for a, b in zip(W.MALE, PRO_MALE):
+            m[a.lower()] = b
+    for key, new in PRO_WORDS.items():
+        old = list(getattr(W, key))
+        for a, b in zip(old, new):
+            m.setdefault(a, b)
+            if key in ("ITEMS", "CONTAINERS"):
+                m.setdefault(a + "s", b + "s")
+    return m
+
+
+def pro_word(family, w):
+    """One word (scene, question, answer or candidate) in the Pro vocabulary."""
+    tab = _PRO.get(family) or _PRO.setdefault(family, _pro_map(family))
+    new = tab.get(w.lower())
+    if new is None:
+        return w
+    return new[0].upper() + new[1:] if (w[:1].isupper() and family != "lines") else new
+
+
+_PRO = {}
