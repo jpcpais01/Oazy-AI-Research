@@ -64,6 +64,39 @@ def _slice(hc, Wc, tc, wk, thc, tWc, kind: str, softcap: float, kd_w, n_valid, n
     return ce, mce, kd, gb @ Wc, (gb.t() @ hc).float()
 
 
+def _slice_rows(hc, Wc, tc, wk, thc, tWc, kind: str, softcap: float, kd_w, n_valid, n_all: float, Vt: int):
+    """_slice with the mentor's weight token by token (kd_w: (n, 1)), for --mentor-skip-world: a token of weight 0
+    learns the real next word only, one of weight w the usual (1 - w) * CE + w * KL. Returns the weighted sums."""
+    dt = hc.dtype
+    z, dz = _cap((hc @ Wc.t()).float(), kind, softcap)
+    lp = torch.log_softmax(z, dim=-1)
+    valid = (tc >= 0).to(torch.float32)
+    tgt = tc.clamp_min(0)
+    tok = -lp.gather(1, tgt)
+    ce = (tok[:, 0] * valid[:, 0]).sum()
+    wv = valid * wk[None, :]
+    mce = ((tok * wv).sum(1, keepdim=True) * (1.0 - kd_w)).sum()
+    p = lp.exp()
+    g = p * wv.sum(1, keepdim=True)
+    g.scatter_add_(1, tgt, -wv)
+    g *= (1.0 - kd_w) / n_valid
+    tlp = torch.log_softmax((thc @ tWc.t()).float(), dim=-1)
+    pt = tlp.exp()
+    V = z.shape[1]
+    if Vt == V:
+        kdt = (pt * (tlp - lp)).sum(1, keepdim=True)
+        g += (p - pt) * (kd_w / n_all)
+    else:
+        lps = torch.log_softmax(z[:, :Vt], dim=-1)
+        kdt = (pt * (tlp - lps)).sum(1, keepdim=True)
+        g[:, :Vt] += (lps.exp() - pt) * (kd_w / n_all)
+    kd, kdw = kdt.sum(), (kdt * kd_w).sum()
+    if dz is not None:
+        g *= dz
+    gb = g.to(dt)
+    return ce, mce, kd, kdw, gb @ Wc, (gb.t() @ hc).float()
+
+
 _compiled = None
 
 
@@ -84,6 +117,41 @@ def _autocast_dtype(h):
     if h.dtype == torch.float32 and on:
         return torch.get_autocast_dtype(h.device.type) if hasattr(torch, "get_autocast_dtype") else torch.bfloat16
     return h.dtype
+
+
+class _HeadLossRows(torch.autograd.Function):
+    """_HeadLoss with the mentor's weight token by token (kd_w: (N, 1)); uncompiled, used only with --mentor-skip-world."""
+    @staticmethod
+    def forward(ctx, h, W, targets, wk, kind, softcap, th, tW, kd_w, chunk):
+        N, D = h.shape
+        V = W.shape[0]
+        dt = _autocast_dtype(h)
+        with torch.autocast(device_type=h.device.type, enabled=False):
+            Wc = W.to(dt)
+            n_valid = (targets[:, 0] >= 0).sum().clamp_min(1).to(torch.float32)
+            tWc, Vt = tW.to(dt), int(tW.shape[0])
+            kw = kd_w.to(device=h.device, dtype=torch.float32)
+            gh = torch.empty_like(h)
+            gW = torch.zeros(V, D, dtype=torch.float32, device=h.device)
+            sums = torch.zeros(4, dtype=torch.float32, device=h.device)
+            for i in range(0, N, chunk):
+                ce, mce, kdv, kdw, ghc, gWc = _slice_rows(h[i:i + chunk].to(dt), Wc, targets[i:i + chunk], wk,
+                                                          th[i:i + chunk].to(dt), tWc, kind, float(softcap),
+                                                          kw[i:i + chunk], n_valid, float(N), Vt)
+                sums += torch.stack([ce, mce, kdv, kdw])
+                gh[i:i + chunk] = ghc.to(h.dtype)
+                gW += gWc
+        loss = sums[1] / n_valid + sums[3] / N
+        ctx.save_for_backward(gh, gW)
+        ctx.w_dtype = W.dtype
+        ce, kdm = sums[0] / n_valid, sums[2] / N
+        ctx.mark_non_differentiable(ce, kdm)
+        return loss, ce, kdm
+
+    @staticmethod
+    def backward(ctx, g_loss, g_ce, g_kd):
+        gh, gW = ctx.saved_tensors
+        return (gh * g_loss.to(gh.dtype), (gW * g_loss).to(ctx.w_dtype)) + (None,) * 8
 
 
 class _HeadLoss(torch.autograd.Function):
@@ -135,16 +203,19 @@ def _prep(h, targets, weights, teacher_h, teacher_W, kd_weight):
     K = targets.shape[-1]
     h2, t2 = h.reshape(-1, D), targets.reshape(-1, K)
     th2 = teacher_h.reshape(-1, teacher_h.shape[-1]) if teacher_h is not None else None
-    if th2 is None or kd_weight <= 0:
-        th2, teacher_W, kd_weight = None, None, 0.0
+    rows = torch.is_tensor(kd_weight)               # --mentor-skip-world: the mentor's weight token by token, (N, 1)
+    if th2 is None or (not rows and kd_weight <= 0) or (rows and not bool((kd_weight > 0).any())):
+        th2, teacher_W, kd_weight, rows = None, None, 0.0, False
     wk = torch.tensor([float(w) for w in weights], dtype=torch.float32, device=h.device)
-    return h2, t2, wk, th2, teacher_W, float(kd_weight)
+    return h2, t2, wk, th2, teacher_W, (kd_weight.reshape(-1, 1).to(device=h.device, dtype=torch.float32) if rows else float(kd_weight))
 
 
 def head_loss(h, W, targets, weights, cfg, teacher_h=None, teacher_W=None, kd_weight=0.0, chunk=1024):
     h2, t2, wk, th2, tW, kw = _prep(h, targets, weights, teacher_h, teacher_W, kd_weight)
     if th2 is not None and th2.shape[0] != h2.shape[0]:
         raise ValueError(f"mentor read {th2.shape[0]} tokens, student {h2.shape[0]}")
+    if torch.is_tensor(kw):
+        return _HeadLossRows.apply(h2, W, t2, wk, cfg.cap, float(cfg.softcap), th2, tW, kw, int(chunk))
     return _HeadLoss.apply(h2, W, t2, wk, cfg.cap, float(cfg.softcap), th2, tW, kw, int(chunk))
 
 
@@ -164,5 +235,10 @@ def plain_loss(h, W, targets, weights, cfg, teacher_h=None, teacher_W=None, kd_w
     Vt = tW.shape[0]
     t = torch.log_softmax(F.linear(th2, tW.to(th2.dtype)).float(), -1)
     s = lp if Vt == z.shape[1] else torch.log_softmax(z[:, :Vt], -1)
+    if torch.is_tensor(kw):                         # --mentor-skip-world: the mentor's weight token by token
+        kdt = F.kl_div(s, t, log_target=True, reduction="none").sum(1)
+        kw1 = kw[:, 0]
+        loss = ((1 - kw1) * (tok * wk[None]).sum(1)).sum() / n_valid + (kw1 * kdt).sum() / h2.shape[0]
+        return loss, ce.detach(), (kdt.sum() / h2.shape[0]).detach()
     kd = F.kl_div(s, t, log_target=True, reduction="sum") / h2.shape[0]
     return (1 - kw) * mce + kw * kd, ce.detach(), kd.detach()

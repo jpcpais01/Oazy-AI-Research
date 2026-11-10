@@ -44,6 +44,25 @@ def main():
     check("emerald:0.05 halves it, emerald:0 is plain Sado",
           abs(parse_mix(resolve_mix("emerald:0.05"))[0][1]["world"] - 0.15) < 1e-9 and emerald_mix(0) == SADO_MIX)
 
+    # ---- the plan written out (--emerald-plan)
+    def wplan(spec):
+        return [(at, round(w.get("world", 0), 6)) for at, w in parse_mix(resolve_mix("emerald:" + spec))]
+    check("plan 0.30:0.2,0.05 = today's emerald, word for word", resolve_mix("emerald:0.30:0.2,0.05") == resolve_mix("emerald"))
+    check("plan flat:0.20 = 20% world in every phase, cool-down too", wplan("flat:0.20") == [(0.0, 0.2), (0.8, 0.2)],
+          str(wplan("flat:0.20")))
+    check("plan 0.30:0.1,0.15 = 30% until 10%, then 15% (cool-down too)",
+          wplan("0.30:0.1,0.15") == [(0.0, 0.3), (0.1, 0.15), (0.8, 0.15)], str(wplan("0.30:0.1,0.15")))
+    from oazy.mix import emerald_plan, plan_average
+    check("plan averages: flat 0.10 = 10%, 0.30:0.1,0.15 = 16.5%",
+          abs(plan_average(emerald_plan("flat:0.10")) - 0.10) < 1e-9 and abs(plan_average(emerald_plan("0.30:0.1,0.15")) - 0.165) < 1e-9)
+    bad = 0
+    for spec in ("0.3:0.5,0.1:0.2,0", "1.5", "0.3,0.1"):
+        try:
+            emerald_plan(spec)
+        except ValueError:
+            bad += 1
+    check("a plan out of order, over 100% or with a share missing its 'until' is refused", bad == 3)
+
     # ---- the build
     data = tmp / "data"
     rng = random.Random(0)

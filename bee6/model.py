@@ -308,6 +308,7 @@ class Bee6(Bee5):
         self._sp = None              # the sparse MLP's counts since the last optimizer step
         self._ex = None              # the experts' words per expert since the last optimizer step
         self._feed = None
+        self.kd_rows = None          # --mentor-skip-world: which rows of the next pass the mentor teaches (None = all)
         if cfg.teach > 0 or self.needs_linker:   # the link head: does a piece name a thing, which earlier piece names the same
             D = cfg.d_model
             cfg.link_at = max(1, min(cfg.link_at, cfg.n_layer - 1))
@@ -440,8 +441,11 @@ class Bee6(Bee5):
         h, aux, agree, sp, xl = out[:5]
         extra = out[5] if len(out) > 5 else None
         th = tW = None
+        rows, self.kd_rows = self.kd_rows, None
         if mentor is not None and kd_weight > 0:
             th, tW = mentor.hidden(idx, self.doc_mask(idx))
+            if rows is not None:         # the mentor's weight row by row: 0 on the rows it must not teach (Emerald's world)
+                kd_weight = (rows.to(torch.float32)[:, None] * kd_weight).expand(idx.shape[0], idx.shape[1]).reshape(-1, 1)
         w = self.mtp()
         tg = targets[..., None]
         if len(w) > 1:
