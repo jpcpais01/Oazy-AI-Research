@@ -170,3 +170,17 @@
 .tile svg.spark { margin-left: auto; width: 76px; height: 30px; flex: none; }
 .tile .t4 { color: var(--muted); font-size: 12.5px; margin-top: 12px; }
 .vmore { display: flex; margin: 24px auto 0; }
+
+/* ---- what they write: one prompt, each charted run's newest writing (three lines; tap for all) */
+.vwrite { display: grid; gap: 10px; }
+.wrow .txt b { color: var(--ink); font-weight: 600; }
+.wrow { display: block; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; padding: 14px 18px; border-radius: 14px;
+  background: rgba(255, 255, 255, .025); border: 1px solid rgba(255, 255, 255, .08); border-left: 2px solid var(--c); transition: background .25s; }
+.wrow:hover { background: rgba(255, 255, 255, .04); }
+.wrow .who { display: flex; align-items: center; gap: 8px; font: 500 10.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.wrow .who i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); box-shadow: 0 0 8px var(--c); flex: none; }
+.wrow .who b { color: var(--text-2); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wrow .who span { margin-left: auto; white-space: nowrap; }
+.wrow .txt { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; color: var(--text-2); font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.wrow.open .txt { -webkit-line-clamp: unset; display: block; }
+#prompts[hidden] { display: none; }

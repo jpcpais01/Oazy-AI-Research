@@ -511,6 +511,12 @@ def make_handler(runs: Path, web: Path = WEB):
                     return self.js(read_jsonl(d / "metrics.jsonl"))
                 if what == "samples":
                     return self.js(read_jsonl(d / "samples.jsonl"))
+                if what == "writing":            # the newest writing for each prompt (the dashboard's "What they write")
+                    last = {}
+                    for x in read_jsonl(d / "samples.jsonl"):
+                        if x.get("prompt") is not None:
+                            last[x["prompt"]] = {k: x.get(k) for k in ("prompt", "text", "tokens", "step")}
+                    return self.js(list(last.values()))
                 if what == "snapshots":
                     return self.js(read_jsonl(d / "snapshots.jsonl"))
                 if what == "snapshot" and len(parts) == 5 and parts[4].endswith(".json") and "/" not in parts[4]:

@@ -14,7 +14,7 @@
 <header class="lab-bar" id="bar"><div class="bar-in">
   <a class="mark" href="#top" aria-label="Oazy AI Research, back to top"><img src="icon.svg" alt=""><span class="word">OAZY<small>TRAINING LAB <span class="ver" id="ver"></span></small></span></a>
   <nav class="tabs" id="tabs" aria-label="Sections"><span class="tabpill" id="tabpill"></span>
-    <a href="#now" data-sec="now">Now</a><a href="#race" data-sec="race">Race</a><a href="#runs" data-sec="runs">Runs</a><a href="world">World ↗</a></nav>
+    <a href="#now" data-sec="now">Now</a><a href="#race" data-sec="race">Race</a><a href="#runs" data-sec="runs">Runs</a><a href="#writing" data-sec="writing">Writing</a><a href="world">World ↗</a></nav>
   <span class="pill" id="pulse"><span class="dot"></span><span>connecting…</span></span>
 </div></header>
 
@@ -50,6 +50,11 @@
   <div class="vrace-tools"><p class="vhint">Tap a run to add it to the charts, or take it out.</p>
     <div class="seg" id="filter"><button data-f="all" class="on">All</button><button data-f="done">Finished</button><button data-f="stopped">Stopped</button></div></div>
   <div class="vtiles" id="tiles"></div>
+
+  <div class="section-title" id="writing" data-k="writing"><h3>What they write</h3><div class="line"></div></div>
+  <div class="vrace-tools"><p class="vhint">The newest writing of each run on the charts, for one prompt at a time.</p>
+    <div class="seg" id="prompts"></div></div>
+  <div class="vwrite" id="writeBox"></div>
 </div>
 
 <footer class="foot"><span>Oazy AI Research · training lab</span><span>Refreshes every 15 s · <a href="world">World</a></span></footer>
