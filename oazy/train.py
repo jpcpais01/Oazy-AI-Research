@@ -161,6 +161,8 @@ def summary(info, run_dir, resumed=None):
           if info.get("select") else []),
         ("world", f"{info['world_plan']} · 9 kinds of practice scene, made fresh, never the secret exams · mentor off on them"
                   if info.get("world") else None),
+        ("Emerald", (f"world text {info['emerald_plan']}" + (" · mentor off on world rows" if info.get("mentor_skip_world") else ""))
+                    if info.get("emerald_plan") else None),
         ("grows", info.get("grow")),
         ("speed", " · ".join(x for x in ["FP8" if info.get("fp8") else ("bf16 (FP8 off)" if "fp8" in info else "bf16"),
                                          "document mask" if info.get("doc_mask") else None] if x)),
@@ -922,6 +924,9 @@ def main():
                     help="Bee's loss in slices (fused, default) or on the full 32-bit scores (plain; slower, same numbers)")
     ap.add_argument("--mentor", default=None, help="the mentor: gpt2-medium (Ember's default), gpt2-large (Bee's), gpt2-xl, "
                     "smollm2-360m (Bee_v2_0.2B's; also smollm2-135m, smollm2-1.7b; only for SmolLM2-tokenizer models) or none")
+    ap.add_argument("--mentor-skip-world", type=int, choices=[0, 1], default=0,
+                    help="1 = the mentor teaches the text rows only: Emerald's world rows always learn the real next word "
+                         "(Bee6 and its kin; --mentor none turns the mentor off altogether)")
     ap.add_argument("--mentor-weight", type=float, default=None, help="mentor's share of the lesson at the start (0.6; Coral 0.25)")
     ap.add_argument("--mentor-until", type=float, default=None, help="fraction of training by which the mentor's share has fallen to --mentor-floor (0.5; Coral 0.3)")
     ap.add_argument("--data-sub", default=None, help="read the SmolLM2 text from <data>/<this> instead of <data>/smol "
@@ -948,6 +953,10 @@ def main():
     ap.add_argument("--emerald", type=float, default=None,
                     help="read Emerald (oazy/emerald.py: Sado + the world's text) with this average world share; "
                          "--data-sub emerald alone = 0.10 (30%% for the first 20%%, then 5%%); 0 = plain Sado")
+    ap.add_argument("--emerald-plan", default=None,
+                    help="Emerald with the world's share over the run written out (oazy/mix.py emerald_plan): "
+                         "'0.30:0.2,0.05' = 30%% until 20%% of the run, then 5%% (the default); 'flat:0.20' = 20%% throughout; "
+                         "'0.30:0.1,0.15' = 30%% for the first 10%%, then 15%%")
     ap.add_argument("--world-workers", type=int, default=None, help="helper processes making world episodes (3; 0 = in the trainer)")
     ap.add_argument("--schedule", choices=["cos", "wsd"], default=None,
                     help="learning-rate shape: cos (cosine) or wsd (flat, then a straight fall over the last 20%%); default wsd for bee")
@@ -985,6 +994,19 @@ def main():
     mentor_floor = recipe.get("mentor_floor", 0.0) if args.mentor_floor is None else args.mentor_floor
     mentor_off = recipe.get("mentor_off", 0.0) if args.mentor_off is None else args.mentor_off
     mentor_share = bool(recipe.get("mentor_share", 0) if args.mentor_share is None else args.mentor_share)
+    if args.emerald_plan is not None:              # the world's share over the run, written out (oazy/mix.py)
+        if args.emerald is not None:
+            raise SystemExit("give --emerald (an average share) or --emerald-plan (the share over the run), not both")
+        from .mix import emerald_plan
+        if ":" not in args.emerald_plan:           # one share alone = that share the whole run
+            args.emerald_plan = "flat:" + args.emerald_plan
+        try:
+            emerald_plan(args.emerald_plan)
+        except ValueError as e:
+            raise SystemExit(str(e))
+        if args.data_sub not in (None, "emerald"):
+            raise SystemExit("--emerald-plan reads Emerald: leave out --data-sub or use --data-sub emerald")
+        args.data_sub = "emerald"
     want_fp8 = bool(recipe.get("fp8", 0) if args.fp8 is None else args.fp8)
     from .select import DEFAULTS as SEL
     use_select = bool(recipe.get("select", 0) if args.select is None else args.select)
@@ -1087,7 +1109,8 @@ def main():
         mix_default = args.mix is None
         if args.mix is None:      # SmolLM2-tokenizer Bees read Tagus when it is there (oazy/tagus.py)
             emerald = args.data_sub == "emerald" or args.emerald is not None
-            args.mix = (f"emerald:{0.10 if args.emerald is None else args.emerald:g}" if emerald else
+            args.mix = (f"emerald:{args.emerald_plan}" if args.emerald_plan is not None else
+                        f"emerald:{0.10 if args.emerald is None else args.emerald:g}" if emerald else
                         "sado-best" if tk == "smollm2" and (data / "best" / "train.bin").exists() else   # Sado (oazy/sado.py)
                         "sado" if tk == "smollm2" and (data / "books" / "train.bin").exists() else
                         "tagus" if tk == "smollm2" and (data / "cosmo" / "train.bin").exists() else "v1")
@@ -1106,6 +1129,19 @@ def main():
     else:
         train = Windows(data / "train.bin", T, micro, seed=args.seed)
         xval = {}
+    # Emerald's world over the run, in words (shown at the start and kept in config.json)
+    emerald_text = None
+    if args.model in BEES and "world:" in str(args.mix) and (args.emerald_plan is not None or args.emerald is not None
+                                                              or args.data_sub == "emerald"):
+        from .mix import emerald_plan, plan_text
+        emerald_text = plan_text(emerald_plan(args.emerald_plan if args.emerald_plan is not None else
+                                              (0.10 if args.emerald is None else args.emerald)))
+    skip_world = bool(args.mentor_skip_world) and mentor_name != "none"
+    if skip_world and not hasattr(model, "kd_rows"):
+        raise SystemExit(f"--mentor-skip-world is for Bee6 and its kin (Bee6-MoE, Logos): {NICE[args.model]} has no row switch")
+    if skip_world and "world" not in getattr(train, "src", {}):
+        say("[mentor] --mentor-skip-world: this run reads no world rows, so the mentor teaches every row as usual")
+        skip_world = False
     vwin = val_set(data / "val.bin", Tv, p["val_windows"])
     pwin = vwin[: min(32, len(vwin))]
     hs_path = root / "hellaswag_val.jsonl"
@@ -1187,6 +1223,8 @@ def main():
             "mentor_off": mentor_off, "mentor_share": mentor_share} if mentor_name != "none" else {}),
         **({"select": True, **sel_cfg} if use_select else {}),
         **({"world": world_w, "world_plan": worldmix.plan_text(world_w)} if world_w > 0 else {}),
+        **({"emerald_plan": emerald_text} if emerald_text else {}),
+        **({"mentor_skip_world": True} if skip_world else {}),
         **({"fp8": fp8} if want_fp8 else {}), **({"grow": cfg.grow} if hasattr(model, "grow_to") and hasattr(cfg, "grow") else {}),
         **({"loss": args.loss, "doc_mask": bool(getattr(cfg, "doc_mask", 0)), "val_context": Tv} if args.model in BEES else {}),
         "layout": model.layout() if hasattr(model, "layout") else None,
@@ -1640,6 +1678,9 @@ def main():
             feed = (lambda: model.feed_marks(train.last_marks[:, :-1].to(device), train.last_rows.to(device))) \
                 if getattr(train, "last_marks", None) is not None and hasattr(model, "feed_marks") else (lambda: None)
             feed()                                  # Logos1-200M: the world's marks, its linker's answer key
+            if skip_world:                          # --mentor-skip-world: the world's rows learn the real next word only
+                kr = [n != "world" for n in train.last_names]
+                model.kd_rows = None if all(kr) or pw <= 0 else torch.tensor(kr, device=device)
             try:
                 loss, st = lesson(x, y, pw)
             except Exception as e:

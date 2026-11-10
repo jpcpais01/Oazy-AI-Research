@@ -86,23 +86,76 @@ def with_share(mix: str, name: str, share: float) -> str:
 EMERALD_SHARE, EMERALD_EARLY, EMERALD_EARLY_X, EMERALD_LATE_X = 0.10, 0.2, 3.0, 0.5
 
 
-def emerald_mix(w: float = EMERALD_SHARE, base: str = SADO_MIX) -> str:
-    """Emerald (oazy/emerald.py): Sado with the world's practice text, w of the run on average: 3w for the first 20%,
-    then w/2 to the end, cool-down included (0.10 -> 30% then 5%; 0 = plain Sado). Like --world (oazy/worldmix.py)."""
-    if w <= 0:
+def emerald_plan(spec) -> list:
+    """The world's share over the run as [(from, share), ...], from a plan written out (--emerald-plan):
+        "0.30:0.2,0.05"   30% world until 20% of the run, then 5% (= today's emerald:0.10)
+        "0.30:0.1,0.15"   30% for the first 10%, then 15%
+        "flat:0.20"       20% the whole run (cool-down included)
+        "0.3:0.1,0.15:0.9,0"  as many steps as you like: share:until, ..., last share
+    or from an average share w alone (a float): 3w for the first 20%, then w/2 (Emerald's default)."""
+    if isinstance(spec, (int, float)):
+        w = float(spec)
+        return [(0.0, min(1.0, w * EMERALD_EARLY_X)), (EMERALD_EARLY, w * EMERALD_LATE_X)] if w > 0 else [(0.0, 0.0)]
+    spec = str(spec).strip()
+    if spec.startswith("flat:"):
+        return [(0.0, float(spec[5:]))]
+    out, at, parts = [], 0.0, spec.split(",")
+    for i, part in enumerate(parts):
+        share, _, until = part.partition(":")
+        out.append((at, float(share)))
+        if until:
+            nxt = float(until)
+            if not at < nxt < 1:
+                raise ValueError(f"the emerald plan {spec!r}: each 'until' must grow and stay under 1")
+            at = nxt
+        elif i < len(parts) - 1:
+            raise ValueError(f"the emerald plan {spec!r}: only the last share goes without ':until'")
+    if any(not 0 <= s <= 1 for _, s in out):
+        raise ValueError(f"the emerald plan {spec!r}: shares go from 0 to 1")
+    return out
+
+
+def plan_average(plan) -> float:
+    """The world's average share over the whole run."""
+    ends = [a for a, _ in plan[1:]] + [1.0]
+    return sum(s * (e - a) for (a, s), e in zip(plan, ends))
+
+
+def plan_text(plan) -> str:
+    """'30% until 20%, then 5% (10% on average)'."""
+    if len(plan) == 1:
+        return f"{plan[0][1]:.0%} the whole run"
+    bits = [f"{s:.0%} until {e:.0%}" for (_, s), (e, _) in zip(plan, plan[1:])]
+    return ", then ".join(bits + [f"{plan[-1][1]:.0%}"]) + f" ({plan_average(plan):.1%} on average)"
+
+
+def emerald_mix(w=EMERALD_SHARE, base: str = SADO_MIX) -> str:
+    """Emerald (oazy/emerald.py): Sado with the world's practice text. w = the average share (3w for the first 20%,
+    then w/2 to the end, cool-down included: 0.10 -> 30% then 5%; 0 = plain Sado; like --world, oazy/worldmix.py),
+    or a plan written out (emerald_plan: "flat:0.20", "0.30:0.1,0.15"). Each phase of Sado keeps its own proportions;
+    the world takes its share of every phase's words."""
+    plan = emerald_plan(w)
+    if all(s <= 0 for _, s in plan):
         return base
-    parts = base.split(";")
-    main, rest = parts[0].rsplit("@", 1)[0], parts[1:]
-    out = [with_share(f"{main}@0", "world", min(1.0, w * EMERALD_EARLY_X)),
-           with_share(f"{main}@{EMERALD_EARLY:g}", "world", w * EMERALD_LATE_X)]
-    out += [with_share(p, "world", w * EMERALD_LATE_X) for p in rest]
+    parts = [(float(p.rsplit("@", 1)[1]), p.rsplit("@", 1)) for p in base.split(";")]
+    marks = sorted({a for a, _ in parts} | {a for a, _ in plan})
+    out = []
+    for t in marks:
+        ws, at = [p for a, p in parts if a <= t][-1]
+        share = [s for a, s in plan if a <= t][-1]
+        out.append(with_share(f"{ws}@{at if float(at) == t else f'{t:g}'}", "world", share))
     return ";".join(out)
 
 
 def resolve_mix(text):
-    """A mix by name ("tagus", "v1", "emerald", "emerald:0.05") or written out."""
+    """A mix by name ("tagus", "v1", "emerald", "emerald:0.05", "emerald:flat:0.20", "emerald:0.30:0.1,0.15") or written out."""
     if text and (text == "emerald" or text.startswith("emerald:")):
-        return emerald_mix(float(text.split(":", 1)[1]) if ":" in text else EMERALD_SHARE)
+        spec = text.split(":", 1)[1] if ":" in text else EMERALD_SHARE
+        try:
+            spec = float(spec)
+        except ValueError:
+            pass
+        return emerald_mix(spec)
     return MIXES.get(text, text) if text else text
 
 
@@ -184,6 +237,7 @@ class Mix:
             raise SystemExit("no training text found")
         self.T, self.batch, self.seed = T, batch, seed
         self.progress, self.batches = 0.0, 0
+        self.last_names = []
         self.seen = {n: 0 for n in self.src}
         self.want_marks = marks and any(s.marks is not None for s in self.src.values())
         self.last_marks = self.last_rows = None    # with marks: (B, T + 1) bytes (255 = none) and which rows have them
@@ -215,6 +269,7 @@ class Mix:
         rng = np.random.default_rng([self.seed, self.batches])
         pick = rng.choice(len(names), size=self.batch, p=[w[n] for n in names])
         self.batches += 1
+        self.last_names = [names[j] for j in pick]      # which source each row came from (--mentor-skip-world)
         rows, mks, has = [], [], []
         for j in pick:
             src = self.src[names[j]]
