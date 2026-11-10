@@ -45,7 +45,8 @@ SETS = {
     "csqa": ("tau/commonsense_qa", None, "validation"),
     "winogrande": ("allenai/winogrande", "winogrande_xl", "validation"),
 }
-BABI_URL = "http://www.thespermwhale.com/jaseweston/babi/tasks_1-20_v1-2.tar.gz"
+BABI_URLS = ("https://s3.amazonaws.com/text-datasets/babi_tasks_1-20_v1-2.tar.gz",      # the Keras mirror (alive Nov 10)
+             "http://www.thespermwhale.com/jaseweston/babi/tasks_1-20_v1-2.tar.gz")
 REASONING = ("arc_challenge", "csqa", "winogrande", "babi")
 CHANCE = {"arc_easy": 0.25, "arc_challenge": 0.25, "piqa": 0.5, "csqa": 0.2, "winogrande": 0.5}
 
@@ -136,7 +137,15 @@ def _prep_babi(out: Path, per_task=50, max_choices=8):
     import re
     import tarfile
     import urllib.request
-    data = urllib.request.urlopen(BABI_URL, timeout=120).read()
+    data, err = None, None
+    for url in BABI_URLS:
+        try:
+            data = urllib.request.urlopen(url, timeout=120).read()
+            break
+        except Exception as e:      # a dead mirror: try the next
+            err = e
+    if data is None:
+        raise err
     rng = random.Random(0)
     rows = []
     with tarfile.open(fileobj=io.BytesIO(data)) as tf:

@@ -83,6 +83,7 @@ async function refresh() {
       if (SER[n] && SER[n].u === r.updated) return;
       try { SER[n] = { u: r.updated, d: await getJSON(`api/run/${encodeURIComponent(n)}/series`) }; } catch (e) { /* keep the old */ }
     }));
+    await loadWriting(compareSet());
     const live = RUNS.filter((r) => isLive(r) && !r.reference).length;
     $("pulse").className = "pill" + (live ? " live" : "");
     $("pulse").lastElementChild.textContent = live ? `${live} live` : "nothing live";
@@ -96,7 +97,39 @@ async function refresh() {
 function draw() {
   const set = compareSet();
   paint(set);
-  drawNow(); drawWorld(); drawRace(set); drawTiles(set);
+  drawNow(); drawWorld(); drawRace(set); drawTiles(set); drawWriting(set);
+}
+
+// ---------------------------------------------------------------- what they write
+// one prompt at a time (the trainer's four, oazy/train.py SAMPLE_PROMPTS); under it, each charted run's newest writing,
+// three lines long until tapped
+let WRITE = {}, PROMPT = null, OPEN = new Set();
+try { PROMPT = localStorage.getItem("oazy.v.prompt"); } catch (e) { PROMPT = null; }
+const SHORT = (p) => { const w = p.replace(/[,.]+$/, "").split(" "); return w.length > 4 ? w.slice(0, 4).join(" ") + "…" : w.join(" "); };
+async function loadWriting(set) {
+  await Promise.all(set.map(async (n) => {
+    const r = runOf(n);
+    if (!r || (WRITE[n] && WRITE[n].u === r.updated)) return;
+    try { WRITE[n] = { u: r.updated, d: await getJSON(`api/run/${encodeURIComponent(n)}/writing`) }; } catch (e) { /* keep the old */ }
+  }));
+}
+function drawWriting(set) {
+  const prompts = [];
+  for (const n of set) for (const x of (WRITE[n] || {}).d || []) if (!prompts.includes(x.prompt)) prompts.push(x.prompt);
+  if (!prompts.length) {
+    $("prompts").hidden = true;
+    $("writeBox").innerHTML = `<p class="vhint">${set.length ? "No writing yet: runs write a little at each check." : "Tap a run above to see what it writes."}</p>`;
+    return;
+  }
+  if (!prompts.includes(PROMPT)) PROMPT = prompts[0];
+  $("prompts").hidden = false;
+  $("prompts").innerHTML = prompts.map((p) => `<button data-p="${esc(p)}" class="${p === PROMPT ? "on" : ""}" title="${esc(p)}">${esc(SHORT(p))}</button>`).join("");
+  const rows = set.map((n) => [n, ((WRITE[n] || {}).d || []).find((x) => x.prompt === PROMPT)]).filter(([, x]) => x);
+  const body = (t) => { t = (t || "").trim(); return t.startsWith(PROMPT) ? `<b>${esc(PROMPT)}</b>${esc(t.slice(PROMPT.length))}` : esc(t); };
+  $("writeBox").innerHTML = rows.map(([n, x]) =>
+    `<button class="wrow${OPEN.has(n) ? " open" : ""}" data-w="${esc(n)}" style="--c:${colorOf(n)}">
+      <span class="who"><i></i><b>${esc(n)}</b><span>after ${fmtM(x.tokens)} tokens</span></span>
+      <span class="txt">${body(x.text)}</span></button>`).join("");
 }
 
 // ---------------------------------------------------------------- the live runs
@@ -218,6 +251,10 @@ document.addEventListener("click", async (e) => {
     PICK = cur.includes(n) ? cur.filter((x) => x !== n) : [...cur, n].slice(-PAL.length);
     savePick(); refresh(); return;
   }
+  const pb = e.target.closest("#prompts button");
+  if (pb) { PROMPT = pb.dataset.p; try { localStorage.setItem("oazy.v.prompt", PROMPT); } catch (err) { /* */ } drawWriting(compareSet()); return; }
+  const w = e.target.closest(".wrow");
+  if (w) { const n = w.dataset.w; OPEN.has(n) ? OPEN.delete(n) : OPEN.add(n); w.classList.toggle("open"); return; }
   const f = e.target.closest("#filter button");
   if (f) { FILTER = f.dataset.f; MORE = false; document.querySelectorAll("#filter button").forEach((x) => x.classList.toggle("on", x === f)); drawTiles(compareSet()); return; }
   if (e.target.closest("#raceReset")) { PICK = null; savePick(); refresh(); return; }
