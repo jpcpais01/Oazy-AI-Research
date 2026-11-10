@@ -303,9 +303,12 @@ class Bee5(nn.Module):
         for b in self.blocks:
             for lin in (b.attn.q, b.attn.k, b.attn.v):
                 nn.init.uniform_(lin.weight, -bound, bound)
-            nn.init.uniform_(b.mlp.up.weight, -0.5 * bound, 0.5 * bound)
+            if hasattr(b.mlp, "reset"):                     # Bee6-MoE's experts: the same start, grid by grid
+                b.mlp.reset(bound)
+            else:
+                nn.init.uniform_(b.mlp.up.weight, -0.5 * bound, 0.5 * bound)
+                nn.init.zeros_(b.mlp.down.weight)           # layer starts as a no-op and the stream is the word itself
             nn.init.zeros_(b.attn.out.weight)               # every output projection starts at zero (record 5): each
-            nn.init.zeros_(b.mlp.down.weight)               # layer starts as a no-op and the stream is the word itself
             for g in (b.attn.gate, b.attn.ve_gate):
                 if g is not None:
                     nn.init.zeros_(g.weight)

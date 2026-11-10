@@ -33,17 +33,17 @@ from memtrix.model import Memtrix, MemtrixConfig
 from memtrix import memory
 from . import hellaswag, probes, term
 
-KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "seed", "smol", "smolbee", "black", "blackt", "logos", "gpt"]
+KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "seed", "smol", "smolbee", "black", "blackt", "logos", "bee6moe", "gpt"]
 NICE = {"memtrix": "Memtrix", "tide": "Tide", "fern": "Fern", "ember": "Ember", "fern2": "Fern2", "fern3": "Fern3",
         "bee": "Bee0.2B", "bee2": "Bee_v2_0.2B", "bee3": "Bee3", "frog": "Frog", "coral": "Coral", "bee4": "Bee4-200M", "coralmini": "Coral Mini",
-        "pegasus": "Pegasus 1", "pegasusmini": "Pegasus 1 Mini", "pegasus2": "Pegasus 2 Mini", "plain100": "Plain-100M", "plain100f": "Plain-100F", "alphastar": "Pegasus Alpha Star", "pegasusbeta": "Pegasus Beta", "bee5": "Bee5-200M", "bee6": "Bee6-200M", "logos": "Logos1-200M", "seed": "Seed", "smol": "SmolLM2 (their recipe)", "smolbee": "SmolLM2 (our recipe)", "black": "Code Black",
+        "pegasus": "Pegasus 1", "pegasusmini": "Pegasus 1 Mini", "pegasus2": "Pegasus 2 Mini", "plain100": "Plain-100M", "plain100f": "Plain-100F", "alphastar": "Pegasus Alpha Star", "pegasusbeta": "Pegasus Beta", "bee5": "Bee5-200M", "bee6": "Bee6-200M", "logos": "Logos1-200M", "bee6moe": "Bee6-MoE", "seed": "Seed", "smol": "SmolLM2 (their recipe)", "smolbee": "SmolLM2 (our recipe)", "black": "Code Black",
         "blackt": "Black-T", "gpt": "GPT"}
-FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "logos", "seed", "smolbee", "black", "blackt")    # raised the fast way: Muon (and a mentor, where MENTOR names one)
+FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "logos", "bee6moe", "seed", "smolbee", "black", "blackt")    # raised the fast way: Muon (and a mentor, where MENTOR names one)
 # default mentor (the others: gpt2-medium). Code Black and Black-T race without one, so the architectures are compared alone.
 MENTOR = {"bee": "gpt2-large", "bee2": "smollm2-360m", "bee3": "smollm2-360m", "frog": "smollm2-360m", "coral": "smollm2-360m",
           "bee4": "smollm2-360m", "coralmini": "smollm2-360m", "pegasus": "smollm2-360m", "pegasusmini": "smollm2-360m", "pegasus2": "smollm2-360m",
-          "plain100": "smollm2-360m", "plain100f": "smollm2-360m", "alphastar": "smollm2-360m", "pegasusbeta": "smollm2-360m", "bee5": "smollm2-360m", "bee6": "smollm2-360m", "logos": "smollm2-360m", "seed": "smollm2-360m", "smolbee": "smollm2-360m", "black": "none", "blackt": "none"}
-BEES = ("bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "logos", "seed", "smol", "smolbee", "black", "blackt")    # the text mix (Tagus), WSD, growing windows
+          "plain100": "smollm2-360m", "plain100f": "smollm2-360m", "alphastar": "smollm2-360m", "pegasusbeta": "smollm2-360m", "bee5": "smollm2-360m", "bee6": "smollm2-360m", "logos": "smollm2-360m", "bee6moe": "smollm2-360m", "seed": "smollm2-360m", "smolbee": "smollm2-360m", "black": "none", "blackt": "none"}
+BEES = ("bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "logos", "bee6moe", "seed", "smol", "smolbee", "black", "blackt")    # the text mix (Tagus), WSD, growing windows
 # Bee3's recipe (bee3/README.md): the mentor stays the whole run, weight decay on the Muon grids, a batch ramp,
 # a 1-minus-square-root cool-down, twice Bee2's learning rates (the presets' lr_bee3 / muon_lr_bee3)
 RECIPE = {"bee3": dict(mentor_floor=0.25, mentor_off=0.1, muon_wd=0.1, batch_ramp="65536:0.1", decay_shape="sqrt")}
@@ -100,6 +100,9 @@ RECIPE["bee6"] = dict(RECIPE["bee5"])
 # Logos1-200M (logos/model.py, Nov 9): Bee6's stream (10 layers) + Logos1's linker, laws core and read-back. Bee6's
 # recipe exactly, so the race against Bee6 on Emerald differs only in the body.
 RECIPE["logos"] = dict(RECIPE["bee6"])
+# Bee6-MoE (bee6/moe.py, Nov 10): Bee6 whose MLPs are 1 shared + 80 routed experts of 384 (9 per word): 872M, 202M at
+# work per word. Bee6's recipe exactly.
+RECIPE["bee6moe"] = dict(RECIPE["bee6"])
 # Seed (seed/README.md, Nov 9): a small core that grows 4x384 -> 6x512 -> 9x640 -> 12x768 (20/20/20/40% of the run,
 # keeping its function) + a 1.3M-row library it looks facts up in. Bee5's recipe exactly (the latest best: windows
 # 512 -> 2,048, the batch ramp, WSD over the last 30%, bf16, the SmolLM2-360M mentor on a share of the passes, Sado with
@@ -262,6 +265,11 @@ def _bee6():
     return Bee6, Bee6Config
 
 
+def _bee6moe():
+    from bee6.moe import Bee6MoE, Bee6MoEConfig      # bee6/moe.py = Bee6 with fine-grained experts for MLPs
+    return Bee6MoE, Bee6MoEConfig
+
+
 def _logos():
     from logos.model import Logos, LogosConfig        # logos/ = Bee6's stream + Logos1's linker, laws core, read-back
     return Logos, LogosConfig
@@ -379,9 +387,10 @@ PRESETS = {
         val_windows=128, hs_quick=1000, evals_quick=500, sample_len=80,
     ),
 }
-for _p in PRESETS.values():           # Logos1-200M: Bee6's batch and learning rates
+for _p in PRESETS.values():           # Logos1-200M and Bee6-MoE: Bee6's batch and learning rates
     for _k in [k for k in _p if k.endswith("_bee6")]:
         _p[_k[:-4] + "logos"] = _p[_k]
+        _p[_k[:-4] + "bee6moe"] = _p[_k]
 
 
 # what every run writes at each check (the dashboard's "What they write", one box each). The fourth, a story, came
@@ -523,6 +532,14 @@ def build(kind, preset, overrides=None):
             small["ctx"] = f"{small['max_len']}:0"
         cfg = Bee6Config(**{**small, **p.get("bee5", {}), **p.get("bee6", {}), **(overrides or {})})
         return Bee6(cfg), cfg
+    if kind == "bee6moe":
+        Bee6MoE, Bee6MoEConfig = _bee6moe()
+        small = {k: v for k, v in p.get("bee", {}).items() if k in ("d_model", "n_layer", "attn_heads", "attn_kv_heads",
+                                                                     "attn_head_dim", "max_len")}
+        if small:                       # a test preset: Bee's small body, one window length, small experts
+            small.update(ctx=f"{small['max_len']}:0", experts=8, expert_top=2, expert_hidden=16)
+        cfg = Bee6MoEConfig(**{**small, **p.get("bee5", {}), **p.get("bee6", {}), **p.get("bee6moe", {}), **(overrides or {})})
+        return Bee6MoE(cfg), cfg
     if kind == "logos":
         Logos, LogosConfig = _logos()
         small = {k: v for k, v in p.get("bee", {}).items() if k in ("d_model", "n_layer", "attn_heads", "attn_kv_heads",
@@ -618,6 +635,9 @@ def load_model(ckpt: Path, device, mmap=False):
     elif kind == "bee6":
         Bee6, Bee6Config = _bee6()
         model = Bee6(Bee6Config.from_dict(st["config"]))      # (it grows to the checkpoint's bloom stage as it loads)
+    elif kind == "bee6moe":
+        Bee6MoE, Bee6MoEConfig = _bee6moe()
+        model = Bee6MoE(Bee6MoEConfig.from_dict(st["config"]))
     elif kind == "logos":
         Logos, LogosConfig = _logos()
         model = Logos(LogosConfig.from_dict(st["config"]))
