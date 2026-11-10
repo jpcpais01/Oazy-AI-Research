@@ -39,6 +39,19 @@ def _plain(x):
     return re.sub(r"\x1b\[[0-9;]*m", "", str(x))
 
 
+def _metrics(d: Path):
+    out = []
+    try:
+        for line in (d / "metrics.jsonl").read_text().splitlines():
+            try:
+                out.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+    except OSError:
+        pass
+    return out
+
+
 def differences(a: dict, b: dict):
     """Settings two arms should share but do not (the world switch itself aside)."""
     out = [k for k in SAME if a.get(k) != b.get(k) and not (k == "mix" and "world" in str(b.get(k)))]   # Emerald's mix has the world in it
@@ -143,6 +156,21 @@ def main(argv=None):
     if fam_rows:
         md += ["", "## World secret exams, family by family", "", "| family | exam | " + " | ".join(have) + " |",
                "|" + "---|" * (2 + len(have))] + ["| " + " | ".join(r) + " |" for r in fam_rows]
+    # the reasoning tests (oazy/evals.py), every arm and the SmolLM2 yardsticks scored the same way, when there
+    keys = [("arc_challenge", "ARC-Challenge"), ("csqa", "CommonsenseQA"), ("winogrande", "Winogrande"), ("babi", "bAbI")]
+    rrows, bchance = [], None
+    for rn in list(a.arms) + ["smollm2-135m", "smollm2-360m", "smollm2-1.7b"]:
+        ev = [r for r in _metrics(run_dir(runs, rn)) if r.get("kind") == "evals" and r.get("full")]
+        if ev and any(k in ev[-1] for k, _ in keys):
+            bchance = bchance or ev[-1].get("babi_chance")
+            rrows.append([rn] + [pct(ev[-1].get(k)) for k, _ in keys])
+    if rrows:
+        from oazy.evals import CHANCE
+        rrows.append(["guessing"] + [pct(CHANCE.get(k, bchance)) for k, _ in keys])
+        term.header("reasoning tests (per token)")
+        term.table([""] + [t for _, t in keys], rrows, right=(1, 2, 3, 4))
+        md += ["", "## Reasoning tests (per token)", "", "| run | " + " | ".join(t for _, t in keys) + " |",
+               "|" + "---|" * (1 + len(keys))] + ["| " + " | ".join(r) + " |" for r in rrows]
     out = runs / a.out
     out.write_text("\n".join(md) + "\n")
     term.info(f"table also saved: {out}")

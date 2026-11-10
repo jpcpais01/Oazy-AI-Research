@@ -39,9 +39,14 @@ def load(path: Path, limit: int | None = None):
 
 
 def render(enc, ex):
-    ctx = enc.encode_ordinary(ex["ctx"])
+    """-> (one context per ending, the endings, the right one). Most tests share one context; Winogrande gives each
+    ending its own ("ctxs": the sentence up to the blank, filled with each option), and scores the shared rest."""
+    if "ctxs" in ex:
+        ctxs = [enc.encode_ordinary(c) for c in ex["ctxs"]]
+    else:
+        ctxs = [enc.encode_ordinary(ex["ctx"])] * len(ex["endings"])
     ends = [enc.encode_ordinary(" " + e) for e in ex["endings"]]
-    return ctx, ends, int(ex["label"])
+    return ctxs, ends, int(ex["label"])
 
 
 @torch.no_grad()
@@ -55,8 +60,8 @@ def evaluate(model, path: Path, device, limit: int | None = None, batch_examples
     for b0 in range(0, len(rows), batch_examples):
         exs = [render(enc, ex) for ex in rows[b0:b0 + batch_examples]]
         seqs, spans = [], []
-        for ctx, ends, _ in exs:
-            for e in ends:
+        for ctxs, ends, _ in exs:
+            for ctx, e in zip(ctxs, ends):
                 seqs.append(ctx + e)
                 spans.append((len(ctx), len(ctx) + len(e)))
         L = max(len(s) for s in seqs)

@@ -1314,7 +1314,7 @@ def main():
             if r:
                 run.log("metrics.jsonl", {"kind": "evals", **base, **r, "full": final})
                 latest.update({k + ("" if final else "_quick"): v for k, v in r.items() if not k.endswith("_n")})
-                say(f"[evals] {'' if final else 'quick, '}" + ", ".join(f"{k} {v * 100:.1f}%" if k in ("arc_easy", "piqa", "lambada") else f"{k} {v:.2f}"
+                say(f"[evals] {'' if final else 'quick, '}" + ", ".join(f"{k} {v * 100:.1f}%" if k in ("arc_easy", "piqa", "lambada", "arc_challenge", "csqa", "winogrande", "babi") else f"{k} {v:.2f}"
                                            for k, v in r.items() if not k.endswith(("_n", "_char"))), flush=True)
             nxt["evals"] += p["evals_every"]
         if final or tokens >= nxt.setdefault("logres", 0):

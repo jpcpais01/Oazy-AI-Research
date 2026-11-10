@@ -33,7 +33,7 @@ run() {     # run <model> <name> <more trainer options...>
 }
 echo "the tests' files (HellaSwag, ARC, PIQA, LAMBADA), fetched once if they are not in $DATA"
 python3 -m oazy.data --hellaswag-only --out "$DATA"
-[ -d "$DATA/evals" ] || python3 -m oazy.evals --prepare --data "$DATA"
+python3 -m oazy.evals --prepare --data "$DATA"     # fetches only the tests not there yet
 echo "Emerald's world and its marks (built once; a world built before the marks only gets the marks added)"
 nice -n 10 python3 -m oazy.emerald build --data "$DATA" 2>&1 | tee -a "$RUNS/emerald-build.log"
 run logos "$LOGOS"           # João, Nov 9: our model first
