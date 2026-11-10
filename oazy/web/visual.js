@@ -316,12 +316,12 @@ function lineChart(id, opt) {
     if (s.faint.length) { const k = s.faint.findIndex((p) => p[1] >= lo && p[1] <= hi); if (k >= 0) s.faint = s.faint.slice(k); else s.faint = []; }
     if (s.faint.length) lines += `<path d="${path(s.faint)}" fill="none" stroke="${s.color}" stroke-width="1.1" stroke-opacity=".3" stroke-linejoin="round"/>`;
     if (!s.pts.length) continue;
-    lines += `<path d="${path(s.pts)}" fill="none" stroke="${s.color}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>`;
-    if (s.pts.length < 30) dots += s.pts.filter((p) => !p[2]).map((p) => `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="2.6" fill="${s.color}"/>`).join("");
+    lines += `<path d="${path(s.pts)}" fill="none" stroke="${s.color}" stroke-width="${s.dash ? 1.8 : 2.4}"${s.dash ? ' stroke-dasharray="5 4"' : ""} stroke-linejoin="round" stroke-linecap="round"/>`;
+    if (s.pts.length < 30 && !s.dash) dots += s.pts.filter((p) => !p[2]).map((p) => `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="2.6" fill="${s.color}"/>`).join("");
     dots += s.pts.filter((p) => p[2]).map((p) => `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="5" fill="#050507" stroke="${s.color}" stroke-width="2.5"><title>final score</title></circle>`).join("");
     const L = s.pts[s.pts.length - 1];
     if (s.live) dots += `<circle class="pulse" cx="${X(L[0])}" cy="${Y(L[1])}" r="4" fill="${s.color}"/><circle cx="${X(L[0])}" cy="${Y(L[1])}" r="4" fill="${s.color}" stroke="#050507" stroke-width="1.5"/>`;
-    ends.push({ y: Y(Math.min(hi, Math.max(lo, L[1]))), x: X(L[0]), v: opt.fmt(L[1]), c: s.color });
+    ends.push({ y: Y(Math.min(hi, Math.max(lo, L[1]))), x: X(L[0]), v: opt.fmt(L[1]) + (s.tag ? " " + s.tag : ""), c: s.color });
   }
   // the newest value written just after the end of each line (no line out to the edge: that read as a forecast),
   // nudged apart so two never sit on top of each other
@@ -395,6 +395,12 @@ function drawRace(set) {
     refs: [...(chance ? [{ y: chance, label: "guessing" }] : []), ...yardsticks("logt")], label: "LogT" });
   lineChart("cWorld", { series: base("world"), turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.02, refs: yardsticks("world_secret"),
     empty: R.length ? "No world exams in these runs (only runs with world text take them)" : empty, label: "World exams" });
+  // Real World (solid): the practised scenes told in words no practice uses; Pro (dashed): new names and things too
+  lineChart("cReal", { series: [...base("real"), ...R.map((r) => ({ name: `${r.name} · Pro`, color: colorOf(r.name), pts: sOf(r, "pro"), dash: true, tag: "Pro" }))],
+    turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.02, refs: yardsticks("world_real"),
+    empty: R.length ? "No Real World exams in these runs (only runs with world text take them)" : empty, label: "Real World" });
+  lineChart("cWval", { series: base("wval"), turns, xmax, fmt: fmtL, crop: 0.08, minSpan: 0.02,
+    empty: R.length ? "No held-out world text in these runs (Emerald runs only)" : empty, label: "World held-out loss" });
   // PIQA (2 choices) and ARC-Easy (4): a quick check on the tests' schedule, every question at the end (the ring)
   lineChart("cPiqa", { series: base("piqa"), turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.01,
     refs: [{ y: 0.5, label: "guessing" }], empty: R.length ? "No PIQA checks yet" : empty, label: "PIQA" });

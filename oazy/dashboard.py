@@ -281,6 +281,7 @@ def series(d: Path):
     if hit and hit[0] == key:
         return hit[1]
     train, val, hs, logt, world, arc, piqa, share = [], [], [], [], [], [], [], []
+    real, pro, wval = [], [], []
     for x in read_jsonl(f):
         k, t = x.get("kind"), x.get("tokens")
         if not _fin(t):
@@ -291,19 +292,25 @@ def series(d: Path):
                 share.append([t, x["world_share"]])
         elif k == "eval" and _fin(x.get("val_loss")):
             val.append([t, x["val_loss"]])
+            if _fin(x.get("val_loss_world")):          # held-out world practice text (Emerald runs)
+                wval.append([t, x["val_loss_world"]])
         elif k == "hellaswag" and _fin(x.get("acc_char")) and (x.get("full") or x.get("sample") == "spread" or (x.get("n") or 0) < 1000):
             hs.append([t, x["acc_char"], 1 if x.get("full") else 0])
         elif k == "logres" and _fin(x.get("acc_char")):
             logt.append([t, x["acc_char"], 0, x.get("chance")])      # every check is all 1,600 puzzles
         elif k == "world" and _fin(x.get("secret")):
             world.append([t, x["secret"], 1 if x.get("full") else 0, x.get("seen") if _fin(x.get("seen")) else None])
+            if _fin(x.get("real")):                    # Real World: practised scenes in words never practised
+                real.append([t, x["real"], 1 if x.get("full") else 0])
+            if _fin(x.get("pro")):                     # Real World Pro: new names and things too
+                pro.append([t, x["pro"], 1 if x.get("full") else 0])
         elif k == "evals":
             if _fin(x.get("arc_easy")):
                 arc.append([t, x["arc_easy"], 1 if x.get("full") else 0])
             if _fin(x.get("piqa")):
                 piqa.append([t, x["piqa"], 1 if x.get("full") else 0])
     out = {"train": _thin(train), "val": val, "hs": hs, "logt": logt, "world": world, "arc": arc, "piqa": piqa,
-           "share": _thin(share, 120)}
+           "share": _thin(share, 120), "real": real, "pro": pro, "wval": wval}
     _SERIES[str(f)] = (key, out)
     return out
 
@@ -362,7 +369,8 @@ def _tile(d: Path):
         "world": cf.get("world") or 0,
         "turns": plan_turns(cf),
         "val": last("val"), "hs": last("hs"), "hs_full": bool(s.get("hs") and s["hs"][-1][2]), "logt": last("logt"),
-        "world_secret": last("world"), "world_seen": last("world", 3), "arc": last("arc"), "piqa": last("piqa"),
+        "world_secret": last("world"), "world_seen": last("world", 3),
+        "world_real": last("real"), "world_pro": last("pro"), "arc": last("arc"), "piqa": last("piqa"),
         "hs_ref": L.get("hellaswag_char_full") if L.get("hellaswag_char_full") is not None else L.get("hellaswag_char"),
         "share": last("share"),
         "spark": [[p[0], round(p[1], 4)] for p in _thin(s.get("val") or s.get("train") or [], 40)],
