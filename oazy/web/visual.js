@@ -281,14 +281,12 @@ function lineChart(id, opt) {
   if (!S.length) { el.innerHTML = `<div class="empty">${opt.empty || "No checks yet"}</div>`; HOV[id] = null; return; }
   const m = { l: 44, r: 52, t: 20, b: 24 };
   const xmax = opt.xmax || Math.max(...S.flatMap((s) => s.pts.concat(s.faint || []).map((p) => p[0])));
-  const cut = opt.crop ? opt.crop * xmax : -1;
-  let ys = S.flatMap((s) => s.pts.filter((p) => p[0] >= cut).map((p) => p[1]));
-  if (!ys.length) ys = S.flatMap((s) => s.pts.map((p) => p[1]));
-  if (opt.faintInRange) ys = ys.concat(S.flatMap((s) => (s.faint || []).filter((p) => p[0] >= Math.max(cut, 0.25 * xmax)).map((p) => p[1])));
-  for (const r of opt.refs || []) if (r.always) ys.push(r.y);
-  if (!ys.length) ys = S.flatMap((s) => (s.faint || []).map((p) => p[1]));
+  // the y range holds everything drawn (every check, the whole training line, the reference lines that always show),
+  // plus 3% of the span above and below (João, Nov 10)
+  const ys = S.flatMap((s) => s.pts.concat(s.faint).map((p) => p[1])).concat((opt.refs || []).filter((r) => r.always).map((r) => r.y));
   let lo = Math.min(...ys), hi = Math.max(...ys);
-  const pad = Math.max((hi - lo) * 0.12, opt.minSpan || 0.01);
+  if (hi - lo < (opt.minSpan || 0.01)) { const c = (hi + lo) / 2, h = (opt.minSpan || 0.01) / 2; lo = c - h; hi = c + h; }
+  const pad = (hi - lo) * 0.03;
   lo -= pad; hi += pad;
   if (opt.floor0 != null) lo = Math.max(lo, opt.floor0);
   const X = (x) => m.l + (x / xmax) * (W - m.l - m.r), Y = (y) => m.t + (1 - (y - lo) / (hi - lo)) * (H - m.t - m.b);
