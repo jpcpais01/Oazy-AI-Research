@@ -211,6 +211,28 @@ The table again: `python3 -m bee6.world_race` (also saved as `<runs>/bee6-world-
 confirm at ~2B tokens before `world=0.10` joins the recipe. Tests: `python3 -m oazy.worldmix_tests`. To see what the
 model reads: `python3 -m oazy.worldmix show`.
 
+## Bee6-MoE: fine-grained experts (`--model bee6moe`, 872M, 202M per word)
+
+João, Nov 10: keep what Bee6 pays for on every word and make the thinking part ~8x bigger, for runs of 10B tokens and
+more. Still a NEXT-WORD model. Each layer's MLP (one ReLU² MLP of 3,840) becomes 1 shared expert + 80 routed experts,
+all ReLU² of 384; the router (sigmoid scores, DeepSeek-V3 bias balancing, a 1e-4 balance loss) picks 9 per word, choosing where each expert stands out for the word (its score centred on its usual score, the sparse MLP's lesson: without it the tiny run put every word on one expert). So a word
+runs 10 x 384 = 3,840 neurons, Bee6's amount, out of 31,104. Attention, the word table, the value tables, MoD and FP8
+attention are Bee6's; the experts run in bf16 in fixed queues (1.25x a fair share, as Coral); reading drops nothing.
+NorMuon straightens every expert's grid on its own. Recipe = Bee6's.
+
+|                 | Bee6-200M | Bee6-MoE |
+|-----------------|-----------|----------|
+| parameters      | 202.0M    | 872M (765M in experts) |
+| at work per word| 202.0M    | 202M |
+| speed (estimate)| B200 ~500k tok/s | ~330-400k tok/s (routing, spare queue room, bf16 experts) |
+
+    python3 -m bee6.moe_tests --device cuda     # tests + Bee6 vs Bee6-MoE speed at full size, ~3 min
+    python3 -m oazy.train --model bee6moe --preset big --micro 32 --tokens 10e9 --data-sub emerald --name bee6moe-emerald-10b
+
+The log's `experts_uneven` (busiest expert / average, ~1.0-1.5 is healthy), `experts_dropped` (share of picks that found
+a full queue, want < 5%) and `experts_idle` (experts no word picked in a step, want 0) say whether the experts are used.
+If memory runs out at micro 32, use `--micro 16` (the batch stays the same, more accumulation).
+
 ## Files
 
 - `bee6/model.py`: `Bee6Config`, `Bee6` (Bee5's body with the fused, FP8 and routed layers).
@@ -220,6 +242,7 @@ model reads: `python3 -m oazy.worldmix show`.
 - `bee6/race.py`: the race table. `runpod/bee6_race.sh`: the race in one line.
 - `bee6/sparse.py`: the sparse MLP. `bee6/sparse_race.py` + `runpod/bee6_sparse.sh`: its race.
   `bee6/sparsebench.py`: CPU writing speed, dense against sparse.
+- `bee6/experts.py`: the fine-grained experts. `bee6/moe.py`: Bee6-MoE. `bee6/moe_tests.py`: its tests.
 - `bee6/tests.py`: self-tests. `bee6/chat.py`: the chat app.
 - `oazy/worldmix.py`: world practice (the stream, the share, the exam); `oazy/worldmix_tests.py`.
   `bee6/world_race.py` + `runpod/bee6_world.sh`: the world race.

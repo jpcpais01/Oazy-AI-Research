@@ -37,6 +37,7 @@ import torch.nn.functional as F
 from bee5.model import (Attention, Bee5, Bee5Config, GATE_IN, MLP, ROPE_TABLE, causal, mtp_weights, norm)
 from . import fp8 as FP8
 from .sparse import SparseMLP
+from .experts import Experts
 
 BLOOM = "4x512:0,6x768:0.2,9x1024:0.4,12x1024:0.6"   # João's Seed schedule, 20/20/20/40 of the tokens, at Bee6's sizes
 PRED_HIDDEN = 128                                     # the Mixture-of-Depths helper: width -> 128 -> 1
@@ -69,6 +70,13 @@ class Bee6Config(Bee5Config):
     sparse_check: int = 16       # after the switch, 1 word in this many still gets the full up-product (the lesson)
     sparse_capacity: float = 1.25   # training: each block's queue holds this x its fair share of the words
     sparse_balance: float = 0.01    # how fast the balancing biases move per step (DeepSeek-V3's gamma)
+    experts: int = 0             # fine-grained experts (bee6/experts.py): routed experts per layer (0 = off; Bee6-MoE 80)
+    expert_top: int = 9          # routed experts per word
+    expert_hidden: int = 384     # each expert's ReLU² width (Bee6-MoE: 1 shared + 9 routed x 384 = Bee6's 3,840 per word)
+    shared_experts: int = 1      # an expert every word runs (0 or 1)
+    expert_capacity: float = 1.25   # training: each expert's queue holds this x its fair share of the words
+    expert_balance: float = 1e-3    # how fast the balancing biases move per step (DeepSeek-V3's gamma, as Coral)
+    expert_aux: float = 1e-4        # the small balance loss (DeepSeek-V3, as Coral)
 
     def __post_init__(self):
         super().__post_init__()
@@ -178,7 +186,8 @@ class Block6(nn.Module):
         self.kind = "A"
         self.cfg = cfg
         self.attn = Attention6(cfg, layer)
-        self.mlp = SparseMLP(cfg) if cfg.sparse_mlp > 0 else MLP6(cfg)
+        self.moe = cfg.experts > 0
+        self.mlp = Experts(cfg) if self.moe else SparseMLP(cfg) if cfg.sparse_mlp > 0 else MLP6(cfg)
         self.sparse = cfg.sparse_mlp > 0
         self.routed = layer in cfg.mod_set()
         if self.routed:
@@ -190,8 +199,8 @@ class Block6(nn.Module):
             nn.init.normal_(self.router.weight, std=0.02)
 
     def ffn(self, h):
-        """The MLP; a sparse one in training also hands back its picker's lesson and counts (else None)."""
-        if self.sparse and self.training:
+        """The MLP; a sparse one (or the experts) in training also hands back its lesson and counts (else None)."""
+        if (self.sparse or self.moe) and self.training:
             return self.mlp(h, with_aux=True)
         return self.mlp(h), None
 
@@ -282,6 +291,8 @@ class Bee6(Bee5):
     def __init__(self, cfg: Bee6Config):
         if cfg.sparse_mlp and cfg.bloom:
             raise ValueError("sparse_mlp and bloom together are not built yet: pick one")
+        if cfg.experts and (cfg.bloom or cfg.sparse_mlp):
+            raise ValueError("experts go with neither bloom nor sparse_mlp (not built): pick one")
         if cfg.bloom and cfg.bloom_stage < 0:
             from .bloom import stage_config
             stage_config(cfg, 0)
@@ -295,6 +306,7 @@ class Bee6(Bee5):
         if cfg.sparse_mlp:           # once the switch has flipped it stays flipped, in the checkpoint too
             self.register_buffer("sparse_live", torch.tensor(0), persistent=True)
         self._sp = None              # the sparse MLP's counts since the last optimizer step
+        self._ex = None              # the experts' words per expert since the last optimizer step
         self._feed = None
         if cfg.teach > 0 or self.needs_linker:   # the link head: does a piece name a thing, which earlier piece names the same
             D = cfg.d_model
@@ -319,9 +331,10 @@ class Bee6(Bee5):
         c = self.cfg
         mods = sorted(i for i in c.mod_set() if i < c.n_layer)
         return (f"{c.n_layer} layers of {c.d_model} ({c.attn_heads} query / {c.attn_kv_heads} key-value heads), "
-                f"{'ReLU²' if c.mlp == 'relu2' else 'SwiGLU'} {c.mlp_hidden}, {c.n_ve} value tables"
+                + ("" if c.experts else f"{'ReLU²' if c.mlp == 'relu2' else 'SwiGLU'} {c.mlp_hidden}, ") + f"{c.n_ve} value tables"
                 + (f", layers {','.join(str(i + 1) for i in mods)} take the top {c.mod_cap:.0%} of words" if mods else "")
                 + (f", sparse MLP: each word runs {self.blocks[0].mlp.share_text()}" if c.sparse_mlp else "")
+                + (f", MLP as experts: each word runs {self.blocks[0].mlp.share_text()}" if c.experts else "")
                 + (", FP8 products" if c.fp8 else ""))
 
     def depth_text(self):
@@ -336,6 +349,7 @@ class Bee6(Bee5):
         return " · ".join(s for s in ["q/k/v fused" if c.fuse_qkv else "", f"FP8 mode {c.fp8}" if c.fp8 else "bf16",
                                       f"MoD {len(c.mod_set())} layers at {c.mod_cap:.0%}" if c.mod_set() else "no MoD",
                                       f"sparse MLP {c.sparse_mlp:.0%} (dense first {c.sparse_from:.0%})" if c.sparse_mlp else "",
+                                      f"experts {c.expert_top} of {c.experts} (bf16)" if c.experts else "",
                                       f"bloom {c.bloom}" if c.bloom else "", "CUDA graphs" if c.graphs else ""] if s)
 
     # ---------------------------------------------------------------- the body
@@ -387,7 +401,10 @@ class Bee6(Bee5):
         h = self._run(x0, ves, layer)[:, :T0]
         xl = keep["x"][:, :T0] if "x" in keep else None
         sp = None
-        if exs:
+        if exs and self.cfg.experts:     # the experts: (balance loss, words per expert per layer, dropped share, the
+            sp = (torch.stack([e[0] for e in exs]).mean(), torch.stack([e[1] for e in exs]),     # scores' moments per layer)
+                  torch.stack([e[2] for e in exs]).mean(), torch.stack([e[3] for e in exs]), torch.stack([e[4] for e in exs]))
+        elif exs:
             sp = (torch.stack([e[0] for e in exs]).mean(), torch.stack([e[1] for e in exs]).mean(),
                   torch.stack([e[2] for e in exs]), torch.stack([e[3] for e in exs]).mean(),
                   torch.stack([e[4] for e in exs]), torch.stack([e[5] for e in exs]))
@@ -441,7 +458,12 @@ class Bee6(Bee5):
             loss = loss + self.cfg.mod_aux * aux
             stats["mod_agree"] = agree
             self._agree = agree
-        if sp is not None:
+        if sp is not None and self.cfg.experts:
+            e_aux, load, drop, mean, sq = sp
+            loss = loss + self.cfg.expert_aux * e_aux
+            new = [t.detach().clone() for t in (load, drop, mean, sq)]
+            self._ex = new + [1] if self._ex is None else [a + b for a, b in zip(self._ex[:4], new)] + [self._ex[4] + 1]
+        elif sp is not None:
             p_aux, recall, load, drop, mean, sq = sp
             loss = loss + self.cfg.sparse_aux * p_aux
             stats["sparse_recall"] = recall
@@ -526,7 +548,18 @@ class Bee6(Bee5):
         return bool(self.cfg.sparse_mlp) and bool(int(self.sparse_live))
 
     def after_step(self):
-        """The trainer calls this after every optimizer step: the blocks' balancing biases move."""
+        """The trainer calls this after every optimizer step: the blocks' (or the experts') balancing biases move."""
+        if self._ex is not None:
+            load, drop, mean, sq, n = self._ex
+            self._ex = None
+            for b, l, mu, q in zip(self.blocks, load, mean / n, sq / n):
+                b.mlp.balance(l, mu, q)
+            lf = load.float()
+            uneven = (lf.max(-1).values / lf.mean(-1).clamp_min(1e-9)).mean()
+            idle = (lf == 0).float().mean()
+            dr, un, il = torch.stack([drop / n, uneven, idle]).tolist()
+            self._sp_report = {"experts_dropped": dr, "experts_uneven": un, "experts_idle": il}
+            return
         if self._sp is None:
             return
         load, recall, drop, mean, sq, n = self._sp

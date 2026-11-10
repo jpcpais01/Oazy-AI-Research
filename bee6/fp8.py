@@ -125,8 +125,8 @@ def check(model, device, say=print, T=512, B=4, loss_tol=0.02, grad_tol=0.9):
     model = copy.deepcopy(model)
     with torch.no_grad():
         for b in model.blocks:
-            for lin in (b.attn.out, b.mlp.down):
-                lin.weight.normal_(0, 0.02)
+            b.attn.out.weight.normal_(0, 0.02)
+            (b.mlp.w_down if hasattr(b.mlp, "w_down") else b.mlp.down.weight).normal_(0, 0.02)   # (Bee6-MoE's experts)
     cfg = model.cfg
     mode = int(cfg.fp8)
     g = torch.Generator(device="cpu").manual_seed(0)

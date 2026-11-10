@@ -95,7 +95,7 @@ class NorMuon(torch.optim.Optimizer):
                 for _, p, _ in items:
                     st = self.state[p]
                     if "second" not in st:
-                        st["second"] = torch.zeros(shape, dtype=torch.float32, device=p.device)
+                        st["second"] = torch.zeros(tuple(p.shape[:-2]) + shape, dtype=torch.float32, device=p.device)
                 sec = torch.stack([self.state[p]["second"] for _, p, _ in items])
                 X = neuron_norm(X, sec, g["beta2"], dim)
                 for (_, p, _), s in zip(items, sec.unbind(0)):
@@ -122,6 +122,8 @@ def groups(model):
         if n.startswith("blocks.") and p.dim() == 2 and n.endswith(("attn.q.weight", "attn.k.weight", "attn.v.weight",
                                                                      "attn.out.weight", "mlp.up.weight", "mlp.down.weight")):
             muon.append((n, p))
+        elif n.startswith("blocks.") and p.dim() == 3 and n.endswith(("mlp.w_up", "mlp.w_down")):
+            muon.append((n, p))                         # Bee6-MoE's experts: a stack of grids, each straightened alone
         elif n in ("lk_q.weight", "lk_k.weight"):      # Bee6's / Logos1-200M's link head: grids, so NorMuon as for both
             muon.append((n, p))
         elif n == "embed.weight":
