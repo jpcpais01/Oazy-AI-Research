@@ -174,7 +174,9 @@ class Experts(nn.Module):
     def balance(self, load, mean=None, sq=None, keep=0.9):
         """After an optimizer step: the experts' usual scores follow the step's (running average), and busy experts'
         biases go down, idle ones' up (DeepSeek-V3)."""
-        if mean is not None:
+        if mean is not None:      # the step's scores come from bf16 autocast: the running averages stay float32
+            mean = mean.to(self.mu_route.device, self.mu_route.dtype)
+            sq = sq.to(self.mu_route.device, self.mu_route.dtype)
             sd = (sq - mean.square()).clamp_min(1e-8).sqrt()
             if int(self.seen_route) == 0:
                 self.mu_route.copy_(mean)
@@ -183,6 +185,6 @@ class Experts(nn.Module):
                 self.mu_route.lerp_(mean, 1 - keep)
                 self.sd_route.lerp_(sd, 1 - keep)
             self.seen_route.add_(1)
-        load = load.to(self.bias_route.device)
+        load = load.to(self.bias_route.device, self.bias_route.dtype)
         if load.sum() > 0:
             self.bias_route.add_(self.cfg.expert_balance * torch.sign(load.mean() - load))
