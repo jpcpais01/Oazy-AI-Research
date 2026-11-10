@@ -60,7 +60,7 @@ def main(argv=None):
     for rn in a.arms:
         d = run_dir(runs, rn)
         if not (d / "metrics.jsonl").exists():
-            body.append([rn, "not run yet"] + [""] * 7)
+            body.append([rn, "not run yet"] + [""] * 8)
             continue
         s = scores(d)
         w = s["cf"].get("world") or 0.0
@@ -74,13 +74,14 @@ def main(argv=None):
         body.append([term.c(rn, "bold"), f"{w:.0%}" if w else "none", f"{term.tokens(tok - wt)} + {term.tokens(wt)}",
                      term.duration(s["sec"]), "–" if s["val"] is None else f"{s['val']:.3f}",
                      pct(s["hs"]) + ("" if s["hs_full"] or s["hs"] is None else "*"), pct(s["logres"]),
-                     pct(ex.get("secret")), pct(ex.get("seen"))])
+                     pct(ex.get("secret")), pct(ex.get("seen")), pct(ex.get("real"))])
     term.header("Bee6 with world practice", "0.5B tokens · Sado · next-word models")
     head = ["", "world", "text + world tokens", "training time", "held-out Sado", "HellaSwag", "LogT", "world secret",
-            "world practised"]
-    term.table(head, body, right=(2, 3, 4, 5, 6, 7, 8))
+            "world practised", "Real World"]
+    term.table(head, body, right=(2, 3, 4, 5, 6, 7, 8, 9))
     term.info("held-out Sado: lower is better (per GPT-2 token, Sado text only). * HellaSwag on part of the questions. "
-              "world secret: exams no run ever practised (longer, deeper, new mixes), asked as plain text.")
+              "world secret: exams no run ever practised (longer, deeper, new mixes), asked as plain text. "
+              "Real World: the practised scenes told in words no practice ever uses.")
 
     base = got.get(a.arms[0])
     lines, md_verdict = [], []
@@ -103,6 +104,8 @@ def main(argv=None):
                 parts.append(f"LogT {(x['logres'] - base['logres']) * 100:+.1f} pts")
             if base["ex"].get("secret") is not None and x["ex"].get("secret") is not None:
                 parts.append(f"world secret {(x['ex']['secret'] - base['ex']['secret']) * 100:+.1f} pts")
+            if base["ex"].get("real") is not None and x["ex"].get("real") is not None:
+                parts.append(f"Real World {(x['ex']['real'] - base['ex']['real']) * 100:+.1f} pts")
             lines.append((rn, ", ".join(parts) or "no numbers yet"))
             md_verdict.append(f"- **{rn}** vs {a.arms[0]}: " + (", ".join(parts) or "no numbers yet")
                               + (f" (settings differ: {', '.join(diff)})" if diff else ""))
@@ -117,7 +120,7 @@ def main(argv=None):
         keys = []
         for r in got[have[0]]["ex"]["rows"]:
             k = (r["family"], r["split"])
-            if r["split"] != "seen" and k not in keys:
+            if r["split"] not in ("seen", "real") and k not in keys:
                 keys.append(k)
         for fam, sp in keys:
             row = [fam, SPLIT.get(sp, sp)]
