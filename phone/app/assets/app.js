@@ -66,8 +66,14 @@
       b.style.setProperty("--m", m.accent || "#8f7bff");
       const tok = +m.tokens_trained ? ` · ${fmtN(+m.tokens_trained)} tokens` : "";
       b.innerHTML = `<i class="sw"></i><div><b>${esc(m.label || m.name)}</b><small>${(m.quant || "").toUpperCase()} · ${fmtB(+m.bytes)} · ${fmtN(+m.params)} params${tok}${on ? " · OPEN" : ""}</small></div>
+        <span class="save" role="button" aria-label="Save a copy to Downloads"><svg viewBox="0 0 16 16"><path d="M8 2.5v7.5M4.8 6.8 8 10l3.2-3.2M3 13h10" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
         <span class="del" role="button" aria-label="Delete"><svg viewBox="0 0 16 16"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`;
       b.onclick = (e) => {
+        if (e.target.closest(".save")) {
+          N.saveCopy(m.file);
+          transfer({ state: "progress", what: "save", file: m.file, done: 0, total: +m.bytes });
+          return;
+        }
         if (e.target.closest(".del")) {
           if (confirmDelete(m)) { N.deleteModel(m.file); if (on) { info = null; paint(); } refreshModels(); }
           return;
@@ -347,13 +353,15 @@
     if (e.state === "progress") {
       box.hidden = false;
       const pct = e.total > 0 ? e.done / e.total : 0;
-      $("#tName").textContent = `${e.what === "import" ? "Copying" : "Downloading"} ${e.file}`;
+      $("#tName").textContent = `${e.what === "import" ? "Copying" : e.what === "save" ? "Saving a copy of" : "Downloading"} ${e.file}`;
       $("#tPct").textContent = e.total > 0 ? `${fmtB(e.done)} of ${fmtB(e.total)}` : fmtB(e.done);
       $("#tBar").style.width = (100 * pct).toFixed(1) + "%";
       $("#tDot").style.left = (100 * pct).toFixed(1) + "%";
     } else {
       box.hidden = true;
-      if (e.state === "done") {
+      if (e.state === "done" && e.what === "save") {
+        toast(`Saved: ${e.where}/${e.file}`, 5000);
+      } else if (e.state === "done") {
         toast(`${e.file} is on the phone`);
         refreshModels();
         if (!info) open(e.file);
@@ -490,7 +498,7 @@
         return true;
       },
       stop: () => { clearInterval(timer); ev({ type: "end", words: 12, speed: 17.1, read: 14, readSpeed: 96, used: 40, ctx: 2048 }); },
-      reset() {}, unload() {}, deleteModel: () => true, pickModel() {}, download() {}, cancelTransfer() {},
+      reset() {}, unload() {}, deleteModel: () => true, saveCopy() {}, pickModel() {}, download() {}, cancelTransfer() {},
       selftest: () => setTimeout(() => ev({ type: "selftest", text: "tokenizer 15/15; scores vs PyTorch: correlation 0.9991, top word same, top-10 shared 10/10, max diff 0.081" }), 600),
     };
   }

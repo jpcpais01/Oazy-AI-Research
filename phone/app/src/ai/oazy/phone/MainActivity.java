@@ -24,6 +24,8 @@ import org.json.JSONObject;
  */
 public class MainActivity extends Activity {
     static final int PICK_MODEL = 7;
+    static final int SAVE_MODEL = 8;
+    String saving;
 
     WebView web;
     Bridge bridge;
@@ -111,6 +113,15 @@ public class MainActivity extends Activity {
         });
     }
 
+    void createDocument(String name) {
+        saving = name;
+        Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("application/octet-stream");
+        i.putExtra(Intent.EXTRA_TITLE, name);
+        startActivityForResult(i, SAVE_MODEL);
+    }
+
     void pickModel() {
         Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         i.addCategory(Intent.CATEGORY_OPENABLE);
@@ -122,6 +133,7 @@ public class MainActivity extends Activity {
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
         if (req == PICK_MODEL && res == RESULT_OK && data != null && data.getData() != null) bridge.importFrom(data.getData());
+        if (req == SAVE_MODEL && res == RESULT_OK && data != null && data.getData() != null && saving != null) bridge.saveTo(data.getData(), saving);
     }
 
     @Override

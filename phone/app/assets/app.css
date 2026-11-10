@@ -182,14 +182,14 @@ textarea::placeholder { color: var(--muted); }
 .sheethead .link { font: 500 10.5px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); padding: 6px 2px; }
 .sheet h3 { font: 600 22px/1.2 var(--display); letter-spacing: -.02em; margin: 0; }
 .list { display: grid; gap: 10px; }
-.mrow { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; padding: 13px 14px; border-radius: 18px; text-align: left; width: 100%;
+.mrow { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 12px; padding: 13px 14px; border-radius: 18px; text-align: left; width: 100%;
   background: rgba(255, 255, 255, .03); border: 1px solid rgba(255, 255, 255, .08); transition: border-color .2s, background .2s; }
 .mrow.on { border-color: color-mix(in srgb, var(--m) 55%, transparent); background: color-mix(in srgb, var(--m) 7%, transparent); }
 .mrow .sw { width: 10px; height: 10px; border-radius: 50%; background: var(--m); box-shadow: 0 0 10px var(--m); }
 .mrow b { display: block; font: 600 16.5px/1.2 var(--display); letter-spacing: -.01em; }
 .mrow small { display: block; font: 400 10.5px/1.5 var(--mono); letter-spacing: .06em; color: var(--muted); margin-top: 3px; }
-.mrow .del { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); }
-.mrow .del svg { width: 16px; height: 16px; }
+.mrow .del, .mrow .save { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); }
+.mrow .del svg, .mrow .save svg { width: 16px; height: 16px; }
 .empty { color: var(--muted); font-size: 14px; padding: 6px 2px 2px; }
 .add { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
 .urlrow { display: flex; gap: 8px; margin: 8px 0 0; }
