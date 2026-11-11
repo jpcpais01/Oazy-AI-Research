@@ -37,7 +37,7 @@ APP = Path(__file__).resolve().parent.parent / "oazy" / "web"     # shared look:
 class Brain:
     def __init__(self, ckpt: Path, device):
         self.model, st = load_model(ckpt, device)
-        if st.get("kind") not in ("bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "bee5", "seed"):
+        if st.get("kind") not in ("bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "bee5", "seed", "bee6", "gnosis", "gnosis2"):
             raise SystemExit("this checkpoint is not a Bee checkpoint")
         self.device = device
         self.enc = tok.for_model(self.model)       # GPT-2's pieces (Bee0.2B) or SmolLM2's (v2)
@@ -47,7 +47,7 @@ class Brain:
         self.att_layers = [i for i, k in enumerate(kinds) if k == "A"]
         self.meta = {"step": st.get("step"), "tokens": st.get("tokens"), "params": self.model.num_params(),
                      "layout": self.model.layout(), "mem_layers": self.mem_layers, "att_layers": self.att_layers,
-                     "layers": len(kinds), "name": {"bee2": "Bee_v2_0.2B", "bee3": "Bee3", "frog": "Frog", "coral": "Coral", "bee4": "Bee4-200M", "coralmini": "Coral Mini", "bee5": "Bee5-200M", "seed": "Seed"}.get(st.get("kind"), "Bee0.2B")}
+                     "layers": len(kinds), "name": {"bee2": "Bee_v2_0.2B", "bee3": "Bee3", "frog": "Frog", "coral": "Coral", "bee4": "Bee4-200M", "coralmini": "Coral Mini", "bee5": "Bee5-200M", "seed": "Seed", "bee6": "Bee6-200M", "gnosis": "Gnosis-300M", "gnosis2": "Gnosis2-300M"}.get(st.get("kind"), "Bee0.2B")}
         self.lock = threading.Lock()
         self.reset()
 
@@ -66,6 +66,9 @@ class Brain:
         looks = []
         for inf in infos:
             if inf["kind"] == "A":
+                if inf.get("looks") is None:           # a layer that kept no picture of where it looked (Bee6's routed layers)
+                    looks.append([])
+                    continue
                 w = inf["looks"].float()
                 v, ix = torch.topk(w, min(3, w.numel()))
                 looks.append([[int(i), round(float(x), 3)] for x, i in zip(v, ix)])

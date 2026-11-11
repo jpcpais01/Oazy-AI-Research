@@ -32,6 +32,7 @@ from .data import default_dir, run_dir
 from . import tok
 from .train import load_model, make_optimizer, amp, save_ckpt, say, NICE
 
+CHAT_APP = {"gnosis": "bee6", "gnosis2": "bee6", "bee6moe": "bee6", "logos": "bee6"}    # kinds without a package of their own
 TURN = re.compile(r"(?:^|\n\n)(User|Assistant|System): ", re.S)
 
 
@@ -135,6 +136,8 @@ def main():
     ap.add_argument("--run", default="bee3", help="the pre-trained run to start from (runs/<run>/ckpt.pt)")
     ap.add_argument("--name", default=None, help="where the result goes (default: <run>-chat)")
     ap.add_argument("--data", default=None)
+    ap.add_argument("--data-sub", default=None, help="read the conversations from <data>/<this>/chat (e.g. opal, sado); "
+                    "default: the first of smol, opal, sado that has them")
     ap.add_argument("--runs", default=None)
     ap.add_argument("--tokens", type=float, default=1e8, help="conversation tokens to read (default 100M)")
     ap.add_argument("--batch", type=int, default=65536, help="tokens per step")
@@ -163,10 +166,13 @@ def main():
     info = st.get("info") or {}
     enc = tok.for_model(model)
     tk = tok.name_of(model)
-    root = Path(a.data) / ("smol" if tk == "smollm2" else "")
-    chat = root / "chat"
-    if not (chat / "train.bin").exists():
-        raise SystemExit(f"no conversations in {chat}: prepare them first (oazy.tagus / oazy.retok)")
+    subs = [a.data_sub] if a.data_sub else (["smol", "opal", "sado"] if tk == "smollm2" else [""])
+    tried = [Path(a.data) / s / "chat" for s in subs]
+    chat = next((c for c in tried if (c / "train.bin").exists()), None)
+    if chat is None:
+        raise SystemExit(f"no conversations in {' or '.join(map(str, tried))}: point --data / --data-sub at the "
+                         f"training set's folder (Opal: --data-sub opal), or prepare them (oazy.tagus / oazy.retok)")
+    say(f"  conversations: {chat / 'train.bin'}")
     T = a.ctx or model.cfg.max_len
     micro = a.micro or max(1, min(32 * 1024, a.batch) // T)
     accum = max(1, a.batch // (micro * T))
@@ -232,7 +238,7 @@ def main():
     (out / "sft.json").write_text(json.dumps(meta["sft"], indent=1))
     say(f"done in {meta['sft']['minutes']:.1f} min. held-out conversation loss "
         f"{before if before is None else round(before, 4)} -> {after if after is None else round(after, 4)}. "
-        f"checkpoint: {out / 'ckpt.pt'}\n  talk to it: python3 -m {kind}.chat --run {out.name} --port 8002")
+        f"checkpoint: {out / 'ckpt.pt'}\n  talk to it: python3 -m {CHAT_APP.get(kind, kind)}.chat --run {out.name} --port 8002")
 
 
 if __name__ == "__main__":
