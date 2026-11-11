@@ -1,11 +1,11 @@
-"""Nous1-300M: a language model that keeps a picture of what it is reading and settles it by surprise.
+"""Anima-300M: a language model that keeps a picture of what it is reading and settles it by surprise.
 
 Still scored as a NEXT-WORD model (every test reads the odds it gives each next token, so it races Gnosis on the same
 text and the same tests), but the way it computes is not a transformer's.
 
 Why not a transformer. A transformer has no picture of anything. Its only memory is the transcript: at every word, in
 every layer, it looks back over every word it has read. It never has to make sense of the text, because it can always
-re-read it. Nous cannot re-read. Its word layers see only the last `window` (64) pieces. Everything older reaches it
+re-read it. Anima cannot re-read. Its word layers see only the last `window` (64) pieces. Everything older reaches it
 only through the MIND: a fixed handful of slots (16 vectors of 1,024) that is its current understanding of the text.
 To get the next word right it has to keep a good picture, because the picture is all it has. Understanding is forced,
 not hoped for.
@@ -43,7 +43,7 @@ the loss in slices. What is new: no attention beyond 64 pieces anywhere, the rec
 the two lessons. Memory while reading is fixed, however long the text (a transformer's grows with every word).
 
 Honest reading: the picture is built only from beats that have ended, and the word layers look only back, so it stays
-true next-word prediction (nous/tests.py checks that changing any piece changes nothing before it).
+true next-word prediction (anima/tests.py checks that changing any piece changes nothing before it).
 """
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ from bee6.model import Attention6, Bee6, Bee6Config, Block6
 
 
 @dataclass
-class NousConfig(Bee6Config):
+class AnimaConfig(Bee6Config):
     n_layer: int = 16            # word layers: the ear's, then the voice's
     ear_layers: int = 4          # the mind hears the stream after this many layers
     window: int = 64             # every word layer sees at most this many pieces (itself included)
@@ -78,11 +78,11 @@ class NousConfig(Bee6Config):
     def __post_init__(self):
         super().__post_init__()
         if self.bloom:
-            raise ValueError("Nous does not bloom")
+            raise ValueError("Anima does not bloom")
         if self.mod_set():
-            raise ValueError("Nous has no Mixture-of-Depths layers (set mod_layers=\"\")")
+            raise ValueError("Anima has no Mixture-of-Depths layers (set mod_layers=\"\")")
         if self.experts or self.sparse_mlp:
-            raise ValueError("Nous's word layers are plain (no experts, no sparse MLP)")
+            raise ValueError("Anima's word layers are plain (no experts, no sparse MLP)")
         self.ear_layers = max(1, min(self.ear_layers, self.n_layer - 1))
         if self.d_model % self.attn_head_dim:
             raise ValueError("d_model must be a multiple of attn_head_dim (the mind's heads)")
@@ -138,7 +138,7 @@ class LocalAttention(Attention6):
 
 
 class LocalBlock(Block6):
-    def __init__(self, cfg: NousConfig, layer: int):
+    def __init__(self, cfg: AnimaConfig, layer: int):
         super().__init__(cfg, layer)
         self.attn = LocalAttention(cfg, layer)
 
@@ -176,7 +176,7 @@ class LawLayer(nn.Module):
 class Mind(nn.Module):
     """The picture (slots) and how it settles on a beat: imagine, surprise, claim, law; `passes` times."""
 
-    def __init__(self, cfg: NousConfig):
+    def __init__(self, cfg: AnimaConfig):
         super().__init__()
         D, N, C = cfg.d_model, cfg.slots, cfg.beat
         self.h = D // cfg.attn_head_dim
@@ -267,12 +267,12 @@ class MindRead(nn.Module):
 
 
 # ---------------------------------------------------------------------------------------------------- the model
-class Nous(Bee6):
+class Anima(Bee6):
     """Ear (short-sighted word layers) -> mind (the picture, settled beat by beat) -> voice (short-sighted word layers
     that read the picture) -> the next word. See the top of this file."""
     Block = LocalBlock
 
-    def __init__(self, cfg: NousConfig):
+    def __init__(self, cfg: AnimaConfig):
         super().__init__(cfg)
         D = cfg.d_model
         self.mind = Mind(cfg)
@@ -454,7 +454,7 @@ class Nous(Bee6):
         return {"pass_loss": out, "adaptive_loss": out[K], "adaptive_passes": float(K), "move_last": move}
 
     def startup_check(self, device, say=print):
-        say(f"[nous] {self.layout()}; the mind and its reads {self.mind_params() / 1e6:.1f}M of {self.num_params() / 1e6:.1f}M")
+        say(f"[anima] {self.layout()}; the mind and its reads {self.mind_params() / 1e6:.1f}M of {self.num_params() / 1e6:.1f}M")
         super().startup_check(device, say)
 
     def grow_to(self, progress: float) -> bool:
