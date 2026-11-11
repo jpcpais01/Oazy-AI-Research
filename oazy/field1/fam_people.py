@@ -1,7 +1,7 @@
 """Field1, people: families, what people think, how many things people have, and the mixed house."""
 from __future__ import annotations
 
-from .core import (QA, Story, T, CONTAINERS, FOODS, OBJECTS_PLURAL, ROOMS, SMALL, P, and_list, people, things, plural)
+from .core import (QA, Story, T, CONTAINERS, ask, note, FOODS, OBJECTS_PLURAL, ROOMS, SMALL, P, and_list, people, things, plural)
 
 
 # ---------------------------------------------------------------- family
@@ -128,8 +128,10 @@ def family(r):
                 continue
             k = len({id(p) for p in found})
             qa = QA(st.t.fmt("how many " + plural_w + " <does|did> {x} have?", x=x), st.t.num(k), "", "")
+        ask(qa, q, rel=rel)
         if all(qa.q != o.q for o in qas):
             qas.append(qa)
+    note(people=len(everyone), generations=3 if gen2 else 2)
     return st, qas
 
 
@@ -238,8 +240,10 @@ def minds(r):
         else:
             yes = t is where[id(o)]
             qa = QA(st.t.fmt("<does|did> {p} know where {x} <is|was>?", p=p, x=o), "yes" if yes else "no", why[(id(p), id(o))], "")
+        ask(qa, q, **({"false_belief": int(t is not where[id(o)])} if q != "real" else {}))
         if all(qa.q != o2.q for o2 in qas):
             qas.append(qa)
+    note(people=len(ps), moves=len(st.events) - len(objs))
     return st, qas
 
 
@@ -326,8 +330,10 @@ def count(r):
                 continue
             qa = QA(st.t.fmt("how many more " + noun + " <does|did> {a} have than {b}?", a=a, b=b), st.t.num(have[id(a)] - have[id(b)]),
                     f"{have[id(a)]} - {have[id(b)]} = {have[id(a)] - have[id(b)]}", "")
+        ask(qa, q, **({"changes": len(log[id(p)])} if q == "many" else {}))
         if all(qa.q != o.q for o in qas):
             qas.append(qa)
+    note(people=len(ps), events=len(st.events))
     return st, qas
 
 
@@ -369,13 +375,15 @@ def house(r):
             c = prev[id(c)]
             out.append(c)
         return out[::-1]
-    qas = [QA(st.t.fmt("which room <will|would> {a} go to first to look for {x}?", a=a, x=it), r0.np,
-              st.t.fmt("{a} <was|was> out when {b} moved {c}, so {a} <thinks|thought> it <is|was> still in {r0}", a=a, b=b, c=box, r0=r0), ""),
-           QA(st.t.fmt("which room <is|was> {x} really in?", x=it), r1.np,
-              st.t.fmt("{x} <is|was> in {c}, and {b} carried {c} to {r1}", x=it, c=box, b=b, r1=r1), "")]
+    qas = [ask(QA(st.t.fmt("which room <will|would> {a} go to first to look for {x}?", a=a, x=it), r0.np,
+                  st.t.fmt("{a} <was|was> out when {b} moved {c}, so {a} <thinks|thought> it <is|was> still in {r0}", a=a, b=b, c=box, r0=r0), ""),
+               "look"),
+           ask(QA(st.t.fmt("which room <is|was> {x} really in?", x=it), r1.np,
+                  st.t.fmt("{x} <is|was> in {c}, and {b} carried {c} to {r1}", x=it, c=box, b=b, r1=r1), ""), "real")]
     w = way(r0, r1)
     from .fam_space import _route
-    qas.append(QA(st.t.fmt("once {a} <finds|found> out, how many doors <must|did> {a.s} go through from {r0} to reach {x}?", a=a, r0=r0, x=it),
-                  st.t.num(len(w) - 1), _route(st, w), ""))
+    qas.append(ask(QA(st.t.fmt("once {a} <finds|found> out, how many doors <must|did> {a.s} go through from {r0} to reach {x}?", a=a, r0=r0, x=it),
+                      st.t.num(len(w) - 1), _route(st, w), ""), "doors"))
+    note(rooms=n, doors=len(w) - 1)
     r.shuffle(qas)
     return st, qas[:r.choice((1, 2, 3))]

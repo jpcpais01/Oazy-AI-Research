@@ -2,7 +2,7 @@
 the day and days of the week."""
 from __future__ import annotations
 
-from .core import (QA, Story, T, ANIMALS, COLOURS, SMALL, and_list, ordinal, people, plural, sents, things)
+from .core import (QA, Story, T, ANIMALS, ask, note, COLOURS, SMALL, and_list, ordinal, people, plural, sents, things)
 
 # ---------------------------------------------------------------- lines: who stands in front of whom, after moves
 LINE_PLACES = ["at the bakery", "at the ice cream stand", "at the ticket window", "for the ferry", "outside the cinema",
@@ -162,8 +162,8 @@ def lines(r):
                     if k == 1 else st.t.fmt("nobody <is|was> ahead of {x}: {x.s} <is|was> at the front", x=x))
         elif q == "place":
             k = pos[id(x)] + 1
-            qa = QA(st.t.fmt("in which place <is|was> {x} " + now + ", counting from the front?", x=x), ordinal(k), why,
-                    st.t.fmt("{x} <is|was> " + ordinal(k) + " in line", x=x))
+            qa = ask(QA(st.t.fmt("in which place <is|was> {x} " + now + ", counting from the front?", x=x), ordinal(k), why,
+                        st.t.fmt("{x} <is|was> " + ordinal(k) + " in line", x=x)), q, _max=len(order))
         elif q == "between":
             i, j = sorted((pos[id(x)], pos[id(y)]))
             if j - i != 2:
@@ -176,8 +176,10 @@ def lines(r):
                     st.t.fmt("there <are|were> {k} in the line", k=len(order)))
         else:
             continue
+        ask(qa, q)
         if all(qa.q != o.q for o in qas):
             qas.append(qa)
+    note(sub="animals" if animal else "people", size=n, moves=len(st.events))
     return st, qas
 
 
@@ -271,8 +273,10 @@ def rows(r):
             qa = QA(st.t.fmt(f"how many <are|were> to the left of {{x}}?", x=x), st.t.num(k), why, "")
         else:
             continue
+        ask(qa, q)
         if all(qa.q != o.q for o in qas):
             qas.append(qa)
+    note(sub="seats" if seat else "things", size=n, moves=len(st.events))
     return st, qas
 
 
@@ -326,8 +330,10 @@ def compare(r):
             word = r.choice([up, down])
             yes = (pos[id(x)] < pos[id(y)]) == (word == up)
             qa = QA(st.t.fmt(f"<is|was> {{x}} {word} than {{y}}?", x=x, y=y), "yes" if yes else "no", chain(i, j), "")
+        ask(qa, q, **({"gap": j - i} if q in ("pair", "yes") else {}))
         if all(qa.q != o.q for o in qas):
             qas.append(qa)
+    note(sub="chain", people=n)
     return st, qas
 
 
@@ -347,15 +353,16 @@ def _ages(r):
     st.keep_order = True
     qas = []
     x = r.choice(ps[1:])
-    qas.append(QA(st.t.fmt("how old <is|was> {x}?", x=x), st.t.num(age[id(x)]), "",
-                  st.t.fmt("{x} <is|was> {k}", x=x, k=age[id(x)])))
+    qas.append(ask(QA(st.t.fmt("how old <is|was> {x}?", x=x), st.t.num(age[id(x)]), "",
+                  st.t.fmt("{x} <is|was> {k}", x=x, k=age[id(x)])), "age"))
     a, b = r.sample(ps, 2)
     if age[id(a)] != age[id(b)]:
         w = a if age[id(a)] > age[id(b)] else b
-        qas.append(QA(st.t.fmt("who <is|was> older, {a} or {b}?", a=a, b=b), w.name,
-                      st.t.fmt("{a} <is|was> {x} and {b} <is|was> {y}", a=a, b=b, x=age[id(a)], y=age[id(b)]), ""))
-        qas.append(QA(st.t.fmt("how many years older <is|was> {w} than {v}?", w=w, v=b if w is a else a),
-                      st.t.num(abs(age[id(a)] - age[id(b)])), "", ""))
+        qas.append(ask(QA(st.t.fmt("who <is|was> older, {a} or {b}?", a=a, b=b), w.name,
+                      st.t.fmt("{a} <is|was> {x} and {b} <is|was> {y}", a=a, b=b, x=age[id(a)], y=age[id(b)]), ""), "older"))
+        qas.append(ask(QA(st.t.fmt("how many years older <is|was> {w} than {v}?", w=w, v=b if w is a else a),
+                      st.t.num(abs(age[id(a)] - age[id(b)])), "", ""), "years"))
+    note(sub="ages", people=n)
     return st, qas[:r.choice((1, 2, 3))]
 
 
@@ -434,9 +441,19 @@ def schedule(r):
                     st.t.fmt("{x} <is|was> at {a} and {y} at {b}", x=x, y=y, a=hour[id(x)], b=hour[id(y)]), "")
         else:
             continue
+        ask(qa, q, **({"hops": _hops(x, dep)} if q == "when" else {}))
         if all(qa.q != o.q for o in qas):
             qas.append(qa)
+    note(sub="hours", events=n, moved=int(moved))
     return st, qas
+
+
+def _hops(e, dep):
+    """How many plans hang between e and the one with a time."""
+    k = 0
+    while id(e) in dep:
+        e, k = dep[id(e)][0], k + 1
+    return k
 
 
 def _why_time(st, e, dep, hour):
@@ -465,8 +482,10 @@ def _days(r):
             p=ps[1], j=j, e=ev, s="s" if j > 1 else "")
     st.keep_order = True
     d1, d2 = DAYS[(today + k) % 7], DAYS[(today + k + j) % 7]
-    qas = [QA(st.t.fmt("on what day <is|was> {e}?", e=ev), d1, st.t.fmt("{k} days after {d} <is|was> {x}", k=k, d=DAYS[today], x=d1),
-              st.t.fmt("{e} <is|was> on {x}", e=ev, x=d1)),
-           QA(st.t.fmt("on what day <is|was> {p}'s birthday?", p=ps[1]), d2,
-              st.t.fmt("{e} <is|was> on {x}, and {j} day{s} later <is|was> {y}", e=ev, x=d1, j=j, s="s" if j > 1 else "", y=d2), "")]
+    qas = [ask(QA(st.t.fmt("on what day <is|was> {e}?", e=ev), d1, st.t.fmt("{k} days after {d} <is|was> {x}", k=k, d=DAYS[today], x=d1),
+                  st.t.fmt("{e} <is|was> on {x}", e=ev, x=d1)), "day", hops=1),
+           ask(QA(st.t.fmt("on what day <is|was> {p}'s birthday?", p=ps[1]), d2,
+                  st.t.fmt("{e} <is|was> on {x}, and {j} day{s} later <is|was> {y}", e=ev, x=d1, j=j, s="s" if j > 1 else "", y=d2), ""),
+               "birthday", hops=2)]
+    note(sub="days", wrap=int(today + k + j >= 7))
     return st, qas[:r.choice((1, 2))]

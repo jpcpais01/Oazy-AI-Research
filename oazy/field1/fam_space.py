@@ -1,7 +1,7 @@
 """Field1, space: things inside things, hidden under cups, in piles, people walking about, rooms joined by doors."""
 from __future__ import annotations
 
-from .core import (QA, Story, T, COLOURS, CONTAINERS, ROOMS, SMALL, PLACES_OUT, and_list, ordinal, people, plural, sents, things)
+from .core import (QA, Story, T, COLOURS, ask, note, CONTAINERS, ROOMS, SMALL, PLACES_OUT, and_list, ordinal, people, plural, sents, things)
 
 # ---------------------------------------------------------------- places: inside, carried, emptied
 SIZE = {"envelope": 1, "wallet": 1, "pouch": 2, "tin": 2, "jar": 3, "pot": 3, "bowl": 3, "vase": 3, "shoebox": 4, "box": 4,
@@ -191,8 +191,10 @@ def places(r):
                     .replace("the floor's", "the floor"), top.np, why_of(x), "")
         else:
             continue
+        ask(qa, q, nest=len(chain(x)) - 1)
         if all(qa.q != o.q for o in qas):
             qas.append(qa)
+    note(sub="rooms" if rooms_mode else "tables", depth=depth, moves=len(st.events))
     return st, qas
 
 
@@ -261,16 +263,18 @@ def shells(r):
         elif q == "where":
             k = at.index(c) + 1
             word = "on the left" if k == 1 else "on the right" if k == n else ("in the middle" if n == 3 else ordinal(k) + " from the left")
-            qa = QA(st.t.fmt("where <is|was> {x}, counting the {noun}s from the left?", x=it, noun=noun), ordinal(k),
-                    sents(why, st.t.fmt("{x} <is|was> under {c}, the " + ordinal(k) + " one", x=it, c=c)),
-                    st.t.fmt("{x} <is|was> under the {noun} " + word, x=it, noun=noun))
+            qa = ask(QA(st.t.fmt("where <is|was> {x}, counting the {noun}s from the left?", x=it, noun=noun), ordinal(k),
+                        sents(why, st.t.fmt("{x} <is|was> under {c}, the " + ordinal(k) + " one", x=it, c=c)),
+                        st.t.fmt("{x} <is|was> under the {noun} " + word, x=it, noun=noun)), q, _max=n)
         else:
             d = r.choice(cups)
             hid = [i for i in items if under[id(i)] is d]
             qa = QA(st.t.fmt("what <is|was> under {d}?", d=d), hid[0].np if len(hid) == 1 else "nothing" if not hid
                     else and_list([i.np for i in hid]), "", "")
+        ask(qa, q)
         if all(qa.q != o.q for o in qas):
             qas.append(qa)
+    note(cups=n, things=len(items), moves=len(st.events))
     return st, qas
 
 
@@ -340,8 +344,10 @@ def stacks(r):
             qa = QA(st.t.fmt("how many {noun}s <are|were> in the pile [now|]?", noun=noun), st.t.num(len(pile)), why, "")
         else:
             continue
+        ask(qa, q)
         if all(qa.q != o.q for o in qas):
             qas.append(qa)
+    note(size=len(pile), moves=len(st.events))
     return st, qas
 
 
@@ -383,19 +389,20 @@ def walks(r):
         dx, dy = STEP[h]
         x, y = x + dx * k, y + dy * k
     qas = []
-    qas.append(QA(st.t.fmt("which way <is|was> {p} facing " + st.t.now() + "?", p=p), DIRS[h], "",
-                  st.t.fmt("{p} <is|was> facing " + DIRS[h], p=p)))
+    qas.append(ask(QA(st.t.fmt("which way <is|was> {p} facing " + st.t.now() + "?", p=p), DIRS[h], "",
+                  st.t.fmt("{p} <is|was> facing " + DIRS[h], p=p)), "facing"))
     axes = [(y, "north", "south"), (x, "east", "west")]
     v, pos, neg = r.choice(axes)
     if v != 0:
         d = pos if v > 0 else neg
-        qas.append(QA(st.t.fmt(f"how many {unit} {d} of {{lm}} <is|was> {{p}} " + st.t.now() + "?", lm=lm, p=p), st.t.num(abs(v)),
-                      "", st.t.fmt(f"{{p}} <is|was> {{k}} {d} of {{lm}}", p=p, k=plural(abs(v), unit1, not st.t.digits), lm=lm)))
+        qas.append(ask(QA(st.t.fmt(f"how many {unit} {d} of {{lm}} <is|was> {{p}} " + st.t.now() + "?", lm=lm, p=p), st.t.num(abs(v)),
+                      "", st.t.fmt(f"{{p}} <is|was> {{k}} {d} of {{lm}}", p=p, k=plural(abs(v), unit1, not st.t.digits), lm=lm)), "distance"))
     d = r.choice(DIRS)
     yes = {"north": y > 0, "south": y < 0, "east": x > 0, "west": x < 0}[d]
-    qas.append(QA(st.t.fmt(f"<is|was> {{p}} [now|] {d} of {{lm}}?", p=p, lm=lm), "yes" if yes else "no", "", ""))
+    qas.append(ask(QA(st.t.fmt(f"<is|was> {{p}} [now|] {d} of {{lm}}?", p=p, lm=lm), "yes" if yes else "no", "", ""), "side"))
     if x == 0 and y == 0:
-        qas.append(QA(st.t.fmt("<is|was> {p} back where {p.s} started?", p=p), "yes", "", ""))
+        qas.append(ask(QA(st.t.fmt("<is|was> {p} back where {p.s} started?", p=p), "yes", "", ""), "back"))
+    note(legs=legs)
     r.shuffle(qas)
     st.keep_order = True
     return st, qas[:r.choice((1, 2, 3))]
@@ -455,11 +462,12 @@ def paths(r):
     why = _route(st, w)
     qas = []
     if len(w) > 2:
-        qas.append(QA(st.t.fmt("which room <does|did> {p} [walk into|reach|get to] first on the way to {x}?", p=p, x=it), w[1].np, why, ""))
-    qas.append(QA(st.t.fmt("how many doors <does|did> {p} [go through|open] to get to {x}?", p=p, x=it), st.t.num(len(w) - 1), why, ""))
+        qas.append(ask(QA(st.t.fmt("which room <does|did> {p} [walk into|reach|get to] first on the way to {x}?", p=p, x=it), w[1].np, why, ""), "first"))
+    qas.append(ask(QA(st.t.fmt("how many doors <does|did> {p} [go through|open] to get to {x}?", p=p, x=it), st.t.num(len(w) - 1), why, ""), "doors"))
     c = r.choice(rooms)
     if c is not a and c is not b:
-        qas.append(QA(st.t.fmt("<does|did> {p} go through {c} on the way to {x}?", p=p, c=c, x=it), "yes" if c in w else "no", why, ""))
-    qas.append(QA(st.t.fmt("which room <is|was> {x} in?", x=it), b.np, "", ""))
+        qas.append(ask(QA(st.t.fmt("<does|did> {p} go through {c} on the way to {x}?", p=p, c=c, x=it), "yes" if c in w else "no", why, ""), "through"))
+    qas.append(ask(QA(st.t.fmt("which room <is|was> {x} in?", x=it), b.np, "", ""), "where"))
+    note(rooms=n, doors=len(w) - 1)
     r.shuffle(qas)
     return st, qas[:r.choice((1, 2, 3))]
