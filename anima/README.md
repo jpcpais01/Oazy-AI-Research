@@ -1,4 +1,4 @@
-# Nous1-300M
+# Anima-300M
 
 A new kind of language model: it keeps a **picture** of what it is reading and **settles it by surprise**, instead of
 looking back over every word. It is still scored as a next-word model (every test reads the odds it gives each next
@@ -9,7 +9,7 @@ piece), so it races Gnosis on the same text and the same tests. The whole design
 A transformer has no picture of anything. Its only memory is the transcript: at every word, in every layer, it looks
 back over every word read so far. It never has to make sense of the text, because it can always re-read it.
 
-Nous cannot re-read. Its word layers see only the last 64 pieces. Everything older reaches it only through the
+Anima cannot re-read. Its word layers see only the last 64 pieces. Everything older reaches it only through the
 **mind**: 16 slots (vectors of 1,024) that are its current understanding. To get the next word right it has to keep a
 good picture, because the picture is all it has.
 
@@ -41,8 +41,8 @@ products, NorMuon, windows 512 -> 2,048, the batch ramp, WSD, the early 3-word l
 ## Run it
 
 ```bash
-python3 -m nous.tests                                     # CPU checks (~3 min)
-OAZY_DATA=/workspace/data bash runpod/train.sh nous --preset big --tokens 10e9 --micro 32 --data-sub opal --mentor none --name nous-opal-10b
+python3 -m anima.tests                                     # CPU checks (~3 min)
+OAZY_DATA=/workspace/data bash runpod/train.sh anima --preset big --tokens 10e9 --micro 32 --data-sub opal --mentor none --name anima-opal-10b
 ```
 
 What to watch in the log:
@@ -60,7 +60,7 @@ What to watch in the log:
 - **The picture gets ignored.** Handled by the short sight: past 64 pieces there is nothing else to read.
 - **Exact copying from far back** (a name 500 pieces ago). Transformers are very good at this, models with a fixed
   memory are worse. It shows in the `repeat recall` line.
-- **Data, not engines, decides at our size.** Every engine change so far tied with Bee6. Nous is a bet that forcing a
+- **Data, not engines, decides at our size.** Every engine change so far tied with Bee6. Anima is a bet that forcing a
   picture changes *what* is learned, not just how fast.
 
 Not built yet: keeping the picture between reads in chat (it re-reads the text each time; same numbers, slower), a
