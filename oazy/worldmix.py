@@ -99,18 +99,28 @@ def episode_words(e):
 def _layout(e, real=False):
     """real: the Real World Exams' wording (oazy/realworld.py), never used in practice."""
     from worldfirst import world as W
-    if real == "pro":                   # Real World Pro: the new wording, and new names and things on top
-        from .realworld import rewrite, pro_word
+    if real in ("pro", "pro2"):         # Real World Pro: the new wording, and new names and things on top
+        from .realworld import rewrite, pro_word, VEHICLES
+        if real == "pro2" and e.family == "lines":
+            # Real World 2 (oazy/realworld2.py): every person of the line becomes a vehicle of their own. In "pro" the
+            # 80 names share 20 vehicles, so two people of a scene could both become "the camper"
+            seen = [w for w in e.tokens if w in W.NAMES]
+            order = list(dict.fromkeys(seen + [w for q in e.questions for w in list(q.tokens) + list(q.answer) if w in W.NAMES]))
+            k0 = sum(map(ord, "".join(order))) % len(VEHICLES)
+            own = {w: VEHICLES[(k0 + i) % len(VEHICLES)] for i, w in enumerate(order)}
+            pw = lambda fam, w: own.get(w, pro_word(fam, w))      # noqa: E731
+        else:
+            pw = pro_word
 
         def say(ws, ms):
             out = []
             for w, m in zip(*rewrite(e.family, list(ws), list(ms))):
                 if e.family == "lines" and w in W.NAMES:
-                    out += [("the", -1), (pro_word(e.family, w), m)]     # "the car is directly ahead of the moto"
+                    out += [("the", -1), (pw(e.family, w), m)]           # "the car is directly ahead of the moto"
                 elif e.family == "lines" and w == "who":
                     out += [("which", -1), ("one", -1)]
                 else:
-                    out.append((pro_word(e.family, w), m))
+                    out.append((pw(e.family, w), m))
             return out
     elif real:
         from .realworld import rewrite
@@ -129,9 +139,8 @@ def _layout(e, real=False):
                 cands = names if w in names else sorted(set(names) | {w})
             else:
                 cands = [str(i) for i in range(10)]
-            if real == "pro":
-                from .realworld import pro_word
-                w, cands = pro_word(e.family, w), [pro_word(e.family, c) for c in cands]
+            if real in ("pro", "pro2"):
+                w, cands = pw(e.family, w), [pw(e.family, c) for c in cands]
             words.append((w, (kind, cands, qi), -1))
         words.append((".", None, -1))
     out, spans, marks, cap = [], [], [], True

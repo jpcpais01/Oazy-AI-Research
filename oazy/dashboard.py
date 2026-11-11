@@ -281,7 +281,7 @@ def series(d: Path):
     if hit and hit[0] == key:
         return hit[1]
     train, val, hs, logt, world, arc, piqa, share, csqa, arcc = [], [], [], [], [], [], [], [], [], []
-    real, pro, wval, field1, f1fam = [], [], [], [], None
+    real, pro, wval, field1, f1fam, real2, pro2 = [], [], [], [], None, [], []
     for x in read_jsonl(f):
         k, t = x.get("kind"), x.get("tokens")
         if not _fin(t):
@@ -305,6 +305,10 @@ def series(d: Path):
                 real.append([t, x["real"], 1 if x.get("full") else 0])
             if _fin(x.get("pro")):                     # Real World Pro: new names and things too
                 pro.append([t, x["pro"], 1 if x.get("full") else 0])
+        elif k == "realworld2" and _fin(x.get("real2")):  # Real World 2 (oazy/realworld2.py): fair forms, a vehicle each
+            real2.append([t, x["real2"], 1 if x.get("full") else 0])
+            if _fin(x.get("pro2")):
+                pro2.append([t, x["pro2"], 1 if x.get("full") else 0])
         elif k == "field1" and _fin(x.get("score")):    # Field1's level table (oazy/field1/levels.py), every family alike
             field1.append([t, x["score"], 1 if x.get("full") else 0, x.get("floor")])
             f1fam = {"tokens": t, "families": x.get("families") or {}, "at_chance": x.get("at_chance") or {}}
@@ -319,7 +323,7 @@ def series(d: Path):
                 csqa.append([t, x["csqa"], 1 if x.get("full") else 0])
     out = {"train": _thin(train), "val": val, "hs": hs, "logt": logt, "world": world, "arc": arc, "piqa": piqa,
            "share": _thin(share, 120), "real": real, "pro": pro, "wval": wval, "csqa": csqa, "arcc": arcc,
-           "field1": field1, "field1_fam": f1fam}
+           "field1": field1, "field1_fam": f1fam, "real2": real2, "pro2": pro2}
     _SERIES[str(f)] = (key, out)
     return out
 
@@ -379,7 +383,7 @@ def _tile(d: Path):
         "turns": plan_turns(cf),
         "val": last("val"), "hs": last("hs"), "hs_full": bool(s.get("hs") and s["hs"][-1][2]), "logt": last("logt"),
         "world_secret": last("world"), "world_seen": last("world", 3),
-        "field1": last("field1"), "field1_floor": last("field1", 3),
+        "field1": last("field1"), "field1_floor": last("field1", 3), "world_real2": last("real2"), "world_pro2": last("pro2"),
         "world_real": last("real"), "world_pro": last("pro"), "arc": last("arc"), "piqa": last("piqa"), "arcc": last("arcc"), "csqa": last("csqa"),
         "hs_ref": L.get("hellaswag_char_full") if L.get("hellaswag_char_full") is not None else L.get("hellaswag_char"),
         "share": last("share"),

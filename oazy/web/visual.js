@@ -13,7 +13,7 @@ const fmtDur = (s) => s == null ? "–" : s < 60 ? "under a minute" : s < 3600 ?
   : s < 86400 ? `${Math.floor(s / 3600)} h ${String(Math.round((s % 3600) / 60)).padStart(2, "0")} min` : (s / 86400).toFixed(1) + " days";
 const ago = (s) => s < 90 ? "just now" : s < 3600 ? Math.round(s / 60) + " min ago" : s < 86400 ? Math.round(s / 3600) + " h ago" : Math.round(s / 86400) + " d ago";
 
-const NICE = { bee6: "Bee6", logos: "Logos1", bee6moe: "Bee6-MoE", gnosis: "Gnosis", gnosis2: "Gnosis2", nous: "Nous", bee5: "Bee5", bee4: "Bee4", bee3: "Bee3", bee2: "Bee2", bee: "Bee", seed: "Seed", coral: "Coral",
+const NICE = { bee6: "Bee6", logos: "Logos1", bee6moe: "Bee6-MoE", gnosis: "Gnosis", gnosis2: "Gnosis2", lucid: "Lucid", bee5: "Bee5", bee4: "Bee4", bee3: "Bee3", bee2: "Bee2", bee: "Bee", seed: "Seed", coral: "Coral",
   coralmini: "Coral Mini", plain100: "Plain-100M", plain100f: "Plain-100F", alphastar: "Pegasus Alpha Star", pegasusbeta: "Pegasus Beta",
   pegasus: "Pegasus 1", pegasusmini: "Pegasus 1 Mini", pegasus2: "Pegasus 2 Mini", smol: "SmolLM2 (their recipe)", smolbee: "SmolLM2 (our recipe)",
   gpt: "GPT-2", memtrix: "Memtrix", tide: "Tide", fern: "Fern", fern2: "Fern2", fern3: "Fern3", ember: "Ember", frog: "Frog" };
@@ -433,6 +433,10 @@ function drawRace(set) {
   lineChart("cArc", { series: [...base("arc"), ...R.map((r) => ({ name: `${r.name} · Challenge`, color: colorOf(r.name), pts: sOf(r, "arcc"), dash: true, tag: "Challenge" }))],
     turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.01,
     refs: [{ y: 0.25, label: "guessing" }], empty: R.length ? "No ARC checks yet" : empty, label: "ARC" });
+  // Real World 2 (oazy/realworld2.py): the same scenes, each choice in its natural forms; Pro 2 dashed
+  lineChart("cReal2", { series: [...base("real2"), ...R.map((r) => ({ name: `${r.name} · Pro 2`, color: colorOf(r.name), pts: sOf(r, "pro2"), dash: true, tag: "Pro 2" }))],
+    turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.02, refs: [{ y: 0.227, label: "guessing" }, ...yardsticks("world_real2")],
+    empty: R.length ? "No Real World 2 checks yet (runs started or resumed since Nov 11 take them)" : empty, label: "Real World 2" });
   // Field1's level table (oazy/field1/levels.py): fresh Field1 scenes, every family weighing the same; the floor is
   // guessing (or always the commonest answer), the same for every run because the scenes are the same
   const f1 = base("field1"), f1floor = f1.flatMap((s) => s.pts.map((p) => p[3])).filter((v) => v != null);

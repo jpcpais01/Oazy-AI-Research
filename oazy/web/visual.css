@@ -203,3 +203,7 @@
 .f1v small { color: var(--muted); font-size: 10.5px; }
 .f1l { grid-column: 2 / 4; font: 500 10px var(--mono); letter-spacing: .04em; color: var(--muted); }
 .f1r.off .f1n, .f1r.off .f1v { color: var(--muted); }
+.vchart.wide { grid-column: 1 / -1; }
+.vchart.wide .f1fam { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 36px; max-height: none; }
+@media (max-width: 860px) { .vchart.wide .f1fam { grid-template-columns: 1fr; max-height: 420px; } }
+.f1fam .f1who, .f1fam .empty { grid-column: 1 / -1; }
