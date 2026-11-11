@@ -280,7 +280,7 @@ def series(d: Path):
     hit = _SERIES.get(str(f))
     if hit and hit[0] == key:
         return hit[1]
-    train, val, hs, logt, world, arc, piqa, share = [], [], [], [], [], [], [], []
+    train, val, hs, logt, world, arc, piqa, share, csqa = [], [], [], [], [], [], [], [], []
     real, pro, wval = [], [], []
     for x in read_jsonl(f):
         k, t = x.get("kind"), x.get("tokens")
@@ -310,8 +310,10 @@ def series(d: Path):
                 arc.append([t, x["arc_easy"], 1 if x.get("full") else 0])
             if _fin(x.get("piqa")):
                 piqa.append([t, x["piqa"], 1 if x.get("full") else 0])
+            if _fin(x.get("csqa")):                    # CommonsenseQA: 5 choices, everyday knowledge
+                csqa.append([t, x["csqa"], 1 if x.get("full") else 0])
     out = {"train": _thin(train), "val": val, "hs": hs, "logt": logt, "world": world, "arc": arc, "piqa": piqa,
-           "share": _thin(share, 120), "real": real, "pro": pro, "wval": wval}
+           "share": _thin(share, 120), "real": real, "pro": pro, "wval": wval, "csqa": csqa}
     _SERIES[str(f)] = (key, out)
     return out
 
@@ -371,7 +373,7 @@ def _tile(d: Path):
         "turns": plan_turns(cf),
         "val": last("val"), "hs": last("hs"), "hs_full": bool(s.get("hs") and s["hs"][-1][2]), "logt": last("logt"),
         "world_secret": last("world"), "world_seen": last("world", 3),
-        "world_real": last("real"), "world_pro": last("pro"), "arc": last("arc"), "piqa": last("piqa"),
+        "world_real": last("real"), "world_pro": last("pro"), "arc": last("arc"), "piqa": last("piqa"), "csqa": last("csqa"),
         "hs_ref": L.get("hellaswag_char_full") if L.get("hellaswag_char_full") is not None else L.get("hellaswag_char"),
         "share": last("share"),
         "spark": [[p[0], round(p[1], 4)] for p in _thin(s.get("val") or s.get("train") or [], 40)],
