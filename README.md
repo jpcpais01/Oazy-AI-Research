@@ -26,6 +26,12 @@ Everything runs on one RunPod GPU: **[docs/RUNPOD.md](docs/RUNPOD.md)** has ever
 |---|---|---|---|
 | **World-first, stage 1** | a reader turns a scene into one vector per thing, and a tiny shared laws core loops over the things until its picture settles, predicting the world after an action; raced against a plain next-word transformer of the same size on secret exams (longer sums, deeper nesting, unseen link chains, unseen rule mixes) | **no** | [`worldfirst/`](worldfirst/) |
 
+**A new kind of model** (Nov 11): not a transformer underneath.
+
+| model | idea | next-word? | code |
+|---|---|---|---|
+| **Nous1-300M** | word layers that see only the last 64 pieces, and a mind: 16 slots that are its picture of the text, settled once per 32-piece beat by surprise (imagine the beat, compare, the slots compete for the surprise, a shared law, 3 passes). It cannot re-read, so it has to understand; more passes at reading time = thinking longer | yes (scored as one) | [`nous/`](nous/) |
+
 **Experiments** (smaller, ~120M, each testing one idea against GPT-2 small):
 
 | model | idea | next-word? | code |
