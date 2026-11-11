@@ -433,6 +433,10 @@ function drawRace(set) {
   lineChart("cArc", { series: [...base("arc"), ...R.map((r) => ({ name: `${r.name} · Challenge`, color: colorOf(r.name), pts: sOf(r, "arcc"), dash: true, tag: "Challenge" }))],
     turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.01,
     refs: [{ y: 0.25, label: "guessing" }], empty: R.length ? "No ARC checks yet" : empty, label: "ARC" });
+  // Real World 2 (oazy/realworld2.py): the same scenes, each choice in its natural forms; Pro 2 dashed
+  lineChart("cReal2", { series: [...base("real2"), ...R.map((r) => ({ name: `${r.name} · Pro 2`, color: colorOf(r.name), pts: sOf(r, "pro2"), dash: true, tag: "Pro 2" }))],
+    turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.02, refs: [{ y: 0.227, label: "guessing" }, ...yardsticks("world_real2")],
+    empty: R.length ? "No Real World 2 checks yet (runs started or resumed since Nov 11 take them)" : empty, label: "Real World 2" });
   // Field1's level table (oazy/field1/levels.py): fresh Field1 scenes, every family weighing the same; the floor is
   // guessing (or always the commonest answer), the same for every run because the scenes are the same
   const f1 = base("field1"), f1floor = f1.flatMap((s) => s.pts.map((p) => p[3])).filter((v) => v != null);
