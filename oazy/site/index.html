@@ -19,6 +19,7 @@
   --serif: "Instrument Serif", "Times New Roman", serif;
   --sans: "Outfit", system-ui, -apple-system, "Segoe UI", sans-serif;
   --ink: #1b2147; --ink-2: #4b5480; --ink-3: #7c84a8; --line: rgba(27, 33, 71, .14);
+  --refbar: rgba(27,33,71,.28);
   --rose: #c0506f; --lilac: #7d8de0; --coral: #e2646b; --moon: #c9bcff; --aqua: #4fb8c8;
   --glass-bg: linear-gradient(140deg, rgba(255,255,255,.46), rgba(255,255,255,.14));
   --glass-line: rgba(255,255,255,.62);
@@ -28,7 +29,7 @@
 }
 .dark, .nav.dark {
   --ink: #f4f2ff; --ink-2: #c3bfe4; --ink-3: #8e8ab4; --line: rgba(244, 242, 255, .14);
-  --rose: #ffb0c4; --lilac: #b7b2ff;
+  --rose: #ffb0c4; --lilac: #b7b2ff; --refbar: rgba(255,255,255,.32);
   --glass-bg: linear-gradient(140deg, rgba(40,40,90,.42), rgba(16,16,40,.22));
   --glass-line: rgba(255,255,255,.14);
   --glass-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 30px 70px -30px rgba(0,0,0,.6);
@@ -73,7 +74,7 @@ h1, h2, h3 { font-family: var(--serif); font-weight: 400; margin: 0; letter-spac
 em { font-style: italic; }
 p { margin: 0; color: var(--ink-2); text-wrap: pretty; }
 .light-text { text-shadow: 0 1px 18px rgba(255,255,255,.55); }
-.dark p { text-shadow: 0 1px 16px rgba(4,5,20,.85); }
+.dark p, .dark .m-sub, .dark h1, .dark .caps, .dark .stats b, .dark .stats span { text-shadow: 0 1px 18px rgba(6,8,30,.55); }
 
 /* glass type: the film's lettering, see-through lilac with a lit top bevel */
 .gt {
@@ -85,6 +86,8 @@ p { margin: 0; color: var(--ink-2); text-wrap: pretty; }
 }
 .gt.warm { background-image: linear-gradient(176deg, #fff6f0 0%, #ffc2b2 30%, #ef7d82 60%, #ffb39f 80%, #fff1ea 100%);
   filter: drop-shadow(0 1.5px 0 rgba(255,255,255,.75)) drop-shadow(0 14px 22px rgba(170,70,70,.22)); }
+.dark .gt { filter: drop-shadow(0 1.5px 0 rgba(255,255,255,.55)) drop-shadow(0 8px 26px rgba(8,10,40,.55)); }
+.dark .gt.warm { filter: drop-shadow(0 1.5px 0 rgba(255,255,255,.55)) drop-shadow(0 8px 26px rgba(40,10,30,.5)); }
 .gt.moon { -webkit-text-stroke: 1px rgba(255,255,255,.35);
   background-image: linear-gradient(176deg, #ffffff 0%, #e2dcff 30%, #a79cf0 60%, #d7d0ff 82%, #ffffff 100%);
   filter: drop-shadow(0 0 22px rgba(170,150,255,.35)); }
@@ -94,6 +97,8 @@ p { margin: 0; color: var(--ink-2); text-wrap: pretty; }
   position: relative; background: var(--glass-bg); border: 1px solid var(--glass-line); border-radius: 22px;
   box-shadow: var(--glass-shadow); -webkit-backdrop-filter: blur(18px) saturate(1.35); backdrop-filter: blur(18px) saturate(1.35);
 }
+.gl .glass { background: transparent; border-color: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.gl .glass::after { display: none; }
 .glass::after { /* faint RGB split on the rim */
   content: ""; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none;
   box-shadow: -1px 0 0 rgba(255, 60, 120, .14), 1px 0 0 rgba(40, 190, 255, .16);
@@ -140,11 +145,23 @@ section { position: relative; padding: 0 var(--gutter); }
 @media (prefers-reduced-motion: reduce) { .rv { opacity: 1; transform: none; filter: none; transition: none; } }
 
 /* ---------- hero ---------- */
-.hero { min-height: 100svh; display: flex; flex-direction: column; align-items: center; text-align: center; padding-top: max(14svh, 96px); }
-.hero h1 { font-size: clamp(46px, 8.4vw, 118px); line-height: .98; color: var(--ink); }
+.hero { min-height: 100svh; display: flex; flex-direction: column; align-items: center; text-align: center; padding-top: max(20svh, 104px); padding-bottom: 9svh; }
+.hero h1 { font-size: clamp(40px, 5.4vw, 76px); line-height: 1.02; color: var(--ink); max-width: 15ch; }
 .hero h1 em { color: var(--rose); }
-.hero .lede { margin-top: 26px; max-width: 520px; font-size: clamp(16px, 1.6vw, 18.5px); }
-.hero .chips { margin-top: 30px; display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+.hero .lede { margin-top: 22px; max-width: 470px; font-size: clamp(15.5px, 1.4vw, 17px); }
+.hero .cards { margin-top: auto; width: min(100%, 900px); display: grid; grid-template-columns: 1fr 1fr; gap: 18px; padding-top: 6svh; text-align: left; }
+.card { display: block; padding: 22px 24px 20px; border-radius: 22px; text-decoration: none; color: var(--ink); transition: transform .4s cubic-bezier(.2,.8,.2,1); }
+.card:hover { transform: translateY(-3px); }
+.card:focus-visible { outline: 2px solid var(--lilac); outline-offset: 4px; }
+.card .top { display: flex; justify-content: space-between; align-items: baseline; }
+.card .top .arrow { font-size: 18px; color: var(--ink-2); transition: transform .4s; }
+.card:hover .arrow { transform: translateX(4px); }
+.card h2 { font-size: 42px; line-height: 1; margin-top: 12px; }
+.card .line { margin-top: 6px; font: italic 400 17px/1.3 var(--serif); color: var(--ink-2); }
+.card .nums { margin-top: 18px; display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); padding-top: 14px; }
+.card .nums b { display: block; font: 400 26px/1 var(--serif); }
+.card .nums span { display: block; margin-top: 6px; font-size: 11.5px; color: var(--ink-2); letter-spacing: .02em; }
+@media (max-width: 720px) { .hero .cards { grid-template-columns: 1fr; padding-top: 8svh; } .hero { padding-bottom: 12svh; } }
 .cue { position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--ink-2); }
 .cue i { width: 1px; height: 46px; background: linear-gradient(var(--ink-2), transparent); transform-origin: top; animation: cue 2.6s ease-in-out infinite; }
 @keyframes cue { 0% { transform: scaleY(0); opacity: 0 } 40% { transform: scaleY(1); opacity: 1 } 100% { transform: scaleY(1) translateY(20px); opacity: 0 } }
@@ -154,7 +171,7 @@ section { position: relative; padding: 0 var(--gutter); }
 .model { padding-top: 22vh; padding-bottom: 14vh; }
 .m-head { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: clamp(28px, 5vw, 80px); align-items: center; }
 .m-head.flip > :first-child { order: 2; }
-.m-title { font-size: clamp(96px, 15vw, 200px); display: block; margin: 18px 0 6px -4px; }
+.m-title { font-size: clamp(80px, 11vw, 150px); display: block; margin: 18px 0 6px -4px; }
 .m-sub { font: italic 400 clamp(22px, 2.4vw, 30px)/1.25 var(--serif); color: var(--ink); }
 .m-text { margin-top: 22px; max-width: 520px; }
 .stats { margin-top: 34px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--line); }
@@ -212,10 +229,10 @@ section { position: relative; padding: 0 var(--gutter); }
 .in .bar i { width: calc(var(--v) / 80 * 100%); }
 .bar.us i { background: linear-gradient(90deg, var(--lilac), #b49cf2); box-shadow: 0 0 10px rgba(125,141,224,.55); }
 .bar.us.warm i { background: linear-gradient(90deg, #f08b7f, var(--coral)); box-shadow: 0 0 10px rgba(226,100,107,.5); }
-.bar.ref i { background: rgba(27,33,71,.28); }
+.bar.ref i { background: var(--refbar); }
 .bar em { font: normal 500 12.5px/1 var(--sans); margin-left: 9px; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .bar.ref em { color: var(--ink-3); font-weight: 400; }
-.bar .chance { position: absolute; left: calc(var(--c) / 80 * 100%); top: 1px; bottom: 1px; width: 1px; background: rgba(27,33,71,.3); }
+.bar .chance { position: absolute; left: calc(var(--c) / 80 * 100%); top: 1px; bottom: 1px; width: 1px; background: var(--refbar); }
 .tag { font-size: 12px; line-height: 1.3; color: var(--ink-2); text-align: right; }
 .tag.good { color: var(--rose); }
 .legend { margin-top: 16px; display: flex; gap: 18px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink-2); }
@@ -299,26 +316,35 @@ footer a { text-decoration: none; color: var(--ink-2); }
 
 <main id="top">
   <!-- ======================= HERO ======================= -->
-  <section class="hero" data-scene="dawn" data-tone="light" aria-label="Introduction">
-    <div class="caps rv">Oazy AI Research</div>
-    <h1 class="rv d1" style="margin-top:22px">Small models that understand, <em>rather than recite.</em></h1>
-    <p class="lede rv d2 light-text">Two small language models, each trained from scratch on a single GPU, and the text that teaches them.</p>
-    <div class="chips rv d3">
-      <a class="chip glass" href="#gnosis">Gnosis <small>308M</small></a>
-      <a class="chip glass" href="#coral">Coral <small>1B experts</small></a>
+  <section class="hero dark" data-scene="dawn" data-tone="dark" aria-label="Introduction">
+    <div class="caps rv">Oazy AI Research &nbsp;·&nbsp; a lab notebook</div>
+    <h1 class="rv d1" style="margin-top:20px">Small models that understand, <em>rather than recite.</em></h1>
+    <p class="lede rv d2">Two language models, each trained from scratch on a single GPU, and the text that teaches them.</p>
+    <div class="cards">
+      <a class="card glass rv d2" href="#gnosis">
+        <div class="top"><span class="caps">01 · 308M · next-token</span><span class="arrow">→</span></div>
+        <h2>Gnosis</h2>
+        <div class="line">PIQA level with SmolLM2-135M, for 120× less</div>
+        <div class="nums"><div><b>66.8</b><span>PIQA</span></div><div><b>37.9</b><span>HellaSwag</span></div><div><b>$42</b><span>to train</span></div></div>
+      </a>
+      <a class="card glass rv d3" href="#coral">
+        <div class="top"><span class="caps">02 · 1B experts · next-token</span><span class="arrow">→</span></div>
+        <h2>Coral</h2>
+        <div class="line">161M at work per word, runs on a phone</div>
+        <div class="nums"><div><b>69.8</b><span>PIQA</span></div><div><b>45.3</b><span>HellaSwag</span></div><div><b>$114</b><span>to train</span></div></div>
+      </a>
     </div>
-    <div class="cue" aria-hidden="true"><span class="caps" style="font-size:10px">Scroll</span><i></i></div>
   </section>
 
   <!-- ======================= GNOSIS ======================= -->
-  <section class="model" id="gnosis" data-scene="morning" data-tone="light" aria-labelledby="gnosis-h">
+  <section class="model dark" id="gnosis" data-scene="morning" data-tone="dark" aria-labelledby="gnosis-h">
     <div class="wrap">
       <div class="m-head">
         <div>
           <div class="caps rv">01 &nbsp;·&nbsp; A micro language model &nbsp;·&nbsp; next-token</div>
           <h2 id="gnosis-h" class="gt m-title rv d1">Gnosis</h2>
           <div class="m-sub rv d2">knowledge, knowing from within</div>
-          <p class="m-text rv d2 light-text">Our Bee6 design, grown to 22 layers. It learns the plain way, by predicting the next word, from ten billion tokens of Pearl: ordinary text, plus small worlds written in words.</p>
+          <p class="m-text rv d2">Our Bee6 design, grown to 22 layers. It learns the plain way, by predicting the next word, from ten billion tokens of Pearl: ordinary text, plus small worlds written in words.</p>
         </div>
         <div class="stack" id="stack" role="img" aria-label="Twenty-two glass layers stacked, with light rising through them as a word passes">
           <div class="lab"><b class="gt">22</b><span>layers</span></div>
@@ -365,21 +391,21 @@ footer a { text-decoration: none; color: var(--ink-2); }
               <div class="tag" role="cell">behind</div>
             </div>
           </div>
-          <div class="legend"><span style="--k:linear-gradient(90deg,#7d8de0,#b49cf2)">Gnosis</span><span style="--k:rgba(27,33,71,.28)">SmolLM2-135M</span><span style="--k:rgba(27,33,71,.3);">│ guessing</span></div>
+          <div class="legend"><span style="--k:linear-gradient(90deg,#7d8de0,#b49cf2)">Gnosis</span><span style="--k:var(--refbar)">SmolLM2-135M</span><span style="--k:var(--refbar);">│ guessing</span></div>
         </div>
       </div>
     </div>
   </section>
 
   <!-- ======================= CORAL ======================= -->
-  <section class="model" id="coral" data-scene="sunset" data-tone="light" aria-labelledby="coral-h">
+  <section class="model dark" id="coral" data-scene="sunset" data-tone="dark" aria-labelledby="coral-h">
     <div class="wrap">
       <div class="m-head flip">
         <div>
           <div class="caps rv">02 &nbsp;·&nbsp; A mixture of experts &nbsp;·&nbsp; next-token</div>
           <h2 id="coral-h" class="gt warm m-title rv d1">Coral</h2>
           <div class="m-sub rv d2">a billion parts, only a few awake at a time</div>
-          <p class="m-text rv d2 light-text">Twenty layers, each with 32 experts. For every word a small router wakes two of them, so only 161M of its 1,037M parameters do the work. After a short chat lesson it runs offline on a phone.</p>
+          <p class="m-text rv d2">Twenty layers, each with 32 experts. For every word a small router wakes two of them, so only 161M of its 1,037M parameters do the work. After a short chat lesson it runs offline on a phone.</p>
         </div>
         <div class="experts glass rv" id="experts">
           <div class="word"><span class="caps">Now reading</span><b id="ex-word">the</b></div>
@@ -418,7 +444,7 @@ footer a { text-decoration: none; color: var(--ink-2); }
               <div class="tag" role="cell">close behind</div>
             </div>
           </div>
-          <div class="legend"><span style="--k:linear-gradient(90deg,#f08b7f,#e2646b)">Coral</span><span style="--k:rgba(27,33,71,.28)">SmolLM2-135M</span></div>
+          <div class="legend"><span style="--k:linear-gradient(90deg,#f08b7f,#e2646b)">Coral</span><span style="--k:var(--refbar)">SmolLM2-135M</span></div>
         </div>
       </div>
     </div>
@@ -503,21 +529,21 @@ const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255);
    pal: zenith, mid, horizon, accent 1, accent 2, water (the film's palettes, plus a dusk and a night)
    pearl: [x (fraction of half width), height above horizon, radius, alpha] */
 const SCENES = {
-  dawn:    { pal: ['#8db6ec', '#cddbf6', '#ffe8d2', '#f6a8bd', '#96ded8', '#6fa3d2'], sunI: .55, sun: [0, .05], sunC: [1, .95, .84], day: 1, stars: 0, petal: .30, mist: .45, hor: -.24,
-             pearl: [0, .05, .036, 1], glow: .25, iri: .1, cam: 0 },
-  morning: { pal: ['#8aa9ea', '#c6cdf6', '#fde6ea', '#bfa5f0', '#93dbe6', '#6f95d0'], sunI: .5, sun: [-.3, .07], sunC: [1, .95, .86], day: 1, stars: 0, petal: .45, mist: .38, hor: -.24,
-             pearl: [-.62, .05, .02, 0], glow: .1, iri: .1, cam: -.5 },
-  sunset:  { pal: ['#7f97dc', '#f1c3c0', '#ffe2bc', '#ff9a8c', '#f7a8c6', '#6f8bc8'], sunI: 1.0, sun: [.32, .03], sunC: [1, .86, .70], day: 1, stars: 0, petal: .18, mist: .3, hor: -.22,
-             pearl: [.6, .04, .02, 0], glow: .3, iri: .1, cam: .9 },
-  dusk:    { pal: ['#262e66', '#5d5296', '#f2a08f', '#c66a9e', '#4b5cab', '#28346a'], sunI: .75, sun: [.36, .006], sunC: [1, .74, .58], day: .25, stars: .35, petal: 0, mist: .2, hor: -.3,
-             pearl: [.6, .04, .02, 0], glow: .2, iri: .2, cam: 1.3 },
-  night:   { pal: ['#05060f', '#0e1132', '#2b2457', '#211b52', '#0f2c46', '#080c1e'], sunI: .38, sun: [-.42, .36], sunC: [.82, .84, 1], day: 0, stars: 1, petal: 0, mist: .15, hor: -.32,
-             pearl: [.5, .3, .17, 1], glow: .55, iri: 1, cam: 1.6 },
-  deep:    { pal: ['#040509', '#0a0c26', '#30245e', '#1c1748', '#0c2340', '#06091a'], sunI: .25, sun: [-.42, .36], sunC: [.82, .84, 1], day: 0, stars: 1, petal: 0, mist: .2, hor: -.36,
-             pearl: [0, .035, .028, .9], glow: .7, iri: .8, cam: 1.8 },
+  dawn:    { pal: ['#0a0e2e', '#222c6a', '#8e9de6', '#4a3cae', '#1d8db4', '#0d143c'], sunI: .95, sun: [0, .014], sunC: [.86, .92, 1], day: .3, stars: .5, petal: .3, mist: .32, hor: -.2,
+             pearl: [0, .05, .03, 0], glow: .3, iri: .4, cam: 0, streak: .75, scat: 1, ca: 1 },
+  morning: { pal: ['#1e2c72', '#4a5db4', '#97a3e2', '#6a5bca', '#36a4c6', '#1a2964'], sunI: .55, sun: [.36, .07], sunC: [1, .96, .9], day: .5, stars: .08, petal: .22, mist: .18, hor: -.24,
+             pearl: [-.62, .05, .02, 0], glow: .1, iri: .1, cam: -.5, streak: 0, scat: .7, ca: .7 },
+  sunset:  { pal: ['#24276a', '#6e5498', '#ffc49a', '#dc7676', '#5659bd', '#272d6a'], sunI: .8, sun: [-.34, .03], sunC: [1, .84, .68], day: .5, stars: .05, petal: .18, mist: .28, hor: -.22,
+             pearl: [.6, .04, .02, 0], glow: .3, iri: .1, cam: .9, streak: .15, scat: .9, ca: .8 },
+  dusk:    { pal: ['#171d52', '#463f88', '#e8907f', '#a95a96', '#3c4ea2', '#1d275a'], sunI: .75, sun: [.36, .006], sunC: [1, .74, .58], day: .25, stars: .4, petal: .18, mist: .2, hor: -.3,
+             pearl: [.6, .04, .02, 0], glow: .2, iri: .2, cam: 1.3, streak: .15, scat: .8, ca: .8 },
+  night:   { pal: ['#05060f', '#0e1132', '#2b2457', '#211b52', '#0f2c46', '#080c1e'], sunI: .38, sun: [-.42, .36], sunC: [.82, .84, 1], day: 0, stars: 1, petal: .2, mist: .15, hor: -.32,
+             pearl: [.5, .3, .17, 1], glow: .55, iri: 1, cam: 1.6, streak: 0, scat: .5, ca: .8 },
+  deep:    { pal: ['#040509', '#0a0c26', '#30245e', '#1c1748', '#0c2340', '#06091a'], sunI: .25, sun: [-.42, .36], sunC: [.82, .84, 1], day: 0, stars: 1, petal: .3, mist: .2, hor: -.36,
+             pearl: [0, .035, .028, .9], glow: .7, iri: .8, cam: 1.8, streak: 0, scat: .4, ca: .8 },
 };
 for (const k in SCENES) SCENES[k].palF = SCENES[k].pal.map(hex);
-const KEYS = ['palF', 'sunI', 'sun', 'sunC', 'day', 'stars', 'petal', 'mist', 'hor', 'pearl', 'glow', 'iri', 'cam'];
+const KEYS = ['palF', 'sunI', 'sun', 'sunC', 'day', 'stars', 'petal', 'mist', 'hor', 'pearl', 'glow', 'iri', 'cam', 'streak', 'scat', 'ca'];
 function mix(a, b, t) {
   if (Array.isArray(a)) return a.map((v, i) => mix(v, b[i], t));
   return lerp(a, b, t);
@@ -534,6 +560,22 @@ function sceneAt(y) {
   const t = ss(.18, .82, (f - centers[i]) / (centers[i + 1] - centers[i]));
   const S = {}; for (const k of KEYS) S[k] = mix(A[k], B[k], t);
   return { S, tone: t < .5 ? sections[i].dataset.tone : sections[i + 1].dataset.tone };
+}
+/* glass panes the shader draws: the on-screen .glass elements, with their fade */
+const glassEls = [...document.querySelectorAll('.glass')];
+const PB = new Float32Array(32), PBX = new Float32Array(32);
+const opac = el => { let a = 1; for (let e = el; e && e !== document.body; e = e.parentElement) { const o = parseFloat(getComputedStyle(e).opacity); if (o < 1) a *= o; } return a; };
+function panes() {
+  let n = 0;
+  for (const el of glassEls) {
+    if (n >= 8) break;
+    const r = el.getBoundingClientRect();
+    if (r.bottom < -60 || r.top > innerHeight + 60 || r.width < 2) continue;
+    const a = opac(el); if (a < .01) continue;
+    PB.set([r.left, r.top, r.width, r.height], n * 4);
+    PBX.set([Math.min(parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0, r.height / 2, r.width / 2), a, 0, 0], n * 4); n++;
+  }
+  return n;
 }
 const portrait = () => innerHeight > innerWidth * 1.05;
 
@@ -609,13 +651,23 @@ void main(){
   }
   oCol=vec4(c,1.);
 }`;
-// full size: the world + stars + the pearl (refracting the world) + petals + grain
+// full size: the world through a lens + god rays + streaks + stars + the pearl + motes + liquid glass panes + grain
 const FRAG_COMP = COMMON + `
 uniform sampler2D tW;
 uniform vec4 uS,uSX;      // pearl x,y,R,alpha / glow, iridescence, -, -
-uniform float uPetal,uStars,uPx,uFrame;
+uniform float uPetal,uStars,uPx,uFrame,uStreak,uScat,uCA;
+uniform vec2 uSun,uCss;   // sun (world units) / canvas size in css px
+uniform vec3 uSunC;
+uniform vec4 uB[8];       // glass panes in css px: x, y, w, h (y from the top)
+uniform vec4 uBX[8];      // radius, alpha, -, -
+uniform int uBN;
 vec3 sceneCA(vec2 uv,vec2 o,float ca){
   return vec3(texture(tW,uv+o*(1.+ca)).r,texture(tW,uv+o).g,texture(tW,uv+o*(1.-ca)).b);
+}
+// the world, seen through a lens: colour splits more toward the edges of the screen
+vec3 world(vec2 uv){
+  vec2 d=uv-.5; vec2 o=d*(.0035+.010*dot(d,d))*uCA;
+  return vec3(texture(tW,uv+o).r,texture(tW,uv).g,texture(tW,uv-o).b);
 }
 float starL(vec2 p,float sc,float th,float seed){
   vec2 g=p*sc; vec2 id=floor(g),f=fract(g)-.5; float h=hash21(id+seed);
@@ -625,34 +677,56 @@ float starL(vec2 p,float sc,float th,float seed){
   float tw=.55+.45*sin(uT*(.7+h*2.4)+h*60.);
   return smoothstep(.13,0.,d)*(.35+.65*hash21(id+4.4))*tw;
 }
-vec4 petals(vec2 p){
-  vec4 acc=vec4(0.);
+// light streaks running out of the sun, each split into red, green and blue (the old site's tunnel, from the film)
+vec3 streaks(vec2 p,vec2 v){
+  vec2 w=p-v; float rad=length(w); float ang=atan(w.y,w.x);
+  const float NB=240.; float A=ang/6.2831853*NB; float id=floor(A); float fa=fract(A)-.5;
+  float h=hash21(vec2(id,3.7)),h2=hash21(vec2(id,9.1)),h3=hash21(vec2(id,5.5));
+  float binw=rad*6.2831853/NB; float lw=clamp((.0010+.0016*h3)/max(binw,1e-4),0.,.5);
+  float m=smoothstep(lw,lw*.25,abs(fa));
+  vec3 s;
+  for(int k=0;k<3;k++){
+    float rr=rad*(1.+float(k-1)*.018);
+    float u=fract(log(rr+.03)*.9-uT*(.04+.07*h2)+h3*7.);
+    s[k]=smoothstep(.0,.30,u)*smoothstep(.36,.30,u);
+  }
+  float fall=smoothstep(.06,.30,rad)*smoothstep(1.2,.35,rad);
+  return s*m*fall*(.35+.65*h2)*step(h,.40);
+}
+// drifting motes of light that catch the sun, with a coloured fringe
+vec3 motes(vec2 p){
+  vec3 acc=vec3(0.);
   for(int L=0;L<3;L++){
-    float fl=float(L); float sc=mix(4.2,10.5,fl*.5);
-    float spd=mix(1.5,.8,fl*.5);
-    vec2 q=p*sc+vec2(-uT*.085*spd*sc*.5,uT*.050*spd*sc*.5)+fl*13.7;
-    vec2 id=floor(q),f=fract(q)-.5; float h=hash21(id+fl*31.);
-    if(h<=uPetal*.85){
-    vec2 o=(vec2(hash21(id+1.3),hash21(id+2.7))-.5)*.44; o+=.07*vec2(sin(uT*.8+h*40.),cos(uT*.63+h*20.));
-    vec2 d=f-o; float rot=h*6.28+uT*(.35+h*.8); float cs=cos(rot),sn=sin(rot); d=mat2(cs,-sn,sn,cs)*d;
-    float tumble=.30+.70*abs(cos(uT*(.6+h*1.2)+h*9.));
-    d.y/=tumble*.62;
-    float size=mix(.07,.15,hash21(id+5.1)); float blur=mix(.55,.14,fl*.5);
-    float sh=d.x/size;
-    float a=smoothstep(size,size*(1.-blur),length(vec2(d.x,d.y*(1.+.35*clamp(sh,-1.,1.)))));
-    float hc=hash21(id+7.7);
-    vec3 col=mix(vec3(1.,.80,.85),vec3(1.,.965,.95),hc);
-    if(hc>.86) col=vec3(1.,.90,.70);
-    col*=1.-.10*clamp(sh,-1.,1.);
-    a*=mix(.55,.92,fl*.5)*smoothstep(uPetal*.85,uPetal*.85-.08,h);
-    acc.rgb=acc.rgb*(1.-a)+col*a; acc.a=acc.a+a*(1.-acc.a);
-  }}
+    float fl=float(L); float sc=mix(5.,12.,fl*.5);
+    vec2 q=p*sc+vec2(uT*.02*sc*.3,-uT*.035*(1.+fl*.4)*sc*.3)+fl*17.3;
+    vec2 id=floor(q),f=fract(q)-.5; float h=hash21(id+fl*23.);
+    if(h<uPetal*.7){
+      vec2 o=(vec2(hash21(id+1.7),hash21(id+3.1))-.5)*.6+.08*vec2(sin(uT*.5+h*30.),cos(uT*.4+h*17.));
+      float sz=mix(.025,.06,hash21(id+5.3))*mix(1.,.6,fl*.5);
+      vec2 d=f-o;
+      float tw=.6+.4*sin(uT*(1.+h*2.)+h*40.);
+      vec3 c=mix(vec3(.75,.85,1.),vec3(1.,.9,1.),hash21(id+8.));
+      float k=mix(.9,.45,fl*.5)*tw;
+      acc+=k*vec3(smoothstep(sz,0.,length(d+vec2(sz*.18,0.)))*c.r,smoothstep(sz,0.,length(d))*c.g,smoothstep(sz,0.,length(d-vec2(sz*.18,0.)))*c.b)*.55;
+    }
+  }
   return acc;
 }
+float sdRB(vec2 p,vec2 b,float r){ vec2 q=abs(p)-b+r; return length(max(q,0.))+min(max(q.x,q.y),0.)-r; }
 void main(){
   vec2 uv=vUv; vec2 p=(uv-.5)*vec2(uAspect,1.);
-  vec3 col=texture(tW,uv).rgb;
+  vec3 col=world(uv);
   float y=p.y-uHor;
+  vec2 sunP=vec2(uSun.x,uSun.y+uHor);
+  // light scattering: the bright sky gathered along the way to the sun (god rays)
+  if(uScat>0.){
+    vec2 sunUV=sunP/vec2(uAspect,1.)+.5;
+    vec2 dir=(sunUV-uv)*(1./14.); vec2 u2=uv+dir*hash21(gl_FragCoord.xy+uFrame);
+    float acc=0.;
+    for(int i=0;i<14;i++){ u2+=dir; vec3 s=texture(tW,u2).rgb; acc+=max(dot(s,vec3(.3,.45,.25))-.55,0.)*(1.-float(i)/14.); }
+    col+=uSunC*acc*uScat*.085;
+  }
+  if(uStreak>0.){ vec3 s=streaks(p,sunP); col+=s*uStreak*(1.-col*.6)+s*uStreak*.10; }
   if(uStars>0.){
     if(y>0.){
       float s=starL(p,95.,.80,0.)+starL(p,190.,.86,9.)*.7+starL(p,48.,.955,3.)*1.4;
@@ -685,18 +759,52 @@ void main(){
       float ndh=max(dot(N,Hh),0.);
       rc+=vec3(1.)*(pow(ndh,120.)*1.1+pow(ndh,9.)*.16);
       rc+=vec3(1.,.97,.90)*pow(max(dot(N,normalize(vec3(.42,-.72,.5))),0.),7.)*.20;
-      rc=mix(rc,rc*vec3(1.03,.97,.86)+vec3(.07,.045,.0),uSX.x*h*h*uDay);
       float aa=smoothstep(uPx,-uPx,sd)*uS.w;
       col=mix(col,rc,aa);
     }
   }
-  if(uPetal>0.){ vec4 pt=petals(p); col=col*(1.-pt.a)+pt.rgb; }
+  if(uPetal>0.) col+=motes(p);
+  // liquid glass panes: frosted, bent hard at the rim, colour split where the light bends
+  vec2 pc=vec2(uv.x,1.-uv.y)*uCss;
+  for(int i=0;i<8;i++){
+    if(i>=uBN) break;
+    vec4 B=uB[i]; float r=uBX[i].x, A=uBX[i].y;
+    vec2 c=B.xy+B.zw*.5, hb=B.zw*.5;
+    float d=sdRB(pc-c,hb,r);
+    if(d>60.) continue;
+    // a soft shadow under the pane
+    if(d>0.){ col*=1.-.16*A*exp(-d/22.)*smoothstep(-20.,30.,pc.y-c.y+hb.y*.2); }
+    if(d>1.5) continue;
+    vec2 g=vec2(sdRB(pc-c+vec2(1.,0.),hb,r)-sdRB(pc-c-vec2(1.,0.),hb,r),sdRB(pc-c+vec2(0.,1.),hb,r)-sdRB(pc-c-vec2(0.,1.),hb,r));
+    g/=max(length(g),1e-4);
+    float e=clamp(-d/26.,0.,1.); float bend=(1.-e)*(1.-e);
+    vec2 off=-g*bend*26.;
+    off+=2.5*vec2(sin(pc.y*.021+uT*.45+pc.x*.006),cos(pc.x*.017-uT*.38+pc.y*.004));
+    vec2 o=off/uCss*vec2(1.,-1.);
+    vec2 cs=g/uCss*vec2(1.,-1.)*(1.5+9.*bend);
+    vec3 fr=vec3(0.);
+    for(int k=0;k<5;k++){
+      float a=float(k)*2.39996+hash21(pc*.37)*6.28; vec2 j=vec2(cos(a),sin(a))*(4.+float(k)*3.)/uCss;
+      fr+=vec3(texture(tW,uv+o+j+cs).r,texture(tW,uv+o+j).g,texture(tW,uv+o+j-cs).b);
+    }
+    fr/=5.;
+    fr=mix(fr,fr*.5+vec3(.04,.045,.11),.68-.2*uDay);            // a darker, cooler body so text reads
+    fr=mix(fr,fr*1.2+vec3(.04,.04,.07),bend*.6);                   // the rim gathers light
+    fr+=vec3(1.)*.05*smoothstep(0.,1.,1.-(pc.y-B.y)/max(B.w,1.))*.6; // a faint sheen from above
+    float rim=smoothstep(1.6,0.,abs(d+.6));
+    float up=clamp(-g.y,0.,1.), lft=clamp(-g.x,0.,1.), rgt=clamp(g.x,0.,1.);
+    fr+=vec3(1.)*rim*(.10+.55*up*up);
+    fr+=vec3(1.,.35,.7)*smoothstep(3.,0.,abs(d+2.4))*lft*.22+vec3(.3,.85,1.)*smoothstep(3.,0.,abs(d+2.4))*rgt*.24;
+    float aa=smoothstep(1.,-1.,d)*A;
+    col=mix(col,fr,aa);
+  }
   float vg=dot(p,p);
   col=mix(col,col*mix(vec3(.62,.62,.78),vec3(.92,.94,.98),uDay),.5*smoothstep(.25,1.05,vg));
   float n1=hash21(gl_FragCoord.xy+uFrame*7.13),n2=hash21(gl_FragCoord.xy*1.7+uFrame*3.71+11.);
-  col+=(n1+n2-1.)*(2.4/255.);
+  col+=(n1+n2-1.)*(2.6/255.);
   oCol=vec4(col,1.);
 }`;
+
 
 function fallback() {
   cv.style.display = 'none';
@@ -711,7 +819,7 @@ function fallback() {
 
 let draw = null;
 if (gl) {
-  try { draw = setupGL(); } catch (e) { console.warn('[oazy] sky off:', e); draw = null; }
+  try { draw = setupGL(); document.documentElement.classList.add('gl'); } catch (e) { console.warn('[oazy] sky off:', e); draw = null; }
 }
 if (!draw) draw = fallback();
 
@@ -765,6 +873,10 @@ function setupGL() {
     const pr = S.pearlPx;
     gl.uniform4f(c.uS, pr[0], pr[1], pr[2], pr[3]); gl.uniform4f(c.uSX, S.glow, S.iri, 0, 0);
     gl.uniform1f(c.uPetal, S.petal); gl.uniform1f(c.uStars, S.stars); gl.uniform1f(c.uPx, 1.2 / H); gl.uniform1f(c.uFrame, frame++ % 997);
+    gl.uniform1f(c.uStreak, S.streak); gl.uniform1f(c.uScat, S.scat); gl.uniform1f(c.uCA, S.ca);
+    gl.uniform2f(c.uSun, S.sun[0] * aspect / 1.6, S.sun[1]); gl.uniform3fv(c.uSunC, S.sunC);
+    gl.uniform2f(c.uCss, cv.clientWidth, cv.clientHeight);
+    const n = panes(); gl.uniform4fv(c.uB, PB); gl.uniform4fv(c.uBX, PBX); gl.uniform1i(c.uBN, n);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   };
 }
@@ -799,7 +911,7 @@ function tick(now) {
   // pearl placement: on tall screens, the night pearl sits up and centred, behind the gap above the text
   let pe = S.pearl.slice();
   const night = SCENES.night.pearl;
-  if (pp) { const k = clamp((pe[2] - .04) / (night[2] - .04)); pe = [lerp(pe[0], 0, k), lerp(pe[1], .52, k), pe[2] * lerp(1, .62, k), pe[3]]; }
+  if (pp) { const k = clamp((pe[2] - .04) / (night[2] - .04)); pe = [lerp(pe[0], .5, k), lerp(pe[1], .6, k), pe[2] * lerp(1, .42, k), pe[3]]; S.sunI *= .7; S.streak *= .6; }
   const bob = reduce ? 0 : Math.sin(T * .9) * .006;
   S.camX = S.cam + mx * .06 + scrollY * .00004;
   S.pearlPx = [pe[0] * aspect * .5, S.hor + pe[1] + bob, pe[2], pe[3]];
@@ -905,7 +1017,7 @@ for (let i = 0; i < 22; i++) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
     const gx = w / COLS, gy = h / ROWS, rad = Math.max(1.6, Math.min(gx, gy) * .26);
     // the path of this word, through its two experts per layer
-    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(226,100,107,.28)'; ctx.beginPath();
+    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,150,140,.35)'; ctx.beginPath();
     for (let r = 0; r < Math.min(ROWS, Math.ceil(prog * ROWS)); r++) {
       const x = (picks[r][0] + picks[r][1] + 1) / 2 * gx, y = (r + .5) * gy;
       r ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
@@ -914,7 +1026,7 @@ for (let i = 0; i < 22; i++) {
     for (let r = 0; r < ROWS; r++) for (let k = 0; k < COLS; k++) {
       const v = lit[r * COLS + k], x = (k + .5) * gx, y = (r + .5) * gy;
       ctx.beginPath(); ctx.arc(x, y, rad, 0, 6.2832);
-      ctx.fillStyle = `rgba(60,50,110,${.13 + .0 * v})`; ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.14)'; ctx.fill();
       if (v > .02) {
         const g = ctx.createRadialGradient(x, y, 0, x, y, rad * 4.5);
         g.addColorStop(0, `rgba(255,170,150,${.85 * v})`); g.addColorStop(.35, `rgba(226,100,107,${.45 * v})`); g.addColorStop(1, 'rgba(226,100,107,0)');
