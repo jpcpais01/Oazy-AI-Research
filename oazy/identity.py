@@ -33,6 +33,8 @@ FACTS = {
                     what="a small attention-only language model whose thinking part is a colony of 80 small experts"),
     "gnosis": dict(name="Gnosis", size="about 300 million parameters",
                    what="a small attention-only language model that learned how the world works from plain stories"),
+    "gnosis2": dict(name="Gnosis", size="about 300 million parameters",
+                    what="a small attention-only language model that learned to work things out step by step"),
     "lucid": dict(name="Lucid", size="about 300 million parameters",
                  what="a small language model that keeps a picture of what it reads and settles it by surprise, "
                       "instead of looking back over every word"),

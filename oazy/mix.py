@@ -57,11 +57,13 @@ SADO_BEST_MIX = SADO_MIX.rsplit(";", 1)[0] + (";fwe:0.1599,dclm:0.05,cosmo:0.11,
 MIXES = {"default": DEFAULT_MIX, "v1": DEFAULT_MIX, "tagus": TAGUS_MIX, "bundle": TAGUS_MIX, "sado": SADO_MIX, "sado-best": SADO_BEST_MIX}
 SOURCES = {"fwe": "", "dclm": "dclm", "chat": "chat",          # name -> sub-folder of the data folder
            "cosmo": "cosmo", "wiki": "wiki", "math": "math", "code": "code", "books": "books", "best": "best",
-           "faith": "faith", "religion": "religion", "creed": "creed", "world": "world", "field1": "field1"}
-WORLD_SOURCES = ("world", "field1")       # the world's text: Emerald's old practice text, or Opal's Field1 (oazy/field1/)
+           "faith": "faith", "religion": "religion", "creed": "creed", "world": "world", "field1": "field1",
+           "proc": "proc", "work": "field1work", "think": "think"}      # Opal2's new parts (oazy/opal2.py)
+WORLD_SOURCES = ("world", "field1", "work")       # the world's text: Emerald's old practice text, or Opal's Field1 (oazy/field1/)
 PREPARE = {"faith": "python3 -m oazy.faith build", "religion": "python3 -m oazy.religion fetch, then build",
            "creed": "python3 -m oazy.religion creed", "world": "python3 -m oazy.emerald build",
-           "field1": "python3 -m oazy.opal build"}     # how a source that is not made by this file is made
+           "field1": "python3 -m oazy.opal build", "proc": "python3 -m oazy.opal2 build --part proc",
+           "work": "python3 -m oazy.opal2 build --part work", "think": "python3 -m oazy.think --tokens 400e6 (a GPU)"}     # how a source that is not made by this file is made
 
 
 def with_cooldown(mix: str, start: float) -> str:
@@ -141,6 +143,39 @@ def opal_mix(plan=OPAL_PLAN) -> str:
     return emerald_mix(plan, OPAL_TEXT_MIX, name="field1")
 
 
+# Opal2 (oazy/opal2.py, Nov 11): Opal taught to think. The logic warm-up alone for the first 0.2% of the run, then
+# a pinch of it until 10%; text that shows its thinking 12%, Field1 worked out 8%, Field1 7%, our text the rest (in
+# Opal's own proportions, its cool-down text from 0.8, moved to where the learning rate falls by the trainer). The
+# religious text keeps its exact shares (2% in all).
+OPAL2_PARTS = {"think": 0.12, "work": 0.08, "field1": 0.07}
+OPAL2_WARM, OPAL2_PINCH, OPAL2_PINCH_UNTIL, OPAL2_PROC = 0.002, 0.005, 0.10, "proc"
+
+
+def opal2_mix(base: str = OPAL_TEXT_MIX) -> str:
+    phases = [(float(p.rsplit("@", 1)[1]), {k: float(v) for k, v in (x.split(":") for x in p.rsplit("@", 1)[0].split(","))})
+              for p in base.split(";")]
+    marks = sorted({a for a, _ in phases} | {OPAL2_WARM, OPAL2_PINCH_UNTIL})
+    out = [f"{OPAL2_PROC}:1@0"]
+    for t in marks:
+        if t < OPAL2_WARM:
+            continue
+        text = [w for a, w in phases if a <= t][-1]
+        extra = dict(OPAL2_PARTS)
+        if t < OPAL2_PINCH_UNTIL:
+            extra[OPAL2_PROC] = OPAL2_PINCH
+        keep = {k: v for k, v in text.items() if k in ("religion", "faith", "creed")}   # João's 2%: kept exact
+        share = 1 - sum(extra.values()) - sum(keep.values())
+        tot = sum(v for k, v in text.items() if k not in keep)
+        w = {k: v / tot * share for k, v in text.items() if k not in keep}
+        w.update(keep)
+        w.update(extra)
+        out.append(",".join(f"{k}:{v:.6g}" for k, v in w.items()) + f"@{t:g}")
+    return ";".join(out)
+
+
+OPAL2_MIX = opal2_mix()
+
+
 def emerald_mix(w=EMERALD_SHARE, base: str = SADO_MIX, name: str = "world") -> str:
     """Emerald (oazy/emerald.py): Sado with the world's practice text. w = the average share (3w for the first 20%,
     then w/2 to the end, cool-down included: 0.10 -> 30% then 5%; 0 = plain Sado; like --world, oazy/worldmix.py),
@@ -161,6 +196,8 @@ def emerald_mix(w=EMERALD_SHARE, base: str = SADO_MIX, name: str = "world") -> s
 
 def resolve_mix(text):
     """A mix by name ("tagus", "v1", "opal", "opal:0.30:0.1,0.15", "emerald", "emerald:0.05", "emerald:flat:0.20") or written out."""
+    if text == "opal2":
+        return OPAL2_MIX
     if text and (text == "opal" or text.startswith("opal:")):
         spec = text.split(":", 1)[1] if ":" in text else OPAL_PLAN
         try:

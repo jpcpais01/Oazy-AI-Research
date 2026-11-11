@@ -297,6 +297,11 @@ def count(r):
             st.event("{p} <eats|ate|had eaten> {k}", p=p, k=w(k))
             have[id(p)] -= k
             log[id(p)].append(f"<eats|ate> {k}")
+        if len(st.events) > len(st.notes):          # worked reasoning only (oazy/field1/work.py): the counts now
+            if kind == "give":
+                st.note("so {p} <has|had> {a} [now|left] and {q} <has|had> {b}", p=p, q=q, a=w(have[id(p)]), b=w(have[id(q)]))
+            else:
+                st.note("so {p} <has|had> {a} [now|at this point]", p=p, a=w(have[id(p)]))
     def why(p):
         if not log[id(p)]:
             return st.t.fmt("{p} <has|had> {k} and nothing <changes|changed>", p=p, k=start[id(p)])

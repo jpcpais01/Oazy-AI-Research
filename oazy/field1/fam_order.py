@@ -116,6 +116,9 @@ def lines(r):
                 x = r.choice(order)
                 st.event(r.choice([t for t in JOIN_AFTER if ok(t)]).rstrip("@"), w=w, x=x)
                 order.insert(order.index(x) + 1, w)
+        if len(st.events) > len(st.notes) and order:        # worked reasoning only (oazy/field1/work.py): the line now
+            st.note("[the line <is|was> now|now the line <is|was>|so the line <is|was>] {L}, from the front",
+                    L=and_list([e.np if isinstance(e, T) else e.name for e in order]))
     pos = {id(e): i for i, e in enumerate(order)}
     names = lambda xs: and_list([e.np if isinstance(e, T) else e.name for e in xs])  # noqa: E731
     summary = r.choice(["from the front, the line <is|was> now {L}", "the order <is|was> now {L}, from front to back",
