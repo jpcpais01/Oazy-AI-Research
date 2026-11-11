@@ -234,8 +234,10 @@ def rl_update_test(dev):
     from gnosis2.model import Gnosis2, Gnosis2Config
     from gnosis2 import rl
     from oazy.field1 import work
+    import os
     tmp_ctx = tempfile.TemporaryDirectory()
     tmp = Path(tmp_ctx.name)
+    env = {k: os.environ.get(k) for k in ("OAZY_SMOL_TOKENIZER", "OAZY_GPT2_TIKTOKEN")}
     stand_ins(tmp)
     cfg = Gnosis2Config(**{**SMALL, "vocab_size": 49152})
     m = jiggle(Gnosis2(cfg))
@@ -260,6 +262,15 @@ def rl_update_test(dev):
           all(x["useful"] > 0 and "kl" in x and x["gnorm"] > 0 for x in steps) and moved > 0,
           f"useful {steps[0]['useful']:.0%}, KL {steps[-1]['kl']:.2e}, largest weight change {moved:.1e}")
     tmp_ctx.cleanup()
+    for k, v in env.items():                # the stand-ins lived in this test's folder: forget them
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+    from oazy import tok
+    for f in vars(tok).values():
+        if hasattr(f, "cache_clear"):
+            f.cache_clear()
 
 
 def gpu_tests(dev):
