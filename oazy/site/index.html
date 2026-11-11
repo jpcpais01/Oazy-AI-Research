@@ -36,7 +36,25 @@
 }
 .nav { color: var(--ink); }
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; scrollbar-width: none; }
+html::-webkit-scrollbar, body::-webkit-scrollbar { display: none; width: 0; height: 0; }
+
+/* floating scrollbar: a thin glass pill that wakes while you scroll or hover the edge */
+.rail { position: fixed; top: 50%; right: 10px; height: min(62vh, 520px); width: 14px; transform: translateY(-50%); z-index: 11;
+  display: flex; justify-content: center; opacity: .0; transition: opacity .6s ease; touch-action: none; }
+.rail::before { content: ""; position: absolute; top: 0; bottom: 0; width: 2px; border-radius: 2px; background: rgba(27,33,71,.10); transition: background .5s; }
+.rail.on, .rail:hover, .rail.drag { opacity: 1; }
+.rail.idle { opacity: .45; }
+.rail .thumb { position: absolute; left: 50%; width: 6px; margin-left: -3px; border-radius: 6px; cursor: grab;
+  background: linear-gradient(180deg, rgba(255,255,255,.95), rgba(196,204,245,.85));
+  box-shadow: 0 0 0 1px rgba(255,255,255,.7), -1px 0 0 rgba(255,60,120,.25), 1px 0 0 rgba(40,190,255,.28), 0 4px 14px rgba(60,70,150,.28);
+  transition: width .3s, margin .3s, background .5s, box-shadow .5s; }
+.rail:hover .thumb, .rail.drag .thumb { width: 8px; margin-left: -4px; }
+.rail.drag .thumb { cursor: grabbing; }
+.rail.dark::before { background: rgba(255,255,255,.10); }
+.rail.dark .thumb { background: linear-gradient(180deg, rgba(255,255,255,.9), rgba(183,178,255,.7));
+  box-shadow: 0 0 0 1px rgba(255,255,255,.25), -1px 0 0 rgba(255,60,120,.3), 1px 0 0 rgba(40,190,255,.3), 0 0 16px rgba(170,150,255,.45); }
+@media (pointer: coarse) { .rail { right: 4px; width: 10px; pointer-events: none; } .rail .thumb { width: 4px; margin-left: -2px; } }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 body {
   margin: 0; color: var(--ink); font: 300 17px/1.6 var(--sans);
@@ -93,7 +111,10 @@ p { margin: 0; color: var(--ink-2); text-wrap: pretty; }
 .nav {
   position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 10;
   display: flex; align-items: center; gap: 6px; padding: 6px 8px 6px 14px; border-radius: 999px;
-  width: max-content; max-width: calc(100vw - 24px); transition: color .5s;
+  width: max-content; max-width: calc(100vw - 24px);
+  transition: color .5s, transform .55s cubic-bezier(.2,.8,.2,1), opacity .4s ease;
+}
+.nav.away { transform: translate(-50%, calc(-100% - 24px)); opacity: 0; pointer-events: none;
 }
 .nav .brand { display: flex; align-items: center; gap: 8px; text-decoration: none; margin-right: 10px; }
 .nav .brand img { width: 22px; height: 22px; }
@@ -260,6 +281,7 @@ footer a { text-decoration: none; color: var(--ink-2); }
 </head>
 <body>
 <canvas id="sky" aria-hidden="true"></canvas>
+<div class="rail" id="rail" aria-hidden="true"><div class="thumb" id="thumb"></div></div>
 <div id="fallback" aria-hidden="true" hidden></div>
 
 <header>
@@ -785,10 +807,56 @@ function tick(now) {
   draw(S, T, rip);
   // nav tone
   const dark = tone === 'dark';
-  nav.classList.toggle('dark', dark);
+  nav.classList.toggle('dark', dark); rail.classList.toggle('dark', dark);
   if (dark !== tick.dark) { tick.dark = dark; theme.content = dark ? '#0b0c22' : '#cddbf6'; }
   if (!reduce) requestAnimationFrame(tick);
 }
+
+/* ---------- nav: hides on the way down, returns when you scroll up a little ---------- */
+let lastY = scrollY, upRun = 0;
+function navScroll() {
+  const y = scrollY, dy = y - lastY; lastY = y;
+  if (y < 80) { nav.classList.remove('away'); upRun = 0; return; }
+  if (dy > 0) { upRun = 0; if (y > 140 && !nav.contains(document.activeElement)) nav.classList.add('away'); }
+  else if (dy < 0) { upRun -= dy; if (upRun > 36) nav.classList.remove('away'); }
+}
+addEventListener('scroll', navScroll, { passive: true });
+nav.addEventListener('focusin', () => nav.classList.remove('away'));
+document.querySelectorAll('a[href^="#"]').forEach(a => a.addEventListener('click', () => setTimeout(() => { lastY = scrollY; }, 0)));
+
+/* ---------- floating scrollbar ---------- */
+const rail = document.getElementById('rail'), thumb = document.getElementById('thumb');
+let railT = 0, thumbH = 40;
+function railSize() {
+  const doc = document.documentElement.scrollHeight, vh = innerHeight, rh = rail.clientHeight;
+  thumbH = Math.max(36, rh * vh / Math.max(doc, vh)); thumb.style.height = thumbH + 'px'; railPos();
+}
+function railPos() {
+  const max = document.documentElement.scrollHeight - innerHeight, rh = rail.clientHeight;
+  thumb.style.transform = `translateY(${(max > 0 ? scrollY / max : 0) * (rh - thumbH)}px)`;
+}
+function wake() {
+  rail.classList.add('on'); rail.classList.remove('idle'); clearTimeout(railT);
+  railT = setTimeout(() => { rail.classList.remove('on'); if (!rail.classList.contains('drag')) rail.classList.add('idle'); }, 1100);
+}
+addEventListener('scroll', () => { railPos(); wake(); }, { passive: true });
+addEventListener('resize', railSize);
+let dragY = null, dragS = 0;
+thumb.addEventListener('pointerdown', e => { dragY = e.clientY; dragS = scrollY; rail.classList.add('drag'); thumb.setPointerCapture(e.pointerId); e.preventDefault(); });
+thumb.addEventListener('pointermove', e => {
+  if (dragY === null) return;
+  const max = document.documentElement.scrollHeight - innerHeight, span = rail.clientHeight - thumbH;
+  window.scrollTo({ top: dragS + (e.clientY - dragY) / span * max, behavior: 'instant' });
+});
+const endDrag = () => { dragY = null; rail.classList.remove('drag'); wake(); };
+thumb.addEventListener('pointerup', endDrag); thumb.addEventListener('pointercancel', endDrag);
+rail.addEventListener('pointerdown', e => {
+  if (e.target === thumb) return;
+  const r = rail.getBoundingClientRect(), max = document.documentElement.scrollHeight - innerHeight;
+  window.scrollTo({ top: clamp((e.clientY - r.top - thumbH / 2) / (r.height - thumbH)) * max, behavior: reduce ? 'instant' : 'smooth' });
+});
+addEventListener('load', railSize); if (document.fonts) document.fonts.ready.then(railSize);
+railSize(); rail.classList.add('idle');
 
 /* ---------- reveal on view ---------- */
 const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { threshold: .18, rootMargin: '0px 0px -6% 0px' });
