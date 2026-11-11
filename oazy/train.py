@@ -1522,6 +1522,19 @@ def main():
                     + f" ({r['n']} episodes per exam set)", flush=True)
             except Exception as e:          # a new test must never stop a run
                 say(f"[world] exam skipped ({type(e).__name__}: {str(e)[:120]})", flush=True)
+            try:
+                # Real World 2 (oazy/realworld2.py): the same Real World and Pro scenes, each choice in its natural
+                # forms ("chest" / "the chest"), Pro's queues with a vehicle per person
+                from . import realworld2
+                big = p["evals_quick"] >= 500
+                r2 = realworld2.exam(model, device, n=(100 if big else 2) if final else (20 if big else 1))
+                run.log("metrics.jsonl", {"kind": "realworld2", **base, **{k: v for k, v in r2.items() if k != "rows"},
+                                          "full": final})
+                latest["world_real2"], latest["world_pro2"] = r2["real2"], r2["pro2"]
+                say(f"[world] Real World 2 {r2['real2'] * 100:.1f}%, Pro 2 {r2['pro2'] * 100:.1f}% (fair forms, guessing ~23%)",
+                    flush=True)
+            except Exception as e:          # a new test must never stop a run
+                say(f"[world] Real World 2 skipped ({type(e).__name__}: {str(e)[:120]})", flush=True)
             nxt["world"] += p["evals_every"]
         if final or tokens >= nxt["probe"]:
             r = probes.memory_report(model, pwin, device, batch=min(micro, 16))
