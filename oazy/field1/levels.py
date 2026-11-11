@@ -300,16 +300,28 @@ def mark(model, its, device, budget=16384, pad_ok=False, say=print):
 
 
 # ---------------------------------------------------------------- the table
-def _row(xs):
-    """Score, chance (1 / choices), and the floor: chance, or what always giving the same answer would score when the
-    answers lean one way (in "rules", "no" is right more often than "yes"), whichever is higher."""
+def _guesses(xs, least=20):
+    """The family's commonest answer for each set of choices that keeps coming back (yes / no, ...): what a model that
+    always says the same thing would say. Found over the whole family, not one level: a guesser does not know the level
+    (in "sets", the "all" scenes are always "yes", but a guesser of "yes" is wrong on all the "none" ones)."""
+    by = {}
+    for x in xs:
+        by.setdefault(tuple(sorted(x["choices"])), []).append(x["choices"][x["right"]])
+    return {k: max(set(v), key=v.count) for k, v in by.items() if len(v) >= least}
+
+
+def _row(xs, guess=None):
+    """Score, chance (1 / choices), and the floor: chance, or what always giving the family's commonest answer would
+    score when the answers lean one way (in "rules", "no" is right more often than "yes"), whichever is higher.
+    guess={} (a level's row): the floor is chance; the family's own row has already shown the model is not just
+    saying the same thing every time (or else every level of it counts as guessing, see table)."""
     n = len(xs)
     acc = sum(x["ok"] for x in xs) / n
     ch = sum(1 / len(x["choices"]) for x in xs) / n
-    same = {}
-    for x in xs:
-        same[x["choices"][x["right"]]] = same.get(x["choices"][x["right"]], 0) + 1
-    floor = max(ch, max(same.values()) / n)
+    guess = _guesses(xs) if guess is None else guess
+    const = sum((x["choices"][x["right"]] == guess[k]) if (k := tuple(sorted(x["choices"]))) in guess
+                else 1 / len(x["choices"]) for x in xs) / n
+    floor = max(ch, const)
     se = math.sqrt(sum((1 / len(x["choices"])) * (1 - 1 / len(x["choices"])) for x in xs)) / n
     if floor > ch:
         se = math.sqrt(floor * (1 - floor) / n)
@@ -324,6 +336,12 @@ def table(its, min_n=12):
     for f in dict.fromkeys(it["family"] for it in its):
         xs = [it for it in its if it["family"] == f]
         fam = {"all": _row(xs), "knobs": {}, "kinds": {}}
+        dull = fam["all"]["at_chance"]                 # the whole family at its floor: so is every level of it
+
+        def lv(g):
+            r = _row(g, {})
+            r["at_chance"] = bool(r["at_chance"] or dull)
+            return r
         for k in sorted({k for it in xs for k in it["knobs"] if not k.startswith("_")}):
             vals = {}
             for it in xs:
@@ -331,12 +349,12 @@ def table(its, min_n=12):
                     vals.setdefault(it["knobs"][k], []).append(it)
             if len(vals) < 2 and k != "sub":
                 continue
-            fam["knobs"][k] = {v: _row(g) for v, g in sorted(vals.items(), key=lambda kv: str(kv[0]).zfill(4))
+            fam["knobs"][k] = {v: lv(g) for v, g in sorted(vals.items(), key=lambda kv: str(kv[0]).zfill(4))
                                if len(g) >= min_n}
         for kind in sorted({it["kind"] for it in xs}):
             g = [it for it in xs if it["kind"] == kind]
             if len(g) >= min_n:
-                fam["kinds"][kind] = _row(g)
+                fam["kinds"][kind] = lv(g)
         out[f] = fam
     return out
 
