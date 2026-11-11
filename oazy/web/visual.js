@@ -433,6 +433,31 @@ function drawRace(set) {
   lineChart("cArc", { series: [...base("arc"), ...R.map((r) => ({ name: `${r.name} · Challenge`, color: colorOf(r.name), pts: sOf(r, "arcc"), dash: true, tag: "Challenge" }))],
     turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.01,
     refs: [{ y: 0.25, label: "guessing" }], empty: R.length ? "No ARC checks yet" : empty, label: "ARC" });
+  // Field1's level table (oazy/field1/levels.py): fresh Field1 scenes, every family weighing the same; the floor is
+  // guessing (or always the commonest answer), the same for every run because the scenes are the same
+  const f1 = base("field1"), f1floor = f1.flatMap((s) => s.pts.map((p) => p[3])).filter((v) => v != null);
+  lineChart("cField1", { series: f1, turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.02,
+    refs: [...(f1floor.length ? [{ y: f1floor[f1floor.length - 1], label: "guessing" }] : []), ...yardsticks("field1")],
+    empty: R.length ? "No Field1 checks yet (Opal runs take them; older runs: python3 -m oazy.field1.levels --watch <run>)" : empty, label: "Field1" });
+  drawF1Fam(R, sOf);
+}
+
+// the newest Field1 check, family by family: score against the floor, and the levels still at guessing
+function drawF1Fam(R, sOf) {
+  const box = $("f1Fam");
+  if (!box) return;
+  const r = [...R.filter(isLive), ...R].find((x) => sOf(x, "field1_fam") && sOf(x, "field1_fam").families);
+  if (!r) { box.innerHTML = `<div class="empty">No Field1 checks in these runs yet</div>`; return; }
+  const F = sOf(r, "field1_fam"), fams = Object.entries(F.families);
+  const rows = fams.map(([f, x]) => {
+    const lv = (F.at_chance[f] || []).filter((s) => !s.startsWith("sub "));
+    const w = Math.max(0, Math.min(1, x.acc)), fl = Math.max(0, Math.min(1, x.floor));
+    return `<div class="f1r${x.at_chance ? " off" : ""}"><span class="f1n">${esc(f)}</span>
+      <span class="f1bar"><i style="width:${(w * 100).toFixed(1)}%;background:${x.at_chance ? "" : colorOf(r.name)}"></i><b style="left:${(fl * 100).toFixed(1)}%"></b></span>
+      <span class="f1v">${pct(x.acc, 0)} <small>vs ${pct(x.floor, 0)}</small></span>
+      ${lv.length ? `<span class="f1l">guessing at: ${esc(lv.slice(0, 4).join(" · "))}${lv.length > 4 ? " …" : ""}</span>` : ""}</div>`;
+  }).join("");
+  box.innerHTML = `<div class="f1who" style="--c:${colorOf(r.name)}"><i></i>${esc(r.name)} · ${fmtM(F.tokens)} tokens</div>${rows}`;
 }
 
 // ---------------------------------------------------------------- every run, as a tile

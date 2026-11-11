@@ -23,7 +23,14 @@ digits ...) and what each question asks (core.ask: its kind and its own knobs, e
 people compared). The table gives, per family, the score against chance for every value of every knob, and for every
 kind of question. A row is "at chance" when the score is within two standard errors of guessing.
 
-What it writes: <runs>/<run>/field1_levels.json (every question's result) and field1_levels.md (the table).
+What it writes: <runs>/<run>/field1_levels.json (every question's result) and field1_levels.md (the table), and a
+"field1" line in the run's metrics.jsonl, which the dashboard draws (the Field1 chart and the by-family card).
+
+During a run. Runs started since Nov 11 on Opal take a short version of it (60 scenes per family) on the tests'
+schedule, every 200M tokens. A run that started before keeps one checkpoint only (overwritten every few minutes), so its
+past cannot be examined; the watcher examines each new checkpoint from now on, every 200M tokens, beside the training:
+
+    python3 -m oazy.field1.levels --watch gnosis-opal-10b             # leave it in its own tmux window
 """
 from __future__ import annotations
 
@@ -379,6 +386,107 @@ def show_text(tab, say=print):
                        f"lift {r['lift'] * 100:+4.0f}%  n {r['n']:4d}" + ("   at chance" if r["at_chance"] else ""), col))
 
 
+# ---------------------------------------------------------------- the short version, for charts
+def record(its, tab, n, shots) -> dict:
+    """A metrics line from a marking: every family weighs the same; at_chance lists each family's levels at chance."""
+    fams = {f: {"acc": round(t["all"]["acc"], 4), "floor": round(t["all"]["floor"], 4), "lift": round(t["all"]["lift"], 4),
+                "at_chance": bool(t["all"]["at_chance"]), "n": t["all"]["n"]} for f, t in tab.items()}
+    flat = {f: [f"{k} {v}" for k, vals in t["knobs"].items() for v, r in vals.items() if r["at_chance"]] +
+               [f"asks {v}" for v, r in t["kinds"].items() if r["at_chance"]] for f, t in tab.items()}
+    k = max(1, len(fams))
+    return {"kind": "field1", "score": sum(x["acc"] for x in fams.values()) / k,
+            "floor": sum(x["floor"] for x in fams.values()) / k, "lift": sum(x["lift"] for x in fams.values()) / k,
+            "families": fams, "at_chance": flat, "n": n, "shots": shots, "questions": len(its)}
+
+
+def quick(model, device, n=60, shots=2, pad_ok=False, families=None, budget=16384):
+    """The table for a model in hand (the trainer's check): -> (metrics record, table). Leaves the model as it was."""
+    from .. import tok
+    from . import FAMILIES
+    was = model.training
+    model.eval()
+    try:
+        enc = tok.for_model(model)
+        max_len = int(getattr(model.cfg, "max_len", 2048) or 2048)
+        its, _ = items(list(families or FAMILIES), n, shots, enc, max_len)
+        mark(model, its, device, budget=budget, pad_ok=pad_ok, say=None)
+        tab = table(its, min_n=max(4, n // 8))
+        return record(its, tab, n, shots), tab
+    finally:
+        if was:
+            model.train()
+
+
+def _last_logged(d: Path):
+    """The tokens of the run's newest field1 line (None: none yet)."""
+    last = None
+    try:
+        for line in open(d / "metrics.jsonl"):
+            if '"field1"' in line:
+                try:
+                    x = json.loads(line)
+                    if x.get("kind") == "field1":
+                        last = x.get("tokens")
+                except ValueError:
+                    pass
+    except OSError:
+        pass
+    return last
+
+
+def _log(d: Path, rec):
+    with open(d / "metrics.jsonl", "a") as f:     # one short write: safe beside the trainer's own lines
+        f.write(json.dumps(rec) + "\n")
+
+
+def watch(name, runs: Path, device, every=200e6, n=60, shots=2, poll=60, budget=16384, say=print):
+    """Examine each new checkpoint of a run as it trains (every `every` tokens), and log it for the dashboard."""
+    import torch
+    from ..data import run_dir
+    from ..train import load_model
+    d = run_dir(runs, name)
+    ck = d / "ckpt.pt"
+    last, seen = _last_logged(d), None
+    say(f"watching {ck}: Field1 levels every {every / 1e6:.0f}M tokens ({n} scenes per family)"
+        + (f", last check at {last / 1e9:.2f}B" if last else ""))
+    while True:
+        try:
+            mt = ck.stat().st_mtime
+        except OSError:
+            mt = None
+        try:
+            st = json.loads((d / "status.json").read_text())
+        except Exception:
+            st = {}
+        done = st.get("state") == "done"
+        near = st.get("tokens")                     # the run's tokens now: no need to open a checkpoint too early
+        due = last is None or done or near is None or near - last >= every
+        if mt is not None and mt != seen and due:
+            seen = mt
+            try:
+                model, meta = load_model(ck, device, mmap=True)
+                tokens = meta.get("tokens") or 0
+                if last is None or tokens - last >= every or (done and tokens > last):
+                    t0 = time.time()
+                    rec, tab = quick(model, device, n, shots, pad_ok=False, budget=budget)
+                    rec.update(step=meta.get("step"), tokens=tokens, elapsed=meta.get("elapsed"), full=done,
+                               by="watcher")
+                    _log(d, rec)
+                    last = tokens
+                    worst = [f for f, x in rec["families"].items() if x["at_chance"]]
+                    say(f"[field1] {tokens / 1e9:.2f}B: {rec['score'] * 100:.1f}% (floor {rec['floor'] * 100:.1f}%), "
+                        f"at chance: {', '.join(worst) or 'none'} ({time.time() - t0:.0f} s)", flush=True)
+                del model
+            except Exception as e:                      # a checkpoint half written, a GPU short of memory: next time
+                say(f"[field1] skipped this checkpoint ({type(e).__name__}: {str(e)[:160]})", flush=True)
+            if device.type == "cuda":
+                torch.cuda.empty_cache()
+        if done and last is not None and mt == seen:
+            say("the run is finished: done watching")
+            return
+        time.sleep(poll)
+
+
 # ---------------------------------------------------------------- python3 -m oazy.field1.levels
 def run(name, runs: Path, device, n=200, shots=2, families=None, budget=16384, say=print):
     from .. import tok
@@ -409,6 +517,7 @@ def run(name, runs: Path, device, n=200, shots=2, families=None, budget=16384, s
     say(f"  {len(its):,} questions to mark (longest {max(len(x['ctx']) for x in its)} pieces, model reads {max_len})")
     mark(model, its, device, budget=budget, pad_ok=pad_ok, say=say)
     tab = table(its)
+    rec = record(its, tab, n, shots)
     meta = {"run": name, "n": n, "shots": shots, "questions": len(its), "seconds": time.time() - t0,
             "families": fams, "made": time.strftime("%Y-%m-%d %H:%M")}
     d.mkdir(parents=True, exist_ok=True)
@@ -417,9 +526,22 @@ def run(name, runs: Path, device, n=200, shots=2, families=None, budget=16384, s
     keep = [{k: v for k, v in it.items() if k not in ("ctx", "cands")} for it in its]
     (d / "field1_levels.json").write_text(json.dumps({**meta, "table": tab, "unmarked": unmarked, "items": keep}, default=str))
     (d / "field1_levels.md").write_text(markdown(name, tab, unmarked, meta))
+    if name in REFS:                             # a yardstick: its line on the dashboard's Field1 chart
+        from ..compare import SMOL_TOKENS
+        _log(d, {**rec, "step": 0, "tokens": SMOL_TOKENS.get(name, 0), "elapsed": 0, "full": True})
+    else:
+        _log(d, {**rec, "step": None, "tokens": _ckpt_tokens(d), "elapsed": None, "full": True, "by": "levels"})
     show_text(tab, say)
     say(f"\nwritten {d / 'field1_levels.md'} ({time.time() - t0:.0f} s)")
     return tab
+
+
+def _ckpt_tokens(d: Path):
+    try:
+        st = json.loads((d / "status.json").read_text())
+        return st.get("tokens")
+    except Exception:
+        return None
 
 
 def show(family, n=3):
@@ -442,6 +564,8 @@ def main(argv=None):
     ap.add_argument("--family", nargs="+", default=None, help="only these families")
     ap.add_argument("--device", default=None)
     ap.add_argument("--budget", type=int, default=16384, help="pieces read at once (lower it if the GPU is short of memory)")
+    ap.add_argument("--watch", default=None, metavar="RUN", help="examine each new checkpoint of a run as it trains")
+    ap.add_argument("--every", type=float, default=200e6, help="--watch: tokens between checks")
     ap.add_argument("--show", default=None, metavar="FAMILY", help="print a few scenes, their questions and choices")
     a = ap.parse_args(argv)
     if a.show:
@@ -452,6 +576,9 @@ def main(argv=None):
     from ..data import few_cpu_threads
     few_cpu_threads(dev)
     runs = Path(a.runs or default_dir("runs"))
+    if a.watch:
+        watch(a.watch, runs, dev, a.every, n=a.n if a.n != 200 else 60, shots=a.shots, budget=a.budget)
+        return
     for rn in a.run:
         run(rn, runs, dev, a.n, a.shots, a.family, a.budget)
 
