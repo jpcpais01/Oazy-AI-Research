@@ -10,7 +10,7 @@ million tokens:
     loss      training loss, averaged over the stretch's log lines (the text, not the world's own loss)
     val       held-out loss, the last check in the stretch
     HS        HellaSwag per letter (quick checks; the full one at the end)
-    PIQA, ARC (ARC-Easy), LogT   the quick tests, last in the stretch
+    PIQA, ARC (ARC-Easy) per letter like HS (what SmolLM2 publishes), LogT; last in the stretch
     secret    world exams never practised; prac = practised (only at the end of a run)
     uneven    busiest expert / average (1.00 = perfectly even), averaged; drop = share of words no expert took
     lr        learning rate at the end of the stretch; ctx = context length; world = world text share
@@ -89,7 +89,9 @@ def values(r: dict) -> dict:
     elif k == "hellaswag":
         out["HS"] = _num(r.get("acc_char"))
     elif k == "evals":
-        out["PIQA"], out["ARC"] = _num(r.get("piqa")), _num(r.get("arc_easy"))
+        # per letter, like HS and like SmolLM2's published numbers (lm-eval acc_norm); per token if a line lacks it
+        out["PIQA"] = _num(r.get("piqa_char", r.get("piqa")))
+        out["ARC"] = _num(r.get("arc_easy_char", r.get("arc_easy")))
     elif k == "logres":
         out["LogT"] = _num(r.get("acc_char"))
     elif k == "world":
