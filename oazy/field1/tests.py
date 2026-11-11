@@ -7,7 +7,8 @@
      which way a turn goes) is read back by a small reader written separately from the templates, and must say the
      same thing as the world
   4. answers are not lopsided (yes and no both common), questions are not repeated in an episode
-  5. Opal: the mix gives Field1 its share; a tiny build writes pieces a reader can read; sado is renamed opal with a link
+  5. the level table (levels.py): every scene notes its level, every question its kind, and its choices hold the answer
+  6. Opal: the mix gives Field1 its share; a tiny build writes pieces a reader can read; sado is renamed opal with a link
 """
 from __future__ import annotations
 
@@ -258,9 +259,36 @@ def t_opal():
               str({k: round(v, 3) for k, v in w.items()}))
 
 
+def t_levels():
+    from .. import field1 as F
+    from . import levels as L
+    no_kind, no_notes, not_in, marked, total = [], [], [], 0, 0
+    for f in F.FAMILIES:
+        for i in range(60):
+            sc = L.scene(f, i)
+            if not sc["knobs"]:
+                no_notes.append(f)
+            for q, a, kind, qk in sc["qas"]:
+                total += 1
+                if not kind:
+                    no_kind.append(f)
+                ch = L.choices(f, q, a, sc["story"], knobs=qk)
+                if ch is not None:
+                    marked += 1
+                    if a not in ch or len(set(ch)) < 2:
+                        not_in.append((f, q, a, ch))
+    check("every family notes its level and every question its kind", not no_kind and not no_notes,
+          str(sorted(set(no_kind + no_notes))))
+    check("every marked question has its answer among 2+ choices", not not_in, str(not_in[:2])[:300])
+    check("almost every question can be marked", marked / total > 0.95, f"{marked} of {total}")
+    sc = L.scene("lines", 0)
+    st, _ = F.GEN["lines"](__import__("random").Random(f"field1|{F.VERSION}|lines|{('levels', 0)}|0"))
+    check("the level table's scenes are the builder's scenes (same dice)", sc["story"] == st.tell())
+
+
 def main():
     print("Field1 self-tests")
-    for t in (t_families, t_walls, t_meaning, t_answers, t_opal):
+    for t in (t_families, t_walls, t_meaning, t_answers, t_levels, t_opal):
         print(f"\n{t.__name__[2:]}")
         try:
             t()

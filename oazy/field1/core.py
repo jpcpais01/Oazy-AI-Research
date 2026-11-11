@@ -222,6 +222,29 @@ def sents(*parts) -> str:
     return " ".join(end(cap(p.strip())) for p in parts if p and p.strip())
 
 
+# ---------------------------------------------------------------- the scene's level, for the level table
+_NOTES = {}
+
+
+def note(**knobs):
+    """How hard the scene being made is ({"people": 7, "moves": 2}), read by oazy/field1/levels.py. Throws no dice and
+    writes nothing: the text is the same with or without it."""
+    _NOTES.update(knobs)
+
+
+def take_notes() -> dict:
+    out = dict(_NOTES)
+    _NOTES.clear()
+    return out
+
+
+def ask(qa: QA, kind: str, **knobs) -> QA:
+    """Mark a question's kind (and its own knobs) for the level table; the text is unchanged."""
+    qa.kind = kind
+    qa.knobs.update(knobs)
+    return qa
+
+
 # ---------------------------------------------------------------- a story: facts, details and events, then told
 @dataclass
 class QA:
@@ -229,6 +252,8 @@ class QA:
     a: str                      # the short answer ("Ana", "no", "3", "the attic")
     why: str = ""               # a short spoken reason, true by construction ("Bo is behind Cy, and ...")
     fact: str = ""              # the answer said as a statement ("Ana is at the front.")
+    kind: str = ""              # what sort of question (for the level table, oazy/field1/levels.py; never written)
+    knobs: dict = field(default_factory=dict)   # how hard this one question is (e.g. {"hops": 3}); never written
 
 
 @dataclass

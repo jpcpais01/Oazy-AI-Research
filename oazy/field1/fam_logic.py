@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import itertools
 
-from .core import (QA, Story, T, COLOURS, ROOMS, SMALL, and_list, num_word, people, things)
+from .core import (QA, Story, T, COLOURS, note, ask as _ask, ROOMS, SMALL, and_list, num_word, people, things)
 
 # ---------------------------------------------------------------- switches: devices that follow switches
 DEVICES = "lamp fan bell pump motor heater radio alarm siren horn clock buzzer heater light".split()
@@ -98,8 +98,10 @@ def switches(r):
             qa = QA(st.t.fmt("<did|did> {d} [change|go from on to off or from off to on]?", d=d), "yes" if ch else "no",
                     st.t.fmt("{d} <was|was> " + ("on" if before[id(d)] else "off") + " at first and <is|was> " +
                              ("on" if now[id(d)] else "off") + " [now|at the end]", d=d), "")
+        _ask(qa, q, depth=depth[id(d)])
         if all(qa.q != o.q for o in qas):
             qas.append(qa)
+    note(switches=len(sw), machines=len(devs), flips=len(flips))
     return st, qas
 
 
@@ -142,24 +144,27 @@ def rules(r):
         st.event(when + ", " + chain[0][1])
         st.add_outro(r.choice(["nothing else <happens|happened> [that day|]", "that <is|was> all that started it"]))
         i = r.randrange(1, k)
-        qas = [QA(cap_q(chain[i][2]) + "?", "yes",
-                  chain[0][1] + "".join(f", so {y[1]}" for y in chain[1:i + 1]), ""),
-               QA(cap_q(other[1][2]) + "?", "no", f"that would only happen if {other[0][0]}, and that did not happen", "")]
+        qas = [_ask(QA(cap_q(chain[i][2]) + "?", "yes",
+                      chain[0][1] + "".join(f", so {y[1]}" for y in chain[1:i + 1]), ""), "follows", hops=i),
+               _ask(QA(cap_q(other[1][2]) + "?", "no", f"that would only happen if {other[0][0]}, and that did not happen", ""), "unstarted")]
         r.shuffle(qas)
     elif told == "end_not":
         st.event(when + ", " + negate(chain[-1][1]))
         i = r.randrange(0, k - 1)
-        qas = [QA(cap_q(chain[i][2]) + "?", "no", f"if {chain[i][1]}, then {chain[-1][1]} as well, and that did not happen", "")]
+        qas = [_ask(QA(cap_q(chain[i][2]) + "?", "no", f"if {chain[i][1]}, then {chain[-1][1]} as well, and that did not happen", ""),
+                   "backwards_no", hops=k - 1 - i)]
     else:
         st.event(when + ", " + chain[-1][1])
         if extra:
-            qas = [QA(cap_q(chain[0][2]) + "?", "we can't tell", f"if {other[2][0]}, that happens too, so we can't be sure", "")]
+            qas = [_ask(QA(cap_q(chain[0][2]) + "?", "we can't tell", f"if {other[2][0]}, that happens too, so we can't be sure", ""),
+                       "cant_tell", hops=k - 1)]
         else:
-            qas = [QA(cap_q(chain[0][2]) + "?", "we can't tell",
-                      "nothing says that only " + chain[-2][0] + " can make that happen", "")] if r.random() < 0.3 else []
+            qas = [_ask(QA(cap_q(chain[0][2]) + "?", "we can't tell",
+                          "nothing says that only " + chain[-2][0] + " can make that happen", ""), "cant_tell", hops=k - 1)] if r.random() < 0.3 else []
             if not qas:
                 return rules(r)
     st.t.tense = "past"
+    note(links=k, told=told)
     return st, qas[:r.choice((1, 2))]
 
 
@@ -206,8 +211,10 @@ def sets(r):
         st.fact("all the " + g + " <are|were> in " + place)
         st.fact(r.choice(["everything in " + place + " <is|was> " + prop2, "whatever is in " + place + " <stays|stayed> " + prop2]))
         st.fact("{m} <is|was> one of the " + g, m=member)
-        qas = [QA(st.t.fmt("<is|was> {m} " + prop2 + "?", m=member), "yes",
-                  st.t.fmt("{m} <is|was> one of the " + g + ", they <are|were> all in " + place + ", and everything there <is|was> " + prop2, m=member), "")]
+        qas = [_ask(QA(st.t.fmt("<is|was> {m} " + prop2 + "?", m=member), "yes",
+                      st.t.fmt("{m} <is|was> one of the " + g + ", they <are|were> all in " + place + ", and everything there <is|was> " + prop2, m=member), ""),
+                   "chain")]
+        note(kind="chain")
         return st, qas
     st.fact({"all": "all the " + g + " <are|were> " + prop, "none": "none of the " + g + " <is|was> " + prop,
              "some": "some of the " + g + " <are|were> " + prop + ", and some <are|were> not"}[kind])
@@ -215,7 +222,8 @@ def sets(r):
     ans = {"all": "yes", "none": "no", "some": "we can't tell"}[kind]
     why = {"all": "all of them <are|were>, and {m} <is|was> one of them", "none": "none of them <is|was>, and {m} <is|was> one of them",
            "some": "only some of them <are|were>, and nothing says which"}[kind]
-    qas = [QA(st.t.fmt("<is|was> {m} " + prop + "?", m=member), ans, st.t.fmt(why, m=member), "")]
+    qas = [_ask(QA(st.t.fmt("<is|was> {m} " + prop + "?", m=member), ans, st.t.fmt(why, m=member), ""), kind)]
+    note(kind=kind)
     return st, qas
 
 
@@ -256,7 +264,8 @@ def _left(r):
     q = {"room": st.t.fmt("where <is|was> {x}?", x=it), "day": st.t.fmt("on which day <is|was> the party?"),
          "colour": st.t.fmt("what colour <is|was> the coat?")}[kind]
     st.connect = False
-    return st, [QA(q, left, st.t.fmt("every other choice <is|was> ruled out, so it <is|was> {k}", k=left), "")]
+    note(sub="left", options=len(opts))
+    return st, [_ask(QA(q, left, st.t.fmt("every other choice <is|was> ruled out, so it <is|was> {k}", k=left), ""), "left_" + kind)]
 
 
 GRID = [("pet", ["cat", "dog", "fish", "rabbit", "parrot", "hamster"], ("has", "have", "has a pet"), "the {v}"),
@@ -299,11 +308,12 @@ def _grid(r):
     st.keep_order = r.random() < 0.5
     qas = []
     for p in r.sample(ps, r.choice((1, 2))):
-        qas.append(QA(st.t.fmt("what <does|did> {p} " + v1 + "?", p=p),
-                      np.format(v=sol[id(p)]), "", ""))
+        qas.append(_ask(QA(st.t.fmt("what <does|did> {p} " + v1 + "?", p=p),
+                          np.format(v=sol[id(p)]), "", ""), "grid_what"))
     who_v = r.choice(vals)
     owner = next(p for p in ps if sol[id(p)] == who_v)
-    qas.append(QA("who " + v3 + " " + np.format(v=who_v) + "?", owner.name, "", ""))
+    qas.append(_ask(QA("who " + v3 + " " + np.format(v=who_v) + "?", owner.name, "", ""), "grid_who"))
+    note(sub="grid", clues=len(clue_list))
     return st, qas[:r.choice((1, 2, 3))]
 
 
@@ -346,7 +356,8 @@ def _column_sum(r):
     why = ("from the right: " + "; ".join(steps)) if worked else ""
     qa = QA(r.choice(["What is {a} plus {b}?", "What do {a} and {b} add up to?", "How much is {a} + {b}?", "{a} + {b} = ?"])
             .format(a=fmt_n(a), b=fmt_n(b)), fmt_n(s), why, f"{fmt_n(a)} + {fmt_n(b)} = {fmt_n(s)}")
-    return st, [qa]
+    note(sub="sum", digits=L, carries=sum("carry" in x for x in steps))
+    return st, [_ask(qa, "sum")]
 
 
 def _take(r):
@@ -357,7 +368,8 @@ def _take(r):
     noun = r.choice(["stickers", "pages", "steps", "beads", "pennies", "sweets", "seeds", "stamps"])
     st.fact("{p} <has|had> {a} " + noun, p=p, a=a)
     st.event(r.choice(["{p} <uses|used|had used> {b}", "{p} <gives|gave|had given> away {b}", "{b} of them <are|were|had been> lost"]), p=p, b=b)
-    return st, [QA(st.t.fmt("how many " + noun + " <are|were> left?"), st.t.num(a - b), f"{a} - {b} = {a - b}", "")]
+    note(sub="take", big=int(a > 20))
+    return st, [_ask(QA(st.t.fmt("how many " + noun + " <are|were> left?"), st.t.num(a - b), f"{a} - {b} = {a - b}", ""), "take")]
 
 
 def _money(r):
@@ -369,11 +381,12 @@ def _money(r):
     pay = price * n + r.randint(0, 10)
     st.fact(r.choice(["a {i} costs {c} coins", "{i}s <are|were> {c} coins each", "at the shop, one {i} <is|was> {c} coins"]), i=item, c=price)
     st.event(r.choice(["{p} <buys|bought|had bought> {n} {i}s", "{p} <gets|got|had got> {n} {i}s"]), p=p, n=n, i=item)
-    qas = [QA(st.t.fmt("how many coins <does|did> {p} pay?", p=p), str(price * n), f"{n} x {price} = {price * n}", "")]
+    qas = [_ask(QA(st.t.fmt("how many coins <does|did> {p} pay?", p=p), str(price * n), f"{n} x {price} = {price * n}", ""), "pay")]
+    note(sub="money")
     if r.random() < 0.5:
         st.event("{p} <pays|paid|had paid> with {m} coins", p=p, m=pay)
-        qas = [QA(st.t.fmt("how many coins <does|did> {p} get back?", p=p), str(pay - price * n),
-                  f"{n} x {price} = {price * n}, and {pay} - {price * n} = {pay - price * n}", "")]
+        qas = [_ask(QA(st.t.fmt("how many coins <does|did> {p} get back?", p=p), str(pay - price * n),
+                      f"{n} x {price} = {price * n}, and {pay} - {price * n} = {pay - price * n}", ""), "change")]
     return st, qas
 
 
@@ -382,8 +395,9 @@ def _times(r):
     st = Story(r, tense="pres")
     what = r.choice([("rows of chairs", "chairs"), ("boxes of eggs", "eggs"), ("bags of marbles", "marbles"), ("shelves of books", "books")])
     st.fact(f"there <are|were> {{a}} {what[0]}, with {{b}} {what[1]} in each", a=a, b=b)
-    return st, [QA(st.t.fmt(f"how many {what[1]} <are|were> there in all?"), str(a * b),
-                   f"{a} x {b} = {a * b}" if r.random() < 0.7 else f"{' + '.join([str(b)] * a)} = {a * b}", "")]
+    note(sub="times")
+    return st, [_ask(QA(st.t.fmt(f"how many {what[1]} <are|were> there in all?"), str(a * b),
+                       f"{a} x {b} = {a * b}" if r.random() < 0.7 else f"{' + '.join([str(b)] * a)} = {a * b}", ""), "times")]
 
 
 # ---------------------------------------------------------------- machines: a hidden rule, found from tries; patterns
@@ -434,9 +448,10 @@ def machines(r):
         st.event(r.choice(TRY_T), x=x, y=f(x), p=p)
     st.keep_order = True
     st.connect = False
-    return st, [QA(r.choice(["What comes out for {x}?", "What does {x} become?", "What would the machine say for {x}?",
+    note(sub=("digit, %d step%s" % (len(steps), "s" if len(steps) > 1 else "")) if small else kind, tries=len(ex))
+    return st, [_ask(QA(r.choice(["What comes out for {x}?", "What does {x} become?", "What would the machine say for {x}?",
                              "And if you put in {x}?"]).format(x=asks[0]), str(f(asks[0])),
-                   "the rule " + rule_words if r.random() < 0.6 else "", "")]
+                   "the rule " + rule_words if r.random() < 0.6 else "", ""), "rule")]
 
 
 def _run(steps, x):
@@ -472,5 +487,6 @@ def _pattern(r):
     st = Story(r, tense="pres")
     st.add_intro(r.choice(["here is a pattern: {s}", "look at these numbers: {s}", "a row of numbers: {s}", "the numbers go {s}"]),
                  s=", ".join(map(str, shown)))
-    return st, [QA(r.choice(["What comes after {l}?", "Which number comes after that?", "What is the following number?",
-                             "What number should come after {l}?"]).format(l=shown[-1]), str(ans), why, "")]
+    note(sub="pattern " + kind)
+    return st, [_ask(QA(r.choice(["What comes after {l}?", "Which number comes after that?", "What is the following number?",
+                                 "What number should come after {l}?"]).format(l=shown[-1]), str(ans), why, ""), "pattern")]
