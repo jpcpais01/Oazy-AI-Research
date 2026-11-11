@@ -203,7 +203,7 @@ function liveCard(r) {
     <span class="phase">${phaseOf(r)}</span>
     <div class="nums">${numTile("Held-out loss", s.val, fmtL, true)}
       ${numTile("HellaSwag", s.hs, (v) => pct(v), false, hsFull.length ? "final, all 10,042" : "")}
-      ${numTile("LogT", s.logt, (v) => pct(v), false)}
+      ${numTile("CommonsenseQA", s.csqa, (v) => pct(v), false)}
       ${numTile("World secret", s.world, (v) => pct(v), false)}</div>
     <div class="lc-ctl">${controls(r)}<span class="meta">${r.tok_s ? Math.round(r.tok_s / 1e3) + "k tok/s" : ""}${r.elapsed ? " · " + fmtDur(r.elapsed) + " in" : ""}</span></div>
   </article>`;
@@ -415,9 +415,9 @@ function drawRace(set) {
   const hs = base("hs"), hsVals = hs.flatMap((s) => s.pts.map((p) => p[1]));
   lineChart("cHs", { series: hs, turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.01, empty,
     refs: [{ y: HS_GPT2, label: "OpenAI GPT-2", always: hsVals.length && Math.max(...hsVals) > 0.27 }, { y: 0.25, label: "guessing" }], label: "HellaSwag" });
-  const lt = base("logt"), chance = (R.map((r) => sOf(r, "logt").slice(-1)[0]).find((p) => p && p[3] != null) || [])[3];
-  lineChart("cLogt", { series: lt, turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.01, empty,
-    refs: [...(chance ? [{ y: chance, label: "guessing" }] : []), ...yardsticks("logt")], label: "LogT" });
+  // CommonsenseQA (5 choices): a quick check on the tests' schedule, every question at the end (the ring)
+  lineChart("cCsqa", { series: base("csqa"), turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.01,
+    refs: [{ y: 0.2, label: "guessing" }, ...yardsticks("csqa")], empty: R.length ? "No CommonsenseQA checks yet" : empty, label: "CommonsenseQA" });
   lineChart("cWorld", { series: base("world"), turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.02, refs: yardsticks("world_secret"),
     empty: R.length ? "No world exams in these runs (only runs with world text take them)" : empty, label: "World exams" });
   // Real World (solid): the practised scenes told in words no practice uses; Pro (dashed): new names and things too
@@ -425,7 +425,7 @@ function drawRace(set) {
     turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.02, refs: yardsticks("world_real"),
     empty: R.length ? "No Real World exams in these runs (only runs with world text take them)" : empty, label: "Real World" });
   lineChart("cWval", { series: base("wval"), turns, xmax, fmt: fmtL, crop: 0.08, minSpan: 0.02,
-    empty: R.length ? "No held-out world text in these runs (Emerald runs only)" : empty, label: "World held-out loss" });
+    empty: R.length ? "No held-out world text in these runs (Opal and Emerald runs only)" : empty, label: "World held-out loss" });
   // PIQA (2 choices) and ARC-Easy (4): a quick check on the tests' schedule, every question at the end (the ring)
   lineChart("cPiqa", { series: base("piqa"), turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.01,
     refs: [{ y: 0.5, label: "guessing" }], empty: R.length ? "No PIQA checks yet" : empty, label: "PIQA" });
@@ -453,7 +453,7 @@ function tile(r, set) {
     <div class="t1">${on ? `<span class="sw" style="background:${c}"></span>` : ""}<span class="nm">${esc(r.name)}</span>${badge(r.live)}</div>
     <div class="t2">${esc(nice(r))}${r.params ? " · " + Math.round(r.params / 1e6) + "M" : ""} · ${fmtM(r.tokens)} of ${fmtM(r.total)}</div>
     <div class="mini ${isLive(r) ? "live" : r.live}"><div style="width:${(f * 100).toFixed(1)}%"></div></div>
-    <div class="t3">${kv("loss", fmtL(r.val))}${kv("HellaSwag", r.hs != null ? pct(r.hs) : r.hs_ref != null ? pct(r.hs_ref) : "–")}${r.world_secret != null ? kv("world", pct(r.world_secret, 0)) : r.logt != null ? kv("LogT", pct(r.logt, 0)) : ""}${spark(r.spark, c)}</div>
+    <div class="t3">${kv("loss", fmtL(r.val))}${kv("HellaSwag", r.hs != null ? pct(r.hs) : r.hs_ref != null ? pct(r.hs_ref) : "–")}${r.world_secret != null ? kv("world", pct(r.world_secret, 0)) : r.csqa != null ? kv("CSQA", pct(r.csqa, 0)) : ""}${spark(r.spark, c)}</div>
     <div class="t4">${when}</div></button>`;
 }
 function drawTiles(set) {
