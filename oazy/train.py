@@ -1368,6 +1368,7 @@ def main():
             + (f" (resumed: {term.tokens(world_tokens)} world tokens so far)" if world_tokens else ""), flush=True)
     world_exams = world is not None or any(n in getattr(train, "src", {}) for n in WORLD_SOURCES)   # Opal / Emerald
     world_exams = world_exams or bool(args.world_exams)  # --world-exams 1: a run without world text, scored the same way
+    field1_levels = "field1" in getattr(train, "src", {})   # Opal runs: Field1's level table (oazy/field1/levels.py)
     if world is None and world_exams and not args.world_exams:
         say("[world] " + ("Opal: Field1, the world in natural speech" if "field1" in getattr(train, "src", {}) else
                           "Emerald: the world's practice text") + " is part of the mix; the world's exams (secret, practised, "
@@ -1450,6 +1451,19 @@ def main():
             except Exception as e:          # a new test must never stop a run
                 say(f"[logres] skipped ({type(e).__name__}: {str(e)[:120]})", flush=True)
             nxt["logres"] += p["evals_every"]
+        if field1_levels and (final or tokens >= nxt.setdefault("field1", 0)):
+            # Field1's level table, short: fresh scenes of every family, scored against guessing per family and level
+            try:
+                from .field1 import levels as F1L
+                n1 = 60 if p["evals_quick"] >= 500 else 3
+                r, _ = F1L.quick(model, device, n=n1, shots=2 if n1 > 3 else 1)
+                run.log("metrics.jsonl", {**base, **r, "full": final})
+                worst = [f for f, x in r["families"].items() if x["at_chance"]]
+                say(f"[field1] {r['score'] * 100:.1f}% (floor {r['floor'] * 100:.1f}%) | at chance: {', '.join(worst) or 'none'}",
+                    flush=True)
+            except Exception as e:          # a new test must never stop a run
+                say(f"[field1] skipped ({type(e).__name__}: {str(e)[:120]})", flush=True)
+            nxt["field1"] += p["evals_every"]
         if final or tokens >= nxt.setdefault("faith", 0):
             # Faith probes (oazy/faith_probe.py): does it hold its quiet belief, and keep it out of ordinary answers?
             try:
