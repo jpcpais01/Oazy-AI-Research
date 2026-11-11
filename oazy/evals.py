@@ -232,14 +232,20 @@ def evaluate_all(model, data_root: Path, device, limit=None):
     """{"arc_easy", "arc_easy_char", "piqa", "piqa_char", ..., "lambada", "lambada_ppl"} for the files that exist."""
     d = Path(data_root) / "evals"
     out = {}
+    # The choice tests are small (1,000-2,400 questions, a few seconds each on a GPU), so the trainer's quick check
+    # (limit >= 500) scores them IN FULL. A quick subset is the same fixed questions every check of every run, so any
+    # luck in it shows up as the same offset in every run: PIQA's 500 read ~5 points above all 1,838, which looked
+    # like a drop at the final test (João, Nov 11). Only LAMBADA (5,153 passages) keeps the quick subset. The tiny
+    # CPU self-test presets (limit < 500) still take a few of each.
+    mc_limit = limit if limit is not None and limit < 500 else None
     for name in ("arc_easy", "piqa") + REASONING:
         p = d / f"{name}.jsonl"
         if p.exists():
-            r = hellaswag.evaluate(model, p, device, limit)
+            r = hellaswag.evaluate(model, p, device, mc_limit)
             out[name], out[name + "_char"], out[name + "_n"] = r["acc_norm"], r["acc_char"], r["n"]
     p = d / "babi.jsonl"
     if p.exists():                                       # what guessing scores there (the number of choices varies)
-        rows = hellaswag.load(p, limit)
+        rows = hellaswag.load(p, mc_limit)
         out["babi_chance"] = sum(1 / len(r["endings"]) for r in rows) / max(1, len(rows))
     p = d / "lambada.jsonl"
     if p.exists():

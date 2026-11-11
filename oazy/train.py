@@ -1483,8 +1483,8 @@ def main():
                 f"({r['acc_norm'] * 100:.2f}% per token)", flush=True)
             nxt["hs"] += p["hs_every"]
         if (root / "evals").exists() and (final or tokens >= nxt["evals"]):
-            # ARC-Easy, PIQA, LAMBADA (oazy/evals.py): a quick check (evals_quick questions of each, spread over the
-            # file) every evals_every tokens, all of them at the end
+            # ARC-Easy, PIQA, the reasoning tests and LAMBADA (oazy/evals.py) every evals_every tokens: the choice tests
+            # in full each time (they are small), LAMBADA on evals_quick passages spread over the file; all at the end
             from . import evals
             r = evals.evaluate_all(model, root, device, None if final else p["evals_quick"])
             if r:
