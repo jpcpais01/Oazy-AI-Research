@@ -429,8 +429,10 @@ function drawRace(set) {
   // PIQA (2 choices) and ARC-Easy (4): a quick check on the tests' schedule, every question at the end (the ring)
   lineChart("cPiqa", { series: base("piqa"), turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.01,
     refs: [{ y: 0.5, label: "guessing" }], empty: R.length ? "No PIQA checks yet" : empty, label: "PIQA" });
-  lineChart("cArc", { series: base("arc"), turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.01,
-    refs: [{ y: 0.25, label: "guessing" }], empty: R.length ? "No ARC checks yet" : empty, label: "ARC-Easy" });
+  // ARC: Easy (solid) and Challenge (dashed), both 4 choices
+  lineChart("cArc", { series: [...base("arc"), ...R.map((r) => ({ name: `${r.name} · Challenge`, color: colorOf(r.name), pts: sOf(r, "arcc"), dash: true, tag: "Challenge" }))],
+    turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.01,
+    refs: [{ y: 0.25, label: "guessing" }], empty: R.length ? "No ARC checks yet" : empty, label: "ARC" });
 }
 
 // ---------------------------------------------------------------- every run, as a tile
