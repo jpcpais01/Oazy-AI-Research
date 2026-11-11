@@ -314,6 +314,7 @@ class Story:
         self.keep_order = False                      # True: the facts are told in the order they were added
         self.connect = True                          # False: events without "Then", "After that" ...
         self.report_rate = rng.choice((0.0, 0.0, 0.1, 0.25))   # facts said by someone: "Bo says that ..."
+        self.notes = {}                              # event index -> what is true right after it (worked reasoning only)
 
     # adding
     def add_intro(self, tpl, **kw):
@@ -325,6 +326,12 @@ class Story:
     def event(self, tpl, perf=None, **kw):
         """An event in time order. tpl's tense forms <pres|past|perf> are used for a flashback; `perf` overrides."""
         self.events.append(Line(tpl, kw, "event", perf or ""))
+
+    def note(self, tpl, **kw):
+        """What is true right after the last event ("the line is now Ana, Bo and Cy"), said only in worked reasoning
+        (oazy/field1/work.py). Kept as a template: nothing is drawn, so the told story stays exactly as before."""
+        if self.events:
+            self.notes[len(self.events) - 1] = Line(tpl, kw, "note")
 
     def add_outro(self, tpl, **kw):
         self.outro.append(Line(tpl, kw, "plain"))

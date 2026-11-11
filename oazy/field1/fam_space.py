@@ -320,6 +320,8 @@ def stacks(r):
             w = spare.pop()
             st.event("{p} <slides|slid|had slid> {w} under the whole pile", p=p, w=w)
             pile.insert(0, w)
+        if len(st.events) > len(st.notes):          # worked reasoning only (oazy/field1/work.py): the pile now
+            st.note("[so|now], from the top down, the pile <is|was> {L}", L=and_list([x.np for x in reversed(pile)]))
     L = and_list([x.np for x in reversed(pile)])
     why = st.t.fmt("from the top down, the pile <is|was> now {L}", L=L)
     qas = []
