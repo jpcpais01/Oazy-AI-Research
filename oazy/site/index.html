@@ -4,1870 +4,921 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Oazy AI Research</title>
-<meta name="claude:viewport-fit-sides" content="cover">
-<meta name="description" content="Oazy AI Research is an independent lab notebook: new, mind-inspired language-model architectures at 0.2B parameters, each trained on one GPU and measured against GPT-2 small on the same text, failures included.">
-<meta name="theme-color" content="#050507">
+<meta name="description" content="Oazy AI Research: small language models that understand rather than recite. Gnosis (308M) and Coral (1B experts), each trained from scratch on one GPU, and Pearl, the text they learn from.">
+<meta name="theme-color" content="#cddbf6">
 <link rel="icon" type="image/png" href="favicon.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@1&family=Outfit:wght@500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Outfit:wght@300;400;500;600&display=swap">
 <style>
-/* Layout: one black stage. A full-bleed light tunnel opens the page, then quiet hairline-ruled
-   sections on a 1200px grid, with each model carrying its own accent (as games do in the Oazy launcher). */
+/* One living world behind the page: the sky and sea of the Gnosis film, drawn live in WebGL.
+   Scrolling moves the day along: dawn (hero), morning (Gnosis), sunset (Coral), dusk (cost), night (Pearl).
+   Light sections use deep ink; the night keeps the old site's dark, starry violet. */
 :root {
-  color-scheme: dark;
-  --bg: #050507;          /* the void the light runs through */
-  --bg-2: #0b0b10;        /* raised surfaces */
-  --bg-3: #12121a;
-  --ink: #ecebf3;         /* warm-cool off-white, never pure white */
-  --ink-2: #b4b3c4;
-  --muted: #7d7c8f;
-  --faint: #4a4958;
-  --line: rgba(236, 235, 243, 0.09);
-  --line-2: rgba(236, 235, 243, 0.16);
-  --violet: #6a4dff;      /* primary action */
-  --violet-2: #8f7bff;
-  --cyan: #4fd8ff;        /* Oazy brand light */
-  --pink: #ff5fae;
-  --teal: #4cf2c4;
-  --bee: #ffb347;         /* model accents, as in the lab dashboard */
-  --fern: #a6e86a;
-  --coral: #ff8a78;
-  --display: "Outfit", "Avenir Next", "Segoe UI", system-ui, sans-serif;
-  --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --wrap: 1200px;
-  --gutter: max(16px, env(safe-area-inset-left, 0px));
-  --gutter-r: max(16px, env(safe-area-inset-right, 0px));
+  --serif: "Instrument Serif", "Times New Roman", serif;
+  --sans: "Outfit", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ink: #1b2147; --ink-2: #4b5480; --ink-3: #7c84a8; --line: rgba(27, 33, 71, .14);
+  --rose: #c0506f; --lilac: #7d8de0; --coral: #e2646b; --moon: #c9bcff; --aqua: #4fb8c8;
+  --glass-bg: linear-gradient(140deg, rgba(255,255,255,.46), rgba(255,255,255,.14));
+  --glass-line: rgba(255,255,255,.62);
+  --glass-shadow: inset 0 1px 0 rgba(255,255,255,.85), 0 24px 60px -28px rgba(40,50,120,.35);
+  --gutter: clamp(16px, 5vw, 64px);
+  color-scheme: light;
 }
+.dark, .nav.dark {
+  --ink: #f4f2ff; --ink-2: #c3bfe4; --ink-3: #8e8ab4; --line: rgba(244, 242, 255, .14);
+  --rose: #ffb0c4; --lilac: #b7b2ff;
+  --glass-bg: linear-gradient(140deg, rgba(40,40,90,.42), rgba(16,16,40,.22));
+  --glass-line: rgba(255,255,255,.14);
+  --glass-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 30px 70px -30px rgba(0,0,0,.6);
+  color: var(--ink);
+}
+.nav { color: var(--ink); }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 body {
-  margin: 0; background: var(--bg); color: var(--ink);
-  font: 16px/1.6 var(--sans); -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  margin: 0; color: var(--ink); font: 300 17px/1.6 var(--sans);
+  background: #cddbf6; -webkit-font-smoothing: antialiased; overflow-x: hidden;
 }
-body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 60; background: var(--bg); }
+::selection { background: rgba(125, 141, 224, .3); }
 a { color: inherit; }
-img, svg, canvas { max-width: 100%; }
-h1, h2, h3 { font-family: var(--display); font-weight: 600; margin: 0; text-wrap: balance; letter-spacing: -0.02em; }
-p { margin: 0; }
-:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; border-radius: 4px; }
-.wrap { max-width: calc(var(--wrap) + 64px); margin: 0 auto; padding-left: max(32px, var(--gutter)); padding-right: max(32px, var(--gutter-r)); }
-@media (max-width: 640px) { .wrap { padding-left: var(--gutter); padding-right: var(--gutter-r); } }
-.label { font: 500 12px/1.4 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-.label b { color: var(--ink-2); font-weight: 500; }
+#sky { position: fixed; inset: 0; width: 100vw; height: 100lvh; display: block; z-index: 0; pointer-events: none; }
+#fallback { position: fixed; inset: 0; z-index: 0; pointer-events: none; transition: background .4s; }
+main, header, footer { position: relative; z-index: 2; }
 
-/* ---------- top bar (the launcher's bar: mark, wordmark, sliding pill tabs) ---------- */
-.bar {
-  position: fixed; top: env(safe-area-inset-top, 0px); left: 0; right: 0; z-index: 50;
-  transition: background .35s, border-color .35s, backdrop-filter .35s;
-  border-bottom: 1px solid transparent;
+/* ---------- type ---------- */
+.caps { font: 500 11.5px/1.4 var(--sans); letter-spacing: .26em; text-transform: uppercase; color: var(--ink-2); }
+.serif { font-family: var(--serif); font-weight: 400; }
+h1, h2, h3 { font-family: var(--serif); font-weight: 400; margin: 0; letter-spacing: -.01em; text-wrap: balance; }
+em { font-style: italic; }
+p { margin: 0; color: var(--ink-2); text-wrap: pretty; }
+.light-text { text-shadow: 0 1px 18px rgba(255,255,255,.55); }
+.dark p { text-shadow: 0 1px 16px rgba(4,5,20,.85); }
+
+/* glass type: the film's lettering, see-through lilac with a lit top bevel */
+.gt {
+  font-family: var(--serif); font-weight: 400; line-height: .9; letter-spacing: -.02em;
+  color: transparent; -webkit-text-stroke: 1px rgba(255,255,255,.7);
+  background: linear-gradient(176deg, #f3f5ff 0%, #b5c1f3 30%, #8494e4 58%, #a9b6f2 78%, #eef1ff 100%);
+  -webkit-background-clip: text; background-clip: text;
+  filter: drop-shadow(0 1.5px 0 rgba(255,255,255,.75)) drop-shadow(0 14px 22px rgba(60,70,150,.22));
 }
-.bar.solid { background: rgba(5, 5, 7, 0.72); backdrop-filter: blur(18px) saturate(140%); -webkit-backdrop-filter: blur(18px) saturate(140%); border-bottom-color: var(--line); }
-.bar-in { display: flex; align-items: center; gap: 24px; height: 68px; }
-.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; flex: none; }
-.brand img { width: 34px; height: 34px; display: block; }
-.word { font: 800 19px/1 var(--display); letter-spacing: 0.2em; color: #fff; }
-.word small { display: block; font: 500 9.5px/1 var(--mono); letter-spacing: 0.24em; color: var(--muted); margin-top: 5px; }
-.tabs { position: relative; display: flex; gap: 2px; margin: 0 auto; padding: 4px; border-radius: 999px; background: rgba(255, 255, 255, 0.035); border: 1px solid var(--line); }
-.tabs a { position: relative; z-index: 1; padding: 8px 16px; border-radius: 999px; font: 500 14px/1 var(--sans); color: var(--ink-2); text-decoration: none; transition: color .25s; white-space: nowrap; }
-.tabs a:hover, .tabs a.on { color: #fff; }
-.pill { position: absolute; z-index: 0; top: 4px; bottom: 4px; left: 0; width: 0; border-radius: 999px; background: rgba(255, 255, 255, 0.11); border: 1px solid rgba(255, 255, 255, 0.08); opacity: 0; transition: transform .45s cubic-bezier(.2,.8,.2,1), width .45s cubic-bezier(.2,.8,.2,1), opacity .3s; }
-.bar-cta { flex: none; }
-@media (max-width: 900px) { .tabs { display: none; } .bar-in { justify-content: space-between; } }
+.gt.warm { background-image: linear-gradient(176deg, #fff6f0 0%, #ffc2b2 30%, #ef7d82 60%, #ffb39f 80%, #fff1ea 100%);
+  filter: drop-shadow(0 1.5px 0 rgba(255,255,255,.75)) drop-shadow(0 14px 22px rgba(170,70,70,.22)); }
+.gt.moon { -webkit-text-stroke: 1px rgba(255,255,255,.35);
+  background-image: linear-gradient(176deg, #ffffff 0%, #e2dcff 30%, #a79cf0 60%, #d7d0ff 82%, #ffffff 100%);
+  filter: drop-shadow(0 0 22px rgba(170,150,255,.35)); }
 
-/* ---------- buttons (mono caps; the light one carries a split-colour edge) ---------- */
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; height: 52px; padding: 0 28px; font: 500 13.5px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; text-decoration: none; border: 0; cursor: pointer; transition: transform .2s, box-shadow .25s, background .25s, filter .25s; }
-.btn:active { transform: translateY(1px); }
-.btn-light { background: var(--ink); color: #0a0a0f; box-shadow: -1.5px 0 0 var(--pink), 1.5px 0 0 var(--teal); }
-.btn-light:hover { box-shadow: -3px 0 0 var(--pink), 3px 0 0 var(--teal), 0 10px 40px -10px rgba(143, 123, 255, .6); }
-.btn-violet { background: var(--violet); color: #fff; }
-.btn-violet:hover { background: #7a5fff; box-shadow: 0 10px 40px -10px rgba(106, 77, 255, .9); }
-.btn-ghost { height: 40px; padding: 0 16px; font-size: 12px; color: var(--ink); background: rgba(255, 255, 255, 0.04); border: 1px solid var(--line-2); border-radius: 999px; }
-.btn-ghost:hover { background: rgba(255, 255, 255, 0.09); }
-.btn svg { width: 16px; height: 16px; flex: none; }
-.btn-quiet { height: 40px; padding: 0 18px; font-size: 11.5px; letter-spacing: 0.14em; color: var(--ink); border-radius: 999px; background: rgba(5, 5, 7, 0.45);
-  border: 1px solid var(--line-2); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
-.btn-quiet:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(236, 235, 243, .3); }
-
-/* ---------- hero: the tunnel of light ---------- */
-.hero { position: relative; overflow: hidden; isolation: isolate; padding-top: calc(68px + env(safe-area-inset-top, 0px)); }
-.hero canvas, .hero .fallback { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -2; display: block; }
-.hero .fallback {
-  background:
-    radial-gradient(70% 22% at 50% 44%, rgba(120, 100, 255, .32), transparent 70%),
-    radial-gradient(40% 60% at 100% 44%, rgba(120, 130, 255, .35), transparent 70%),
-    radial-gradient(40% 60% at 0% 44%, rgba(120, 130, 255, .30), transparent 70%),
-    var(--bg);
+/* ---------- glass surfaces ---------- */
+.glass {
+  position: relative; background: var(--glass-bg); border: 1px solid var(--glass-line); border-radius: 22px;
+  box-shadow: var(--glass-shadow); -webkit-backdrop-filter: blur(18px) saturate(1.35); backdrop-filter: blur(18px) saturate(1.35);
 }
-.hero::after { content: ""; position: absolute; inset: auto 0 0; height: 30%; z-index: -1; background: linear-gradient(transparent, var(--bg)); pointer-events: none; }
-.hero-in { min-height: clamp(560px, 86vh, 880px); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 22px; padding-block: 72px 120px; }
-.eyebrow { font: 500 12px/1.4 var(--mono); letter-spacing: 0.22em; text-transform: uppercase; color: var(--ink-2); text-shadow: 0 2px 24px rgba(0, 0, 0, .9); }
-.hero h1 { font-size: clamp(34px, 4.6vw, 68px); line-height: 1.06; font-weight: 400; letter-spacing: -0.025em; max-width: 16ch; text-shadow: 0 4px 60px rgba(0, 0, 0, .7); }
-/* the one word set apart: a fine italic serif, like a journal title */
-.hero h1 em { font-family: "Instrument Serif", Georgia, serif; font-style: italic; font-weight: 400; font-size: 1.08em; letter-spacing: -0.01em; padding-right: .06em; background: linear-gradient(180deg, #fff 30%, #cfc8ff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.hero .sub { max-width: 520px; text-wrap: balance; font-size: clamp(15px, 1.1vw, 16.5px); color: var(--ink-2); text-shadow: 0 2px 20px rgba(0, 0, 0, .9); }
-.ctas { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; margin-top: 8px; }
-@media (max-width: 480px) { .ctas .btn:not(.btn-quiet) { flex: 1 1 100%; } .ctas:has(.btn-ghost, .btn-light) { width: 100%; } }
-.hero-in > * { animation: rise 1s cubic-bezier(.2,.8,.2,1) both; }
-.hero-in > :nth-child(2) { animation-delay: .08s; } .hero-in > :nth-child(3) { animation-delay: .16s; } .hero-in > :nth-child(4) { animation-delay: .24s; }
-@keyframes rise { from { opacity: .001; transform: translateY(14px); filter: blur(6px); } }
-
-/* ---------- three pillars under the hero (hairline columns) ---------- */
-.pillars { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: -40px; position: relative; }
-.pillar { border-left: 1px solid var(--line-2); padding: 4px 28px 8px; display: grid; gap: 12px; align-content: start; }
-.pillar h3 { font-size: 22px; font-weight: 600; }
-.pillar p { color: var(--ink-2); font-size: 15px; max-width: 36ch; }
-@media (max-width: 820px) { .pillars { grid-template-columns: 1fr; gap: 28px; margin-top: 0; } }
-
-/* ---------- sections ---------- */
-section.block { padding-block: clamp(48px, 6vw, 85px); scroll-margin-top: 70px; }   /* the divider line sits halfway between two sections, clear of any glass */
-.head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px 48px; align-items: end; margin-bottom: 48px; }
-.head h2 { font-size: clamp(28px, 3.2vw, 42px); line-height: 1.1; font-weight: 500; letter-spacing: -0.02em; margin-top: 12px; }
-.head p { color: var(--ink-2); max-width: 52ch; justify-self: end; }
-@media (max-width: 820px) { .head { grid-template-columns: 1fr; } .head p { justify-self: start; } }
-
-/* ---------- model tiles (the launcher's home tiles: accent glow, chips, big title) ---------- */
-.models { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
-@media (max-width: 960px) { .models { grid-template-columns: 1fr; } }
-.model {
-  --acc: var(--bee); position: relative; overflow: hidden; border-radius: 22px; padding: 30px;
-  background: radial-gradient(120% 70% at 100% 0%, color-mix(in srgb, var(--acc) 16%, transparent), transparent 60%), var(--bg-2);
-  border: 1px solid var(--line); display: grid; gap: 22px; align-content: start; min-width: 0;
-  transition: border-color .35s, transform .35s cubic-bezier(.2,.8,.2,1), box-shadow .35s;
+.glass::after { /* faint RGB split on the rim */
+  content: ""; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none;
+  box-shadow: -1px 0 0 rgba(255, 60, 120, .14), 1px 0 0 rgba(40, 190, 255, .16);
 }
-.model:hover { border-color: color-mix(in srgb, var(--acc) 45%, transparent); transform: translateY(-3px); box-shadow: 0 30px 80px -40px color-mix(in srgb, var(--acc) 60%, transparent); }
-.model.fern { --acc: var(--fern); }
-/* Coral: a wide card under the two smaller models */
-.model.coral { --acc: var(--coral); }
-.model.wide { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 18px 40px; align-items: start; }
-.model.wide > .demo { grid-column: 2; grid-row: 1 / span 6; align-self: stretch; }
-.chip.done { color: var(--ink-2); border-color: var(--line-2); background: transparent; }
-.scores { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px 16px; margin: 0; }
-.scores div { display: grid; gap: 5px; }
-.scores dt { font: 500 10px/1.3 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-.scores dd { margin: 0; font: 500 16px/1 var(--display); letter-spacing: -0.01em; font-variant-numeric: tabular-nums; color: var(--ink); }
-.model .aside { font-size: 13.5px; color: var(--ink-2); }
-@media (max-width: 520px) { .scores { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 960px) { .model.wide { grid-template-columns: 1fr; } .model.wide > .demo { grid-column: auto; grid-row: auto; } }
-.chip.live { color: var(--acc); border-color: color-mix(in srgb, var(--acc) 40%, transparent); background: transparent; }
-.chip.live::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 7px; border-radius: 50%; background: var(--acc); vertical-align: 1px; animation: blink 1.6s ease-in-out infinite; }
-.model .note { font-size: 13.5px; color: var(--ink-2); padding-left: 12px; border-left: 2px dashed rgba(255, 215, 138, 0.45); }
-.experts { display: grid; grid-template-columns: repeat(16, minmax(0, 1fr)); gap: 5px; }
-.experts i { aspect-ratio: 1; border-radius: 3px; border: 1px solid var(--line); transition: background .5s, border-color .5s, box-shadow .5s; }
-.experts i.on { background: color-mix(in srgb, var(--acc) 55%, transparent); border-color: color-mix(in srgb, var(--acc) 80%, transparent); box-shadow: 0 0 12px -2px color-mix(in srgb, var(--acc) 70%, transparent); }
-.coral .words { display: flex; flex-wrap: wrap; gap: 6px 4px; font: 400 15px/1 var(--mono); }
-.coral .words span { padding: 6px; border-radius: 6px; border: 1px solid transparent; color: var(--faint); transition: color .4s, border-color .4s, background .4s; }
-.coral .words span.now { color: #fff; border-color: color-mix(in srgb, var(--acc) 60%, transparent); background: color-mix(in srgb, var(--acc) 14%, transparent); }
-.model::before { content: ""; position: absolute; inset: 0 0 auto; height: 1px; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--acc) 80%, transparent), transparent); }
-.chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.chip { font: 500 11px/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; padding: 7px 10px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--ink-2); background: rgba(255, 255, 255, 0.03); }
-.chip.acc { color: var(--acc); border-color: color-mix(in srgb, var(--acc) 40%, transparent); background: color-mix(in srgb, var(--acc) 8%, transparent); }
-.chip.real { color: var(--teal); border-color: rgba(76, 242, 196, .35); background: rgba(76, 242, 196, .08); }
-.chip.ph { color: #ffd78a; border-color: rgba(255, 215, 138, 0.35); background: repeating-linear-gradient(135deg, rgba(255, 215, 138, 0.10) 0 6px, transparent 6px 12px); }
-.model h3 { font-size: clamp(28px, 3vw, 38px); line-height: 1.05; letter-spacing: -0.02em; font-weight: 600; }
-.model h3 span { color: var(--acc); }
-.model .what { color: var(--ink-2); max-width: 54ch; }
-.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-.stat { padding: 16px 0 14px; display: grid; gap: 6px; }
-.stat + .stat { padding-left: 16px; border-left: 1px solid var(--line); }
-.stat .v { font: 500 23px/1 var(--display); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
-.stat .v small { font-size: 15px; color: var(--muted); font-weight: 500; }
-.stat .k { font: 500 10.5px/1.3 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-@media (max-width: 520px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .stat:nth-child(3) { padding-left: 0; border-left: 0; } .stat:nth-child(n+3) { border-top: 1px solid var(--line); } }
-
-/* the little writing demos */
-.demo { border-radius: 14px; background: rgba(0, 0, 0, 0.45); border: 1px solid var(--line); padding: 16px 18px 18px; display: grid; gap: 14px; min-width: 0; }
-.demo-top { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.demo-top .label b { color: var(--acc); }
-.toks { display: flex; flex-wrap: wrap; gap: 6px 4px; min-height: 76px; align-content: flex-start; font: 400 15px/1 var(--mono); }
-.tok { padding: 6px 6px; border-radius: 6px; border: 1px solid transparent; color: var(--ink); white-space: pre; transition: background .4s, border-color .4s, color .4s, filter .6s, opacity .6s; }
-.bee .tok { background: rgba(255, 255, 255, 0.04); border-color: var(--line); }
-.bee .tok.new { background: color-mix(in srgb, var(--acc) 22%, transparent); border-color: color-mix(in srgb, var(--acc) 60%, transparent); color: #fff; }
-.bee .caret { width: 9px; height: 26px; background: var(--acc); border-radius: 2px; animation: blink 1s steps(1) infinite; align-self: center; }
-@keyframes blink { 50% { opacity: 0; } }
-.fern .tok { border-color: var(--line); color: var(--faint); background: transparent; }
-.fern .tok.blank { color: transparent; background: repeating-linear-gradient(90deg, rgba(255,255,255,.07) 0 4px, transparent 4px 7px); border-color: transparent; }
-.fern .tok.blank::selection { background: transparent; }
-.fern .tok.new { color: #fff; border-color: color-mix(in srgb, var(--acc) 60%, transparent); background: color-mix(in srgb, var(--acc) 18%, transparent); }
-.fern .tok.set { color: var(--ink); }
-.fern .tok.fresh { filter: blur(5px); opacity: .2; }
-.rounds { display: flex; gap: 6px; }
-.rounds i { width: 22px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.1); transition: background .4s; }
-.rounds i.on { background: var(--acc); }
-.ph-note { display: flex; gap: 12px; align-items: flex-start; margin-top: 24px; padding: 14px 18px; border-radius: 14px; border: 1px dashed rgba(255, 215, 138, 0.35); color: var(--ink-2); font-size: 14.5px; }
-.ph-note .chip { flex: none; }
-
-/* ---------- HellaSwag chart ---------- */
-.panel { border: 1px solid var(--line); border-radius: 22px; background: var(--bg-2); padding: 28px; min-width: 0; }
-.panel h3 { font-size: 22px; margin-top: 10px; }
-.panel .cap { color: var(--muted); font-size: 14px; margin-top: 6px; }
-.chart { margin-top: 26px; display: grid; gap: 14px; position: relative; }
-.row { display: grid; grid-template-columns: 150px minmax(0, 1fr) 62px; align-items: center; gap: 14px; }
-.row .n { font: 500 14px/1.2 var(--sans); color: var(--ink); }
-.row .n small { display: block; font: 400 11px/1.4 var(--mono); color: var(--muted); letter-spacing: 0.04em; }
-.track { position: relative; height: 30px; border-radius: 6px; background: rgba(255, 255, 255, 0.025); overflow: hidden; }
-.track .fill { position: absolute; inset: 0 auto 0 0; border-radius: 6px; transform-origin: left; }
-.row .pct { font: 500 15px/1 var(--mono); text-align: right; font-variant-numeric: tabular-nums; }
-.fill.bee { background: linear-gradient(90deg, color-mix(in srgb, var(--bee) 30%, transparent), var(--bee)); }
-.fill.bee.old { opacity: .55; }
-.fill.coral { background: linear-gradient(90deg, color-mix(in srgb, var(--coral) 30%, transparent), var(--coral)); }
-.fill.fern { background: linear-gradient(90deg, color-mix(in srgb, var(--fern) 30%, transparent), var(--fern)); }
-.fill.ref { background: linear-gradient(90deg, rgba(236,235,243,.08), rgba(236,235,243,.45)); }
-.fill.rand { background: rgba(236,235,243,.12); }
-.fill.ph::after { content: ""; position: absolute; inset: 0; border-radius: 6px; background: repeating-linear-gradient(135deg, rgba(0,0,0,.28) 0 5px, transparent 5px 10px); }
-.axis { display: grid; grid-template-columns: 150px minmax(0, 1fr) 62px; gap: 14px; margin-top: 4px; }
-.ticks { position: relative; height: 18px; font: 400 11px/1 var(--mono); color: var(--muted); }
-.ticks span { position: absolute; top: 4px; transform: translateX(-50%); }
-.grid-lines { position: absolute; top: 0; bottom: 22px; pointer-events: none; }
-.grid-lines i { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255,255,255,.06); }
-@media (max-width: 560px) { .row, .axis { grid-template-columns: 96px minmax(0, 1fr) 52px; gap: 10px; } .row .n small { display: none; } }
-.tbl-wrap { overflow-x: auto; margin-top: 20px; }
-table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 380px; }
-th { font: 500 10.5px/1.3 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); text-align: left; padding: 0 10px 10px 0; border-bottom: 1px solid var(--line); }
-td { padding: 13px 10px 13px 0; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
-td.num, th.num { text-align: right; padding-right: 0; padding-left: 10px; }
-tr:last-child td { border-bottom: 0; }
-.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; vertical-align: 1px; }
-
-/* ---------- lab log (a real sequence, so it is numbered by date) ---------- */
-.log { border-top: 1px solid var(--line); }
-.entry { display: grid; grid-template-columns: 120px 170px minmax(0, 1fr) auto; gap: 8px 28px; align-items: baseline; padding: 22px 0; border-bottom: 1px solid var(--line); transition: background .3s; }
-.entry:hover { background: linear-gradient(90deg, transparent, rgba(255,255,255,.025), transparent); }
-.entry time { font: 500 12px/1.4 var(--mono); color: var(--muted); letter-spacing: 0.06em; }
-.entry h3 { font-size: 20px; font-weight: 500; }
-.entry p { color: var(--ink-2); font-size: 15px; max-width: 62ch; }
-
-.chip.nt { color: var(--cyan); border-color: rgba(79, 216, 255, .3); }
-.chip.nn { color: var(--pink); border-color: rgba(255, 95, 174, .3); }
-@media (max-width: 820px) { .entry { grid-template-columns: 1fr auto; } .entry time { grid-column: 1 / -1; } .entry p { grid-column: 1 / -1; } .entry .chip { grid-row: 2; grid-column: 2; } }
-
-/* ---------- closing band + footer ---------- */
-.close { margin-top: clamp(90px, 12vw, 160px); position: relative; overflow: hidden; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-.close::before { content: ""; position: absolute; inset: 0; background:
-  radial-gradient(50% 120% at 50% 50%, rgba(106, 77, 255, .22), transparent 70%),
-  repeating-linear-gradient(180deg, transparent 0 9px, rgba(143, 123, 255, .07) 9px 10px);
-  -webkit-mask-image: radial-gradient(60% 100% at 50% 50%, #000, transparent); mask-image: radial-gradient(60% 100% at 50% 50%, #000, transparent); }
-.close-in { position: relative; text-align: center; padding-block: clamp(80px, 10vw, 130px); display: grid; justify-items: center; gap: 22px; }
-.close h2 { font-size: clamp(26px, 3vw, 40px); line-height: 1.12; font-weight: 500; letter-spacing: -0.02em; max-width: 22ch; }
-.close p { color: var(--ink-2); max-width: 56ch; }
-footer { padding-block: 40px calc(40px + env(safe-area-inset-bottom, 0px)); }
-.foot { display: flex; flex-wrap: wrap; gap: 20px 32px; align-items: center; justify-content: space-between; }
-.foot nav { display: flex; flex-wrap: wrap; gap: 8px 24px; }
-.foot nav a { color: var(--muted); text-decoration: none; font-size: 14px; }
-.foot nav a:hover { color: var(--ink); }
-.foot .label { text-transform: none; letter-spacing: 0.02em; }
-
-/* ---------- custom scrollbar: the native one is hidden, a slim light rail replaces it ---------- */
-html { scrollbar-width: none; }
-html::-webkit-scrollbar { display: none; }
-.rail { position: fixed; z-index: 70; top: calc(env(safe-area-inset-top, 0px) + 10px); bottom: calc(env(safe-area-inset-bottom, 0px) + 10px); right: calc(env(safe-area-inset-right, 0px) + 4px); width: 14px; opacity: 0; transition: opacity .5s; cursor: pointer; }
-.rail::before { content: ""; position: absolute; top: 0; bottom: 0; right: 5px; width: 1px; background: rgba(236, 235, 243, 0.05); transition: background .3s; }
-.rail.on, .rail:hover, .rail.drag { opacity: 1; }
-.rail:hover::before, .rail.drag::before { background: rgba(236, 235, 243, 0.10); }
-/* the thumb: a sliver of white liquid glass, its edges split faintly into pink and cyan */
-.thumb { position: absolute; right: 3px; top: 0; width: 6px; min-height: 40px; border-radius: 6px;
-  background: linear-gradient(90deg, rgba(255, 255, 255, .85), rgba(255, 255, 255, .5) 40%, rgba(255, 255, 255, .42) 62%, rgba(255, 255, 255, .7));
-  border: 0.5px solid rgba(255, 255, 255, .45);
-  backdrop-filter: blur(6px) saturate(170%) brightness(1.15); -webkit-backdrop-filter: blur(6px) saturate(170%) brightness(1.15);
-  box-shadow: -0.75px 0 0 rgba(255, 95, 174, .32), 0.75px 0 0 rgba(79, 216, 255, .38), inset 0 1px 1px rgba(255, 255, 255, .9), 0 0 12px rgba(255, 255, 255, .18);
-  transition: width .25s cubic-bezier(.2,.8,.2,1), right .25s cubic-bezier(.2,.8,.2,1), box-shadow .3s; will-change: transform; }
-.thumb::after { content: ""; position: absolute; left: 1px; right: 1px; top: 3px; height: 30%; border-radius: 6px; background: linear-gradient(180deg, rgba(255, 255, 255, .9), transparent); opacity: .5; }
-.rail:hover .thumb, .rail.drag .thumb { width: 8px; right: 2px; box-shadow: -1px 0 0 rgba(255, 95, 174, .4), 1px 0 0 rgba(79, 216, 255, .45), inset 0 1px 1px rgba(255, 255, 255, .95), 0 0 16px rgba(255, 255, 255, .26); }
-@media (pointer: coarse) { .rail { display: none; } }
-
-/* ---------- life below the hero: a living landscape of light, glass, light seams ---------- */
-/* the landscape: a fixed canvas behind everything below the hero (drawn in the script) */
-#land { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -1; display: block; pointer-events: none; }
-
-/* a seam of light opens each section, split into colour like the hero's lens */
-section.block { position: relative; }
-section.block::before { content: ""; position: absolute; top: 0; left: 50%; width: min(1100px, 92%); height: 1px; transform: translateX(-50%);
-  background: linear-gradient(90deg, transparent, rgba(79, 216, 255, .55) 30%, rgba(236, 235, 243, .85) 50%, rgba(255, 95, 174, .55) 70%, transparent);
-  box-shadow: 0 0 18px 1px rgba(143, 123, 255, .45); opacity: .55; }
-.head h2 em, .close h2 em { font-style: normal; background: linear-gradient(100deg, #fff 0%, #d9d2ff 40%, #a6f0ff 95%); -webkit-background-clip: text; background-clip: text; color: transparent; }
-
-/* pillars become lit glass panes, each with its own colour of light */
-.pillar { position: relative; border-left: 0; padding: 26px 26px 28px; border-radius: 18px; overflow: hidden;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 9%, transparent), rgba(255, 255, 255, .015) 60%), rgba(11, 11, 16, .55);
-  border: 1px solid var(--line); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
-.pillar::before { content: ""; position: absolute; inset: 0 18% auto; height: 1px; background: linear-gradient(90deg, transparent, var(--acc), transparent); box-shadow: 0 0 14px 1px var(--acc); }
-.pillar .label { color: var(--acc); }
-.pillars { gap: 18px; }
-@media (max-width: 820px) { .pillars { gap: 14px; } }
-
-/* glass cards: frosted so the pools of light show through, with a lit edge and a light that follows the pointer */
-.model, .glass { position: relative; isolation: isolate; backdrop-filter: blur(18px) saturate(130%); -webkit-backdrop-filter: blur(18px) saturate(130%); }
-.model { background: radial-gradient(120% 70% at 100% 0%, color-mix(in srgb, var(--acc) 18%, transparent), transparent 60%), linear-gradient(180deg, rgba(255, 255, 255, .045), rgba(255, 255, 255, .012)), rgba(11, 11, 16, .6); }
-.glass { overflow: hidden; background: radial-gradient(90% 60% at 0% 0%, rgba(106, 77, 255, .12), transparent 60%), linear-gradient(180deg, rgba(255, 255, 255, .045), rgba(255, 255, 255, .012)), rgba(11, 11, 16, .6); }
-.model::after, .glass::after { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity .4s;
-  background: radial-gradient(420px circle at var(--mx, 50%) var(--my, 0%), color-mix(in srgb, var(--acc, var(--violet-2)) 14%, transparent), transparent 60%); }
-.model:hover::after, .glass:hover::after { opacity: 1; }
-.glass::before { content: ""; position: absolute; inset: 0 0 auto; height: 1px; background: linear-gradient(90deg, transparent, rgba(143, 123, 255, .8), rgba(79, 216, 255, .6), transparent); }
-.demo { background: rgba(0, 0, 0, .5); }
-.track { background: rgba(255, 255, 255, .04); }
-.fill.bee { box-shadow: 0 0 18px -2px color-mix(in srgb, var(--bee) 70%, transparent); }
-.fill.fern { box-shadow: 0 0 18px -2px color-mix(in srgb, var(--fern) 70%, transparent); }
-
-/* research notes: question status, findings, method, caveats, open questions */
-.pillar .status { margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--line); font: 500 12px/1.5 var(--mono); color: var(--ink-2); }
-.pillar h3 { font-size: 18px; font-weight: 500; line-height: 1.3; }
-.notes { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 24px 48px; margin-top: 56px; align-items: start; }
-@media (max-width: 960px) { .notes { grid-template-columns: 1fr; } }
-.findings { list-style: none; margin: 0; padding: 0; display: grid; border-top: 1px solid var(--line); }
-.findings li { padding: 24px 0; border-bottom: 1px solid var(--line); display: grid; gap: 8px; }
-.findings h3 { font-size: 19px; font-weight: 500; line-height: 1.3; }
-.findings p { color: var(--ink-2); font-size: 15.5px; max-width: 62ch; }
-.side { display: grid; gap: 16px; position: sticky; top: 90px; }
-.side-box { border: 1px solid var(--line); border-radius: 16px; padding: 20px 22px; background: rgba(11, 11, 16, .6); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
-.side-box ul { margin: 12px 0 0; padding-left: 18px; display: grid; gap: 8px; color: var(--ink-2); font-size: 14.5px; }
-.side-box li::marker { color: var(--violet-2); }
-.side-box.caveat { border-style: dashed; border-color: rgba(255, 215, 138, .3); }
-.side-box.caveat li::marker { color: #ffd78a; }
-@media (max-width: 960px) { .side { position: static; } }
-.qs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
-@media (max-width: 820px) { .qs { grid-template-columns: 1fr; } }
-.q { border: 1px solid var(--line); border-radius: 18px; padding: 24px 26px; display: grid; gap: 10px; align-content: start; }
-.q h3 { font-size: 18px; font-weight: 500; line-height: 1.3; }
-.q p { color: var(--ink-2); font-size: 15px; }
-.close .btn-ghost { height: 46px; padding: 0 20px; }
-
-/* Tagus, the dataset: a quiet table, one hairline meter per phase */
-.tagus { border-top: 1px solid var(--line-2); }
-.t-head, .t-rows li { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr); gap: 12px 40px; align-items: center; }
-.t-head { padding: 16px 0 12px; border-bottom: 1px solid var(--line); }
-.t-rows { list-style: none; margin: 0; padding: 0; }
-.t-rows li { padding: 18px 0; border-bottom: 1px solid var(--line); transition: background .3s; }
-.t-rows li:hover { background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .025), transparent); }
-.src { display: grid; gap: 3px; min-width: 0; }
-.src b { font-weight: 500; font-size: 16px; }
-.src span { color: var(--muted); font-size: 13.5px; }
-.m { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 14px; align-items: center; }
-.m .pc { font: 500 13px/1 var(--mono); color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; }
-.m .tr { position: relative; height: 2px; border-radius: 2px; background: rgba(236, 235, 243, .08); }
-.m .tr i { position: absolute; inset: 0 auto 0 0; border-radius: 2px; }
-.m .tr i::after { content: ""; position: absolute; right: -3px; top: -2px; width: 6px; height: 6px; border-radius: 50%; background: inherit; box-shadow: 0 0 10px 1px currentColor; }
-.m.a .tr i { background: var(--violet-2); color: var(--violet-2); box-shadow: 0 0 12px rgba(143, 123, 255, .6); }
-.m.b .tr i { background: var(--cyan); color: var(--cyan); box-shadow: 0 0 12px rgba(79, 216, 255, .5); }
-.t-foot { margin-top: 18px; text-transform: none; letter-spacing: .04em; }
-@media (max-width: 720px) {
-  .t-head { grid-template-columns: 1fr 1fr; } .t-head span:first-child { display: none; }
-  .t-rows li { grid-template-columns: 1fr 1fr; gap: 10px 20px; } .src { grid-column: 1 / -1; }
-  .m { grid-template-columns: 36px minmax(0, 1fr); gap: 10px; }
-  .t-head .label { font-size: 10.5px; letter-spacing: .06em; white-space: nowrap; }
+.chip {
+  display: inline-flex; align-items: center; gap: 10px; padding: 10px 18px; border-radius: 999px; text-decoration: none;
+  font: 500 13px/1 var(--sans); letter-spacing: .04em; color: var(--ink);
+  transition: transform .3s cubic-bezier(.2,.8,.2,1), background .3s;
 }
-.foot-note { margin-top: 20px; color: var(--muted); font-size: 13.5px; max-width: 90ch; }
+.chip:hover { transform: translateY(-2px); }
+.chip small { color: var(--ink-3); font-weight: 400; letter-spacing: .02em; }
+.chip:focus-visible, .nav a:focus-visible { outline: 2px solid var(--lilac); outline-offset: 3px; }
 
-/* notebook: quiet rows grouped by day, newest first */
-.log { border-top: 1px solid var(--line-2); }
-.day { padding: 28px 0 6px; }
-.day .label { color: var(--ink-2); }
-.ideas { list-style: none; margin: 0; padding: 0; }
-.idea { display: grid; grid-template-columns: 40px minmax(120px, 180px) minmax(0, 1fr) auto; gap: 6px 28px; align-items: baseline; padding: 18px 0; border-bottom: 1px solid var(--line); }
-.idea .no { font: 500 12px/1 var(--mono); color: var(--faint); font-variant-numeric: tabular-nums; }
-.idea h3 { font-size: 18px; font-weight: 500; letter-spacing: -0.01em; transition: color .3s; }
-.idea p { color: var(--ink-2); font-size: 15px; }
-.idea:hover h3 { color: #fff; }
-.idea:hover .no { color: var(--ink-2); }
-.kind { display: inline-flex; align-items: center; gap: 8px; font: 500 11px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
-.kind::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
-.kind.nn::before { background: var(--pink); box-shadow: 0 0 8px var(--pink); }
-@media (max-width: 720px) { .idea { grid-template-columns: 28px minmax(0, 1fr) auto; gap: 6px 14px; } .idea p { grid-column: 2 / -1; } .idea .kind { grid-row: 1; grid-column: 3; } }
-
-/* closing band: a horizon. The curve of a dark world with a thin rim of light breaking over it,
-   split into colour like the hero's lens, and a slow dawn breathing behind the rim */
-.close { border-top: 0; }
-.close::before { display: none; }
-.close-in { padding-block: clamp(90px, 10vw, 130px) clamp(190px, 20vw, 280px); }
-.horizon { position: absolute; inset: 0; pointer-events: none; overflow: hidden;
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 22%, #000 78%, transparent); mask-image: linear-gradient(90deg, transparent, #000 22%, #000 78%, transparent); }
-.horizon::before { content: ""; position: absolute; left: 50%; bottom: clamp(70px, 9vw, 130px); width: min(1100px, 120%); height: 340px; transform: translateX(-50%);
-  background: radial-gradient(50% 60% at 50% 100%, rgba(143, 123, 255, .38), rgba(79, 216, 255, .10) 45%, transparent 75%);
-  animation: dawn 9s ease-in-out infinite alternate; }
-.planet { position: absolute; left: 50%; top: calc(100% - clamp(70px, 9vw, 130px)); width: max(5200px, 380vw); aspect-ratio: 1; transform: translateX(-50%); border-radius: 50%;
-  background: radial-gradient(14% 3% at 50% 0%, rgba(120, 100, 255, .26), transparent), #050507;
-  box-shadow: 0 -1px 0 0 rgba(255, 255, 255, .95), 0 -2px 0 0 rgba(79, 216, 255, .75), 0 1px 0 0 rgba(255, 95, 174, .7),
-    0 -6px 22px 0 rgba(143, 123, 255, .65), 0 -24px 90px 0 rgba(106, 77, 255, .35); }
-.planet::after { content: ""; position: absolute; left: 50%; top: -3px; width: 10%; height: 7px; transform: translateX(-50%); border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(255, 255, 255, .95), rgba(166, 240, 255, .5) 40%, transparent); filter: blur(2px);
-  animation: glint 9s ease-in-out infinite alternate; }
-@keyframes dawn { from { opacity: .65; transform: translateX(-50%) scaleX(.92); } to { opacity: 1; transform: translateX(-50%) scaleX(1.05); } }
-@keyframes glint { from { opacity: .55; width: 7%; } to { opacity: 1; width: 12%; } }
-footer { position: relative; }
-footer::before { content: ""; position: absolute; top: 0; left: 50%; width: min(900px, 90%); height: 1px; transform: translateX(-50%); background: linear-gradient(90deg, transparent, rgba(143, 123, 255, .5), transparent); }
-
-/* ---------- liquid glass: one material everywhere. White, frosted, a bright top edge,
-   and edges split faintly into pink and cyan like light through a lens ---------- */
-:root {
-  --glass: linear-gradient(180deg, rgba(255, 255, 255, .075), rgba(255, 255, 255, .025) 45%, rgba(255, 255, 255, .04));
-  --glass-edge: rgba(255, 255, 255, .14);
-  --glass-shadow: inset 0 1px 0 rgba(255, 255, 255, .22), inset 0 -1px 0 rgba(255, 255, 255, .04), -0.75px 0 0 rgba(255, 95, 174, .18), 0.75px 0 0 rgba(79, 216, 255, .2), 0 20px 50px -30px rgba(0, 0, 0, .8);
+/* ---------- nav ---------- */
+.nav {
+  position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 10;
+  display: flex; align-items: center; gap: 6px; padding: 6px 8px 6px 14px; border-radius: 999px;
+  width: max-content; max-width: calc(100vw - 24px); transition: color .5s;
 }
-.tabs { background: var(--glass), rgba(8, 8, 12, .35); border: 1px solid var(--glass-edge); box-shadow: var(--glass-shadow); backdrop-filter: blur(16px) saturate(160%); -webkit-backdrop-filter: blur(16px) saturate(160%); }
-.pill { background: linear-gradient(180deg, rgba(255, 255, 255, .2), rgba(255, 255, 255, .08)); border: 0.5px solid rgba(255, 255, 255, .3); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), -0.5px 0 0 rgba(255, 95, 174, .4), 0.5px 0 0 rgba(79, 216, 255, .45); }
-.btn-ghost, .btn-quiet { background: var(--glass), rgba(8, 8, 12, .35); border: 1px solid var(--glass-edge); box-shadow: var(--glass-shadow); backdrop-filter: blur(14px) saturate(160%); -webkit-backdrop-filter: blur(14px) saturate(160%); }
-.btn-ghost:hover, .btn-quiet:hover { background: linear-gradient(180deg, rgba(255, 255, 255, .16), rgba(255, 255, 255, .06)), rgba(8, 8, 12, .35); border-color: rgba(255, 255, 255, .26);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .4), -1px 0 0 rgba(255, 95, 174, .35), 1px 0 0 rgba(79, 216, 255, .4), 0 0 24px -6px rgba(255, 255, 255, .25); }
-.model, .glass { border: 1px solid var(--glass-edge); box-shadow: var(--glass-shadow); backdrop-filter: blur(22px) saturate(150%); -webkit-backdrop-filter: blur(22px) saturate(150%); }
-.model { background: radial-gradient(90% 60% at 100% 0%, color-mix(in srgb, var(--acc) 9%, transparent), transparent 60%), var(--glass), rgba(8, 8, 12, .55); }
-.glass { background: var(--glass), rgba(8, 8, 12, .55); }
-.model::before, .glass::before { inset: 0 8% auto; height: 1px; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .75), transparent);
-  box-shadow: 0 -0.5px 0 rgba(255, 95, 174, .35), 0 0.5px 0 rgba(79, 216, 255, .4); }
-.model:hover { border-color: rgba(255, 255, 255, .24); transform: translateY(-2px); box-shadow: var(--glass-shadow), 0 30px 80px -40px rgba(255, 255, 255, .18); }
-.model::after, .glass::after { background: radial-gradient(420px circle at var(--mx, 50%) var(--my, 0%), rgba(255, 255, 255, .07), transparent 60%); }
-.demo { background: rgba(0, 0, 0, .35); border: 1px solid rgba(255, 255, 255, .08); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06); }
-.chip { background: linear-gradient(180deg, rgba(255, 255, 255, .08), rgba(255, 255, 255, .02)); border-color: rgba(255, 255, 255, .14); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12); }
-.stats, .stat + .stat { border-color: rgba(255, 255, 255, .08); }
-/* dividers: thin white lines with the same faint colour split */
-section.block::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .55) 30%, rgba(255, 255, 255, .8) 50%, rgba(255, 255, 255, .55) 70%, transparent);
-  box-shadow: 0 -0.75px 0 rgba(255, 95, 174, .3), 0 0.75px 0 rgba(79, 216, 255, .35), 0 0 16px rgba(255, 255, 255, .12); opacity: .45; }
-.log, .tagus { border-top-color: rgba(255, 255, 255, .16); }
-.bar.solid { background: linear-gradient(180deg, rgba(255, 255, 255, .03), rgba(255, 255, 255, 0)), rgba(5, 5, 7, .62); border-bottom-color: rgba(255, 255, 255, .1); box-shadow: 0 0.5px 0 rgba(79, 216, 255, .12); }
-footer::before { background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .35), transparent); }
-
-
-/* clear glass: the boxes themselves draw nothing; see the landscape shader */
-.model, .glass { overflow: visible; border-color: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: none; }
-.model, .glass { background: transparent; }
-/* the glass of each box is made in the landscape shader: it refracts the lines behind it, most at
-   the rim, so its edge shows through bent light and not a drawn border. Without WebGL, a plain pane. */
-.noland .model, .noland .glass { background: rgba(255, 255, 255, .035); border-color: rgba(255, 255, 255, .12); }
-.model::before, .glass::before { display: none; }
-.model:hover { border-color: transparent; box-shadow: none; }
-.model::after, .glass::after { display: none; }
-.tabs, .btn-ghost, .btn-quiet { backdrop-filter: blur(6px) saturate(140%); -webkit-backdrop-filter: blur(6px) saturate(140%); }
-
-
-/* ---------- the nav: quiet numbered text links, no pills. The active one is lit and a thin line of
-   light (split faintly into colour at its ends, like the hero's lens) slides under it. ---------- */
-.tabs { counter-reset: nav; gap: 34px; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
-.tabs a { counter-increment: nav; padding: 12px 0; border-radius: 0; font: 500 11.5px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; color: rgba(236, 235, 243, .5); transition: color .3s; }
-.tabs a::before { content: counter(nav, decimal-leading-zero); margin-right: 9px; font-size: 9.5px; letter-spacing: .08em; color: rgba(236, 235, 243, .26); transition: color .3s; }
-.tabs a:hover { color: rgba(236, 235, 243, .85); }
-.tabs a.on { color: #fff; }
-.tabs a.on::before { color: rgba(185, 170, 255, .9); }
-.tabs .pill { top: auto; bottom: 3px; height: 1px; border: 0; border-radius: 1px; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .95) 18%, rgba(255, 255, 255, .95) 82%, transparent);
-  box-shadow: -1.5px 0 1px -0.5px rgba(255, 95, 174, .7), 1.5px 0 1px -0.5px rgba(79, 216, 255, .75), 0 0 10px rgba(255, 255, 255, .35); }
-/* the source link: plain text, not a button */
-.bar-cta { height: auto; padding: 10px 0; gap: 8px; border: 0; background: none; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; font-size: 11.5px; letter-spacing: .16em; color: rgba(236, 235, 243, .6); }
-.bar-cta:hover { background: none; box-shadow: none; color: #fff; }
-.bar-cta svg { width: 14px; height: 14px; }
-.bar-cta::after { content: "\2197"; font-size: 12px; opacity: .6; transition: transform .3s; }
-.bar-cta:hover::after { transform: translate(2px, -2px); }
-
-/* ---------- near-0 compute: a short text, then a band of light in the hero's language. A wide river of streaks
-   (the usual way: a room of GPUs) narrows into one glass bead and leaves it as a single thread (ours) ---------- */
-.serif { font-family: "Instrument Serif", Georgia, serif; font-style: italic; font-weight: 400; letter-spacing: -0.01em; padding-right: .06em;
-  background: linear-gradient(100deg, #fff 0%, #e4dcff 45%, #b9f2ff 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.nz-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px 64px; align-items: end; }
-.nz-top h2 { font-size: clamp(30px, 3.4vw, 46px); line-height: 1.08; font-weight: 500; letter-spacing: -0.02em; margin-top: 12px; }
-.nz-top h2 .serif { font-size: 1.1em; }
-.nz-top p { color: var(--ink-2); max-width: 56ch; justify-self: end; }
-.nz-top p + p { margin-top: 14px; }
-@media (max-width: 820px) { .nz-top { grid-template-columns: 1fr; } .nz-top p { justify-self: start; } }
-.nz-band { position: relative; margin: clamp(28px, 4vw, 48px) calc(-1 * max(32px, var(--gutter))) 0; height: clamp(300px, 38vw, 500px);
-  -webkit-mask-image: linear-gradient(90deg, transparent, #000 9%, #000 91%, transparent); mask-image: linear-gradient(90deg, transparent, #000 9%, #000 91%, transparent); }
-@media (max-width: 640px) { .nz-band { margin-left: calc(-1 * var(--gutter)); margin-right: calc(-1 * var(--gutter-r)); height: 340px; } }
-.nz-band canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.nz-band .fallback { position: absolute; inset: 0; background:
-  radial-gradient(3px 3px at 68% 50%, #fff, transparent), radial-gradient(40% 46% at 20% 50%, rgba(143,123,255,.18), transparent 70%),
-  linear-gradient(90deg, transparent 68%, rgba(236,235,243,.6) 68.2%, transparent 98%) center / 100% 1px no-repeat; }
-.nz-tag { position: absolute; z-index: 1; display: grid; gap: 4px; pointer-events: none; }
-.nz-tag b { font: 400 clamp(17px, 1.6vw, 22px)/1.1 "Instrument Serif", Georgia, serif; font-style: italic; color: var(--ink); }
-.nz-tag span { font: 500 10.5px/1.3 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
-.nz-tag.a { left: 12%; top: 9%; }
-.nz-tag.b { left: calc(var(--fx, 66%) + 4%); top: calc(50% + 18px); }
-@media (max-width: 640px) { .nz-tag.a { left: 7%; top: 7%; } .nz-tag.b { left: auto; right: 7%; top: calc(50% + 16px); text-align: right; } }
-.nz-facts { list-style: none; margin: 18px 0 0; padding: 18px 0 0; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 10px 40px; justify-content: center; }
-.nz-facts li { font: 400 12.5px/1.4 var(--mono); color: var(--muted); letter-spacing: .02em; }
-.nz-facts li b { font-weight: 400; color: var(--ink); }
-
-/* HellaSwag, at the end of the models: one wide glass panel */
-.hs { margin-top: 24px; scroll-margin-top: 90px; }
-.hs-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 48px; align-items: end; }
-.hs-top .cap { margin-top: 0; max-width: 60ch; justify-self: end; }
-@media (max-width: 820px) { .hs-top { grid-template-columns: 1fr; } .hs-top .cap { justify-self: start; } }
-@media (max-width: 520px) { .hs { padding: 22px 18px; } }
-
-/* ---------- cost · speed · size: one plane, two axes, and the size of each bead as the third ---------- */
-.tri { margin-top: 24px; scroll-margin-top: 90px; }
-@media (max-width: 520px) { .tri { padding: 22px 18px; } }
-.tri-plot { position: relative; margin-top: 26px; }
-.tri-plot svg { display: block; width: 100%; overflow: visible; }
-.tri-plot text { font-family: var(--mono); }
-.tri-plot .tk { font-size: 11px; fill: var(--muted); }
-.tri-plot .ax { font-size: 10.5px; letter-spacing: .1em; fill: var(--muted); text-transform: uppercase; }
-.tri-plot .nm { font: 500 13.5px var(--sans); fill: var(--ink); }
-.tri-plot .ref .nm { fill: var(--ink-2); }
-.tri-plot .sb { font-size: 11px; fill: var(--muted); }
-.tri-plot .aim { font: italic 400 19px "Instrument Serif", Georgia, serif; fill: rgba(236, 235, 243, .42); }
-.tri-plot .pt { cursor: default; outline: none; }
-.tri-plot .pt .ring { transition: stroke-width .25s; }
-.tri-plot .pt:hover .ring, .tri-plot .pt:focus-visible .ring, .tri-plot .pt.on .ring { stroke-width: 2.25; }
-.tri-plot .pt .grow { transform-box: fill-box; transform-origin: center; transition: transform 1.1s cubic-bezier(.2,.8,.2,1), opacity .8s; }
-.tri-plot.pre .pt .grow { transform: scale(.2); opacity: 0; }
-.tri-plot .lbl { transition: opacity .8s .3s; }
-.tri-plot.pre .lbl { opacity: 0; }
-.tri-tip { position: absolute; z-index: 2; pointer-events: none; min-width: 210px; max-width: 260px; padding: 12px 14px; border-radius: 12px;
-  background: rgba(12, 12, 18, .92); border: 1px solid rgba(255, 255, 255, .14); box-shadow: 0 18px 50px -20px rgba(0, 0, 0, .9), -0.75px 0 0 rgba(255, 95, 174, .25), 0.75px 0 0 rgba(79, 216, 255, .28);
-  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); opacity: 0; transform: translateY(4px); transition: opacity .18s, transform .18s; }
-.tri-tip.show { opacity: 1; transform: none; }
-.tri-tip b { display: flex; align-items: center; gap: 8px; font: 600 14px/1.2 var(--sans); color: var(--ink); }
-.tri-tip b i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
-.tri-tip .k { display: block; margin: 3px 0 8px; font: 400 11px/1.4 var(--mono); color: var(--muted); }
-.tri-tip dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 12.5px; }
-.tri-tip dt { color: var(--muted); }
-.tri-tip dd { margin: 0; color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; }
-.tri-tip dd small { color: var(--muted); font-size: 11px; }
-.tri-key { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px 32px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
-.tri-key .sz { display: flex; align-items: center; gap: 14px; }
-.tri-key .sz svg { flex: none; }
-.tri-key .sz text { font: 400 10.5px var(--mono); fill: var(--muted); }
-.tri-key ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 22px; }
-.tri-key li { display: flex; align-items: center; gap: 8px; font: 400 11.5px/1.3 var(--mono); color: var(--muted); letter-spacing: .02em; }
-.tri-key li svg { flex: none; }
-.tri-foot { margin-top: 14px; font-size: 12.5px; line-height: 1.55; color: var(--muted); max-width: 92ch; }
-.tri details { margin-top: 12px; }
-.tri summary { cursor: pointer; width: max-content; font: 500 11px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-2); list-style: none; padding: 6px 0; }
-.tri summary::-webkit-details-marker { display: none; }
-.tri summary::after { content: " +"; color: var(--muted); }
-.tri details[open] summary::after { content: " \2212"; }
-.tri td small { color: var(--muted); font-size: 11.5px; }
-
-/* reveal: content is visible at rest; this only adds a gentle rise when it scrolls in */
-.rv { transition: transform .9s cubic-bezier(.2,.8,.2,1), opacity .9s; }
-.js .rv.pre { transform: translateY(18px); opacity: .35; }
-@media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  .hero-in > *, .rv { animation: none !important; transition: none !important; transform: none !important; opacity: 1 !important; }
-  .bee .caret { animation: none; }
-  .horizon::before, .planet::after { animation: none !important; }
+.nav .brand { display: flex; align-items: center; gap: 8px; text-decoration: none; margin-right: 10px; }
+.nav .brand img { width: 22px; height: 22px; }
+.nav .brand b { font: 600 13px/1 var(--sans); letter-spacing: .22em; }
+.nav .links { display: flex; gap: 2px; }
+.nav .links a, .nav .src { text-decoration: none; font: 400 13px/1 var(--sans); padding: 9px 12px; border-radius: 999px; color: var(--ink-2); transition: background .3s, color .3s; }
+.nav .links a:hover, .nav .src:hover, .nav .links a.on { color: var(--ink); background: rgba(255,255,255,.35); }
+.dark .nav .links a:hover, .dark .nav .src:hover, .nav.dark .links a.on { background: rgba(255,255,255,.08); }
+.nav .src { border-left: 1px solid var(--line); border-radius: 0 999px 999px 0; padding-left: 14px; }
+@media (max-width: 640px) {
+  .nav { top: 10px; padding: 5px 6px 5px 12px; gap: 0; }
+  .nav .brand b, .nav .src { display: none; }
+  .nav .brand { margin-right: 4px; }
+  .nav .links a { padding: 9px 10px; font-size: 12.5px; }
 }
+
+/* ---------- layout ---------- */
+section { position: relative; padding: 0 var(--gutter); }
+.wrap { max-width: 1180px; margin: 0 auto; }
+.rv { opacity: 0; transform: translateY(26px); filter: blur(6px); transition: opacity 1.1s ease, transform 1.1s cubic-bezier(.2,.8,.2,1), filter 1.1s ease; }
+.rv.in { opacity: 1; transform: none; filter: none; }
+.rv.d1 { transition-delay: .12s; } .rv.d2 { transition-delay: .24s; } .rv.d3 { transition-delay: .36s; }
+@media (prefers-reduced-motion: reduce) { .rv { opacity: 1; transform: none; filter: none; transition: none; } }
+
+/* ---------- hero ---------- */
+.hero { min-height: 100svh; display: flex; flex-direction: column; align-items: center; text-align: center; padding-top: max(14svh, 96px); }
+.hero h1 { font-size: clamp(46px, 8.4vw, 118px); line-height: .98; color: var(--ink); }
+.hero h1 em { color: var(--rose); }
+.hero .lede { margin-top: 26px; max-width: 520px; font-size: clamp(16px, 1.6vw, 18.5px); }
+.hero .chips { margin-top: 30px; display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+.cue { position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--ink-2); }
+.cue i { width: 1px; height: 46px; background: linear-gradient(var(--ink-2), transparent); transform-origin: top; animation: cue 2.6s ease-in-out infinite; }
+@keyframes cue { 0% { transform: scaleY(0); opacity: 0 } 40% { transform: scaleY(1); opacity: 1 } 100% { transform: scaleY(1) translateY(20px); opacity: 0 } }
+@media (max-height: 640px) { .cue { display: none; } }
+
+/* ---------- model chapters ---------- */
+.model { padding-top: 22vh; padding-bottom: 14vh; }
+.m-head { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: clamp(28px, 5vw, 80px); align-items: center; }
+.m-head.flip > :first-child { order: 2; }
+.m-title { font-size: clamp(96px, 15vw, 200px); display: block; margin: 18px 0 6px -4px; }
+.m-sub { font: italic 400 clamp(22px, 2.4vw, 30px)/1.25 var(--serif); color: var(--ink); }
+.m-text { margin-top: 22px; max-width: 520px; }
+.stats { margin-top: 34px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--line); }
+.stats div { padding: 18px 14px 0 0; }
+.stats b { display: block; font: 400 clamp(30px, 3.4vw, 44px)/1 var(--serif); color: var(--ink); }
+.stats b small { font-size: .5em; margin-left: 2px; color: var(--ink-2); }
+.stats span { display: block; margin-top: 8px; font-size: 13px; line-height: 1.35; color: var(--ink-2); }
+@media (max-width: 860px) {
+  .stack { height: 320px; }
+  .m-head { grid-template-columns: 1fr; }
+  .m-head.flip > :first-child { order: 0; }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 18px; }
+}
+
+/* Gnosis: 22 glass layers */
+.stack { position: relative; height: clamp(340px, 42vw, 520px); }
+.stack .ring {
+  position: absolute; left: 40%; width: min(62%, 320px); aspect-ratio: 3.3 / 1; transform: translate(-50%, 50%);
+  border-radius: 50%; border: 1px solid rgba(255,255,255,.85);
+  background: radial-gradient(ellipse at 50% 30%, rgba(255,255,255,.28), rgba(170,185,245,.10) 60%, rgba(255,255,255,.02));
+  box-shadow: inset 0 -2px 6px rgba(255,255,255,.35), 0 1px 0 rgba(90,100,180,.12);
+  opacity: 0; transition: opacity .8s ease, transform 1s cubic-bezier(.2,.8,.2,1);
+}
+.stack.in .ring { opacity: 1; }
+.stack .ring::before {
+  content: ""; position: absolute; inset: 0; border-radius: 50%; opacity: 0;
+  background: radial-gradient(ellipse at 50% 50%, rgba(255,226,190,.95), rgba(255,190,200,.35) 45%, transparent 70%);
+  animation: rise 3.4s ease-in-out infinite; animation-delay: calc(var(--i) * 0.085s);
+}
+@keyframes rise { 0%, 100% { opacity: 0 } 8% { opacity: .9 } 22% { opacity: 0 } }
+@media (prefers-reduced-motion: reduce) { .stack .ring::before { animation: none; } }
+.stack .lab { position: absolute; right: 0; top: 6%; text-align: right; }
+.stack .lab b { display: block; font-size: clamp(64px, 7vw, 96px); }
+.stack .lab span { font: italic 400 22px/1.2 var(--serif); color: var(--ink); }
+.stack .lab2 { position: absolute; right: 0; bottom: 4%; max-width: 170px; text-align: right; font-size: 13.5px; color: var(--ink-2); }
+
+/* side-by-side scores */
+.versus { margin-top: 12vh; display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.25fr); gap: clamp(24px, 4vw, 60px); padding: clamp(24px, 4vw, 48px); }
+.versus h3 { font-size: clamp(30px, 3.3vw, 44px); line-height: 1.08; }
+.versus h3 em { color: var(--rose); }
+.versus .cost { margin-top: 26px; display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap; }
+.versus .cost .gt { font-size: clamp(76px, 9vw, 124px); }
+.versus .cost .vs { padding-bottom: 14px; }
+.versus .cost .vs b { display: block; font: 400 30px/1 var(--serif); color: var(--ink-3); text-decoration: line-through; text-decoration-thickness: 1px; }
+.versus .cost .vs span { font-size: 13px; color: var(--ink-2); }
+.versus .note { margin-top: 18px; font-size: 15px; }
+.rows { display: grid; gap: 4px; align-content: center; }
+.row { display: grid; grid-template-columns: 150px minmax(0, 1fr) 96px; gap: 16px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.row:last-child { border-bottom: 0; }
+.row .what b { display: block; font: 500 14.5px/1.2 var(--sans); color: var(--ink); }
+.row .what span { font-size: 12.5px; color: var(--ink-2); }
+.bars { display: grid; gap: 7px; }
+.bar { position: relative; height: 16px; display: flex; align-items: center; }
+.bar i { display: block; height: 3px; border-radius: 3px; width: 0; transition: width 1.6s cubic-bezier(.2,.8,.2,1); }
+.in .bar i { width: calc(var(--v) / 80 * 100%); }
+.bar.us i { background: linear-gradient(90deg, var(--lilac), #b49cf2); box-shadow: 0 0 10px rgba(125,141,224,.55); }
+.bar.us.warm i { background: linear-gradient(90deg, #f08b7f, var(--coral)); box-shadow: 0 0 10px rgba(226,100,107,.5); }
+.bar.ref i { background: rgba(27,33,71,.28); }
+.bar em { font: normal 500 12.5px/1 var(--sans); margin-left: 9px; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bar.ref em { color: var(--ink-3); font-weight: 400; }
+.bar .chance { position: absolute; left: calc(var(--c) / 80 * 100%); top: 1px; bottom: 1px; width: 1px; background: rgba(27,33,71,.3); }
+.tag { font-size: 12px; line-height: 1.3; color: var(--ink-2); text-align: right; }
+.tag.good { color: var(--rose); }
+.legend { margin-top: 16px; display: flex; gap: 18px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink-2); }
+.legend span::before { content: ""; display: inline-block; width: 18px; height: 3px; border-radius: 3px; margin-right: 8px; vertical-align: middle; background: var(--k); }
+@media (max-width: 860px) {
+  .versus { grid-template-columns: 1fr; }
+  .row { grid-template-columns: 1fr 78px; }
+  .row .bars { grid-column: 1 / -1; grid-row: 2; }
+}
+
+/* Coral: experts */
+.experts { position: relative; padding: 22px 22px 18px; }
+.experts canvas { display: block; width: 100%; height: clamp(260px, 30vw, 380px); }
+.experts .word { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+.experts .word b { font: italic 400 clamp(28px, 3vw, 38px)/1 var(--serif); color: var(--ink); min-height: 1em; }
+.experts .foot { margin-top: 12px; font-size: 12.5px; color: var(--ink-2); display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+
+/* ---------- cost chart ---------- */
+.cost-sec { padding-top: 24vh; padding-bottom: 12vh; }
+.sec-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; align-items: end; }
+.sec-head h2 { font-size: clamp(40px, 5.4vw, 76px); line-height: 1; margin-top: 14px; }
+.sec-head h2 em { color: var(--rose); }
+@media (max-width: 860px) { .sec-head { grid-template-columns: 1fr; } }
+.plot { margin-top: 44px; padding: clamp(14px, 3vw, 34px); }
+.plot svg { display: block; width: 100%; height: auto; overflow: visible; }
+.plot .cap { margin-top: 14px; font-size: 12.5px; color: var(--ink-3); }
+.plot text { font-family: var(--sans); }
+.pt { cursor: default; }
+.pt circle.halo { transition: r .4s; }
+
+/* ---------- pearl ---------- */
+.pearl-sec { padding-top: 26vh; padding-bottom: 10vh; }
+.pearl-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(28px, 5vw, 80px); }
+.pearl-grid .spacer { min-height: 46vh; }
+@media (max-width: 860px) { .pearl-grid { grid-template-columns: 1fr; } .pearl-grid .spacer { min-height: 38vh; order: -1; } }
+.field { margin-top: 34px; padding: 26px 28px; }
+.field .ln { font: 400 clamp(21px, 2.1vw, 26px)/1.35 var(--serif); color: var(--ink); opacity: 0; transform: translateY(8px); transition: opacity .9s, transform .9s; }
+.field .ln.q { color: var(--ink-2); margin-top: 12px; }
+.field .ln.a { font-style: italic; font-size: clamp(26px, 2.6vw, 34px); color: var(--rose); margin-top: 4px; }
+.field.in .ln { opacity: 1; transform: none; }
+.field.in .ln:nth-child(3) { transition-delay: .9s; } .field.in .ln:nth-child(4) { transition-delay: 1.8s; } .field.in .ln:nth-child(5) { transition-delay: 2.8s; }
+.field .fam { margin-top: 20px; font-size: 10.5px; letter-spacing: .2em; }
+.mix { margin-top: 34px; padding: 22px 26px 10px; }
+.mix .rowm:last-child { border-bottom: 0; }
+.mix .rowm { display: grid; grid-template-columns: 170px minmax(0, 1fr) 46px; gap: 18px; align-items: center; padding: 13px 0; border-bottom: 1px solid var(--line); }
+.mix .rowm b { font: 500 14.5px/1.2 var(--sans); color: var(--ink); display: block; }
+.mix .rowm span { font-size: 12.5px; color: var(--ink-2); }
+.mix .rowm i { display: block; height: 2px; border-radius: 2px; width: 0; background: linear-gradient(90deg, #8f7bff, #4fd8ff); box-shadow: 0 0 10px rgba(143,123,255,.6); transition: width 1.6s cubic-bezier(.2,.8,.2,1); }
+.mix.in .rowm i { width: calc(var(--v) / 36 * 100%); }
+.mix .rowm.f1 i { background: linear-gradient(90deg, #ffd0dc, #ffb0c4); box-shadow: 0 0 12px rgba(255,176,196,.7); }
+.mix .rowm em { font: normal 500 13px/1 var(--sans); text-align: right; color: var(--ink); font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) { .mix .rowm { grid-template-columns: minmax(0, 1fr) 46px; } .mix .rowm .m { grid-column: 1 / -1; grid-row: 2; } }
+
+/* ---------- close ---------- */
+.close { min-height: 92svh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding-top: 10vh; padding-bottom: 14vh; }
+.close img { width: 64px; height: 64px; filter: drop-shadow(0 0 24px rgba(180,160,255,.5)); }
+.close h2 { margin-top: 26px; font-size: clamp(56px, 8vw, 112px); line-height: 1; }
+.close p { margin-top: 18px; max-width: 460px; }
+.close .chips { margin-top: 30px; display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+footer { padding: 26px var(--gutter) max(26px, env(safe-area-inset-bottom)); display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--ink-3); }
+footer a { text-decoration: none; color: var(--ink-2); }
 </style>
 </head>
 <body>
+<canvas id="sky" aria-hidden="true"></canvas>
+<div id="fallback" aria-hidden="true" hidden></div>
 
-
-<div class="rail" id="rail" aria-hidden="true"><div class="thumb" id="thumb"></div></div>
-
-<header class="bar" id="bar">
-  <div class="wrap bar-in">
-    <a class="brand" href="#top" aria-label="Oazy AI Research, back to top">
-      <img src="logo.png" alt="">
-      <span class="word">OAZY<small>AI RESEARCH</small></span>
-    </a>
-    <nav class="tabs" id="tabs" aria-label="Sections">
-      <span class="pill" id="pill"></span>
-      <a href="#models" data-sec="models">Models</a>
-      <a href="#near0" data-sec="near0">Near-0</a>
-      <a href="#data" data-sec="data">Data</a>
-      <a href="#log" data-sec="log">Notebook</a>
-    </nav>
-    <a class="btn btn-ghost bar-cta" href="https://github.com/jpcpais01/Oazy-AI-Research" target="_blank" rel="noopener">
-      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38v-1.34c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.72 1.22 1.88.87 2.34.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.66 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 8 0Z"/></svg>
-      Source
-    </a>
-  </div>
+<header>
+  <nav class="nav glass" id="nav" aria-label="Sections">
+    <a class="brand" href="#top" aria-label="Oazy AI Research, top"><img src="logo.png" alt=""><b>OAZY</b></a>
+    <div class="links">
+      <a href="#gnosis">Gnosis</a>
+      <a href="#coral">Coral</a>
+      <a href="#cost">Cost</a>
+      <a href="#pearl">Pearl</a>
+    </div>
+    <a class="src" href="https://github.com/jpcpais01/simulations" rel="noopener">Source</a>
+  </nav>
 </header>
 
-<canvas id="land" aria-hidden="true"></canvas>
 <main id="top">
-  <section class="hero" aria-label="Introduction">
-    <div class="fallback" aria-hidden="true"></div>
-    <canvas id="warp" aria-hidden="true"></canvas>
-    <div class="wrap hero-in">
-      <p class="eyebrow">Oazy AI Research</p>
-      <h1>Small models that think <em>differently</em></h1>
-      <p class="sub">A lab notebook on mind-inspired language models, each trained on one GPU and compared with open models of their size.</p>
-      <div class="ctas">
-        <a class="btn btn-quiet" href="#results">Results</a>
-        <a class="btn btn-quiet" href="#log">Notebook</a>
-      </div>
+  <!-- ======================= HERO ======================= -->
+  <section class="hero" data-scene="dawn" data-tone="light" aria-label="Introduction">
+    <div class="caps rv">Oazy AI Research</div>
+    <h1 class="rv d1" style="margin-top:22px">Small models that understand, <em>rather than recite.</em></h1>
+    <p class="lede rv d2 light-text">Two small language models, each trained from scratch on a single GPU, and the text that teaches them.</p>
+    <div class="chips rv d3">
+      <a class="chip glass" href="#gnosis">Gnosis <small>308M</small></a>
+      <a class="chip glass" href="#coral">Coral <small>1B experts</small></a>
     </div>
+    <div class="cue" aria-hidden="true"><span class="caps" style="font-size:10px">Scroll</span><i></i></div>
   </section>
 
-  <div class="below">
-
-  <!-- ===================== MODELS ===================== -->
-  <section class="block" id="models" aria-labelledby="models-h">
+  <!-- ======================= GNOSIS ======================= -->
+  <section class="model" id="gnosis" data-scene="morning" data-tone="light" aria-labelledby="gnosis-h">
     <div class="wrap">
-      <div class="head rv">
+      <div class="m-head">
         <div>
-          <span class="label">// models</span>
-          <h2 id="models-h">Two ways to <em>write a sentence</em></h2>
+          <div class="caps rv">01 &nbsp;·&nbsp; A micro language model &nbsp;·&nbsp; next-token</div>
+          <h2 id="gnosis-h" class="gt m-title rv d1">Gnosis</h2>
+          <div class="m-sub rv d2">knowledge, knowing from within</div>
+          <p class="m-text rv d2 light-text">Our Bee6 design, grown to 22 layers. It learns the plain way, by predicting the next word, from ten billion tokens of Pearl: ordinary text, plus small worlds written in words.</p>
         </div>
-        <p>Bee writes one token after another. Fern drafts a whole passage and lets it come into focus. Coral, five times larger, writes like Bee but uses only a small part of itself for each word.</p>
+        <div class="stack" id="stack" role="img" aria-label="Twenty-two glass layers stacked, with light rising through them as a word passes">
+          <div class="lab"><b class="gt">22</b><span>layers</span></div>
+          <div class="lab2">Each word rises through every layer before the next one is guessed.</div>
+        </div>
+      </div>
+      <div class="stats rv">
+        <div><b>308<small>M</small></b><span>parameters</span></div>
+        <div><b>10<small>B</small></b><span>tokens read</span></div>
+        <div><b>10.4<small>h</small></b><span>on one H200</span></div>
+        <div><b>266<small>k</small></b><span>tokens a second</span></div>
       </div>
 
-      <div class="models">
-        <article class="model bee rv" aria-labelledby="bee-h">
-          <div class="chips">
-            <span class="chip acc">Next-token</span>
-            <span class="chip real">Measured</span>
-            <span class="chip ph">Partial run</span>
+      <div class="versus glass rv" id="g-vs">
+        <div>
+          <div class="caps">Beside SmolLM2-135M</div>
+          <h3 style="margin-top:14px">The same sense of the physical world, <em>for a sliver of the cost.</em></h3>
+          <div class="cost">
+            <span class="gt">$42</span>
+            <div class="vs"><b>≈ $5,000</b><span>SmolLM2-135M, our estimate</span></div>
           </div>
-          <h3 id="bee-h">Bee<span>3_0.2B</span></h3>
-          <p class="what">A 203M-parameter hybrid of Memtrix fast-weight memory layers and gated attention, with SmolLM2's tokenizer and SmolLM2-360M as its teacher. Bee_v2's body with a new recipe: trained only on Tagus, no bleed between documents, and the teacher kept for the whole run.</p>
-          <div class="stats">
-            <div class="stat"><span class="v">203<small>M</small></span><span class="k">Parameters</span></div>
-            <div class="stat"><span class="v">1.1<small>B</small></span><span class="k">Tokens seen</span></div>
-            <div class="stat"><span class="v">3.199</span><span class="k">Held-out loss</span></div>
-            <div class="stat"><span class="v">29.6<small>%</small></span><span class="k">Quick HellaSwag</span></div>
-          </div>
-          <p class="note">Unfinished. The run was cut off at 45% (1,135M of 2,500M tokens) when the pod stopped, before its learning-rate cool-down. These are its last numbers, and it can resume from its checkpoint.</p>
-          <div class="demo" aria-label="Animation: Bee writes one token at a time">
-            <div class="demo-top">
-              <span class="label">How it writes <b>· one token per step</b></span>
-              <span class="label" id="bee-step">step 0 / 16</span>
+          <p class="note">About <b style="color:var(--ink);font-weight:500">120× cheaper</b> to train, after reading 200× less text. SmolLM2-135M is a published model from Hugging Face, trained on 2 trillion tokens.</p>
+        </div>
+        <div>
+          <div class="rows" role="table" aria-label="Gnosis against SmolLM2-135M">
+            <div class="row" role="row">
+              <div class="what" role="cell"><b>PIQA</b><span>physical common sense</span></div>
+              <div class="bars" role="cell"><div class="bar us" style="--v:66.8"><span class="chance" style="--c:50"></span><i></i><em>66.8</em></div><div class="bar ref" style="--v:68.4"><span class="chance" style="--c:50"></span><i></i><em>68.4</em></div></div>
+              <div class="tag good" role="cell">the same, within error</div>
             </div>
-            <div class="toks" id="bee-toks"></div>
-          </div>
-        </article>
-
-        <article class="model fern rv" aria-labelledby="fern-h">
-          <div class="chips">
-            <span class="chip acc">Not next-token</span>
-            <span class="chip ph">Placeholder</span>
-          </div>
-          <h3 id="fern-h">Fern<span>_0.2B</span></h3>
-          <p class="what">Fern does not guess the next word. It writes 16 words at once over 5 rounds, gist first and details last.</p>
-          <div class="stats">
-            <div class="stat"><span class="v">198<small>M</small></span><span class="k">Parameters</span></div>
-            <div class="stat"><span class="v">5.0<small>B</small></span><span class="k">Tokens seen</span></div>
-            <div class="stat"><span class="v">3.05</span><span class="k">Held-out loss</span></div>
-            <div class="stat"><span class="v">31.2<small>%</small></span><span class="k">HellaSwag</span></div>
-          </div>
-          <div class="demo" aria-label="Animation: Fern writes 16 words at once over 5 rounds">
-            <div class="demo-top">
-              <span class="label">How it writes <b>· 16 words at once</b></span>
-              <span class="label" style="display:flex;gap:10px;align-items:center"><span id="fern-step">round 0 / 5</span><span class="rounds" id="fern-rounds"><i></i><i></i><i></i><i></i><i></i></span></span>
+            <div class="row" role="row">
+              <div class="what" role="cell"><b>ARC-Challenge</b><span>hard school science</span></div>
+              <div class="bars" role="cell"><div class="bar us" style="--v:30"><span class="chance" style="--c:25"></span><i></i><em>≈ 30</em></div><div class="bar ref" style="--v:29.6"><span class="chance" style="--c:25"></span><i></i><em>29.6</em></div></div>
+              <div class="tag good" role="cell">level</div>
             </div>
-            <div class="toks" id="fern-toks"></div>
-          </div>
-        </article>
-
-        <article class="model coral wide rv" aria-labelledby="coral-h">
-          <div class="chips">
-            <span class="chip acc">Next-token</span>
-            <span class="chip real">Measured</span>
-            <span class="chip done">Finished</span>
-          </div>
-          <h3 id="coral-h">Coral<span>_1B</span></h3>
-          <p class="what">Our first mixture-of-experts model. It holds 1B parameters, but each word passes through only a few of its experts, about 211M parameters. It read 13B tokens of Tagus on one B200, for about $100, and finished ahead of SmolLM2-135M, which read about 150 times more text.</p>
-          <div class="stats">
-            <div class="stat"><span class="v">1<small>B</small></span><span class="k">Parameters</span></div>
-            <div class="stat"><span class="v">211<small>M</small></span><span class="k">Active per word</span></div>
-            <div class="stat"><span class="v">13<small>B</small></span><span class="k">Tokens seen</span></div>
-            <div class="stat"><span class="v">45.3<small>%</small></span><span class="k">HellaSwag</span></div>
-          </div>
-          <dl class="scores" aria-label="Coral's other results">
-            <div><dt>ARC-Easy</dt><dd>55.3%</dd></div>
-            <div><dt>PIQA</dt><dd>69.8%</dd></div>
-            <div><dt>Held-out loss</dt><dd>2.754</dd></div>
-            <div><dt>Bits per byte</dt><dd>0.859</dd></div>
-            <div><dt>Recall</dt><dd>87%</dd></div>
-          </dl>
-          <p class="aside">After a short chat fine-tune, Coral runs offline on a phone at about 55 tokens a second.</p>
-          <div class="demo" aria-label="Illustration: each word is sent to a few of many experts">
-            <div class="demo-top">
-              <span class="label">How it thinks <b>· a few experts per word</b></span>
-              <span class="label">illustration</span>
+            <div class="row" role="row">
+              <div class="what" role="cell"><b>ARC-Easy</b><span>school science</span></div>
+              <div class="bars" role="cell"><div class="bar us" style="--v:54"><span class="chance" style="--c:25"></span><i></i><em>54.0</em></div><div class="bar ref" style="--v:58.8"><span class="chance" style="--c:25"></span><i></i><em>58.8</em></div></div>
+              <div class="tag" role="cell">close behind</div>
             </div>
-            <div class="words" id="coral-words"></div>
-            <div class="experts" id="coral-experts"></div>
+            <div class="row" role="row">
+              <div class="what" role="cell"><b>HellaSwag</b><span>the sensible ending</span></div>
+              <div class="bars" role="cell"><div class="bar us" style="--v:37.9"><span class="chance" style="--c:25"></span><i></i><em>37.9</em></div><div class="bar ref" style="--v:42.1"><span class="chance" style="--c:25"></span><i></i><em>42.1</em></div></div>
+              <div class="tag" role="cell">behind</div>
+            </div>
           </div>
-        </article>
-      </div>
-
-      <div class="panel glass hs rv" id="results">
-        <div class="hs-top">
-          <div>
-            <span class="label">HellaSwag · 10,042 questions</span>
-            <h3>Picking the sensible ending</h3>
-          </div>
-          <p class="cap">Each question is a scene with four possible endings; guessing gets 25%. Higher is better. Coral's is the full set, each ending scored per letter. Striped bars are placeholders, and Bee3's is a quick check on 1,000 of the questions from a run cut off at 45%.</p>
+          <div class="legend"><span style="--k:linear-gradient(90deg,#7d8de0,#b49cf2)">Gnosis</span><span style="--k:rgba(27,33,71,.28)">SmolLM2-135M</span><span style="--k:rgba(27,33,71,.3);">│ guessing</span></div>
         </div>
-        <div class="chart" id="chart" role="img" aria-label="HellaSwag accuracy: Coral_1B 45.3%, SmolLM2-135M 42.1%, Bee3_0.2B 29.6% (partial run, 1,000 questions), Bee_v2_0.2B 32.9%, Fern_0.2B 31.2% (placeholder), GPT-2 small 29.6%, random guessing 25%."></div>
-      </div>
-      <div class="panel glass tri rv" id="tradeoff">
-        <div class="hs-top">
-          <div>
-            <span class="label">Cost · HellaSwag · size</span>
-            <h3>What it took to train, and how well it does</h3>
-          </div>
-          <p class="cap">Across, what training cost, each step ten times the last. Up, HellaSwag: picking the sensible ending of a scene, scored per letter; guessing gets 25%. Each bead is as large as the model's file. Coral uses only a few of its experts for each word, so its inner bead is the part at work.</p>
-        </div>
-        <div class="tri-plot pre" id="tri" role="img" aria-label="Training cost against HellaSwag, with bead size for file size. Coral_1B: $114 paid, 45.3%, 2.07 GB, of which 0.42 GB at work per word. Bee4-200M: about $50, score still to come, 0.40 GB. GPT-2 small: about $18 estimated, 31.1%, 0.25 GB. SmolLM2-135M: about $4,000 estimated, 42.1%, 0.27 GB. SmolLM2-360M: about $21,000 estimated, 54.5%, 0.72 GB.">
-          <div class="tri-tip" id="tri-tip" aria-hidden="true"></div>
-        </div>
-        <div class="tri-key" aria-hidden="true">
-          <div class="sz">
-            <svg width="132" height="44" viewBox="0 0 132 44" id="tri-sz"></svg>
-          </div>
-          <ul>
-            <li><svg width="14" height="14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--ink-2)" stroke-width="1.25"/></svg>measured</li>
-            <li><svg width="14" height="14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--ink-2)" stroke-width="1.25" stroke-dasharray="2.5 2"/></svg>cost estimated</li>
-            <li><svg width="14" height="14"><circle cx="7" cy="7" r="5.5" fill="rgba(236,235,243,.1)" stroke="var(--ink-2)" stroke-width="1.25"/></svg>grey · published models</li>
-            <li><svg width="14" height="14"><circle cx="7" cy="7" r="6" fill="none" stroke="var(--ink-2)" stroke-width="1"/><circle cx="7" cy="7" r="3" fill="rgba(236,235,243,.55)"/></svg>inner bead · at work per word</li>
-          </ul>
-        </div>
-        <p class="tri-foot">Ours is the GPU rent we paid, about $8 an hour; Bee4's is from its run time, and its score is still to come. Published models' costs are estimated from their size and the text they read, and likely low; their scores are the published ones, and GPT-2's is measured here.</p>
-        <details>
-          <summary>As a table</summary>
-          <div class="tbl-wrap"><table>
-            <thead><tr><th>Model</th><th class="num">Training cost</th><th class="num">HellaSwag</th><th class="num">File</th><th class="num">CPU words/s</th></tr></thead>
-            <tbody id="tri-tbl"></tbody>
-          </table></div>
-        </details>
       </div>
     </div>
   </section>
 
-  <!-- ===================== NEAR-0 COMPUTE ===================== -->
-  <section class="block" id="near0" aria-labelledby="near0-h">
+  <!-- ======================= CORAL ======================= -->
+  <section class="model" id="coral" data-scene="sunset" data-tone="light" aria-labelledby="coral-h">
     <div class="wrap">
-      <div class="nz-top rv">
+      <div class="m-head flip">
         <div>
-          <span class="label">// near-0 compute</span>
-          <h2 id="near0-h">Small enough to run on <span class="serif">almost nothing</span></h2>
+          <div class="caps rv">02 &nbsp;·&nbsp; A mixture of experts &nbsp;·&nbsp; next-token</div>
+          <h2 id="coral-h" class="gt warm m-title rv d1">Coral</h2>
+          <div class="m-sub rv d2">a billion parts, only a few awake at a time</div>
+          <p class="m-text rv d2 light-text">Twenty layers, each with 32 experts. For every word a small router wakes two of them, so only 161M of its 1,037M parameters do the work. After a short chat lesson it runs offline on a phone.</p>
         </div>
-        <div>
-          <p>The usual way to run a language model is a room full of GPUs. We are trying to go the other way: models small enough for an old laptop or the phone in your pocket, with no GPU and no connection, that still write well.</p>
-          <p>On a phone, a model writes only as fast as it can read its own weights, so we look for designs that read less for each word.</p>
+        <div class="experts glass rv" id="experts">
+          <div class="word"><span class="caps">Now reading</span><b id="ex-word">the</b></div>
+          <canvas id="ex-c" role="img" aria-label="Twenty rows of 32 experts; for each word, two experts light up in every row"></canvas>
+          <div class="foot"><span>20 layers × 32 experts</span><span>2 awake per layer, per word</span></div>
         </div>
       </div>
-      <div class="nz-band rv" id="nz-band" role="img" aria-label="A wide river of light, the power of a room of GPUs, narrows into one glass bead and leaves it as a single fine thread: our models, on a few watts">
-        <div class="fallback" aria-hidden="true"></div>
-        <canvas id="nz-c" aria-hidden="true"></canvas>
-        <div class="nz-tag a" aria-hidden="true"><b>a room of GPUs</b><span>tens of megawatts</span></div>
-        <div class="nz-tag b" aria-hidden="true"><b>ours</b><span>a few watts</span></div>
+      <div class="stats rv">
+        <div><b>1<small>B</small></b><span>parameters</span></div>
+        <div><b>161<small>M</small></b><span>at work per word</span></div>
+        <div><b>13<small>B</small></b><span>tokens read</span></div>
+        <div><b>$114</b><span>on one B200, 272k tokens a second</span></div>
       </div>
-      <ul class="nz-facts">
-        <li>Coral_1B on a 4-core CPU · <b>about 40 words/s</b></li>
-        <li>read for each word · <b>211M of 1,037M</b></li>
-        <li>on a phone, offline · <b>about 55 tokens/s</b></li>
-      </ul>
+
+      <div class="versus glass rv">
+        <div>
+          <div class="caps">Beside SmolLM2-135M</div>
+          <h3 style="margin-top:14px">Ahead on common sense, <em>trained for $114.</em></h3>
+          <p class="note">Coral reads like a 161M model but knows like a bigger one. It finished ahead of SmolLM2-135M on HellaSwag and PIQA, after reading 150 times less text.</p>
+        </div>
+        <div>
+          <div class="rows" role="table" aria-label="Coral against SmolLM2-135M">
+            <div class="row" role="row">
+              <div class="what" role="cell"><b>HellaSwag</b><span>the sensible ending</span></div>
+              <div class="bars" role="cell"><div class="bar us warm" style="--v:45.3"><span class="chance" style="--c:25"></span><i></i><em>45.3</em></div><div class="bar ref" style="--v:42.1"><span class="chance" style="--c:25"></span><i></i><em>42.1</em></div></div>
+              <div class="tag good" role="cell">ahead</div>
+            </div>
+            <div class="row" role="row">
+              <div class="what" role="cell"><b>PIQA</b><span>physical common sense</span></div>
+              <div class="bars" role="cell"><div class="bar us warm" style="--v:69.8"><span class="chance" style="--c:50"></span><i></i><em>69.8</em></div><div class="bar ref" style="--v:68.4"><span class="chance" style="--c:50"></span><i></i><em>68.4</em></div></div>
+              <div class="tag good" role="cell">ahead</div>
+            </div>
+            <div class="row" role="row">
+              <div class="what" role="cell"><b>ARC-Easy</b><span>school science</span></div>
+              <div class="bars" role="cell"><div class="bar us warm" style="--v:55.3"><span class="chance" style="--c:25"></span><i></i><em>55.3</em></div><div class="bar ref" style="--v:58.8"><span class="chance" style="--c:25"></span><i></i><em>58.8</em></div></div>
+              <div class="tag" role="cell">close behind</div>
+            </div>
+          </div>
+          <div class="legend"><span style="--k:linear-gradient(90deg,#f08b7f,#e2646b)">Coral</span><span style="--k:rgba(27,33,71,.28)">SmolLM2-135M</span></div>
+        </div>
+      </div>
     </div>
   </section>
 
-  <!-- ===================== DATA ===================== -->
-  <section class="block" id="data" aria-labelledby="data-h">
+  <!-- ======================= COST ======================= -->
+  <section class="cost-sec dark" id="cost" data-scene="dusk" data-tone="dark" aria-labelledby="cost-h">
     <div class="wrap">
-      <div class="head rv">
+      <div class="sec-head">
         <div>
-          <span class="label">// data</span>
-          <h2 id="data-h"><em>Tagus</em>, our training text</h2>
+          <div class="caps rv">What it took</div>
+          <h2 id="cost-h" class="rv d1">The cost of a model, <em>and what it knows</em></h2>
         </div>
-        <p>About 2.5B tokens of open text, read once each, in two phases. Documents never bleed into each other, and every source keeps a held-out slice. Bee3 was the first model trained on it, and Coral reads a larger build of it.</p>
+        <p class="rv d2">Each pearl is a model: further right cost more to train, higher picks the sensible ending more often. Ours are what we paid for the GPU. The published models are our estimates from their size and the text they read.</p>
       </div>
-
-      <div class="tagus rv">
-        <div class="t-head" aria-hidden="true"><span></span><span class="label">Main <b>· first 80%</b></span><span class="label">Cool-down <b>· last 20%</b></span></div>
-        <ol class="t-rows" aria-label="Tagus mix by source: share of the main phase and of the cool-down">
-<li><div class="src"><b>FineWeb-Edu</b><span>Web pages kept for their teaching value</span></div><div class="m a"><span class="pc">45%</span><span class="tr"><i style="width:100.0%"></i></span></div><div class="m b"><span class="pc">30%</span><span class="tr"><i style="width:66.7%"></i></span></div></li>
-<li><div class="src"><b>DCLM</b><span>Broad, quality-filtered web text</span></div><div class="m a"><span class="pc">25%</span><span class="tr"><i style="width:55.6%"></i></span></div><div class="m b"><span class="pc">5%</span><span class="tr"><i style="width:11.1%"></i></span></div></li>
-<li><div class="src"><b>Cosmopedia v2</b><span>Synthetic textbooks and stories</span></div><div class="m a"><span class="pc">12%</span><span class="tr"><i style="width:26.7%"></i></span></div><div class="m b"><span class="pc">15%</span><span class="tr"><i style="width:33.3%"></i></span></div></li>
-<li><div class="src"><b>Wikipedia</b><span>Encyclopedic facts, in English</span></div><div class="m a"><span class="pc">5%</span><span class="tr"><i style="width:11.1%"></i></span></div><div class="m b"><span class="pc">5%</span><span class="tr"><i style="width:11.1%"></i></span></div></li>
-<li><div class="src"><b>FineMath</b><span>Math explanations and worked problems</span></div><div class="m a"><span class="pc">5%</span><span class="tr"><i style="width:11.1%"></i></span></div><div class="m b"><span class="pc">10%</span><span class="tr"><i style="width:22.2%"></i></span></div></li>
-<li><div class="src"><b>Python code</b><span>Real code, for structure and precision</span></div><div class="m a"><span class="pc">5%</span><span class="tr"><i style="width:11.1%"></i></span></div><div class="m b"><span class="pc">5%</span><span class="tr"><i style="width:11.1%"></i></span></div></li>
-<li><div class="src"><b>smol-smoltalk</b><span>Short conversations</span></div><div class="m a"><span class="pc">3%</span><span class="tr"><i style="width:6.7%"></i></span></div><div class="m b"><span class="pc">30%</span><span class="tr"><i style="width:66.7%"></i></span></div></li>
-        </ol>
-        <p class="t-foot label">≈ 2.5B tokens · SmolLM2 tokenizer · every token read once</p>
+      <div class="plot glass rv" id="plot">
+        <svg id="plot-svg" viewBox="0 0 1000 470" role="img" aria-label="Training cost against HellaSwag. Gnosis: $42, 37.9%. Coral: $114, 45.3%. SmolLM2-135M: about $5,000, 42.1%. SmolLM2-360M: about $21,000, 54.5%. Guessing: 25%."></svg>
+        <div class="cap">HellaSwag, scored per letter, 10,042 questions. Pearl size follows parameter count; Coral's bright core is the part at work per word.</div>
       </div>
-
     </div>
   </section>
 
-  <!-- ===================== LAB LOG ===================== -->
-  <section class="block" id="log" aria-labelledby="log-h">
+  <!-- ======================= PEARL ======================= -->
+  <section class="pearl-sec dark" id="pearl" data-scene="night" data-tone="dark" aria-labelledby="pearl-h">
     <div class="wrap">
-      <div class="head rv">
+      <div class="pearl-grid">
         <div>
-          <span class="label">// notebook</span>
-          <h2 id="log-h">Every idea we tried, <em>newest first</em></h2>
-        </div>
-        <p>Including the ones that did not work. Each taught the next.</p>
+          <div class="caps rv">The training text</div>
+          <h2 id="pearl-h" class="gt moon m-title rv d1">Pearl</h2>
+          <div class="m-sub rv d2">ordinary text, and small worlds</div>
+          <p class="m-text rv d2">Mostly carefully chosen web pages, books, Wikipedia, maths and code. One part in five is Field1: little worlds told in plain, varied words, where every answer is known exactly, so a model can learn to keep track of who has what and where things are.</p>
+          <div class="field glass" id="field">
+            <div class="caps">Field1 &nbsp;·&nbsp; a small world, written in words</div>
+            <div class="ln" style="margin-top:14px">Mara puts the shell in the blue box.</div>
+            <div class="ln">Then she walks down to the river.</div>
+            <div class="ln q">Where is the shell?</div>
+            <div class="ln a">In the blue box.</div>
+            <div class="caps fam">Who has what · where things are · order · counting · cause · belief</div>
+          </div>
+          <div class="mix glass rv" id="mix">
+        <div class="caps" style="margin-bottom:10px">What's inside, by share of tokens</div>
+        <div class="rowm f1"><div><b>Field1</b><span>small worlds, written in words</span></div><div class="m"><i style="--v:20"></i></div><em>20%</em></div>
+        <div class="rowm"><div><b>FineWeb-Edu</b><span>web pages kept for teaching value</span></div><div class="m"><i style="--v:33.6"></i></div><em>34%</em></div>
+        <div class="rowm"><div><b>DCLM-Edu</b><span>broad, filtered web text</span></div><div class="m"><i style="--v:16"></i></div><em>16%</em></div>
+        <div class="rowm"><div><b>Cosmopedia</b><span>synthetic textbooks and stories</span></div><div class="m"><i style="--v:8"></i></div><em>8%</em></div>
+        <div class="rowm"><div><b>Maths</b><span>explanations and worked problems</span></div><div class="m"><i style="--v:5.6"></i></div><em>6%</em></div>
+        <div class="rowm"><div><b>Books</b><span>Project Gutenberg</span></div><div class="m"><i style="--v:4.8"></i></div><em>5%</em></div>
+        <div class="rowm"><div><b>Wikipedia</b><span>encyclopedic facts</span></div><div class="m"><i style="--v:4.8"></i></div><em>5%</em></div>
+        <div class="rowm"><div><b>Code</b><span>for structure and precision</span></div><div class="m"><i style="--v:4.8"></i></div><em>5%</em></div>
+        <div class="rowm"><div><b>Conversations</b><span>so it can learn to talk</span></div><div class="m"><i style="--v:2.4"></i></div><em>2%</em></div>
       </div>
-      <div class="log">
-        <div class="day rv"><time class="label" datetime="2026-11-07">Nov 7</time></div>
-        <ol class="ideas">
-          <li class="idea rv"><span class="no">06</span><h3>Coral_1B</h3><p>Our first mixture of experts: 1B parameters, about 211M at work per word, 13B tokens. 45.3% on HellaSwag, ahead of SmolLM2-135M, and it runs offline on a phone.</p><span class="kind nt">next-token</span></li>
-        </ol>
-        <div class="day rv"><time class="label" datetime="2026-11-06">Nov 6</time></div>
-        <ol class="ideas">
-          <li class="idea rv"><span class="no">05</span><h3>Bee3</h3><p>Bee_v2 on Tagus, with a new recipe. Cut off at 45% when the pod stopped: loss 3.199 and 29.6% on a quick HellaSwag check at 1.1B tokens.</p><span class="kind nt">next-token</span></li>
-        </ol>
-        <div class="day rv"><time class="label" datetime="2026-11-05">Nov 5</time></div>
-        <ol class="ideas">
-          <li class="idea rv"><span class="no">04</span><h3>Bee_v2</h3><p>Everything that worked, in one model. 32.9% on HellaSwag, ahead of GPT-2 small.</p><span class="kind nt">next-token</span></li>
-          <li class="idea rv"><span class="no">03</span><h3>Fern</h3><p>Sixteen words at a time, gist first and details last.</p><span class="kind nn">unfolds text</span></li>
-        </ol>
-        <div class="day rv"><time class="label" datetime="2026-11-04">Nov 4</time></div>
-        <ol class="ideas">
-          <li class="idea rv"><span class="no">02</span><h3>Memtrix</h3><p>Memory that learns while it reads. Beat our GPT-2 baseline, 28.4% to 27.8%.</p><span class="kind nt">next-token</span></li>
-          <li class="idea rv"><span class="no">01</span><h3>Settle</h3><p>A sheet of thought that settles. Worse than the GPT baseline.</p><span class="kind nt">next-token</span></li>
-        </ol>
+        </div>
+        <div class="spacer" aria-hidden="true"></div>
       </div>
     </div>
   </section>
 
-  </div>
-
-  <section class="close" aria-labelledby="close-h">
-    <div class="horizon" aria-hidden="true"><div class="planet"></div></div>
-    <div class="wrap close-in rv">
-      <span class="label">// next</span>
-      <h2 id="close-h">Bee4, on <em>Coral's recipe</em></h2>
-      <p>A dense 0.2B model at Coral's width, trained the way Coral was, with SmolLM2-360M as its teacher, over 10B tokens of Tagus. The result goes in the notebook either way.</p>
-      <div class="ctas">
-        <a class="btn btn-quiet" href="https://github.com/jpcpais01/Oazy-AI-Research" target="_blank" rel="noopener">Source on GitHub</a>
-      </div>
-    </div>
+  <!-- ======================= CLOSE ======================= -->
+  <section class="close dark" data-scene="deep" data-tone="dark" aria-labelledby="close-h">
+    <img class="rv" src="logo.png" alt="">
+    <h2 id="close-h" class="rv d1"><em>Still learning.</em></h2>
+    <p class="rv d2">An independent research notebook. Every model here was trained from nothing, on one GPU at a time.</p>
+    <div class="chips rv d3"><a class="chip glass" href="https://github.com/jpcpais01/simulations" rel="noopener">Source on GitHub</a></div>
   </section>
 </main>
 
-<footer>
-  <div class="wrap foot">
-    <a class="brand" href="#top" aria-label="Back to top">
-      <img src="logo.png" alt="">
-      <span class="word">OAZY<small>AI RESEARCH</small></span>
-    </a>
-    <nav aria-label="Footer">
-      <a href="#models">Models</a><a href="#near0">Near-0</a><a href="#data">Data</a><a href="#log">Notebook</a>
-      <a href="https://github.com/jpcpais01/Oazy-AI-Research" target="_blank" rel="noopener">Source</a>
-    </nav>
-    <span class="label">Oazy AI Research · 2026</span>
-  </div>
+<footer class="dark" style="color-scheme:dark">
+  <span>Oazy AI Research · 2026</span>
+  <span><a href="#gnosis">Gnosis</a> &nbsp;·&nbsp; <a href="#coral">Coral</a> &nbsp;·&nbsp; <a href="#pearl">Pearl</a></span>
 </footer>
 
 <script>
-/* =====================================================================
-   The light tunnel. Thousands of hair-thin streaks of light flow through
-   a narrow waist behind the headline and open towards the edges, seen in
-   perspective: far away (tiny, dense, hazy) in the middle, close (long,
-   bright) at the sides. Rendered in three steps:
-     1. the streak field (one fragment shader, 4 depth layers)
-     2. a two-level bloom (blurred copies at 1/4 and 1/8 size)
-     3. a final pass with soft colour fringing, glow, vignette and grain
-   Own implementation for Oazy.
-   ===================================================================== */
-(function () {
-  const canvas = document.getElementById('warp');
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const opts = { antialias: false, alpha: false, depth: false, stencil: false, premultipliedAlpha: false, powerPreference: 'high-performance' };
+(() => {
+'use strict';
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const ss = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+const lerp = (a, b, t) => a + (b - a) * t;
+const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255);
 
-  let gl = canvas.getContext('webgl2', opts);
-  const v2 = !!gl;
-  if (!gl) {
-    gl = canvas.getContext('webgl', opts) || canvas.getContext('experimental-webgl', opts);
-    if (gl && !gl.getExtension('OES_standard_derivatives')) gl = null;
+/* ---------- scenes: one per section, blended by scroll ----------
+   pal: zenith, mid, horizon, accent 1, accent 2, water (the film's palettes, plus a dusk and a night)
+   pearl: [x (fraction of half width), height above horizon, radius, alpha] */
+const SCENES = {
+  dawn:    { pal: ['#8db6ec', '#cddbf6', '#ffe8d2', '#f6a8bd', '#96ded8', '#6fa3d2'], sunI: .55, sun: [0, .05], sunC: [1, .95, .84], day: 1, stars: 0, petal: .30, mist: .45, hor: -.24,
+             pearl: [0, .05, .036, 1], glow: .25, iri: .1, cam: 0 },
+  morning: { pal: ['#8aa9ea', '#c6cdf6', '#fde6ea', '#bfa5f0', '#93dbe6', '#6f95d0'], sunI: .5, sun: [-.3, .07], sunC: [1, .95, .86], day: 1, stars: 0, petal: .45, mist: .38, hor: -.24,
+             pearl: [-.62, .05, .02, 0], glow: .1, iri: .1, cam: -.5 },
+  sunset:  { pal: ['#7f97dc', '#f1c3c0', '#ffe2bc', '#ff9a8c', '#f7a8c6', '#6f8bc8'], sunI: 1.0, sun: [.32, .03], sunC: [1, .86, .70], day: 1, stars: 0, petal: .18, mist: .3, hor: -.22,
+             pearl: [.6, .04, .02, 0], glow: .3, iri: .1, cam: .9 },
+  dusk:    { pal: ['#262e66', '#5d5296', '#f2a08f', '#c66a9e', '#4b5cab', '#28346a'], sunI: .75, sun: [.36, .006], sunC: [1, .74, .58], day: .25, stars: .35, petal: 0, mist: .2, hor: -.3,
+             pearl: [.6, .04, .02, 0], glow: .2, iri: .2, cam: 1.3 },
+  night:   { pal: ['#05060f', '#0e1132', '#2b2457', '#211b52', '#0f2c46', '#080c1e'], sunI: .38, sun: [-.42, .36], sunC: [.82, .84, 1], day: 0, stars: 1, petal: 0, mist: .15, hor: -.32,
+             pearl: [.5, .3, .17, 1], glow: .55, iri: 1, cam: 1.6 },
+  deep:    { pal: ['#040509', '#0a0c26', '#30245e', '#1c1748', '#0c2340', '#06091a'], sunI: .25, sun: [-.42, .36], sunC: [.82, .84, 1], day: 0, stars: 1, petal: 0, mist: .2, hor: -.36,
+             pearl: [0, .035, .028, .9], glow: .7, iri: .8, cam: 1.8 },
+};
+for (const k in SCENES) SCENES[k].palF = SCENES[k].pal.map(hex);
+const KEYS = ['palF', 'sunI', 'sun', 'sunC', 'day', 'stars', 'petal', 'mist', 'hor', 'pearl', 'glow', 'iri', 'cam'];
+function mix(a, b, t) {
+  if (Array.isArray(a)) return a.map((v, i) => mix(v, b[i], t));
+  return lerp(a, b, t);
+}
+const sections = [...document.querySelectorAll('[data-scene]')];
+let centers = [];
+function measure() { centers = sections.map(s => { const r = s.getBoundingClientRect(); return r.top + scrollY + r.height / 2; }); }
+function sceneAt(y) {
+  const f = y + innerHeight / 2; let i = 0;
+  while (i < centers.length - 1 && f > centers[i + 1]) i++;
+  const A = SCENES[sections[i].dataset.scene];
+  if (i >= centers.length - 1 || f <= centers[0]) return { S: A, tone: sections[i].dataset.tone };
+  const B = SCENES[sections[i + 1].dataset.scene];
+  const t = ss(.18, .82, (f - centers[i]) / (centers[i + 1] - centers[i]));
+  const S = {}; for (const k of KEYS) S[k] = mix(A[k], B[k], t);
+  return { S, tone: t < .5 ? sections[i].dataset.tone : sections[i + 1].dataset.tone };
+}
+const portrait = () => innerHeight > innerWidth * 1.05;
+
+/* ---------- WebGL world ---------- */
+const cv = document.getElementById('sky');
+const gl = cv.getContext('webgl2', { antialias: false, alpha: false, depth: false, stencil: false, powerPreference: 'high-performance' });
+
+const VERT = `#version 300 es
+in vec2 aPos; out vec2 vUv; void main(){ vUv=aPos*.5+.5; gl_Position=vec4(aPos,0.,1.); }`;
+const COMMON = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 oCol;
+uniform float uT,uHor,uAspect,uCamX,uDay;
+const float CAMH=0.12;
+float hash21(vec2 p){p=fract(p*vec2(123.34,456.21));p+=dot(p,p+45.32);return fract(p.x*p.y);}
+float vnoise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+  return mix(mix(hash21(i),hash21(i+vec2(1.,0.)),f.x),mix(hash21(i+vec2(0.,1.)),hash21(i+vec2(1.,1.)),f.x),f.y);}
+float fbm(vec2 p){float a=.5,s=0.;for(int i=0;i<4;i++){s+=a*vnoise(p);p=p*2.03+vec2(17.1,9.2);a*=.5;}return s/.9375;}
+`;
+// sky, colour clouds, sun or moon, mist, mirror water with ripples (drawn small: it is all soft)
+const FRAG_WORLD = COMMON + `
+uniform vec3 cZen,cMid,cHor,cA1,cA2,cWater,uSunC;
+uniform float uCloud,uMist,uSunI;
+uniform vec2 uSun;
+uniform vec4 uRip[4];
+vec3 sky(vec2 p,float sunk){
+  float y=max(p.y,0.);
+  vec3 c=mix(cHor,cMid,smoothstep(0.,.30,y)); c=mix(c,cZen,smoothstep(.2,.8,y));
+  vec2 q=vec2(p.x+uCamX*.22,y)*vec2(1.05,1.7);
+  vec2 w=vec2(fbm(q*1.3+vec2(uT*.014,0.)),fbm(q*1.3+vec2(5.2,1.3)-vec2(uT*.010,0.)));
+  float n=fbm(q*1.05+2.3*w+vec2(0.,uT*.006));
+  float n2=fbm(q*.8-1.9*w+vec2(9.1,3.3));
+  c=mix(c,cA1,smoothstep(.34,.66,n)*uCloud);
+  c=mix(c,cA2,smoothstep(.38,.70,n2)*uCloud*.9);
+  float wisp=fbm(q*vec2(1.5,4.2)+w*3.2+vec2(uT*.02,2.));
+  c=mix(c,mix(cMid*1.25,vec3(1.),uDay),smoothstep(.48,.86,wisp)*mix(.16,.42,uDay)*uCloud);
+  vec2 sd=vec2(p.x-uSun.x,y-uSun.y); float d=length(sd);
+  float halo=mix(.35,1.,uDay);
+  c+=uSunI*sunk*(uSunC*(exp(-d*d*mix(900.,260.,uDay))*.55*halo+exp(-d*d*mix(5200.,1400.,uDay))*.75)+uSunC*vec3(1.,.93,.86)*exp(-d*mix(9.,5.5,uDay))*.20*halo);
+  c=mix(c,mix(cHor,vec3(1.),.5*uDay),exp(-y*8.)*uMist);
+  return c;
+}
+void main(){
+  vec2 p=(vUv-.5)*vec2(uAspect,1.); float y=p.y-uHor; vec3 c;
+  if(y>=0.){ c=sky(vec2(p.x,y),1.); }
+  else{
+    float d=-y; float z=CAMH/(d+1e-4);
+    vec2 wp=vec2(p.x*z+uCamX,z);
+    vec2 a=wp*vec2(3.6,11.);
+    float e=.18;
+    float b0=vnoise(a+vec2(uT*.22,uT*.5))+.5*vnoise(a*2.1-vec2(uT*.3,uT*.35)+7.);
+    float bx=vnoise(a+vec2(e,0.)+vec2(uT*.22,uT*.5))+.5*vnoise((a+vec2(e,0.))*2.1-vec2(uT*.3,uT*.35)+7.);
+    float by=vnoise(a+vec2(0.,e)+vec2(uT*.22,uT*.5))+.5*vnoise((a+vec2(0.,e))*2.1-vec2(uT*.3,uT*.35)+7.);
+    vec2 nn=vec2(b0-bx,b0-by)*1.25;
+    nn*=smoothstep(0.,.05,d);
+    float hl=0.;
+    for(int i=0;i<4;i++){
+      float age=uT-uRip[i].z; if(age>0.&&uRip[i].w>0.){
+      vec2 dv=wp-uRip[i].xy; float r=length(dv);
+      float front=age*.75+.02;
+      float env=uRip[i].w*exp(-age*.30)*smoothstep(front+.12,front-.05,r)*exp(-max(front-r,0.)*1.5);
+      float ph=(r-front)*16.;
+      nn+=dv/(r+1e-4)*sin(ph)*env*.55;
+      hl+=pow(max(cos(ph),0.),8.)*env;
+    }}
+    vec2 rp=vec2(p.x+nn.x*(.010+.12*d), d+nn.y*(.020+.22*d));
+    c=sky(vec2(rp.x,max(rp.y,0.)),.6);
+    c=mix(c,cWater,.16+.50*smoothstep(0.,.45,d));
+    c+=uSunC*pow(max(nn.y*5.,0.),4.)*uSunI*.5*smoothstep(.0,.08,d)*exp(-pow((p.x-uSun.x)*2.4,2.));
+    c+=hl*mix(.10,.16,uDay)*mix(vec3(.75,.75,1.),vec3(1.),uDay);
+    c=mix(c,mix(cHor,vec3(1.),.5*uDay),exp(-d*22.)*uMist*.85);
+    c=mix(c,mix(cHor*1.4,vec3(1.),uDay),exp(-d*420.)*.55);
   }
-  if (!gl) { canvas.remove(); return; } // the CSS glow behind it stays as the fallback
-
-  // half-float targets keep the bright cores from clipping before the bloom
-  let hdr = false, texType = gl.UNSIGNED_BYTE, texIFmt = gl.RGBA;
-  if (v2 && gl.getExtension('EXT_color_buffer_float')) { hdr = true; texType = gl.HALF_FLOAT; texIFmt = gl.RGBA16F; }
-  else if (!v2) {
-    const hf = gl.getExtension('OES_texture_half_float');
-    if (hf && gl.getExtension('EXT_color_buffer_half_float')) { hdr = true; texType = hf.HALF_FLOAT_OES; }
+  oCol=vec4(c,1.);
+}`;
+// full size: the world + stars + the pearl (refracting the world) + petals + grain
+const FRAG_COMP = COMMON + `
+uniform sampler2D tW;
+uniform vec4 uS,uSX;      // pearl x,y,R,alpha / glow, iridescence, -, -
+uniform float uPetal,uStars,uPx,uFrame;
+vec3 sceneCA(vec2 uv,vec2 o,float ca){
+  return vec3(texture(tW,uv+o*(1.+ca)).r,texture(tW,uv+o).g,texture(tW,uv+o*(1.-ca)).b);
+}
+float starL(vec2 p,float sc,float th,float seed){
+  vec2 g=p*sc; vec2 id=floor(g),f=fract(g)-.5; float h=hash21(id+seed);
+  if(h<th) return 0.;
+  vec2 o=(vec2(hash21(id+1.3+seed),hash21(id+2.1+seed))-.5)*.7;
+  float d=length(f-o);
+  float tw=.55+.45*sin(uT*(.7+h*2.4)+h*60.);
+  return smoothstep(.13,0.,d)*(.35+.65*hash21(id+4.4))*tw;
+}
+vec4 petals(vec2 p){
+  vec4 acc=vec4(0.);
+  for(int L=0;L<3;L++){
+    float fl=float(L); float sc=mix(4.2,10.5,fl*.5);
+    float spd=mix(1.5,.8,fl*.5);
+    vec2 q=p*sc+vec2(-uT*.085*spd*sc*.5,uT*.050*spd*sc*.5)+fl*13.7;
+    vec2 id=floor(q),f=fract(q)-.5; float h=hash21(id+fl*31.);
+    if(h<=uPetal*.85){
+    vec2 o=(vec2(hash21(id+1.3),hash21(id+2.7))-.5)*.44; o+=.07*vec2(sin(uT*.8+h*40.),cos(uT*.63+h*20.));
+    vec2 d=f-o; float rot=h*6.28+uT*(.35+h*.8); float cs=cos(rot),sn=sin(rot); d=mat2(cs,-sn,sn,cs)*d;
+    float tumble=.30+.70*abs(cos(uT*(.6+h*1.2)+h*9.));
+    d.y/=tumble*.62;
+    float size=mix(.07,.15,hash21(id+5.1)); float blur=mix(.55,.14,fl*.5);
+    float sh=d.x/size;
+    float a=smoothstep(size,size*(1.-blur),length(vec2(d.x,d.y*(1.+.35*clamp(sh,-1.,1.)))));
+    float hc=hash21(id+7.7);
+    vec3 col=mix(vec3(1.,.80,.85),vec3(1.,.965,.95),hc);
+    if(hc>.86) col=vec3(1.,.90,.70);
+    col*=1.-.10*clamp(sh,-1.,1.);
+    a*=mix(.55,.92,fl*.5)*smoothstep(uPetal*.85,uPetal*.85-.08,h);
+    acc.rgb=acc.rgb*(1.-a)+col*a; acc.a=acc.a+a*(1.-acc.a);
+  }}
+  return acc;
+}
+void main(){
+  vec2 uv=vUv; vec2 p=(uv-.5)*vec2(uAspect,1.);
+  vec3 col=texture(tW,uv).rgb;
+  float y=p.y-uHor;
+  if(uStars>0.){
+    if(y>0.){
+      float s=starL(p,95.,.80,0.)+starL(p,190.,.86,9.)*.7+starL(p,48.,.955,3.)*1.4;
+      col+=vec3(.92,.93,1.)*s*uStars*smoothstep(.0,.22,y);
+    }
+    col+=vec3(.50,.36,1.)*exp(-abs(y)*60.)*uStars*.28;      // the old site's violet horizon line
+    col+=vec3(.30,.22,.75)*exp(-abs(y)*9.)*uStars*.10;
   }
-  const SCALE = hdr ? 1.0 : 0.45;     // headroom when the targets are 8-bit
-
-  const HEAD_V = v2 ? '#version 300 es\n#define ATTR in\n#define VARY out\n' : '#define ATTR attribute\n#define VARY varying\n';
-  const HEAD_F = v2
-    ? '#version 300 es\nprecision highp float;\n#define VARY in\n#define TEX texture\n#define OUT o\nout vec4 o;\n'
-    : '#extension GL_OES_standard_derivatives : enable\nprecision highp float;\n#define VARY varying\n#define TEX texture2D\n#define OUT gl_FragColor\n';
-
-  const VERT = HEAD_V + 'ATTR vec2 p; VARY vec2 vUv; void main(){ vUv = p * 0.5 + 0.5; gl_Position = vec4(p, 0., 1.); }';
-
-  /* ---------- 1. the streak field ---------- */
-  const FIELD = HEAD_F + `
-VARY vec2 vUv;
-uniform vec2  uRes;      // target size in pixels
-uniform float uTime;
-uniform vec2  uMouse;    // -1..1, eased
-uniform float uCenter;   // waist height, 0..1 from the bottom
-uniform float uPx;       // target pixels per CSS pixel
-uniform float uScale;
-
-float h11(float n) { return fract(sin(n * 91.3458) * 47453.5453); }
-
-// smooth 1D value noise along a lane, evolving slowly in time (2D lattice)
-float vnoise(vec2 p) {
-  vec2 i = floor(p), f = fract(p);
-  f = f * f * (3.0 - 2.0 * f);
-  float a = h11(i.x + i.y * 57.0), b = h11(i.x + 1.0 + i.y * 57.0);
-  float c = h11(i.x + (i.y + 1.0) * 57.0), d = h11(i.x + 1.0 + (i.y + 1.0) * 57.0);
-  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-}
-
-vec3 tint(float r) {
-  // pale lilac and ice blue carry the scene; violet, magenta, cyan, ember and mint add life
-  if (r < 0.30) return vec3(0.84, 0.82, 1.00);   // lilac white
-  if (r < 0.50) return vec3(0.52, 0.62, 1.00);   // ice blue
-  if (r < 0.66) return vec3(0.62, 0.46, 1.00);   // violet
-  if (r < 0.76) return vec3(0.42, 0.86, 1.00);   // cyan
-  if (r < 0.85) return vec3(1.00, 0.46, 0.80);   // magenta
-  if (r < 0.92) return vec3(1.00, 0.64, 0.46);   // ember
-  return vec3(0.52, 1.00, 0.76);                 // mint
-}
-
-// a smooth, looping gradient of the tunnel's colours
-vec3 field(float h) {
-  h = fract(h) * 6.0;
-  vec3 c0 = vec3(0.84, 0.80, 1.00);   // lilac white
-  vec3 c1 = vec3(0.60, 0.46, 1.00);   // violet
-  vec3 c2 = vec3(0.44, 0.60, 1.00);   // electric blue
-  vec3 c3 = vec3(0.44, 0.86, 1.00);   // cyan
-  vec3 c4 = vec3(0.86, 0.70, 1.00);   // pale orchid
-  vec3 c5 = vec3(1.00, 0.52, 0.78);   // magenta rose
-  float t = smoothstep(0.0, 1.0, fract(h));
-  if (h < 1.0) return mix(c0, c1, t);
-  if (h < 2.0) return mix(c1, c2, t);
-  if (h < 3.0) return mix(c2, c3, t);
-  if (h < 4.0) return mix(c3, c4, t);
-  if (h < 5.0) return mix(c4, c5, t);
-  return mix(c5, c0, t);
-}
-
-vec3 layer(vec2 p, float aspect, float id, float N, float waist, float flare, float gain, float spd) {
-  float depth = id / 3.0;
-  float xn = p.x / (0.5 * aspect) - uMouse.x * 0.04 * (0.3 + depth);
-  float ax = sqrt(xn * xn + 0.0016);                // a soft |x|: no crease where the two halves meet
-  float y = p.y + uMouse.y * 0.02 * (0.3 + depth) + 0.010 * sin(xn * 1.7 + uTime * 0.11 + id * 1.7) * ax;
-  float w = waist + flare * ax * ax;                 // half-height of the bundle here
-  float s = y / w;                                   // which lane we are in
-  float env = exp(-s * s * 1.35) * (0.55 + 0.45 * exp(-s * s * 5.0));
-  if (env < 0.003) return vec3(0.0);
-
-  float lane = floor(s * N);
-  float r1 = h11(lane * 1.37 + id * 17.31);
-  float r2 = h11(lane * 2.11 + id * 5.71 + 3.1);
-  float r3 = h11(lane * 0.73 + id * 9.13 + 7.7);
-  float r4 = h11(lane * 4.31 + id * 1.97 + 1.3);
-
-  float lanePx = w * uRes.y / N;
-  float sc = (lane + 0.5 + (r4 - 0.5) * 0.7) / N;
-  float dpx = abs(s - sc) * w * uRes.y;
-  // hair-thin: about 0.8 CSS px, a touch wider close to us
-  float t = uPx * (0.45 + 0.5 * ax) * (0.7 + 0.6 * r3);
-  float tt = max(t, 0.6);
-  float prof = exp(-dpx * dpx / (tt * tt)) * min(1.0, t / 0.6);
-
-  // perspective along the tunnel: log distance, so streaks are tiny far away
-  // (in the middle) and long close up (at the edges), and speed up outwards
-  float u = log(ax + 0.035);
-  // each lane has its own pace, and that pace itself ebbs and flows smoothly
-  float sp = spd * mix(0.5, 1.6, r1);
-  float wf = mix(0.07, 0.19, r2);
-  float travel = uTime * sp + 0.7 * sp / wf * sin(uTime * wf + r4 * 6.283);
-  float r5 = h11(lane * 7.77 + id * 3.33 + 5.9);
-  float lit = smoothstep(0.22, 0.42, r5);
-
-  // 1. wisps: soft segments that drift outwards and slowly change shape
-  float freq = mix(1.6, 4.2, r2);
-  float evolve = uTime * mix(0.06, 0.16, r3);
-  float n = vnoise(vec2(u * freq - travel + r3 * 40.0, evolve + r4 * 31.0));
-  float n2 = vnoise(vec2(u * freq * 3.1 - travel * 1.3 + r2 * 23.0, evolve * 1.7 + 7.0));
-  float wisp = smoothstep(0.55, 0.95, n) * smoothstep(0.15, 0.6, n2);
-  wisp = wisp * wisp * (3.0 - 2.0 * wisp);
-
-  // 2. comets: now and then a brighter head with a long tail glides out
-  float cf = mix(0.7, 1.6, r4);
-  float ph = u * cf - travel * 1.6 + r2 * 9.0;
-  float f = fract(ph);
-  float duty = mix(0.4, 0.85, r3);
-  float aa = min(fwidth(ph) * 1.2 + 0.004, 0.25);
-  float comet = pow(smoothstep(0.0, duty, f), 2.2) * (1.0 - smoothstep(duty - aa * 2.0, duty + aa, f));
-  comet *= step(0.74, h11(lane * 3.9 + id * 11.1 + floor(ph) * 7.31));   // not every lap, not every lane
-  float head = smoothstep(duty * 0.82, duty, f) * comet;
-
-  // 3. swells: soft, local waves of extra light rolling through parts of the tunnel
-  float swell = 0.8 + 0.55 * pow(0.5 + 0.5 * sin(u * 1.8 - uTime * 0.7 + s * 1.3 + id * 1.9), 5.0);
-
-  float streak = (wisp * 0.9 + comet * 1.05) * lit * swell;
-  float bright = 1.35 * (0.3 + 0.7 * r1 * r1) * (r2 > 0.955 ? 2.2 : 1.0);   // a few hero streaks
-
-  float xg = mix(0.32, 1.0, smoothstep(0.0, 0.9, ax));                     // brighter close up
-  // colour comes from slowly drifting regions, so neighbouring streaks share a hue
-  float hue = vnoise(vec2(u * 0.75 + uTime * 0.03 + id * 3.1, s * 1.5 - uTime * 0.022 + id * 7.7));
-  hue = fract(hue * 1.35 + 0.35 * vnoise(vec2(s * 0.6 + 19.0, uTime * 0.017 + u * 0.3)));
-  vec3 col = mix(field(hue), tint(fract(r3 * 7.13 + r1)), 0.15);
-  // colour blobs: soft, random patches of stronger colour that ride along with the flowing light
-  float flow = uTime * spd * 0.9;
-  vec2 bq = vec2(u * 1.1 - flow + id * 5.3, s * 1.9 + id * 2.1);
-  float bm = vnoise(bq + vec2(0.0, uTime * 0.05)) * 0.65 + vnoise(bq * 2.3 + vec2(17.0, -uTime * 0.08)) * 0.35;
-  bm = smoothstep(0.48, 0.80, bm);
-  float bh = vnoise(vec2(u * 0.35 - flow * 0.5 + 41.0, s * 0.7 + id * 9.0 + uTime * 0.02));
-  vec3 blobCol = bh < 0.25 ? mix(vec3(1.00, 0.42, 0.40), vec3(1.00, 0.36, 0.78), bh / 0.25)          // coral -> magenta
-               : bh < 0.50 ? mix(vec3(1.00, 0.36, 0.78), vec3(0.42, 0.40, 1.00), (bh - 0.25) / 0.25)  // magenta -> blue violet
-               : bh < 0.75 ? mix(vec3(0.42, 0.40, 1.00), vec3(0.25, 0.90, 1.00), (bh - 0.50) / 0.25)  // -> cyan
-               :             mix(vec3(0.25, 0.90, 1.00), vec3(0.40, 1.00, 0.62), (bh - 0.75) / 0.25); // -> mint
-  col = mix(col, blobCol, bm * 0.85);
-  // light disperses as it comes closer: cooler far away, slightly warmer at the edges
-  col *= mix(vec3(0.86, 0.82, 1.12), vec3(1.08, 0.97, 0.95), smoothstep(0.15, 1.0, ax));
-  col = mix(col, vec3(1.0, 0.97, 1.0), head * 0.75);                       // white-hot heads
-  vec3 line = col * prof * streak * bright;
-
-  // where lanes pack tighter than a few pixels, show their average light (no shimmer)
-  vec3 haze = vec3(0.70, 0.66, 1.00) * 0.045 * min(1.0, 1.6 * tt / max(lanePx, 0.001));
-  float k = smoothstep(1.3, 3.6, lanePx);
-  return mix(haze, line, k) * env * xg * gain;
-}
-
-void main() {
-  vec2 frag = vUv * uRes;
-  float aspect = uRes.x / uRes.y;
-  vec2 p = vec2((frag.x - 0.5 * uRes.x) / uRes.y, frag.y / uRes.y - uCenter);
-  float sq = clamp(aspect, 0.55, 1.0);
-  p.y *= mix(1.7, 1.0, (sq - 0.55) / 0.45);        // keep the hourglass on tall phones
-
-  vec3 c = vec3(0.0);
-  c += layer(p, aspect, 0.0, 170.0, 0.150, 0.16, 0.85, 0.075);
-  c += layer(p, aspect, 1.0, 120.0, 0.170, 0.22, 1.00, 0.10);
-  c += layer(p, aspect, 2.0, 105.0, 0.195, 0.29, 1.15, 0.135);
-  c += layer(p, aspect, 3.0,  58.0, 0.225, 0.38, 1.35, 0.18);
-  // pools of light: big soft regions that glow brighter and others that fall dim,
-  // drifting outwards with the flow (shared by all layers so they read as one light)
-  float xn = p.x / (0.5 * aspect), ax = sqrt(xn * xn + 0.0016);
-  // each side has its own pattern; they cross-fade softly through the middle so there is no seam
-  vec2 rq = vec2(log(ax + 0.035) * 0.6 - uTime * 0.045, p.y / (0.19 + 0.28 * ax * ax) * 0.8);
-  vec2 rr = rq + vec2(37.0, 0.0);
-  float gl = vnoise(rq + vec2(0.0, uTime * 0.03)) * 0.6 + vnoise(rq * 2.1 + vec2(-uTime * 0.05, 11.0)) * 0.4;
-  float gr = vnoise(rr + vec2(0.0, uTime * 0.03)) * 0.6 + vnoise(rr * 2.1 + vec2(-uTime * 0.05, 11.0)) * 0.4;
-  float g = mix(gl, gr, smoothstep(-0.12, 0.12, xn));
-  c *= 0.2 + 2.0 * smoothstep(0.3, 0.85, g);
-  OUT = vec4(c * uScale, 1.0);
+  // the pearl
+  vec2 q=p-uS.xy; float R=uS.z;
+  if(uS.w>0.){
+    vec2 dq=vec2(q.x,(p.y-uHor)*3.2)/R;
+    col+=mix(vec3(1.,.98,.94),vec3(.8,.78,1.),1.-uDay)*uS.w*.14*exp(-dot(dq,dq)*1.4)*step(p.y,uHor);
+    float dd=max(length(q)-R,0.)/R; col+=mix(vec3(1.,.90,.72),vec3(.72,.66,1.),1.-uDay)*uSX.x*uS.w*.24*exp(-dd*4.);
+    float sd=length(q)-R;
+    if(sd<uPx*2.){
+      vec2 g=q/max(length(q),1e-5); float k=1.-clamp(-sd/R,0.,1.);
+      vec3 N=normalize(vec3(g*k,sqrt(max(1.-k*k,0.))+.03)); float h=N.z;
+      vec2 o=-N.xy*R*1.9*h;
+      vec3 rc=sceneCA(uv,o/vec2(uAspect,1.),.07);
+      float fr=pow(1.-N.z,2.6);
+      rc*=1.-.34*fr; rc=mix(rc,mix(vec3(.62,.6,.9),vec3(.96,.985,1.),uDay),fr*.30);
+      vec3 iri=.5+.5*cos(6.2831*(vec3(0.,.33,.67)+fr*1.3+N.x*.35+N.y*.2+uT*.03));
+      vec3 milk=mix(vec3(.80,.78,.95),vec3(.99,.97,1.),pow(h,.7))*(.55+.45*h);
+      milk+=(iri-.5)*.16*(.3+fr);
+      rc=mix(rc,milk,uSX.y*.62);
+      rc=mix(rc,rc*.75+iri*.35,uSX.y*fr*.35);
+      rc*=1.-.25*smoothstep(uPx*5.,0.,-sd);
+      vec3 Hh=normalize(normalize(vec3(-.45,.62,.64))+vec3(0.,0.,1.));
+      float ndh=max(dot(N,Hh),0.);
+      rc+=vec3(1.)*(pow(ndh,120.)*1.1+pow(ndh,9.)*.16);
+      rc+=vec3(1.,.97,.90)*pow(max(dot(N,normalize(vec3(.42,-.72,.5))),0.),7.)*.20;
+      rc=mix(rc,rc*vec3(1.03,.97,.86)+vec3(.07,.045,.0),uSX.x*h*h*uDay);
+      float aa=smoothstep(uPx,-uPx,sd)*uS.w;
+      col=mix(col,rc,aa);
+    }
+  }
+  if(uPetal>0.){ vec4 pt=petals(p); col=col*(1.-pt.a)+pt.rgb; }
+  float vg=dot(p,p);
+  col=mix(col,col*mix(vec3(.62,.62,.78),vec3(.92,.94,.98),uDay),.5*smoothstep(.25,1.05,vg));
+  float n1=hash21(gl_FragCoord.xy+uFrame*7.13),n2=hash21(gl_FragCoord.xy*1.7+uFrame*3.71+11.);
+  col+=(n1+n2-1.)*(2.4/255.);
+  oCol=vec4(col,1.);
 }`;
 
-  /* ---------- 2. blur (separable, 9 taps folded into 5 fetches) ---------- */
-  const BLUR = HEAD_F + `
-VARY vec2 vUv;
-uniform sampler2D uTex;
-uniform vec2 uDir;       // one texel step in the blur direction
-void main() {
-  vec3 c = TEX(uTex, vUv).rgb * 0.2270270270;
-  c += (TEX(uTex, vUv + uDir * 1.3846153846).rgb + TEX(uTex, vUv - uDir * 1.3846153846).rgb) * 0.3162162162;
-  c += (TEX(uTex, vUv + uDir * 3.2307692308).rgb + TEX(uTex, vUv - uDir * 3.2307692308).rgb) * 0.0702702703;
-  OUT = vec4(c, 1.0);
-}`;
-
-  /* ---------- 3. final: fringing, glow, tone, vignette, grain ---------- */
-  const FINAL = HEAD_F + `
-VARY vec2 vUv;
-uniform sampler2D uScene, uB1, uB2;
-uniform vec2  uRes;
-uniform float uTime, uIntro, uFade, uCenter, uScale;
-float h21(vec2 p) { p = fract(p * vec2(233.34, 851.73)); p += dot(p, p + 23.45); return fract(p.x * p.y); }
-// one travelling ripple on the glass: height, slope (x, y) and curvature
-vec4 rip(vec2 q, vec2 k, float w, float ph, float a) {
-  float th = dot(k, q) + w * uTime + ph;
-  float sn = sin(th), cs = cos(th);
-  return vec4(a * sn, a * cs * k, -a * sn * dot(k, k));
+function fallback() {
+  cv.style.display = 'none';
+  const fb = document.getElementById('fallback'); fb.hidden = false;
+  const paint = () => {
+    const { S } = sceneAt(scrollY);
+    const c = S.palF.map(v => `rgb(${v.map(x => Math.round(x * 255)).join(',')})`);
+    fb.style.background = `linear-gradient(180deg, ${c[0]} 0%, ${c[1]} 40%, ${c[2]} 68%, ${c[5]} 70%, ${c[5]} 100%)`;
+  };
+  return paint;
 }
-void main() {
-  vec2 uv = vUv;
-  vec2 d = uv - vec2(0.5, uCenter);
-  float aspect = uRes.x / uRes.y;
 
-  // we look at the light through a sheet of liquid glass. Its surface is a few slow, crossing
-  // ripples. Where the surface tilts, the light
-  // behind it is bent; where it curves, the light is gathered or spread, so it brightens and
-  // dims like caustics; and blue bends a little more than red, so the bending splits colour.
-  vec2 q = d * vec2(aspect, 1.0);
-  q += 0.12 * vec2(sin(q.y * 2.1 + uTime * 0.13), sin(q.x * 1.6 - uTime * 0.11));
-  vec4 s = rip(q, vec2(3.1, 1.4), 0.21, 0.0, 0.0016)
-         + rip(q, vec2(-2.2, 3.6), -0.17, 1.7, 0.0013)
-         + rip(q, vec2(5.3, -2.6), 0.29, 4.1, 0.0006)
-         + rip(q, vec2(-1.3, -6.4), 0.23, 2.3, 0.0004);
-  vec2 off = s.yz * vec2(1.0 / aspect, 1.0);
-  // lens aberration grows with how hard the light is bent, plus a gentle split at the edges
-  vec2 ca = d * vec2(0.010, 0.022) * (0.55 + 1.6 * dot(d, d)) + off * 0.16;
-  vec2 o1 = off * 1.5, o2 = off * 2.0;
-  vec3 sc = vec3(TEX(uScene, uv + off * 0.9 + ca).r, TEX(uScene, uv + off).g, TEX(uScene, uv + off * 1.1 - ca).b);
-  vec3 b1 = vec3(TEX(uB1, uv + o1 * 0.9 + ca * 1.5).r, TEX(uB1, uv + o1).g, TEX(uB1, uv + o1 * 1.1 - ca * 1.5).b);
-  vec3 b2 = vec3(TEX(uB2, uv + o2 * 0.9 + ca * 2.2).r, TEX(uB2, uv + o2).g, TEX(uB2, uv + o2 * 1.1 - ca * 2.2).b);
-  float caustic = clamp(1.0 - s.w * 10.0, 0.5, 2.0);
-  vec3 c = (sc * caustic + b1 * 0.42 + b2 * 0.6) / uScale;
+let draw = null;
+if (gl) {
+  try { draw = setupGL(); } catch (e) { console.warn('[oazy] sky off:', e); draw = null; }
+}
+if (!draw) draw = fallback();
 
-  // a faint violet breath behind the waist
-  float ax = abs(d.x) * 2.0;
-  c += vec3(0.20, 0.16, 0.55) * 0.05 * exp(-pow(d.y / (0.10 + 0.25 * ax * ax), 2.0));
-
-  c *= uIntro * uFade;
-  c = vec3(1.0) - exp(-c * 2.1);                       // soft shoulder, no hard clipping
-  float vig = smoothstep(1.25, 0.25, length(d * vec2(1.0, 1.6)));
-  c *= mix(0.55, 1.0, vig);
-  c += vec3(0.0196, 0.0196, 0.0275);                   // the page black (#050507)
-  float g = h21(gl_FragCoord.xy + fract(uTime * 7.0) * 113.0) - 0.5;
-  c += g * 0.018 * (0.3 + c);                          // film grain
-  c += (h21(gl_FragCoord.yx + 3.7) - 0.5) / 255.0;     // dither, kills banding
-  OUT = vec4(c, 1.0);
-}`;
-
-  function sh(type, src) {
-    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { console.warn(gl.getShaderInfoLog(s)); return null; }
-    return s;
-  }
-  const vs = sh(gl.VERTEX_SHADER, VERT);
-  function program(fsrc, names) {
-    const fs = sh(gl.FRAGMENT_SHADER, fsrc);
-    if (!vs || !fs) return null;
-    const pr = gl.createProgram();
-    gl.attachShader(pr, vs); gl.attachShader(pr, fs);
-    gl.bindAttribLocation(pr, 0, 'p');
-    gl.linkProgram(pr);
-    if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) return null;
-    const u = {};
-    names.forEach(n => u[n] = gl.getUniformLocation(pr, n));
-    return { pr, u };
-  }
-  const P1 = program(FIELD, ['uRes', 'uTime', 'uMouse', 'uCenter', 'uPx', 'uScale']);
-  const PB = program(BLUR, ['uTex', 'uDir']);
-  const PF = program(FINAL, ['uScene', 'uB1', 'uB2', 'uRes', 'uTime', 'uIntro', 'uFade', 'uCenter', 'uScale']);
-  if (!P1 || !PB || !PF) { canvas.remove(); return; }
-
-  const buf = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-  gl.enableVertexAttribArray(0);
-  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-
-  function target(w, h) {
-    const tex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texImage2D(gl.TEXTURE_2D, 0, texIFmt, w, h, 0, gl.RGBA, texType, null);
-    const fb = gl.createFramebuffer();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-    return { tex, fb, w, h };
-  }
-  function free(t) { if (t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); } }
-
-  const hero = canvas.parentElement;
-  const title = hero.querySelector('h1');
-  let quality = 1, W = 0, H = 0, px = 1, center = 0.55;
-  let T = {};
-
+function setupGL() {
+  const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+  const prog = (fs) => { const p = gl.createProgram(); gl.attachShader(p, sh(gl.VERTEX_SHADER, VERT)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fs));
+    gl.bindAttribLocation(p, 0, 'aPos'); gl.linkProgram(p); if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(p, i); u[a.name.replace(/\[0\]$/, '')] = gl.getUniformLocation(p, a.name); }
+    return { p, u }; };
+  const PW = prog(FRAG_WORLD), PC = prog(FRAG_COMP);
+  const vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  const tex = gl.createTexture(); const fb = gl.createFramebuffer();
+  let W = 0, H = 0, ww = 0, wh = 0;
   function resize() {
-    const r = canvas.getBoundingClientRect();
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    px = dpr * quality;
-    const nW = Math.max(8, Math.round(r.width * px)), nH = Math.max(8, Math.round(r.height * px));
-    const tr = title.getBoundingClientRect();
-    center = 1 - ((tr.top + tr.height * 0.5) - r.top) / r.height;   // waist right behind the headline
-    if (nW === W && nH === H) return;
-    W = nW; H = nH;
-    canvas.width = W; canvas.height = H;
-    Object.values(T).forEach(free);
-    const q = (n, d) => Math.max(4, Math.round(n / d));
-    T = {
-      scene: target(W, H),
-      a1: target(q(W, 4), q(H, 4)), b1: target(q(W, 4), q(H, 4)),
-      a2: target(q(W, 8), q(H, 8)), b2: target(q(W, 8), q(H, 8)),
-    };
-    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) { hdr = false; }
+    const dpr = Math.min(devicePixelRatio || 1, 1.75);
+    const cw = cv.clientWidth, ch = cv.clientHeight;
+    let w = Math.round(cw * dpr), h = Math.round(ch * dpr);
+    const cap = 2.6e6; if (w * h > cap) { const k = Math.sqrt(cap / (w * h)); w = Math.round(w * k); h = Math.round(h * k); }
+    if (w === W && h === H) return;
+    W = cv.width = w; H = cv.height = h;
+    ww = Math.max(2, Math.round(cw * .5)); wh = Math.max(2, Math.round(ch * .5));
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, ww, wh, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
   }
+  addEventListener('resize', resize); resize();
+  let frame = 0;
+  return function (S, t, rip) {
+    resize();
+    const aspect = W / H;
+    const set = (P, sh) => { const u = P.u;
+      gl.uniform1f(u.uT, t); gl.uniform1f(u.uHor, S.hor); gl.uniform1f(u.uAspect, aspect); gl.uniform1f(u.uCamX, S.camX); gl.uniform1f(u.uDay, S.day); };
+    // world
+    gl.useProgram(PW.p); set(PW);
+    const u = PW.u, pf = S.palF;
+    gl.uniform3fv(u.cZen, pf[0]); gl.uniform3fv(u.cMid, pf[1]); gl.uniform3fv(u.cHor, pf[2]); gl.uniform3fv(u.cA1, pf[3]); gl.uniform3fv(u.cA2, pf[4]); gl.uniform3fv(u.cWater, pf[5]);
+    gl.uniform3fv(u.uSunC, S.sunC); gl.uniform1f(u.uCloud, 1); gl.uniform1f(u.uMist, S.mist); gl.uniform1f(u.uSunI, S.sunI);
+    gl.uniform2f(u.uSun, S.sun[0] * aspect / 1.6, S.sun[1]);
+    gl.uniform4fv(u.uRip, rip);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.viewport(0, 0, ww, wh); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    // composite
+    gl.useProgram(PC.p); set(PC);
+    const c = PC.u;
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex); gl.uniform1i(c.tW, 0);
+    const pr = S.pearlPx;
+    gl.uniform4f(c.uS, pr[0], pr[1], pr[2], pr[3]); gl.uniform4f(c.uSX, S.glow, S.iri, 0, 0);
+    gl.uniform1f(c.uPetal, S.petal); gl.uniform1f(c.uStars, S.stars); gl.uniform1f(c.uPx, 1.2 / H); gl.uniform1f(c.uFrame, frame++ % 997);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, W, H); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  };
+}
 
-  function pass(prog, out, w, h) {
-    gl.useProgram(prog.pr);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, out ? out.fb : null);
-    gl.viewport(0, 0, w, h);
+/* ---------- ripples: tap the water ---------- */
+const rip = new Float32Array(16); let ripN = 0, T = 0, last = null;
+function addRipple(wx, wz, amp) { const i = (ripN++ % 4) * 4; rip[i] = wx; rip[i + 1] = wz; rip[i + 2] = T; rip[i + 3] = amp; }
+let cur = null;
+addEventListener('pointerdown', e => {
+  if (!cur || e.target.closest('a, button, .glass, canvas#ex-c')) return;
+  const aspect = innerWidth / innerHeight;
+  const px = (e.clientX / innerWidth - .5) * aspect, py = .5 - e.clientY / innerHeight;
+  const d = cur.hor - py; if (d <= .01) return;
+  const z = .12 / d; addRipple(px * z + cur.camX, z, .8);
+}, { passive: true });
+
+/* ---------- tone (light ink / dark ink) for the nav ---------- */
+const nav = document.getElementById('nav');
+const links = [...nav.querySelectorAll('.links a')];
+const theme = document.querySelector('meta[name="theme-color"]');
+let mx = 0, mxT = 0;
+addEventListener('pointermove', e => { mxT = (e.clientX / innerWidth - .5); }, { passive: true });
+
+function tick(now) {
+  if (last === null) last = now;
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  if (!reduce) T += dt;
+  mx += (mxT - mx) * Math.min(1, dt * 2);
+  const { S, tone } = sceneAt(scrollY);
+  const aspect = innerWidth / innerHeight;
+  const pp = portrait();
+  // pearl placement: on tall screens, the night pearl sits up and centred, behind the gap above the text
+  let pe = S.pearl.slice();
+  const night = SCENES.night.pearl;
+  if (pp) { const k = clamp((pe[2] - .04) / (night[2] - .04)); pe = [lerp(pe[0], 0, k), lerp(pe[1], .52, k), pe[2] * lerp(1, .62, k), pe[3]]; }
+  const bob = reduce ? 0 : Math.sin(T * .9) * .006;
+  S.camX = S.cam + mx * .06 + scrollY * .00004;
+  S.pearlPx = [pe[0] * aspect * .5, S.hor + pe[1] + bob, pe[2], pe[3]];
+  cur = S;
+  draw(S, T, rip);
+  // nav tone
+  const dark = tone === 'dark';
+  nav.classList.toggle('dark', dark);
+  if (dark !== tick.dark) { tick.dark = dark; theme.content = dark ? '#0b0c22' : '#cddbf6'; }
+  if (!reduce) requestAnimationFrame(tick);
+}
+
+/* ---------- reveal on view ---------- */
+const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { threshold: .18, rootMargin: '0px 0px -6% 0px' });
+document.querySelectorAll('.rv, .stack, .versus, .field, .mix').forEach(el => io.observe(el));
+const spy = new IntersectionObserver(es => es.forEach(e => {
+  if (e.isIntersecting) links.forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + e.target.id));
+}), { rootMargin: '-45% 0px -50% 0px' });
+['gnosis', 'coral', 'cost', 'pearl'].forEach(id => spy.observe(document.getElementById(id)));
+
+/* ---------- Gnosis: the 22 layers ---------- */
+const stack = document.getElementById('stack');
+for (let i = 0; i < 22; i++) {
+  const r = document.createElement('i'); r.className = 'ring'; r.style.setProperty('--i', 21 - i);
+  r.style.bottom = `calc(10% + ${i} * 3.55%)`;
+  r.style.transitionDelay = `${i * 45}ms`;
+  r.style.setProperty('--i', i);
+  stack.appendChild(r);
+}
+
+/* ---------- Coral: two of 32 experts wake in each of 20 layers ---------- */
+(() => {
+  const c = document.getElementById('ex-c'), wordEl = document.getElementById('ex-word');
+  const ctx = c.getContext('2d');
+  const ROWS = 20, COLS = 32;
+  const words = 'the tide came in slowly and the small boat rose with it'.split(' ');
+  const lit = new Float32Array(ROWS * COLS);
+  let wi = -1, t0 = 0, picks = [], seen = false, w = 0, h = 0, dpr = 1;
+  const io2 = new IntersectionObserver(es => { seen = es[0].isIntersecting; }, {}); io2.observe(c);
+  function rnd(s) { s = Math.sin(s * 127.1) * 43758.5453; return s - Math.floor(s); }
+  function next(now) {
+    wi = (wi + 1) % words.length; wordEl.textContent = words[wi]; t0 = now;
+    picks = [];
+    for (let r = 0; r < ROWS; r++) { const a = Math.floor(rnd(wi * 31 + r * 7.3 + 1) * COLS); let b = Math.floor(rnd(wi * 17 + r * 3.1 + 9) * COLS); if (b === a) b = (b + 5) % COLS; picks.push([a, b]); }
   }
-  function bind(unit, tex, loc) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex); gl.uniform1i(loc, unit); }
-  function blur(src, tmp, dst) {
-    pass(PB, tmp, tmp.w, tmp.h); bind(0, src.tex, PB.u.uTex); gl.uniform2f(PB.u.uDir, 1 / src.w, 0); gl.drawArrays(gl.TRIANGLES, 0, 3);
-    pass(PB, dst, dst.w, dst.h); bind(0, tmp.tex, PB.u.uTex); gl.uniform2f(PB.u.uDir, 0, 1 / tmp.h); gl.drawArrays(gl.TRIANGLES, 0, 3);
-  }
-
-  let mouse = [0, 0], mouseT = [0, 0];
-  addEventListener('pointermove', e => {
-    if (e.pointerType !== 'mouse') return;
-    mouseT = [(e.clientX / innerWidth) * 2 - 1, -((e.clientY / innerHeight) * 2 - 1)];
-  }, { passive: true });
-
-  let visible = true, running = false, last = 0, simT = 20.0, start = 0, fade = 1, intro = 0;
-  let frames = 0, acc = 0, frozen = false;
-  // lets a test render any moment of the animation exactly
-  window.__oazyWarp = { render(t) { frozen = true; simT = t; intro = 1; fade = 1; draw(); } };
-
-  function draw() {
-    // 1. streak field
-    pass(P1, T.scene, W, H);
-    gl.uniform2f(P1.u.uRes, W, H);
-    gl.uniform1f(P1.u.uTime, simT);
-    gl.uniform2f(P1.u.uMouse, mouse[0], mouse[1]);
-    gl.uniform1f(P1.u.uCenter, center);
-    gl.uniform1f(P1.u.uPx, px);
-    gl.uniform1f(P1.u.uScale, SCALE);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-    // 2. bloom: 1/4 size, then 1/8 size from that
-    blur(T.scene, T.a1, T.b1);
-    blur(T.b1, T.a2, T.b2);
-    blur(T.b2, T.a2, T.b2);
-    // 3. final
-    pass(PF, null, W, H);
-    bind(0, T.scene.tex, PF.u.uScene); bind(1, T.b1.tex, PF.u.uB1); bind(2, T.b2.tex, PF.u.uB2);
-    gl.uniform2f(PF.u.uRes, W, H);
-    gl.uniform1f(PF.u.uTime, simT);
-    gl.uniform1f(PF.u.uIntro, intro);
-    gl.uniform1f(PF.u.uFade, fade);
-    gl.uniform1f(PF.u.uCenter, center);
-    gl.uniform1f(PF.u.uScale, SCALE);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-  }
-
+  function size() { dpr = Math.min(devicePixelRatio || 1, 2); w = c.clientWidth; h = c.clientHeight; c.width = w * dpr; c.height = h * dpr; }
+  addEventListener('resize', size); size();
+  let lt = 0;
   function frame(now) {
-    if (!visible || document.hidden) { running = false; return; }
-    const dt = Math.min(0.05, (now - (last || now)) / 1000);
-    last = now;
-    if (!start) start = now;
-    const k = Math.min(1, (now - start) / 2200);
-    intro = 1 - Math.pow(1 - k, 3);
-    simT += dt * (1 + 4 * Math.pow(1 - k, 2.4));          // rush in, then cruise
-    mouse[0] += (mouseT[0] - mouse[0]) * Math.min(1, dt * 1.8);
-    mouse[1] += (mouseT[1] - mouse[1]) * Math.min(1, dt * 1.8);
-    const hr = hero.getBoundingClientRect();
-    fade = Math.max(0.25, Math.min(1, 1 + hr.top / (hr.height * 0.9)));
-    if (!frozen) draw();
-
-    // keep it smooth on slower GPUs: lower the resolution if frames run long
-    if (k >= 1) {
-      frames++; acc += dt;
-      if (frames === 45) {
-        const avg = acc / frames;
-        if (avg > 0.030 && quality > 0.7) { quality = Math.max(0.7, quality * 0.85); resize(); }
-        else if (avg < 0.013 && quality < 1) { quality = Math.min(1, quality * 1.12); resize(); }
-        frames = 0; acc = 0;
+    requestAnimationFrame(frame);
+    if (!seen && wi >= 0) return;
+    if (wi < 0 || now - t0 > 1500) next(now);
+    const dt = Math.min(.05, (now - (lt || now)) / 1000); lt = now;
+    const prog = (now - t0) / 800;
+    for (let i = 0; i < lit.length; i++) lit[i] *= Math.exp(-dt * 2.2);
+    for (let r = 0; r < ROWS; r++) if (prog * ROWS >= r && prog * ROWS < r + 1.6) { lit[r * COLS + picks[r][0]] = 1; lit[r * COLS + picks[r][1]] = 1; }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+    const gx = w / COLS, gy = h / ROWS, rad = Math.max(1.6, Math.min(gx, gy) * .26);
+    // the path of this word, through its two experts per layer
+    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(226,100,107,.28)'; ctx.beginPath();
+    for (let r = 0; r < Math.min(ROWS, Math.ceil(prog * ROWS)); r++) {
+      const x = (picks[r][0] + picks[r][1] + 1) / 2 * gx, y = (r + .5) * gy;
+      r ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+    ctx.stroke();
+    for (let r = 0; r < ROWS; r++) for (let k = 0; k < COLS; k++) {
+      const v = lit[r * COLS + k], x = (k + .5) * gx, y = (r + .5) * gy;
+      ctx.beginPath(); ctx.arc(x, y, rad, 0, 6.2832);
+      ctx.fillStyle = `rgba(60,50,110,${.13 + .0 * v})`; ctx.fill();
+      if (v > .02) {
+        const g = ctx.createRadialGradient(x, y, 0, x, y, rad * 4.5);
+        g.addColorStop(0, `rgba(255,170,150,${.85 * v})`); g.addColorStop(.35, `rgba(226,100,107,${.45 * v})`); g.addColorStop(1, 'rgba(226,100,107,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, rad * 4.5, 0, 6.2832); ctx.fill();
+        ctx.fillStyle = `rgba(255,245,240,${v})`; ctx.beginPath(); ctx.arc(x, y, rad * 1.05, 0, 6.2832); ctx.fill();
       }
     }
-    requestAnimationFrame(frame);
   }
-  function go() { if (!running && visible && !document.hidden) { running = true; last = 0; requestAnimationFrame(frame); } }
-
-  resize();
-  if (reduce) { intro = 1; draw(); addEventListener('resize', () => { resize(); draw(); }); return; }
-  addEventListener('resize', resize);
-  new ResizeObserver(resize).observe(hero);
-  new IntersectionObserver(es => { visible = es[0].isIntersecting; go(); }).observe(hero);
-  document.addEventListener('visibilitychange', go);
-  canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); running = false; });
-  go();
+  if (reduce) { next(0); seen = true; lt = 0; frame(800); for (let r = 0; r < ROWS; r++) { lit[r * COLS + picks[r][0]] = 1; lit[r * COLS + picks[r][1]] = 1; } }
+  else requestAnimationFrame(frame);
 })();
 
-/* ========================= page behaviour ========================= */
-(function () {
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  document.documentElement.classList.add('js');
-
-  // solid bar once we leave the top
-  const bar = document.getElementById('bar');
-  const onScroll = () => bar.classList.toggle('solid', scrollY > 24);
-  addEventListener('scroll', onScroll, { passive: true }); onScroll();
-
-  // ---------- custom scrollbar ----------
-  const rail = document.getElementById('rail'), thumb = document.getElementById('thumb');
-  let hideT = null, dragging = false, dragY = 0, dragTop = 0;
-  function sizes() {
-    const doc = document.documentElement, view = innerHeight, full = doc.scrollHeight, track = rail.clientHeight;
-    const th = Math.max(36, track * view / full);
-    return { view, full, track, th, max: full - view };
-  }
-  function placeThumb() {
-    const z = sizes();
-    thumb.style.height = z.th + 'px';
-    const y = z.max > 0 ? (scrollY / z.max) * (z.track - z.th) : 0;
-    thumb.style.transform = 'translateY(' + y + 'px)';
-    rail.style.display = z.max > 4 ? '' : 'none';
-  }
-  function wake() {
-    rail.classList.add('on');
-    clearTimeout(hideT);
-    hideT = setTimeout(() => { if (!dragging) rail.classList.remove('on'); }, 1100);
-  }
-  addEventListener('scroll', () => { placeThumb(); wake(); }, { passive: true });
-  addEventListener('resize', placeThumb);
-  new ResizeObserver(placeThumb).observe(document.body);
-  thumb.addEventListener('pointerdown', e => {
-    dragging = true; dragY = e.clientY; dragTop = scrollY;
-    rail.classList.add('drag'); thumb.setPointerCapture(e.pointerId); e.preventDefault(); e.stopPropagation();
-  });
-  thumb.addEventListener('pointermove', e => {
-    if (!dragging) return;
-    const z = sizes();
-    window.scrollTo({ top: dragTop + (e.clientY - dragY) * z.max / Math.max(1, z.track - z.th), behavior: 'instant' });
-  });
-  const endDrag = () => { dragging = false; rail.classList.remove('drag'); wake(); };
-  thumb.addEventListener('pointerup', endDrag);
-  thumb.addEventListener('pointercancel', endDrag);
-  rail.addEventListener('pointerdown', e => {
-    if (e.target !== rail) return;
-    const z = sizes(), r = rail.getBoundingClientRect();
-    const frac = (e.clientY - r.top - z.th / 2) / Math.max(1, z.track - z.th);
-    window.scrollTo({ top: Math.max(0, Math.min(1, frac)) * z.max, behavior: 'smooth' });
-  });
-  placeThumb();
-
-  // sliding pill under the active tab (as in the Oazy launcher)
-  const tabs = document.getElementById('tabs'), pill = document.getElementById('pill');
-  const links = [...tabs.querySelectorAll('a')];
-  function movePill(a) {
-    links.forEach(l => l.classList.toggle('on', l === a));
-    if (!a) { pill.style.opacity = 0; return; }
-    pill.style.opacity = 1;
-    pill.style.width = a.offsetWidth + 'px';
-    pill.style.transform = 'translateX(' + a.offsetLeft + 'px)';
-  }
-  const secs = links.map(a => document.getElementById(a.dataset.sec));
-  function spy() {
-    let cur = null;
-    secs.forEach((s, i) => { if (s.getBoundingClientRect().top < innerHeight * 0.45) cur = links[i]; });
-    movePill(cur);
-  }
-  addEventListener('scroll', spy, { passive: true }); addEventListener('resize', spy); spy();
-
-  // gentle rise as blocks scroll in (they are readable before it runs)
-  if (!reduce && 'IntersectionObserver' in window) {
-    const els = [...document.querySelectorAll('.rv')].filter(el => el.getBoundingClientRect().top > innerHeight);
-    els.forEach(el => el.classList.add('pre'));
-    const io = new IntersectionObserver(es => es.forEach(e => {
-      if (e.isIntersecting) { e.target.classList.remove('pre'); io.unobserve(e.target); }
-    }), { rootMargin: '0px 0px -8% 0px' });
-    els.forEach(el => io.observe(el));
-  }
-
-  // ---------- HellaSwag chart, drawn to one scale (20% .. 40%) ----------
-  const chart = document.getElementById('chart');
-  const LO = 20, HI = 50;
-  const pos = v => ((v - LO) / (HI - LO)) * 100;
-  const rows = [
-    { n: 'Coral_1B', s: 'full set', v: 45.3, cls: 'coral' },
-    { n: 'SmolLM2-135M', s: '2T tokens', v: 42.1, cls: 'ref' },
-    { n: 'Bee3_0.2B', s: '45% run · 1,000 qs', v: 29.6, cls: 'bee' },
-    { n: 'Bee_v2_0.2B', s: 'measured', v: 32.9, cls: 'bee old' },
-    { n: 'Fern_0.2B', s: 'placeholder', v: 31.2, cls: 'fern ph' },
-    { n: 'GPT-2 small', s: 'OpenAI · 124M', v: 29.6, cls: 'ref' },
-    { n: 'Random guess', s: '1 in 4', v: 25.0, cls: 'rand' },
+/* ---------- cost chart ---------- */
+(() => {
+  const svg = document.getElementById('plot-svg');
+  const M = [
+    { n: 'Gnosis', cost: 42, hs: 37.9, p: 308, c: '#b7b2ff', lab: '$42 · 37.9%', ours: 1 },
+    { n: 'Coral', cost: 114, hs: 45.3, p: 1037, act: 161, c: '#ff9a92', lab: '$114 · 45.3%', ours: 1 },
+    { n: 'SmolLM2-135M', cost: 5000, hs: 42.1, p: 135, c: '#d9d6ee', lab: '≈ $5,000 · 42.1%' },
+    { n: 'SmolLM2-360M', cost: 21000, hs: 54.5, p: 360, c: '#d9d6ee', lab: '≈ $21,000 · 54.5%' },
   ];
-  let html = '<div class="grid-lines" id="gl"></div>';
-  rows.forEach(r => {
-    html += `<div class="row"><span class="n">${r.n}<small>${r.s}</small></span>` +
-      `<div class="track"><div class="fill ${r.cls}" style="width:${pos(r.v)}%"></div></div>` +
-      `<span class="pct">${r.v.toFixed(1)}%</span></div>`;
+  const box = svg.parentElement;
+  let lastW = 0;
+  function render() {
+  const cw = Math.round(box.clientWidth) || 1000; if (Math.abs(cw - lastW) < 8) return; lastW = cw;
+  const VW = Math.max(340, Math.min(1000, cw - 20)), small = VW < 640, VH = small ? Math.round(VW * 1.15) : 470;
+  svg.setAttribute('viewBox', `0 0 ${VW} ${VH}`);
+  const X0 = small ? 44 : 70, X1 = VW - (small ? 10 : 40), Y0 = VH - 60, Y1 = 30;
+  const lx = v => X0 + (Math.log10(v) - 1) / (Math.log10(60000) - 1) * (X1 - X0);
+  const ly = v => Y0 - (v - 20) / (60 - 20) * (Y0 - Y1);
+  const r = p => (small ? 5 : 7) + Math.sqrt(p) * (small ? .62 : 1.05);
+  let g = '<defs>';
+  M.forEach((m, i) => { g += `<radialGradient id="pb${i}" cx=".35" cy=".3" r=".85"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".3" stop-color="${m.c}" stop-opacity="${m.ours ? .75 : .35}"/><stop offset="1" stop-color="${m.c}" stop-opacity="${m.ours ? .12 : .05}"/></radialGradient>`; });
+  g += '</defs>';
+  [20, 30, 40, 50, 60].forEach(v => { g += `<line x1="${X0}" x2="${X1}" y1="${ly(v)}" y2="${ly(v)}" stroke="rgba(255,255,255,.08)"/><text x="${X0 - 14}" y="${ly(v) + 4}" text-anchor="end" font-size="12" fill="rgba(230,226,255,.55)">${v}%</text>`; });
+  (small ? [10, 1000, 10000] : [10, 100, 1000, 10000]).forEach(v => { g += `<line x1="${lx(v)}" x2="${lx(v)}" y1="${Y1}" y2="${Y0}" stroke="rgba(255,255,255,.06)"/><text x="${lx(v)}" y="${Y0 + 24}" text-anchor="middle" font-size="12" fill="rgba(230,226,255,.55)">$${v.toLocaleString('en-US')}</text>`; });
+  g += `<line x1="${X0}" x2="${X1}" y1="${ly(25)}" y2="${ly(25)}" stroke="rgba(255,255,255,.35)" stroke-dasharray="3 6"/><text x="${X1}" y="${ly(25) - 8}" text-anchor="end" font-size="12" fill="rgba(230,226,255,.6)">guessing, 25%</text>`;
+  g += `<text x="${X1}" y="${Y0 + 50}" text-anchor="end" font-size="11.5" letter-spacing="2.5" fill="rgba(230,226,255,.5)">TRAINING COST →</text>`;
+  g += `<text x="${X0}" y="${Y1 - 12}" font-size="11.5" letter-spacing="2.5" fill="rgba(230,226,255,.5)">↑ HELLASWAG</text>`;
+  // the gap, drawn as a soft bridge from Gnosis to SmolLM2-135M
+  g += `<path d="M ${lx(42) + 26} ${ly(37.9) + 30} Q ${(lx(42) + lx(5000)) / 2} ${ly(30)} ${lx(5000) - 18} ${ly(42.1) + 22}" fill="none" stroke="rgba(255,176,196,.55)" stroke-dasharray="2 7" stroke-linecap="round"/>`;
+  g += `<text x="${(lx(42) + lx(5000)) / 2}" y="${ly(30) + 2}" text-anchor="middle" font-family="Instrument Serif, serif" font-style="italic" font-size="${small ? 20 : 26}" fill="#ffd0dc">about 120× the cost</text>`;
+  M.forEach((m, i) => {
+    const x = lx(m.cost), y = ly(m.hs), R = r(m.p);
+    g += `<g class="pt" tabindex="0" aria-label="${m.n}: ${m.lab}">`;
+    if (m.ours) g += `<circle cx="${x}" cy="${y}" r="${R * 2.2}" fill="${m.c}" opacity=".10"/>`;
+    g += `<circle cx="${x}" cy="${y}" r="${R}" fill="url(#pb${i})" stroke="rgba(255,255,255,${m.ours ? .7 : .35})"/>`;
+    if (m.act) g += `<circle cx="${x}" cy="${y}" r="${r(m.act)}" fill="rgba(255,235,230,.55)"/>`;
+    g += `<circle cx="${x - R * .32}" cy="${y - R * .38}" r="${Math.max(2, R * .16)}" fill="#fff" opacity=".85"/>`;
+    const right = small ? m.cost < 1000 : (m.cost < 10000 && m.n !== 'Gnosis'), tx = right ? x + R + 12 : x - R - 12;
+    const below = small && m.n === 'SmolLM2-135M', ty = below ? y - R - 26 : y - 2, anc = below ? 'start' : (right ? 'start' : 'end'), tx2 = below ? x - R - 4 : tx;
+    g += `<text x="${tx2}" y="${ty}" text-anchor="${anc}" font-family="Instrument Serif, serif" font-size="${m.ours ? (small ? 22 : 26) : (small ? 17 : 20)}" fill="${m.ours ? '#fff' : 'rgba(230,226,255,.75)'}">${m.n}</text>`;
+    g += `<text x="${tx2}" y="${ty + 18}" text-anchor="${anc}" font-size="12" fill="rgba(230,226,255,.6)">${m.lab}</text></g>`;
   });
-  html += '<div class="axis"><span></span><div class="ticks">' +
-    [20, 30, 40, 50].map(t => `<span style="left:${pos(t)}%">${t}%</span>`).join('') + '</div><span></span></div>';
-  chart.innerHTML = html;
-  function placeGrid() {
-    const tr = chart.querySelector('.track'), gl = document.getElementById('gl');
-    if (!tr) return;
-    const cr = chart.getBoundingClientRect(), r = tr.getBoundingClientRect();
-    gl.style.left = (r.left - cr.left) + 'px'; gl.style.width = r.width + 'px';
-    gl.innerHTML = [25, 30, 35, 40, 45].map(t => `<i style="left:${pos(t)}%"></i>`).join('');
+  svg.innerHTML = g;
   }
-  placeGrid(); addEventListener('resize', placeGrid);
-  if (!reduce && 'IntersectionObserver' in window) {
-    const fills = [...chart.querySelectorAll('.fill')];
-    if (chart.getBoundingClientRect().top > innerHeight) {
-      fills.forEach(f => { f.style.transform = 'scaleX(0.02)'; });
-      const io = new IntersectionObserver(es => {
-        if (!es[0].isIntersecting) return;
-        fills.forEach((f, i) => { f.style.transition = `transform 1.2s cubic-bezier(.2,.8,.2,1) ${i * 0.09}s`; f.style.transform = 'scaleX(1)'; });
-        io.disconnect();
-      }, { threshold: 0.3 });
-      io.observe(chart);
-    }
-  }
-
-  // ---------- cost · HellaSwag · size ----------
-  // HellaSwag per letter (acc_norm): ours and GPT-2 measured with our tests; SmolLM2 from its model card.
-  // speed: python3 -m oazy.cpubench --models coral,bee4,smollm2,smollm2-135m,gpt2 (4-core Xeon, float32, Nov 7 2026)
-  // cost, ours: GPU rent (B200 ~$8/h, mentor included). Published: 6 x params x tokens at 40% of a B200's bf16 peak, $8/h.
-  (function () {
-    const box = document.getElementById('tri'), tip = document.getElementById('tri-tip');
-    if (!box) return;
-    const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-    const M = [
-      { id: 'coral', n: 'Coral_1B', kind: 'ours · next-token · mixture of experts', cost: 114, est: false, costNote: 'GPU rent, measured',
-        tps: 24.7, gb: 2.07, params: '1,037M · 211M at work per word', toks: '13B', hs: 45.3, act: 0.42, col: css('--coral'), side: 'r', ps: 'r', short: 'Coral' },
-      { id: 'bee4', n: 'Bee4-200M', kind: 'ours · next-token · dense', cost: 50, est: true, costNote: 'from its run time', hs: null,
-        tps: 41.0, gb: 0.40, params: '198M', toks: '10B', col: '#ffcf6b', side: 'r', ps: 'r', short: 'Bee4' },
-      { id: 'gpt2', n: 'GPT-2 small', kind: 'OpenAI, 2019 · next-token', cost: 18, est: true, costNote: 'estimate', ref: true, hs: 31.1,
-        tps: 62.4, gb: 0.25, params: '124M', toks: '~10B', side: 'r', ps: 'r', short: 'GPT-2' },
-      { id: 's135', n: 'SmolLM2-135M', kind: 'Hugging Face, 2024 · next-token', cost: 4000, est: true, costNote: 'estimate', ref: true, hs: 42.1,
-        tps: 40.7, gb: 0.27, params: '135M', toks: '2,000B', side: 'l', ps: 'b', short: 'SmolLM2-135M' },
-      { id: 's360', n: 'SmolLM2-360M', kind: 'Hugging Face, 2024 · next-token', cost: 21400, est: true, costNote: 'estimate', ref: true, hs: 54.5,
-        tps: 21.9, gb: 0.72, params: '362M', toks: '4,000B', side: 'l', ps: 't', short: 'SmolLM2-360M' },
-    ];
-    const REF = '#b4b3c4';
-    const money = v => v >= 1000 ? '$' + (v >= 1e4 ? Math.round(v / 1000) : (v / 1000).toFixed(1).replace(/\.0$/, '')) + 'k' : '$' + Math.round(v);
-    const X0 = Math.log10(8), X1 = Math.log10(60000), Y0 = 25, Y1 = 62;
-    const ns = 'http://www.w3.org/2000/svg';
-    let svg = null;
-
-    document.getElementById('tri-tbl').innerHTML = M.map(m =>
-      `<tr><td><span class="dot" style="background:${m.col || REF}"></span>${m.n}</td><td class="num">${m.est ? '~' : ''}${money(m.cost)} <small>${m.ref ? 'est.' : m.est ? 'run time' : 'paid'}</small></td>` +
-      `<td class="num">${m.hs != null ? m.hs.toFixed(1) + '%' : '<small>to come</small>'}</td><td class="num">${m.gb.toFixed(2)} GB${m.act ? ` <small>· ${m.act.toFixed(2)} at work</small>` : ''}</td><td class="num">${m.tps.toFixed(1)}</td></tr>`).join('');
-
-    // the size key: three nested beads, sharing the bottom line, like a stack of coins seen side-on
-    function sizeKey() {
-      const k = document.getElementById('tri-sz'), base = 40;
-      let h = '', x = 6;
-      [[0.25, '0.25'], [1, '1'], [2, '2 GB']].forEach(([gb, t]) => {
-        const r = 18 * Math.sqrt(gb / 2.07);           // the key is drawn at a fixed scale: 2.07 GB = 18px
-        h += `<circle cx="${x + r}" cy="${base - r}" r="${r}" fill="rgba(236,235,243,.05)" stroke="rgba(236,235,243,.45)" stroke-width="1"/>`;
-        h += `<text x="${x + 2 * r + 5}" y="${base - 1}">${t}</text>`;
-        x += 2 * r + (t.length * 6.5) + 14;
-      });
-      k.setAttribute('viewBox', `0 0 ${x} 44`); k.setAttribute('width', x); k.innerHTML = h;
-    }
-
-    function draw() {
-      const W = box.clientWidth; if (!W) return;
-      const phone = W < 560;
-      const H = phone ? 400 : Math.round(Math.max(360, Math.min(500, W * 0.5)));
-      const pl = phone ? 30 : 44, pr = phone ? 8 : 16, pt = 22, pb = 40;
-      const iw = W - pl - pr, ih = H - pt - pb;
-      const x = c => pl + (Math.log10(c) - X0) / (X1 - X0) * iw;
-      const y = t => pt + ih - (t - Y0) / (Y1 - Y0) * ih;
-      const R = Math.max(20, Math.min(42, W * 0.04));
-      const rad = gb => R * Math.sqrt(gb / 2.07);
-      let g = '';
-      // the corner every model wants to reach: little cost, a high score
-      g += `<defs><radialGradient id="tri-aim"><stop offset="0" stop-color="#8f7bff" stop-opacity=".12"/><stop offset=".5" stop-color="#6f8cff" stop-opacity=".04"/><stop offset="1" stop-color="#4fd8ff" stop-opacity="0"/></radialGradient>`;
-      M.forEach(m => {
-        const c = m.col || REF;
-        g += `<radialGradient id="tri-b-${m.id}" cx=".36" cy=".3" r=".8"><stop offset="0" stop-color="#fff" stop-opacity="${m.ref ? .16 : .3}"/><stop offset=".35" stop-color="${c}" stop-opacity="${m.ref ? .12 : .3}"/><stop offset="1" stop-color="${c}" stop-opacity="${m.ref ? .03 : .07}"/></radialGradient>`;
-      });
-      g += `</defs>`;
-      g += `<circle cx="${x(28)}" cy="${y(52)}" r="${Math.min(iw * .4, ih * .75)}" fill="url(#tri-aim)"/>`;
-      if (!phone) g += `<text class="aim" x="${x(400)}" y="${pt + 26}" text-anchor="middle">← cheaper to train · a better score ↑</text>`;
-      // grid: decades of cost, steps of 10 points; guessing (25%) is the floor
-      [10, 100, 1000, 10000].forEach(c => {
-        const X = x(c);
-        g += `<line x1="${X}" x2="${X}" y1="${pt}" y2="${pt + ih}" stroke="rgba(255,255,255,.06)"/>`;
-        g += `<text class="tk" x="${X}" y="${pt + ih + 18}" text-anchor="middle">${money(c)}</text>`;
-      });
-      [30, 40, 50, 60].forEach(t => {
-        const Y = y(t);
-        g += `<line x1="${pl}" x2="${pl + iw}" y1="${Y}" y2="${Y}" stroke="rgba(255,255,255,.06)"/>`;
-        g += `<text class="tk" x="${pl - 8}" y="${Y + 4}" text-anchor="end">${t}%</text>`;
-      });
-      g += `<line x1="${pl}" x2="${pl + iw}" y1="${y(25)}" y2="${y(25)}" stroke="rgba(255,255,255,.18)" stroke-dasharray="2 4"/>`;
-      g += `<text class="tk" x="${pl - 8}" y="${y(25) + 4}" text-anchor="end">25%</text>`;
-      if (!phone) g += `<text class="tk" x="${pl + iw}" y="${y(25) - 7}" text-anchor="end">guessing</text>`;
-      g += `<text class="ax" x="${pl + iw}" y="${pt + ih + 34}" text-anchor="end">training cost →</text>`;
-      g += `<text class="ax" x="${pl - (phone ? 26 : 38)}" y="${pt - 9}">↑ HellaSwag</text>`;
-      // a model whose score isn't in yet: a faint line at its cost, no bead
-      M.filter(m => m.hs == null).forEach(m => {
-        const X = x(m.cost), c = m.col || REF;
-        g += `<line x1="${X}" x2="${X}" y1="${y(25)}" y2="${y(29)}" stroke="${c}" stroke-opacity=".55" stroke-dasharray="2 3"/>`;
-        g += `<text class="sb" x="${X + 8}" y="${y(26.2)}">${phone ? m.short : m.n} · score to come</text>`;
-      });
-      // the beads: biggest first, so a small one is never hidden under a large one
-      [...M].filter(m => m.hs != null).sort((a, b) => b.gb - a.gb).forEach(m => {
-        const X = x(m.cost), Y = y(m.hs), r = rad(m.gb), c = m.col || REF;
-        const side = phone ? m.ps : m.side;
-        let lx = side === 'r' ? X + r + 9 : side === 'l' ? X - r - 9 : X, an = side === 'r' ? 'start' : side === 'l' ? 'end' : 'middle';
-        const vert = side === 't' || side === 'b';
-        let ly = side === 't' ? Y - r - 10 : side === 'b' ? Y + r + 18 : Y - 2;
-        if (vert && X + 40 > pl + iw) { lx = X + r; an = 'end'; }
-        const sub = `${m.est ? '~' : ''}${money(m.cost)} · ${m.hs.toFixed(1)}% · ${m.gb < 1 ? m.gb.toFixed(2) : m.gb.toFixed(1)} GB${m.act ? ` (${m.act.toFixed(2)} at work)` : ''}`;
-        g += `<g class="pt${m.ref ? ' ref' : ''}" tabindex="0" data-id="${m.id}" aria-label="${m.n}">`;
-        g += `<circle cx="${X}" cy="${Y}" r="${Math.max(r + 10, 22)}" fill="transparent"/>`;
-        g += `<g class="grow">`;
-        if (!m.ref) g += `<circle cx="${X}" cy="${Y}" r="${r * 1.9}" fill="${c}" opacity=".07" style="filter:blur(${Math.round(r * .5)}px)"/>`;
-        g += `<circle cx="${X}" cy="${Y}" r="${r}" fill="url(#tri-b-${m.id})"/>`;
-        g += `<circle class="ring" cx="${X}" cy="${Y}" r="${r}" fill="none" stroke="${c}" stroke-opacity="${m.ref ? .6 : .95}" stroke-width="1.25"${m.est ? ' stroke-dasharray="3 2.6"' : ''}/>`;
-        if (m.act) {                                       // the experts: only this much is read for each word
-          const ri = rad(m.act);
-          g += `<circle cx="${X}" cy="${Y}" r="${ri}" fill="${c}" fill-opacity=".38"/>`;
-          g += `<circle cx="${X}" cy="${Y}" r="${ri}" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="1"/>`;
-        }
-        g += `<ellipse cx="${X - r * .32}" cy="${Y - r * .42}" rx="${r * .3}" ry="${r * .14}" transform="rotate(-28 ${X - r * .32} ${Y - r * .42})" fill="#fff" opacity="${m.ref ? .18 : .4}"/>`;
-        g += `<circle cx="${X}" cy="${Y}" r="1.6" fill="${c}"/>`;
-        g += `</g><g class="lbl"><text class="nm" x="${lx}" y="${phone && !vert ? Y + 4.5 : ly}" text-anchor="${an}">${phone ? m.short : m.n}</text>`;
-        if (!phone) g += `<text class="sb" x="${lx}" y="${Y + 14}" text-anchor="${an}">${sub}</text>`;
-        g += `</g></g>`;
-      });
-      if (!svg) { svg = document.createElementNS(ns, 'svg'); svg.setAttribute('aria-hidden', 'true'); box.insertBefore(svg, tip); }
-      svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.setAttribute('height', H); svg.innerHTML = g;
-      sizeKey();
-      svg.querySelectorAll('.pt').forEach(el => {
-        const m = M.find(q => q.id === el.dataset.id);
-        const show = () => { svg.querySelectorAll('.pt.on').forEach(o => o.classList.remove('on')); el.classList.add('on'); tipFor(m, el); };
-        el.addEventListener('pointerenter', show); el.addEventListener('focus', show);
-        el.addEventListener('pointerleave', hide); el.addEventListener('blur', hide);
-        el.addEventListener('click', show);
-      });
-    }
-    function tipFor(m, el) {
-      const c = m.col || REF;
-      tip.innerHTML = `<b><i style="background:${c}"></i>${m.n}</b><span class="k">${m.kind}</span><dl>` +
-        `<dt>Training cost</dt><dd>${m.est ? '~' : ''}${money(m.cost)} <small>${m.costNote}</small></dd>` +
-        `<dt>HellaSwag</dt><dd>${m.hs != null ? m.hs.toFixed(1) + '%' : '<small>to come</small>'}</dd>` +
-        `<dt>File</dt><dd>${m.gb.toFixed(2)} <small>GB</small>${m.act ? ` <small>· ${m.act.toFixed(2)} at work</small>` : ''}</dd>` +
-        `<dt>CPU writing</dt><dd>${m.tps.toFixed(1)} <small>words/s</small></dd>` +
-        `<dt>Parameters</dt><dd>${m.params}</dd>` +
-        `<dt>Text read</dt><dd>${m.toks} <small>tokens</small></dd></dl>`;
-      const br = box.getBoundingClientRect(), r = el.querySelector('.ring').getBoundingClientRect();
-      const tw = tip.offsetWidth, th = tip.offsetHeight;
-      let left = r.right - br.left + 12, top = r.top - br.top + r.height / 2 - th / 2;
-      if (left + tw > br.width) left = r.left - br.left - tw - 12;
-      if (left < 0) { left = Math.max(0, Math.min(br.width - tw, r.left - br.left + r.width / 2 - tw / 2)); top = r.bottom - br.top + 10; }
-      tip.style.left = left + 'px'; tip.style.top = Math.max(0, top) + 'px'; tip.classList.add('show');
-    }
-    function hide() { tip.classList.remove('show'); svg && svg.querySelectorAll('.pt.on').forEach(o => o.classList.remove('on')); }
-    draw();
-    let rt; addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { hide(); draw(); }, 80); });
-    document.addEventListener('pointerdown', e => { if (!box.contains(e.target)) hide(); });
-    const open = () => box.classList.remove('pre');
-    if (reduce || !('IntersectionObserver' in window) || box.getBoundingClientRect().top < innerHeight) open();
-    else { const io = new IntersectionObserver(es => { if (es[0].isIntersecting) { open(); io.disconnect(); } }, { threshold: 0.35 }); io.observe(box); }
-  })();
-
-  // ---------- Bee: one token per step ----------
-  const BEE = ['The', ' river', ' carried', ' the', ' light', ' all', ' the', ' way', ' to', ' the', ' sea', ',', ' and', ' the', ' town', ' woke'];
-  const beeBox = document.getElementById('bee-toks'), beeStep = document.getElementById('bee-step');
-  function beeRender(n) {
-    beeBox.innerHTML = BEE.slice(0, n).map((t, i) => `<span class="tok${i === n - 1 ? ' new' : ''}">${t.trim() || t}</span>`).join('') + (n < BEE.length ? '<span class="caret"></span>' : '');
-    beeStep.textContent = `step ${n} / ${BEE.length}`;
-  }
-
-  // ---------- Fern: 16 words, 5 rounds, gist first ----------
-  const FERN = ['Light', 'from', 'the', 'river', 'reaches', 'the', 'sea,', 'and', 'the', 'quiet', 'town', 'wakes', 'slowly', 'under', 'the', 'morning.'];
-  const ROUND = [3, 4, 5, 1, 3, 5, 1, 4, 5, 3, 2, 2, 4, 4, 5, 3]; // which round reveals each word
-  const fernBox = document.getElementById('fern-toks'), fernStep = document.getElementById('fern-step');
-  const fernBars = [...document.querySelectorAll('#fern-rounds i')];
-  fernBox.innerHTML = FERN.map(w => `<span class="tok blank">${w}</span>`).join('');
-  const fernToks = [...fernBox.children];
-  function fernRender(r) {
-    fernToks.forEach((el, i) => {
-      const at = ROUND[i];
-      el.className = 'tok ' + (at > r ? 'blank' : at === r ? 'new' : 'set');
-      if (at === r) { el.classList.add('fresh'); requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove('fresh'))); }
-    });
-    fernBars.forEach((b, i) => b.classList.toggle('on', i < r));
-    fernStep.textContent = `round ${r} / 5`;
-  }
-
-  if (reduce) { beeRender(BEE.length); fernRender(5); return; }
-  // both demos run on one clock: 16 Bee steps take as long as 5 Fern rounds
-  let tick = 0, timer = null;
-  const STEP = 260, LOOP = 16 + 9;     // 16 steps then a pause
-  function run() {
-    const s = tick % LOOP;
-    beeRender(Math.min(16, s + 1));
-    const r = s >= 16 ? 5 : Math.min(5, Math.floor((s + 1) / 3.2) + 1);
-    if (fernStep.textContent !== `round ${r} / 5` || s === 0) fernRender(r);
-    tick++;
-  }
-  beeRender(BEE.length); fernRender(5);       // complete at rest
-  const demos = document.querySelector('.models');
-  new IntersectionObserver(es => {
-    if (es[0].isIntersecting && !timer) { tick = 0; run(); timer = setInterval(run, STEP); }
-    else if (!es[0].isIntersecting && timer) { clearInterval(timer); timer = null; }
-  }).observe(demos);
+  render(); addEventListener('resize', render);
 })();
 
-// Coral: an illustration of routing. Each word lights the few experts it is sent to (not real routing data)
-(() => {
-  const wEl = document.getElementById('coral-words'), xEl = document.getElementById('coral-experts');
-  if (!wEl || !xEl) return;
-  const WORDS = ['The', ' tide', ' pulled', ' the', ' boat', ' out', ' past', ' the', ' reef'];
-  wEl.innerHTML = WORDS.map(w => `<span>${w.trim()}</span>`).join('');
-  xEl.innerHTML = '<i></i>'.repeat(64);
-  const ws = [...wEl.children], xs = [...xEl.children];
-  const pick = w => { let h = 7; for (const ch of w) h = (h * 31 + ch.charCodeAt(0)) >>> 0; const o = new Set(); while (o.size < 4) { h = (h * 1103515245 + 12345) >>> 0; o.add((h >>> 8) % 64); } return o; };
-  const show = k => { const on = pick(WORDS[k].trim().toLowerCase()); ws.forEach((e, i) => e.classList.toggle('now', i === k)); xs.forEach((e, i) => e.classList.toggle('on', on.has(i))); };
-  show(1);
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  let k = 1, t = null;
-  new IntersectionObserver(es => {
-    if (es[0].isIntersecting && !t) t = setInterval(() => { k = (k + 1) % WORDS.length; show(k); }, 900);
-    else if (!es[0].isIntersecting && t) { clearInterval(t); t = null; }
-  }).observe(xEl);
+/* ---------- start ---------- */
+measure();
+addEventListener('resize', measure);
+addEventListener('load', measure);
+if (document.fonts) document.fonts.ready.then(measure);
+// a drop lands as the page opens, as in the film
+setTimeout(() => addRipple(0, 2.2, 1.0), reduce ? 0 : 500);
+setInterval(() => { if (scrollY < innerHeight * .6 && !reduce && !document.hidden) addRipple(0, 2.2, .35); }, 9000);
+if (reduce) {
+  T = 12; const once = () => tick(performance.now());
+  addEventListener('scroll', () => requestAnimationFrame(once), { passive: true }); addEventListener('resize', once); once();
+} else requestAnimationFrame(tick);
 })();
-
-// near-0 compute: a band of light drawn like the hero's tunnel. Hair-thin streaks with drifting wisps, comets and
-// colour flow in from a wide river on the left and narrow into a glass bead (a ball lens: it shows the river
-// upside down, with colour split at its rim); out of it comes one fine bright thread. Colour separates slightly
-// as the light converges, like dispersion. One fragment shader; it only runs while the band is on screen.
-(() => {
-  const band = document.getElementById('nz-band'), cv = document.getElementById('nz-c');
-  if (!band || !cv) return;
-  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const gl = cv.getContext('webgl', { antialias: false, alpha: true, premultipliedAlpha: false });
-  if (!gl || !gl.getExtension('OES_standard_derivatives')) { cv.remove(); return; }
-  const FX = 0.66;                     // where the bead sits, as a share of the width
-  band.style.setProperty('--fx', (FX * 100) + '%');
-  const VS = 'attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}';
-  const FS = `#extension GL_OES_standard_derivatives : enable
-precision highp float;
-uniform vec2 uRes; uniform float uT, uPx, uFx, uSpan;
-float h11(float n){ return fract(sin(n*91.3458)*47453.5453); }
-float h21(vec2 p){ p=fract(p*vec2(233.34,851.73)); p+=dot(p,p+23.45); return fract(p.x*p.y); }
-float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f);
-  float a=h11(i.x+i.y*57.), b=h11(i.x+1.+i.y*57.), c=h11(i.x+(i.y+1.)*57.), d=h11(i.x+1.+(i.y+1.)*57.);
-  return mix(mix(a,b,f.x),mix(c,d,f.x),f.y); }
-vec3 hueCol(float h){ h=fract(h)*5.;
-  vec3 c0=vec3(.84,.80,1.), c1=vec3(.60,.46,1.), c2=vec3(.44,.62,1.), c3=vec3(.44,.86,1.), c4=vec3(1.,.52,.80);
-  float t=smoothstep(0.,1.,fract(h));
-  if(h<1.) return mix(c0,c1,t); if(h<2.) return mix(c1,c2,t); if(h<3.) return mix(c2,c3,t); if(h<4.) return mix(c3,c4,t); return mix(c4,c0,t); }
-// the river: lanes of streaks whose spread narrows towards the bead at x = xf
-vec3 river(vec2 p, float xf, float spread, float id, float N){
-  float d=(xf-p.x)*uSpan; if(d<=0.) return vec3(0.);   // uSpan stretches the river on narrow screens
-  float w=.003+.29*spread*pow(d,1.3);                       // half-height of the river here
-  float s=p.y/w, env=exp(-s*s*1.25)*(.6+.4*exp(-s*s*4.));
-  if(env<.004) return vec3(0.);
-  float lane=floor(s*N);
-  float r1=h11(lane*1.37+id*17.31), r2=h11(lane*2.11+id*5.71+3.1), r3=h11(lane*.73+id*9.13+7.7), r4=h11(lane*4.31+id*1.97+1.3);
-  float lanePx=w*uRes.y/N, sc=(lane+.5+(r4-.5)*.7)/N, dpx=abs(s-sc)*w*uRes.y;
-  float t=uPx*(.5+.5*min(d,1.))*(.7+.6*r3), tt=max(t,.6);
-  float prof=exp(-dpx*dpx/(tt*tt))*min(1.,t/.6);
-  float u=-log(d+.03);                                        // streaks bunch up and speed up near the bead
-  float sp=mix(.35,1.,r1)*(.6+.15*id), travel=uT*sp;
-  float wisp=smoothstep(.5,.95,vn(vec2(u*mix(1.8,4.,r2)-travel+r3*40., uT*.1+r4*31.)))*smoothstep(.15,.6,vn(vec2(u*7.-travel*1.3+r2*23., uT*.17+7.)));
-  float ph=u*mix(.8,1.6,r4)-travel*1.5+r2*9., f=fract(ph), duty=mix(.45,.85,r3), aa=min(fwidth(ph)*1.2+.004,.25);
-  float comet=pow(smoothstep(0.,duty,f),2.2)*(1.-smoothstep(duty-aa*2.,duty+aa,f))*step(.7,h11(lane*3.9+id*11.1+floor(ph)*7.31));
-  float lit=smoothstep(.2,.42,h11(lane*7.77+id*3.33+5.9));
-  float hue=vn(vec2(u*.6+uT*.03+id*3.1, s*1.4-uT*.02+id*7.7));
-  vec3 col=hueCol(hue*1.3+.2*r1);
-  col=mix(col, vec3(1.,.97,1.), smoothstep(duty*.8,duty,f)*comet*.7);
-  float near=1.+2.2*exp(-d*5.);                               // light gathers as it closes in
-  vec3 line=col*prof*(wisp*.9+comet*1.1)*lit*(.35+.65*r1*r1)*1.5*near;
-  vec3 haze=vec3(.72,.68,1.)*(.05+.22*exp(-d*9.))*min(1.,1.6*tt/max(lanePx,.001))*near;
-  return mix(haze,line,smoothstep(1.3,3.6,lanePx))*env;
-}
-vec3 scene(vec2 p, float xf, float spread){
-  vec3 c=river(p,xf,spread,0.,64.)*.8+river(p,xf,spread*1.15,1.,38.)+river(p,xf,spread*.85,2.,96.)*.6;
-  // the thread: one fine line leaving the bead, with soft pulses travelling along it
-  float e=p.x-xf;
-  if(e>0.){
-    float th=uPx*(.55+e*.6), dy=abs(p.y)*uRes.y;
-    float pulse=.55+.45*smoothstep(.35,.9,vn(vec2(e*9.-uT*1.4, 3.)));
-    float fade=exp(-e*1.1);
-    c+=vec3(.92,.90,1.)*exp(-dy*dy/(th*th))*pulse*1.6*fade + vec3(.55,.5,1.)*exp(-dy/(14.*uPx))*.07*fade;
-  }
-  // the light of the focus itself
-  float r=length(p-vec2(xf,0.))*uRes.y/uPx;
-  c+=vec3(.75,.7,1.)*(exp(-r/7.)*.9+exp(-r/40.)*.18);
-  return c;
-}
-vec3 disp(vec2 p, float xf){                                   // red, green and blue converge a touch apart
-  return vec3(scene(p,xf,.985).r, scene(p,xf,1.).g, scene(p,xf,1.02).b);
-}
-void main(){
-  vec2 fc=gl_FragCoord.xy;
-  vec2 p=(fc-.5*uRes)/uRes.y;
-  float xf=(uFx-.5)*uRes.x/uRes.y;
-  vec2 bc=vec2(xf,0.); float R=.072;
-  vec2 q=p-bc; float rr=length(q)/R;
-  vec3 c;
-  if(rr<1.){
-    // a ball lens: the view through it is upside down and squeezed, more so towards the rim; blue bends most
-    float k=-(.55+.35*rr*rr);
-    vec2 pr=bc+q*k*.98, pg=bc+q*k, pb=bc+q*k*1.03;
-    c=vec3(scene(pr,xf,1.).r, scene(pg,xf,1.).g, scene(pb,xf,1.).b)*.85;
-    vec3 n=normalize(vec3(q/R, sqrt(max(0.,1.-rr*rr))));
-    float sp=pow(max(dot(n,normalize(vec3(-.45,.55,.7)+vec3(0.,0.,1.))),0.),90.);
-    float fr=pow(1.-n.z,3.);
-    c=c*(.75+.25*n.z)+vec3(1.)*sp*1.2+vec3(.75,.75,1.)*fr*.35;
-  } else c=disp(p,xf);
-  // the bead's rim, split into colour: pink a touch left, cyan a touch right
-  float px=uRes.y/uPx;
-  float er=abs(length(q-vec2(.0016*uPx*0.,0.))-R)*px;
-  float rimR=exp(-pow((length(q+vec2(.9/px*uPx,0.))-R)*px/.9,2.)), rimG=exp(-pow((length(q)-R)*px/.8,2.)), rimB=exp(-pow((length(q-vec2(.9/px*uPx,0.))-R)*px/.9,2.));
-  c+=vec3(rimR*.9+rimG*.5, rimG*.6, rimB*.9+rimG*.55)*.85;
-  c=1.-exp(-c*1.35);                                           // soft tone
-  c+=(h21(fc+fract(uT)*61.)-.5)*.025;                          // grain
-  float a=clamp(max(c.r,max(c.g,c.b))*1.4,0.,1.);
-  gl_FragColor=vec4(c/max(a,1e-3), a);
-}`;
-  const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o)); return o; };
-  let prog;
-  try {
-    prog = gl.createProgram(); gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(prog);
-    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error('link');
-  } catch (e) { console.warn('near-0', e); cv.remove(); return; }
-  gl.useProgram(prog);
-  const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-  const loc = gl.getAttribLocation(prog, 'a'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-  const U = {}; ['uRes', 'uT', 'uPx', 'uFx', 'uSpan'].forEach(k => U[k] = gl.getUniformLocation(prog, k));
-  band.querySelector('.fallback').remove();
-  let dpr = 1, live = false, raf = 0, t0 = performance.now();
-  function size() {
-    const r = cv.getBoundingClientRect(); dpr = Math.min(1.5, devicePixelRatio || 1);
-    cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr); gl.viewport(0, 0, cv.width, cv.height);
-  }
-  function draw(now) {
-    const t = still ? 40 : 40 + (now - t0) / 1000;
-    gl.uniform2f(U.uRes, cv.width, cv.height); gl.uniform1f(U.uT, t); gl.uniform1f(U.uPx, dpr); gl.uniform1f(U.uFx, FX); gl.uniform1f(U.uSpan, Math.min(3.2, Math.max(1, 1.9 * cv.height / cv.width)));
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    if (live && !still) raf = requestAnimationFrame(draw);
-  }
-  size(); draw(performance.now());
-  addEventListener('resize', () => { size(); draw(performance.now()); });
-  new IntersectionObserver(es => {
-    live = es[0].isIntersecting;
-    if (live && !still) { cancelAnimationFrame(raf); raf = requestAnimationFrame(draw); }
-  }).observe(band);
-})();
-
-// glass cards: a soft light follows the pointer
-document.querySelectorAll('.model, .glass').forEach(el => el.addEventListener('pointermove', e => {
-  const r = el.getBoundingClientRect();
-  el.style.setProperty('--mx', (e.clientX - r.left) + 'px'); el.style.setProperty('--my', (e.clientY - r.top) + 'px');
-}));
-
-// below the hero: a photon field, the page as a detector catching the hero's light (see land()
-// in the shader), refracted again by the glass boxes.
-(() => {
-  const cv = document.getElementById('land'); if (!cv) return;
-  const gl = cv.getContext('webgl', { antialias: false, alpha: false, premultipliedAlpha: false });
-  if (!gl || !gl.getExtension('OES_standard_derivatives')) { cv.remove(); document.documentElement.classList.add('noland'); return; }
-  const vs = 'attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}';
-  const fs = `#extension GL_OES_standard_derivatives : enable
-precision highp float;
-uniform vec2 uRes; uniform float uT, uTop, uDpr, uPa, uScroll, uCw; uniform vec2 uP; uniform vec4 uB[6]; uniform float uBR[6]; uniform int uBN; 
-float h21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
-float vn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
-  return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y); }
-float fbm(vec2 p){ float s = 0., a = .55; for (int i = 0; i < 3; i++) { s += a * vn(p); p = p * 1.9 + vec2(1.7, 9.2); a *= .42; } return s; }
-float ln(float v, float w){ float d = abs(fract(v + .5) - .5); return 1. - smoothstep(.45 * w, 1.45 * w, d); }
-// below the hero: a photon field. The page is a detector slowly catching the hero's light: a fine,
-// slightly irregular grid of tiny points, each one flashing now and then as a single photon lands
-// and fading after, more often where the light is stronger (soft pools of the hero's colours that
-// drift slowly, brighter towards the margins and under the pointer). Each point splits faintly into
-// colour like the hero's lens, and where many land the detector keeps a soft glow, like an exposure.
-vec3 field(float h){
-  h = fract(h) * 4.;
-  vec3 a = vec3(.80, .76, 1.), b = vec3(.58, .46, 1.), c = vec3(.45, .82, 1.), d = vec3(1., .58, .84);
-  float t = smoothstep(0., 1., fract(h));
-  if (h < 1.) return mix(a, b, t); if (h < 2.) return mix(b, c, t); if (h < 3.) return mix(c, d, t); return mix(d, a, t);
-}
-vec2 h22(vec2 p){ return fract(sin(vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)))) * 43758.5453); }
-vec3 land(vec2 css, float wIn, out float wOut){
-  wOut = 1.;
-  float vw = uRes.x / uDpr, t = uT;
-  vec2 pc = vec2(css.x, css.y + uScroll * .5);                    // a little depth when scrolling
-  vec2 q = pc / 620.;
-  // how much light falls here
-  float L = smoothstep(.2, .9, vn(q + vec2(t * .01, -t * .008))) * .8 + .2 * vn(q * 3. + 5.);
-  float calm = mix(.35, 1., smoothstep(uCw - 80., uCw + 160., abs(css.x - vw * .5)));
-  vec2 dp = (css - uP) / 150.; L += .7 * uPa * exp(-dot(dp, dp));
-  L *= calm;
-  vec3 tint = field(vn(q * .8 + vec2(-t * .006, t * .004)) * 1.4);
-  // the detector's points
-  const float G = 9.;
-  vec2 cell = floor(pc / G), f = pc - (cell + .5) * G;
-  vec2 hh = h22(cell);
-  float rate = .05 + .25 * hh.y;
-  float ph = fract(t * rate + hh.x * 7.);
-  // a photon lands: a quick flash, then a slow fade
-  float on = step(hh.x, .25 + .75 * L) * smoothstep(0., .04, ph) * exp(-ph * 6.);
-  vec2 d = f - (h22(cell + 9.) - .5) * 4.;
-  vec3 dot3 = exp(-vec3(dot(d + vec2(.55, 0.), d + vec2(.55, 0.)), dot(d, d), dot(d - vec2(.55, 0.), d - vec2(.55, 0.))) / .5);
-  vec3 c = dot3 * on * mix(tint, vec3(1.), .35 * on) * (.45 + 1.4 * L);
-  c += tint * L * L * .022;                                          // the exposure
-  return c;
-}
-float sdBox(vec2 p, vec2 b, float r){ vec2 q = abs(p) - b + r; return length(max(q, 0.)) + min(max(q.x, q.y), 0.) - r; }
-// distance to the nearest glass pane (negative inside); near the pointer the pane's skin swells towards it
-float panes(vec2 css){
-  float sd = 1e5;
-  for (int i = 0; i < 6; i++) {
-    if (i >= uBN) break;
-    vec4 b = uB[i]; vec2 c = b.xy + b.zw * .5, hb = b.zw * .5;
-    float d = sdBox(css - c, hb, uBR[i]);
-    float dp = sdBox(uP - c, hb, uBR[i]);
-    vec2 e = (css - uP) / 70.;
-    d -= 14. * uPa * exp(-dp * dp / 3200.) * exp(-dot(e, e));
-    sd = min(sd, d);
-  }
-  return sd;
-}
-void main(){
-  vec2 css = vec2(gl_FragCoord.x, uRes.y - gl_FragCoord.y) / uDpr;
-  float w0; vec3 c = land(css, -1., w0);
-  float sd = panes(css);
-  if (sd < 1.5) {
-    // glass: a flat clear middle and a thick rounded rim. The rim bends the lines behind it
-    // outwards (more for blue than red, so edges split into colour) and catches the light
-    float e = 1.5;
-    vec2 n = normalize(vec2(panes(css + vec2(e, 0.)) - panes(css - vec2(e, 0.)), panes(css + vec2(0., e)) - panes(css - vec2(0., e))) + 1e-5);
-    float rim = smoothstep(-26., 0., min(sd, 0.));            // 0 in the middle, 1 at the edge
-    float bend = pow(rim, 2.4) * 34.;
-    vec3 g = c;
-    float wr = w0 * (1. + bend * .04), wx;
-    if (bend > .05) g = vec3(land(css + n * bend * .92, wr, wx).r, land(css + n * bend, wr, wx).g, land(css + n * bend * 1.1, wr, wx).b);
-    g *= mix(.4, 1.25, pow(rim, 1.6));                         // calm middle for reading, denser light at the rim
-    float lit = .55 + .45 * dot(n, normalize(vec2(-.55, -.85))); // light from the top left
-    g += vec3(.92, .94, 1.) * (pow(rim, 9.) * .22 * lit + pow(rim, 3.) * .028);
-    g += vec3(.006, .006, .01);
-    c = mix(c, g, smoothstep(.75, -.75, sd));
-  }
-  float y = css.y * uDpr;
-  c *= smoothstep(uTop + 40. * uDpr, uTop + 380. * uDpr, y);              // fades in below the hero
-  c += (h21(gl_FragCoord.xy + fract(uT)) - .5) / 255.;
-  gl_FragColor = vec4(c + vec3(.0196, .0196, .0275), 1.);
-}`;
-  const sh = (t, src) => { const o = gl.createShader(t); gl.shaderSource(o, src); gl.compileShader(o); if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw gl.getShaderInfoLog(o); return o; };
-  let pr;
-  try { pr = gl.createProgram(); gl.attachShader(pr, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, fs)); gl.linkProgram(pr); gl.useProgram(pr); }
-  catch (e) { cv.remove(); document.documentElement.classList.add('noland'); return; }
-  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-  const la = gl.getAttribLocation(pr, 'a'); gl.enableVertexAttribArray(la); gl.vertexAttribPointer(la, 2, gl.FLOAT, false, 0, 0);
-  const U = n => gl.getUniformLocation(pr, n), uRes = U('uRes'), uT = U('uT'), uTop = U('uTop'), uDpr = U('uDpr'), uP = U('uP'), uPa = U('uPa'), uB = U('uB'), uBR = U('uBR'), uBN = U('uBN'), uScroll = U('uScroll'), uCw = U('uCw');
-  const wrapEl = document.querySelector('.below .wrap');
-  const glassEls = [...document.querySelectorAll('.model, .glass')], B = new Float32Array(24), BR = new Float32Array(6);
-  const radii = glassEls.map(el => parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0);
-  const hero = document.querySelector('.hero');
-  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let dpr = 1, ptr = [-999, -999], tp = [-999, -999], pa = 0, ta = 0, run = false, t0 = performance.now(), last = 0;
-  function size() { dpr = Math.min(window.devicePixelRatio || 1, 1.5); cv.width = Math.round(innerWidth * dpr); cv.height = Math.round(innerHeight * dpr); gl.viewport(0, 0, cv.width, cv.height); }
-  function draw(t) {
-    const top = Math.max(0, hero.getBoundingClientRect().bottom - 60) * dpr;
-    gl.uniform2f(uRes, cv.width, cv.height); gl.uniform1f(uT, t); gl.uniform1f(uTop, top);
-    gl.uniform1f(uDpr, dpr); gl.uniform2f(uP, ptr[0], ptr[1]); gl.uniform1f(uPa, pa);
-    // the glass panes on screen right now (only those that overlap the viewport)
-    let n = 0;
-    for (let i = 0; i < glassEls.length && n < 6; i++) {
-      const r = glassEls[i].getBoundingClientRect();
-      if (r.bottom < -60 || r.top > innerHeight + 60) continue;
-      B.set([r.left, r.top, r.width, r.height], n * 4); BR[n] = radii[i]; n++;
-    }
-    gl.uniform4fv(uB, B); gl.uniform1fv(uBR, BR); gl.uniform1i(uBN, n);
-    gl.uniform1f(uScroll, scrollY);
-    const wr = wrapEl ? wrapEl.getBoundingClientRect() : null;
-    gl.uniform1f(uCw, wr ? Math.min(wr.width * .5 - 16, innerWidth * .5 - 20) : 560);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-  }
-  function frame(now) {
-    if (!run) return;
-    ptr[0] += (tp[0] - ptr[0]) * .18; ptr[1] += (tp[1] - ptr[1]) * .18; pa += (ta - pa) * .06;
-    draw(still ? 20 : 20 + (now - t0) / 1000);
-    requestAnimationFrame(frame);
-  }
-  const wanted = () => !document.hidden && hero.getBoundingClientRect().bottom < innerHeight * 1.2;
-  function check() { const w = wanted(); if (w && !run) { run = true; requestAnimationFrame(frame); } else if (!w) run = false; if (still && w) draw(20); }
-  size(); draw(20);
-  addEventListener('resize', () => { size(); draw(20); check(); });
-  addEventListener('scroll', check, { passive: true });
-  document.addEventListener('visibilitychange', check);
-  addEventListener('pointermove', e => { if (e.pointerType === 'mouse') { tp = [e.clientX, e.clientY]; if (ptr[0] < -900) ptr = tp.slice(); ta = 1; } }, { passive: true });
-  document.addEventListener('pointerleave', () => { ta = 0; });
-  check();
-  window.__oazyLand = { render: t => draw(t) };
-})();
-
 </script>
 </body>
 </html>
