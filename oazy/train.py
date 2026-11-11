@@ -33,17 +33,17 @@ from memtrix.model import Memtrix, MemtrixConfig
 from memtrix import memory
 from . import hellaswag, probes, term
 
-KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "seed", "smol", "smolbee", "black", "blackt", "logos", "bee6moe", "gnosis", "anima", "gpt"]
+KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "seed", "smol", "smolbee", "black", "blackt", "logos", "bee6moe", "gnosis", "lucid", "gpt"]
 NICE = {"memtrix": "Memtrix", "tide": "Tide", "fern": "Fern", "ember": "Ember", "fern2": "Fern2", "fern3": "Fern3",
         "bee": "Bee0.2B", "bee2": "Bee_v2_0.2B", "bee3": "Bee3", "frog": "Frog", "coral": "Coral", "bee4": "Bee4-200M", "coralmini": "Coral Mini",
-        "pegasus": "Pegasus 1", "pegasusmini": "Pegasus 1 Mini", "pegasus2": "Pegasus 2 Mini", "plain100": "Plain-100M", "plain100f": "Plain-100F", "alphastar": "Pegasus Alpha Star", "pegasusbeta": "Pegasus Beta", "bee5": "Bee5-200M", "bee6": "Bee6-200M", "logos": "Logos1-200M", "bee6moe": "Bee6-MoE", "gnosis": "Gnosis-300M", "anima": "Anima-300M", "seed": "Seed", "smol": "SmolLM2 (their recipe)", "smolbee": "SmolLM2 (our recipe)", "black": "Code Black",
+        "pegasus": "Pegasus 1", "pegasusmini": "Pegasus 1 Mini", "pegasus2": "Pegasus 2 Mini", "plain100": "Plain-100M", "plain100f": "Plain-100F", "alphastar": "Pegasus Alpha Star", "pegasusbeta": "Pegasus Beta", "bee5": "Bee5-200M", "bee6": "Bee6-200M", "logos": "Logos1-200M", "bee6moe": "Bee6-MoE", "gnosis": "Gnosis-300M", "lucid": "Lucid-300M", "seed": "Seed", "smol": "SmolLM2 (their recipe)", "smolbee": "SmolLM2 (our recipe)", "black": "Code Black",
         "blackt": "Black-T", "gpt": "GPT"}
-FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "logos", "bee6moe", "gnosis", "anima", "seed", "smolbee", "black", "blackt")    # raised the fast way: Muon (and a mentor, where MENTOR names one)
+FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "logos", "bee6moe", "gnosis", "lucid", "seed", "smolbee", "black", "blackt")    # raised the fast way: Muon (and a mentor, where MENTOR names one)
 # default mentor (the others: gpt2-medium). Code Black and Black-T race without one, so the architectures are compared alone.
 MENTOR = {"bee": "gpt2-large", "bee2": "smollm2-360m", "bee3": "smollm2-360m", "frog": "smollm2-360m", "coral": "smollm2-360m",
           "bee4": "smollm2-360m", "coralmini": "smollm2-360m", "pegasus": "smollm2-360m", "pegasusmini": "smollm2-360m", "pegasus2": "smollm2-360m",
-          "plain100": "smollm2-360m", "plain100f": "smollm2-360m", "alphastar": "smollm2-360m", "pegasusbeta": "smollm2-360m", "bee5": "smollm2-360m", "bee6": "smollm2-360m", "logos": "smollm2-360m", "bee6moe": "smollm2-360m", "gnosis": "smollm2-360m", "anima": "smollm2-360m", "seed": "smollm2-360m", "smolbee": "smollm2-360m", "black": "none", "blackt": "none"}
-BEES = ("bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "logos", "bee6moe", "gnosis", "anima", "seed", "smol", "smolbee", "black", "blackt")    # the text mix (Tagus), WSD, growing windows
+          "plain100": "smollm2-360m", "plain100f": "smollm2-360m", "alphastar": "smollm2-360m", "pegasusbeta": "smollm2-360m", "bee5": "smollm2-360m", "bee6": "smollm2-360m", "logos": "smollm2-360m", "bee6moe": "smollm2-360m", "gnosis": "smollm2-360m", "lucid": "smollm2-360m", "seed": "smollm2-360m", "smolbee": "smollm2-360m", "black": "none", "blackt": "none"}
+BEES = ("bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "logos", "bee6moe", "gnosis", "lucid", "seed", "smol", "smolbee", "black", "blackt")    # the text mix (Tagus), WSD, growing windows
 # Bee3's recipe (bee3/README.md): the mentor stays the whole run, weight decay on the Muon grids, a batch ramp,
 # a 1-minus-square-root cool-down, twice Bee2's learning rates (the presets' lr_bee3 / muon_lr_bee3)
 RECIPE = {"bee3": dict(mentor_floor=0.25, mentor_off=0.1, muon_wd=0.1, batch_ramp="65536:0.1", decay_shape="sqrt")}
@@ -106,10 +106,10 @@ RECIPE["bee6moe"] = dict(RECIPE["bee6"])
 # Gnosis-300M (Nov 11): Bee6 made deeper, 22 layers of 1,024 instead of 12 (about 307M weights), with Mixture of Depths in
 # every other layer and the previous-word keys in every fourth, as Bee6 spaces them. Bee6's recipe exactly.
 RECIPE["gnosis"] = dict(RECIPE["bee6"])
-# Anima-300M (anima/model.py, Nov 11): not a transformer underneath. Word layers that see only the last 64 pieces, and a
+# Lucid-300M (lucid/model.py, Nov 11): not a transformer underneath. Word layers that see only the last 64 pieces, and a
 # mind: 16 slots that hold its picture of the text, settled once per 32-piece beat by surprise (imagine, compare, the
 # slots claim the surprise, a shared law). Gnosis's recipe exactly, so the race differs only in the body.
-RECIPE["anima"] = dict(RECIPE["bee6"])
+RECIPE["lucid"] = dict(RECIPE["bee6"])
 GNOSIS = dict(n_layer=22, mod_layers="2,4,6,8,10,12,14,16,18,20", key_offset="3,7,11,15,19")
 # Seed (seed/README.md, Nov 9): a small core that grows 4x384 -> 6x512 -> 9x640 -> 12x768 (20/20/20/40% of the run,
 # keeping its function) + a 1.3M-row library it looks facts up in. Bee5's recipe exactly (the latest best: windows
@@ -287,9 +287,9 @@ def _logos():
     return Logos, LogosConfig
 
 
-def _anima():
-    from anima.model import Anima, AnimaConfig            # anima/ = short-sighted word layers + a mind that settles by surprise
-    return Anima, AnimaConfig
+def _lucid():
+    from lucid.model import Lucid, LucidConfig            # lucid/ = short-sighted word layers + a mind that settles by surprise
+    return Lucid, LucidConfig
 
 
 def _smol():
@@ -409,7 +409,7 @@ for _p in PRESETS.values():           # Logos1-200M and Bee6-MoE: Bee6's batch a
         _p[_k[:-4] + "logos"] = _p[_k]
         _p[_k[:-4] + "bee6moe"] = _p[_k]
         _p[_k[:-4] + "gnosis"] = _p[_k]
-        _p[_k[:-4] + "anima"] = _p[_k]
+        _p[_k[:-4] + "lucid"] = _p[_k]
 
 
 # what every run writes at each check (the dashboard's "What they write", one box each). The fourth, a story, came
@@ -564,16 +564,16 @@ def build(kind, preset, overrides=None):
             small["ctx"] = f"{small['max_len']}:0"
         cfg = Bee6Config(**{**GNOSIS, **small, **p.get("bee5", {}), **p.get("bee6", {}), **p.get("gnosis", {}), **(overrides or {})})
         return Bee6(cfg), cfg
-    if kind == "anima":
-        Anima, AnimaConfig = _anima()
+    if kind == "lucid":
+        Lucid, LucidConfig = _lucid()
         small = {k: v for k, v in p.get("bee", {}).items() if k in ("d_model", "n_layer", "attn_heads", "attn_kv_heads",
                                                                      "attn_head_dim", "mlp_hidden", "max_len")}
         if small:                       # a test preset: Bee's small body, one window length, a small mind
             small["ctx"] = f"{small['max_len']}:0"
             small.update(ear_layers=max(1, small.get("n_layer", 4) // 3), read_at="", window=32, beat=16, slots=4,
                          law_layers=1, law_hidden=small.get("mlp_hidden", 128), key_offset="3")
-        cfg = AnimaConfig(**{**small, **p.get("bee5", {}), **p.get("bee6", {}), **p.get("anima", {}), **(overrides or {})})
-        return Anima(cfg), cfg
+        cfg = LucidConfig(**{**small, **p.get("bee5", {}), **p.get("bee6", {}), **p.get("lucid", {}), **(overrides or {})})
+        return Lucid(cfg), cfg
     if kind == "bee6moe":
         Bee6MoE, Bee6MoEConfig = _bee6moe()
         small = {k: v for k, v in p.get("bee", {}).items() if k in ("d_model", "n_layer", "attn_heads", "attn_kv_heads",
@@ -680,9 +680,9 @@ def load_model(ckpt: Path, device, mmap=False):
     elif kind == "gnosis":
         Bee6, Bee6Config = _bee6()
         model = Bee6(Bee6Config.from_dict(st["config"]))
-    elif kind == "anima":
-        Anima, AnimaConfig = _anima()
-        model = Anima(AnimaConfig.from_dict(st["config"]))
+    elif kind == "lucid":
+        Lucid, LucidConfig = _lucid()
+        model = Lucid(LucidConfig.from_dict(st["config"]))
     elif kind == "bee6moe":
         Bee6MoE, Bee6MoEConfig = _bee6moe()
         model = Bee6MoE(Bee6MoEConfig.from_dict(st["config"]))

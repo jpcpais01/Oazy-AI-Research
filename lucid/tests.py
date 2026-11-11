@@ -1,9 +1,9 @@
-"""Self-tests for Anima-300M (anima/model.py): its size against Gnosis, the short sight is exactly 64 pieces, honest
+"""Self-tests for Lucid-300M (lucid/model.py): its size against Gnosis, the short sight is exactly 64 pieces, honest
 next-word reading (nothing looks ahead, any length reads the same), the picture carries what the word layers can no
 longer see, a few steps teach the picture to foresee, more passes at reading time run, the grids go to NorMuon, and a
 whole tiny run through the trainer (the mind-on/off and passes checks logged, a checkpoint that loads again).
 
-    python3 -m anima.tests        (CPU, a few minutes; without internet it uses stand-in tokenizers)
+    python3 -m lucid.tests        (CPU, a few minutes; without internet it uses stand-in tokenizers)
 """
 from __future__ import annotations
 
@@ -25,12 +25,12 @@ def check(name, ok, detail=""):
 
 
 def small(**kw):
-    from anima.model import Anima, AnimaConfig
+    from lucid.model import Lucid, LucidConfig
     cfg = dict(fp8=0, d_model=64, n_layer=6, ear_layers=2, read_at="3,5", attn_heads=2, attn_kv_heads=1, attn_head_dim=32,
                mlp_hidden=128, law_hidden=128, max_len=256, ctx="128:0", vocab_size=300, key_offset="3", window=16, beat=8,
                slots=4)
     cfg.update(kw)
-    return Anima(AnimaConfig(**cfg))
+    return Lucid(LucidConfig(**cfg))
 
 
 def wake(m, std=0.05):
@@ -42,16 +42,16 @@ def wake(m, std=0.05):
 
 
 def main():
-    term.tests_start("Anima-300M", "cpu")
-    from anima.model import Anima, AnimaConfig, local
+    term.tests_start("Lucid-300M", "cpu")
+    from lucid.model import Lucid, LucidConfig, local
     from bee6.model import Bee6, Bee6Config
     from oazy.train import GNOSIS
 
     # ---- the size
     ng = sum(p.numel() for p in Bee6(Bee6Config(fp8=0, **GNOSIS)).parameters())
-    big = Anima(AnimaConfig(fp8=0))
+    big = Lucid(LucidConfig(fp8=0))
     nn_ = big.num_params()
-    check("Anima-300M is about Gnosis's size (within 5%)", abs(nn_ - ng) / ng < 0.05,
+    check("Lucid-300M is about Gnosis's size (within 5%)", abs(nn_ - ng) / ng < 0.05,
           f"{nn_ / 1e6:.1f}M (the mind and its reads {big.mind_params() / 1e6:.1f}M) vs Gnosis {ng / 1e6:.1f}M")
     del big
 
@@ -150,7 +150,7 @@ def main():
         for _ in range(24)))
     from oazy import train
     runs = tmp / "runs"
-    sys.argv = ["train", "--model", "anima", "--preset", "smoke", "--data", str(data), "--runs", str(runs), "--mentor", "none",
+    sys.argv = ["train", "--model", "lucid", "--preset", "smoke", "--data", str(data), "--runs", str(runs), "--mentor", "none",
                 "--device", "cpu", "--compile", "0", "--tokens", "40000", "--batch-ramp", "512:0.5", "--micro", "2",
                 "--set", "ctx=64:0,128:0.3", "attn_head_dim=16", "attn_heads=4", "attn_kv_heads=2", "fp8=0",
                 "--name", "ns", "--data-sub", "sado"]
@@ -161,13 +161,13 @@ def main():
     core = [r for r in recs if r["kind"] == "core"]
     loop = [r for r in recs if r["kind"] == "loop"]
     mind = [r for r in recs if r["kind"] == "train" and r.get("mind_foresee") is not None]
-    check("a tiny Anima run finishes; the mind-on/off check, the passes check and the mind's numbers are logged",
+    check("a tiny Lucid run finishes; the mind-on/off check, the passes check and the mind's numbers are logged",
           stw["state"] == "done" and core and loop and mind,
           f"mind gap {core[-1]['core_gap']:+.4f}" if core else "")
     model, _ = train.load_model(rd / "ckpt.pt", torch.device("cpu"))
-    check("its checkpoint loads again as Anima", type(model).__name__ == "Anima")
+    check("its checkpoint loads again as Lucid", type(model).__name__ == "Lucid")
     tmp_ctx.cleanup()
-    term.tests_passed("Anima-300M")
+    term.tests_passed("Lucid-300M")
 
 
 if __name__ == "__main__":

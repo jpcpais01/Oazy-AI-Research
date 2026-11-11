@@ -13,7 +13,7 @@ const fmtDur = (s) => s == null ? "–" : s < 60 ? "under a minute" : s < 3600 ?
   : s < 86400 ? `${Math.floor(s / 3600)} h ${String(Math.round((s % 3600) / 60)).padStart(2, "0")} min` : (s / 86400).toFixed(1) + " days";
 const ago = (s) => s < 90 ? "just now" : s < 3600 ? Math.round(s / 60) + " min ago" : s < 86400 ? Math.round(s / 3600) + " h ago" : Math.round(s / 86400) + " d ago";
 
-const NICE = { bee6: "Bee6", logos: "Logos1", bee6moe: "Bee6-MoE", gnosis: "Gnosis", anima: "Anima", bee5: "Bee5", bee4: "Bee4", bee3: "Bee3", bee2: "Bee2", bee: "Bee", seed: "Seed", coral: "Coral",
+const NICE = { bee6: "Bee6", logos: "Logos1", bee6moe: "Bee6-MoE", gnosis: "Gnosis", lucid: "Lucid", bee5: "Bee5", bee4: "Bee4", bee3: "Bee3", bee2: "Bee2", bee: "Bee", seed: "Seed", coral: "Coral",
   coralmini: "Coral Mini", plain100: "Plain-100M", plain100f: "Plain-100F", alphastar: "Pegasus Alpha Star", pegasusbeta: "Pegasus Beta",
   pegasus: "Pegasus 1", pegasusmini: "Pegasus 1 Mini", pegasus2: "Pegasus 2 Mini", smol: "SmolLM2 (their recipe)", smolbee: "SmolLM2 (our recipe)",
   gpt: "GPT-2", memtrix: "Memtrix", tide: "Tide", fern: "Fern", fern2: "Fern2", fern3: "Fern3", ember: "Ember", frog: "Frog" };
