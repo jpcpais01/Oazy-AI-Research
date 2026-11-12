@@ -67,6 +67,13 @@ THINK = {
                 exam_n=600, exam_reads=(1, 2, 3, 4, 6, 8, 12)),
 }
 TRAIN_SEED, EXAM_SEED = "think-train", "think-exam"
+# --align C: a telling is ONE chunk. Every telling is padded on its left to C tokens and so is the question block, and
+# the fed model's chunk is C: a telling goes through the stack in one parallel pass, what its top worked out lands in
+# the stores when it ends, and the next telling reads it. A training step is then ALIGN_ROOM passes one after the
+# other instead of 32 (512 tokens in chunks of 16), each over C tokens of every row. (Token pilot clock/fb4.py: it
+# learns as fast, and goes as far past the depth it was trained on.) One more telling is one more step of reasoning
+# for the WHOLE scene, in whatever order its sentences stand.
+ALIGN_ROOM = 6                              # chunks to a training window: a circuit of depth 3 told 5 times, and its questions
 
 # ---------------------------------------------------------------- circuits: the plain rung
 # Field1's switches in bare sentences: no setting, no people, no flips, one wording for each rule, and EVERY part asked
@@ -120,8 +127,10 @@ def circuit(i, seed):
             "qas": [(f"Is {p} on?", "yes" if val[p] else "no", None, {"depth": depth[p]}) for p in asked]}
 
 
-def make(arm: str, preset: dict, vocab: int, point=None, stores=None) -> Keep:
+def make(arm: str, preset: dict, vocab: int, point=None, stores=None, align=0) -> Keep:
     cfg = dict(preset["cfg"], vocab_size=vocab, **THINK[preset["name"]].get("cfg", {}))
+    if align:                                       # a window: ALIGN_ROOM chunks, a telling to each, the questions in the last
+        cfg["max_len"] = ALIGN_ROOM * align
     if arm in ("keep", "feed"):
         cfg.update(preset["keep"])
         cfg.update(THINK[preset["name"]].get("keep", {}))
@@ -131,6 +140,8 @@ def make(arm: str, preset: dict, vocab: int, point=None, stores=None) -> Keep:
             cfg["point"] = point
         if stores:
             cfg["stores"] = stores
+        if align:
+            cfg["chunk"] = align
     return Keep(KeepConfig(**cfg))
 
 
@@ -158,21 +169,30 @@ def told(enc, family: str, i, seed):
     return enc.encode_ordinary(sc["story"]), enc.encode_ordinary("\n\n"), lines, sc.get("depth")
 
 
-def scene_tokens(enc, family, i, seed, reads, room: int, rng=None, most=1):
+def scene_tokens(enc, family, i, seed, reads, room: int, rng=None, most=1, align=0):
     """A scene told `reads` times and asked, as it stands in a stream: tokens, what each is (D.STORY / D.ASKED), and
     the marks [(place whose next piece is asked, candidate pieces, which is right, level, the answer)].
-    Told fewer times if it would not fit in `room` tokens; None if one telling does not fit. reads None: drawn (training)."""
+    Told fewer times if it would not fit in `room` tokens; None if one telling does not fit. reads None: drawn (training).
+    align C: every telling fills a chunk of C tokens (<|endoftext|> on its left), the questions end the next one."""
     story, sep, lines, deep = told(enc, family, i, seed)
     if reads is None:                               # training: Field1 1..R times; a circuit as often as its depth asks (+ 1 or 2)
         reads = rng.randint(1, most) if deep is None else deep + rng.randint(1, 2)
     block = [t for lead, ans, *_ in lines for t in lead + ans]
-    while reads > 1 and 1 + reads * len(story) + (reads - 1) * len(sep) + len(block) > room:
-        reads -= 1
-    toks = [enc.eot_token] + story
-    for _ in range(reads - 1):
-        toks += sep + story
-    if len(toks) + len(block) > room or not lines:
-        return None
+    if align:                                       # a telling to a chunk, the questions at the end of the next
+        if len(story) > align or len(block) > align or not lines:
+            return None
+        reads = min(reads, room // align - 1)
+        if reads < 1:
+            return None
+        toks = ([enc.eot_token] * (align - len(story)) + story) * reads + [enc.eot_token] * (align - len(block))
+    else:
+        while reads > 1 and 1 + reads * len(story) + (reads - 1) * len(sep) + len(block) > room:
+            reads -= 1
+        toks = [enc.eot_token] + story
+        for _ in range(reads - 1):
+            toks += sep + story
+        if len(toks) + len(block) > room or not lines:
+            return None
     kinds = [D.STORY] * len(toks)
     marks = []
     for lead, ans, ch, a, lv in lines:
@@ -184,7 +204,7 @@ def scene_tokens(enc, family, i, seed, reads, room: int, rng=None, most=1):
     return toks, kinds + [D.ASKED] * (len(toks) - len(kinds)), marks, reads
 
 
-def stream(rng: random.Random, enc, T: int, families, reads: int, tag=0):
+def stream(rng: random.Random, enc, T: int, families, reads: int, tag=0, align=0):
     """Yields (tokens, what they are) for ever: one scene to a training window, as in the exam: <|endoftext|> up to
     the scene, then the scene told again and again and its questions at the window's end. (A second scene in the
     window would find the first one's switches still in the stores: the same names, other states.)"""
@@ -193,7 +213,7 @@ def stream(rng: random.Random, enc, T: int, families, reads: int, tag=0):
     n, none = 0, 0
     while True:
         f = rng.choices(families, weights=wts)[0]
-        sc = scene_tokens(enc, f, n, (TRAIN_SEED, tag), None, T, rng=rng, most=reads)
+        sc = scene_tokens(enc, f, n, (TRAIN_SEED, tag), None, T, rng=rng, most=reads, align=align)
         n += 1
         if sc is None:
             none += 1
@@ -209,9 +229,10 @@ def stream(rng: random.Random, enc, T: int, families, reads: int, tag=0):
 class Rows:
     """`rows` streams cut into windows, as data.Rows: next() -> tokens (rows, T + 1), what each is (rows, T + 1)."""
 
-    def __init__(self, enc, rows, T, seed, families, reads, first_row=0):
+    def __init__(self, enc, rows, T, seed, families, reads, first_row=0, align=0):
         self.T, self.eot = T, enc.eot_token
-        self.gens = [stream(random.Random(f"{seed}|{first_row + r}"), enc, T, families, reads, tag=first_row + r) for r in range(rows)]
+        assert not align or T % align == 0, "a window is whole chunks"
+        self.gens = [stream(random.Random(f"{seed}|{first_row + r}"), enc, T, families, reads, tag=first_row + r, align=align) for r in range(rows)]
         self.buf = [([], []) for _ in range(rows)]
 
     def next(self):
@@ -228,9 +249,9 @@ class Rows:
         return out, what
 
 
-def _worker(q, rows, T, seed, families, reads, first_row):
+def _worker(q, rows, T, seed, families, reads, first_row, align=0):
     from oazy import tok
-    r = Rows(tok.get("smollm2"), rows, T, seed, families, reads, first_row)
+    r = Rows(tok.get("smollm2"), rows, T, seed, families, reads, first_row, align)
     while True:
         q.put(r.next())
 
@@ -238,19 +259,19 @@ def _worker(q, rows, T, seed, families, reads, first_row):
 class Feed:
     """Batches of windows from `workers` processes (0 = made here). Row r is always the same stream."""
 
-    def __init__(self, enc, batch, T, seed, families, reads, workers=8):
+    def __init__(self, enc, batch, T, seed, families, reads, workers=8, align=0):
         import multiprocessing as mp
         self.procs, self.qs, self.local = [], [], None
         workers = min(workers, batch)
         if workers <= 0:
-            self.local = Rows(enc, batch, T, seed, families, reads)
+            self.local = Rows(enc, batch, T, seed, families, reads, align=align)
             return
         ctx = mp.get_context("fork")
         first = 0
         for i in range(workers):
             n = batch // workers + (1 if i < batch % workers else 0)
             q = ctx.Queue(maxsize=6)
-            p = ctx.Process(target=_worker, args=(q, n, T, seed, families, reads, first), daemon=True)
+            p = ctx.Process(target=_worker, args=(q, n, T, seed, families, reads, first, align), daemon=True)
             p.start()
             self.procs.append(p)
             self.qs.append(q)
@@ -269,26 +290,40 @@ class Feed:
 
 # ---------------------------------------------------------------- the exam
 @torch.no_grad()
-def exam(model: Keep, enc, families, reads_list, n, device, batch=32, seed=0, say=None):
+def exam(model: Keep, enc, families, reads_list, n, device, batch=32, seed=0, say=None, align=0):
     """-> {family: {level: {reads: [right, asked, commonest answer's count]}}} on scenes never trained on.
     A model with stores reads a scene from its beginning, window after window, the stores carried. The twin sees the
-    last max_len tokens (at many readings: the last tellings and the questions)."""
+    last max_len tokens (at many readings: the last tellings and the questions).
+    align: a telling to a chunk, as in training; the chunk is as long as the exam's longest telling or question block
+    asks (its scenes are deeper, so longer, than training's), and the fed model takes a scene in one go."""
     model.eval()
     T = model.cfg.max_len
     eot = enc.eot_token
     res = {}
+    was = model.cfg.chunk
     for f in families:
         res[f] = {}
+        C = 0
+        if align:
+            for i in range(n):
+                story, _, lines, _ = told(enc, f, i, (EXAM_SEED, seed))
+                C = max(C, len(story), sum(len(lead) + len(ans) for lead, ans, *_ in lines))
+            C = min(T, max(align, -(-C // 16) * 16))
+            if model.cfg.feed:
+                model.cfg.chunk = C
         for R in reads_list:
             rows = []
             for i in range(n):
-                sc = scene_tokens(enc, f, i, (EXAM_SEED, seed), R, 1 << 30)
+                sc = scene_tokens(enc, f, i, (EXAM_SEED, seed), R, 1 << 30, align=C)
                 if sc is not None and sc[3] == R and sc[2]:
                     rows.append(sc)
             for lo in range(0, len(rows), batch):
                 part = rows[lo:lo + batch]
                 L = max(len(s[0]) for s in part)
-                L = min(L, T) if not model.store else -(-L // T) * T      # stores: whole windows, so that the last one holds the scene's end (and most scenes whole)
+                W = C if C and model.cfg.feed else T
+                L = min(L, T) if not model.store else -(-L // W) * W      # stores: whole windows, so that the last one holds the scene's end (and most scenes whole)
+                if C and model.cfg.feed:
+                    W = L                                                 # in one go, as a training window: a chunk's first tokens see the end of the chunk before
                 x = np.full((len(part), L), eot, dtype=np.int64)
                 offs = []
                 for r, s in enumerate(part):
@@ -299,8 +334,8 @@ def exam(model: Keep, enc, families, reads_list, n, device, batch=32, seed=0, sa
                 with amp(device):
                     if model.store:
                         st, hs = model.init_state(len(part), device), []
-                        for c in range(0, L, T):
-                            h, st, _ = model.hidden(x[:, c:c + T], st)
+                        for c in range(0, L, W):
+                            h, st, _ = model.hidden(x[:, c:c + W], st)
                             hs.append(h)
                         h = torch.cat(hs, 1)
                     else:
@@ -328,6 +363,7 @@ def exam(model: Keep, enc, families, reads_list, n, device, batch=32, seed=0, sa
                 row = res[f].get(key, {})
                 say(f"    {f + (', ' + key if key != 'all' else ''):20s} " + "  ".join(f"{R}x {100 * c[0] / max(1, c[1]):.0f}%" for R, c in row.items())
                     + (f"   (commonest answer {100 * max(c[2] for c in row.values()) / max(1, max(c[1] for c in row.values())):.0f}%)" if row else ""))
+    model.cfg.chunk = was
     model.train()
     return res
 
@@ -347,7 +383,7 @@ def train(arm, preset, th, args, enc, device, out: Path, say):
         return None, {}
     torch.manual_seed(args.seed)
     model = make(arm, preset, enc.n_vocab, point=args.point,
-                 stores=tuple(int(i) for i in args.stores.split(",")) if args.stores else None).to(device)
+                 stores=tuple(int(i) for i in args.stores.split(",")) if args.stores else None, align=args.align).to(device)
     T, B = model.cfg.max_len, args.batch or th.get("batch") or preset["batch"]
     total = int(args.tokens or th["tokens"])
     steps = max(1, total // (B * T))
@@ -358,11 +394,15 @@ def train(arm, preset, th, args, enc, device, out: Path, say):
                             fused=device.type == "cuda")
     warm = max(10, steps // 50)
     reads = args.reads or th["reads"]
-    feed = Feed(enc, B, T, args.seed, args.families, reads, workers=args.workers)
+    feed = Feed(enc, B, T, args.seed, args.families, reads, workers=args.workers, align=args.align)
     say(f"[{arm}] {model.n_params() / 1e6:.1f}M weights, attention reaches {model.cfg.window or T} tokens, "
         + (f"{len(model.store)} stores of {model.cfg.side ** 2:,} rows" + (f" written from the top (it may file under one of the {model.cfg.point} tokens before)"
                                                                          if model.cfg.feed else "") if model.store else "no stores")
-        + f"; {steps:,} steps of {B} x {T} = {steps * B * T / 1e6:.0f}M tokens; scenes told 1 to {reads} times: {', '.join(args.families)}")
+        + f"; {steps:,} steps of {B} x {T} = {steps * B * T / 1e6:.0f}M tokens; scenes told 1 to {reads} times: {', '.join(args.families)}"
+        + (f"; a telling to a chunk of {args.align} tokens" if args.align else ""))
+    if args.align:                                  # a scene whose telling or questions are longer than the chunk is left out: say how many
+        fit = [scene_tokens(enc, f, i, (TRAIN_SEED, 0), 1, T, align=args.align) is not None for f in args.families for i in range(300)]
+        say(f"[{arm}] {100 * sum(fit) / len(fit):.0f}% of the scenes fit a chunk of {args.align} tokens" + ("" if sum(fit) > 0.9 * len(fit) else ": raise --align"))
     if args.compile and device.type == "cuda" and not model.cfg.feed:
         model.speed_up()
     log = open(out / "log.jsonl", "a")
@@ -414,7 +454,7 @@ def train(arm, preset, th, args, enc, device, out: Path, say):
         if step in mids:
             say(f"[{arm}] a short exam at {step * B * T / 1e6:.0f}M tokens (share right by times told):")
             mid = exam(model, enc, args.families, [r for r in (1, 2, 4, 8) if r in th["exam_reads"]] or th["exam_reads"][:4],
-                       max(8, th["exam_n"] // 2), device, seed=1, say=say)
+                       max(8, th["exam_n"] // 2), device, seed=1, say=say, align=args.align)
             log.write(json.dumps({"kind": "exam", "step": step, "tokens": step * B * T, "exam": mid}) + "\n")
             log.flush()
             seen = (step, time.time())
@@ -440,7 +480,9 @@ def report(res: dict) -> str:
     L = ["# Think: is reasoning depth bought with weights, or with reading time?", "",
          f"Scenes ({', '.join(res['families'])}), each told again and again before its questions. Training told a Field1 scene "
          f"1 to {res['reads']} times and a circuit (trained to depth {CIRCUIT_TRAIN} only) its depth + 1 or + 2 times; the exam tells scenes "
-         f"never trained on {', '.join(reads)} times. Share of questions right (%).", ""]
+         f"never trained on {', '.join(reads)} times. Share of questions right (%)."
+         + (f" A telling fills one chunk of {res['align']} tokens (longer in the exam): the fed model takes a telling in one pass, and one more "
+            "telling is one more step for the whole scene, so depth d asks for d + 1 tellings." if res.get("align") else ""), ""]
     L += ["| Model | Weights | Tokens | Speed |", "|---|---|---|---|"]
     for a in arms:
         s = res["train"].get(a, {})
@@ -478,6 +520,8 @@ def main(argv=None):
     ap.add_argument("--lr", type=float, default=None)
     ap.add_argument("--point", type=int, default=None, help="feed: the top may file a write under one of this many tokens before it (0: the token before)")
     ap.add_argument("--stores", default=None, help="feed: a store read after each of these blocks, e.g. 2 or 2,5")
+    ap.add_argument("--align", type=int, default=0, help="a telling to a chunk of this many tokens (96 for circuits): the fed model takes a whole "
+                    "telling in one parallel pass, so a step is 6 passes one after the other instead of 32. 0: tellings follow each other, chunks of 16")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--compile", type=int, default=1)
     ap.add_argument("--every", type=int, default=100)
@@ -505,7 +549,7 @@ def main(argv=None):
     say = lambda s: print(s, flush=True)
     res_path = out / "think.json"
     res = json.loads(res_path.read_text()) if res_path.exists() else {}
-    res.update({"preset": args.preset, "families": args.families, "exam_reads": list(th["exam_reads"]), "reads": args.reads or th["reads"]})
+    res.update({"preset": args.preset, "families": args.families, "exam_reads": list(th["exam_reads"]), "reads": args.reads or th["reads"], "align": args.align})
     res.setdefault("train", {})
     res.setdefault("exam", {})
     for arm in [a for a in ARMS if args.only in ("all", "report", a)]:
@@ -515,7 +559,7 @@ def main(argv=None):
         if summary:
             res["train"][arm] = summary
         say(f"[{arm}] the exam (share right by times told):")
-        ex = exam(model, enc, args.families, th["exam_reads"], args.exam_n or th["exam_n"], device, say=say)
+        ex = exam(model, enc, args.families, th["exam_reads"], args.exam_n or th["exam_n"], device, say=say, align=args.align)
         if res_path.exists():                                       # another model may have been trained beside this one
             there = json.loads(res_path.read_text())
             for part in ("train", "exam"):

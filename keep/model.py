@@ -484,6 +484,11 @@ class Keep(nn.Module):
         before left them; its writes are made from its final vectors and land when it ends."""
         B, T = x.shape
         ch, win = self.cfg.chunk, self.cfg.window
+        if T > self.cos.size(0):                                      # longer than max_len in one go (think's exam, a telling to a chunk): more angles
+            hd = self.cfg.d // self.cfg.n_head
+            f = 1.0 / (10000 ** (torch.arange(0, hd, 2, device=x.device).float() / hd))
+            ang = torch.arange(T, device=x.device).float()[:, None] * f[None]
+            self.cos, self.sin = ang.cos().to(self.cos.dtype), ang.sin().to(self.sin.dtype)
         S = dict(state)
         past = [None] * len(self.blocks)
         old = {i: None for i in self.store}

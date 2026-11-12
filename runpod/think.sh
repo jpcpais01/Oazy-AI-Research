@@ -7,6 +7,7 @@
 #   bash runpod/think.sh                                  # the real run (base: ~50M each, 300M tokens each) on circuits in plain sentences
 #   bash runpod/think.sh --only feed --name think         # one model (feed | keep | full): they can train side by side
 #   bash runpod/think.sh --families switches,rules --name field   # Field1's families; extra options go to python3 -m keep.think
+#   bash runpod/think.sh --align 96 --name aligned        # a telling to a chunk of 96 tokens: 6 passes a step instead of 32 for the fed model
 #   bash runpod/think.sh --only report                    # examine the saved models again and rewrite the report
 # Results: <runs>/think/think.md and think.json.
 set -euo pipefail
