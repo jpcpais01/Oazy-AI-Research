@@ -609,6 +609,25 @@ def the_top_points():
     p.train()
     p.hidden(x, p.init_state(2))[0][:, 32:].square().sum().backward()
     assert all(float(g.grad.abs().sum()) > 0 for g in (st.pq.weight, st.pk.weight, st.pb))
+    # two writes on one address, one of them held back: sharing by strength, the real one lands in full (counted
+    # alike, it is cut in half); both at full strength, the two ways agree and the store says their mean
+    with torch.no_grad():
+        idx = torch.tensor([[[0, 1, 2, 3], [8, 9, 10, 11], [0, 1, 2, 3], [12, 13, 14, 15]]])       # tokens 1 and 3 write under tokens 0 and 2: one address
+        w = torch.full((1, 4, 4), 0.25)
+        top = torch.randn(1, 4, CFG["d"])
+        top[0, :, 0] = torch.tensor([0.0, 0.0, 0.0, -1.0])
+        after = {}
+        for share in ("all", "strength"):
+            for held in (True, False):
+                q = fed(share=share).store["1"]
+                q.gate.weight.zero_()
+                q.gate.bias.zero_()
+                q.gate.weight[0, 0] = 40.0 if held else 0.0                             # token 3: beta 0 or 1; token 1: beta 1
+                after[share, held] = q.file(top, torch.zeros(1, q.rows, q.dv), (idx, w, None), None)[0][0, :4].mean(0)
+                v = q.val(top)[0]
+        assert torch.allclose(after["strength", True], v[1], atol=1e-5), "a held-back write weakened the real one"
+        assert torch.allclose(after["all", True], v[1] / 2, atol=1e-5)
+        assert torch.allclose(after["strength", False], (v[1] + v[3]) / 2, atol=1e-5) and torch.allclose(after["all", False], after["strength", False], atol=1e-5)
 
 
 
