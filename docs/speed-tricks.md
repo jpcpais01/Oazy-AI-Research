@@ -337,8 +337,10 @@ scores over the words 45 + stores 69; the twin 88 ms = blocks 42 + scores over t
 - **Compiled segments.** The blocks between two stores are one compiled function; the stores run plain.
 - **The loop as one graph node** (`_Loop`, hand-written way back). The store's loop was 44% of the step, and not for
   its arithmetic: 32 sequential passes, each some fifty small kernels and graph nodes (4 times larger chunks: 69 ms
-  down to 26). One node, about twenty launches a pass. **Not measured yet.** General rule: a short sequential loop
-  of small tensor operations costs its launch count on a GPU; count the kernels, not the FLOPs.
+  down to 26). One node, about twenty launches a pass: stores 69 ms down to 42, Keep 209k to 257k (both beside a
+  training run). General rule: a short sequential loop of small tensor operations costs its launch count on a GPU;
+  count the kernels, not the FLOPs.
+- **The loss in slices of 4,096 tokens**, not the default 1,024: 12 ms less per step of 32,768 tokens (285k).
 
 **For every small model:** the scores over 49,152 words cost about 45 ms per 32,768 tokens on the H200, whatever
 the model. At 50M weights that is half the step.

@@ -339,7 +339,7 @@ class Keep(nn.Module):
         self.register_buffer("cos", ang.cos(), persistent=False)
         self.register_buffer("sin", ang.sin(), persistent=False)
         self._fast = None                           # the compiled blocks (speed_up)
-        self.loss_chunk = 1024                      # tokens per slice of the fused loss (oazy/lmloss.py)
+        self.loss_chunk = 4096                      # tokens per slice of the fused loss (oazy/lmloss.py); 1,024 cost 12 ms more a step
 
     # ------------------------------------------------------------ state
     def init_state(self, batch: int, device=None):
