@@ -1,5 +1,5 @@
-# Nov 12, round 2: the fast layout written as chunks of 16 are (--group 16), trained twice as long (600M tokens), two seeds.
-# Question: does the loop complete with more training? (c6, the slow layout with seed 1, was half way at 300M tokens:
-# depth 1 = 100%, depth 2 = 90%, depth 3 = 77%, and still rising.)
-c11: --align 96 --group 16 --seed 1 --tokens 6e8
-c12: --align 96 --group 16 --seed 2 --tokens 6e8
+# Nov 12, round 2: the fast layout written as chunks of 16 are (--group 16), trained longer. Does the loop complete?
+# At 300M tokens it was half formed: c10 (seed 0) depth 1 = 95%, depth 2 = 84%, depth 3 = 70%; c6 (slow layout, seed 1)
+# depth 1 = 100%, depth 2 = 93%, depth 3 = 77%, and still rising. c12 is c10 with twice the tokens, c13 is c11 with 5/3.
+c12: --align 96 --group 16 --tokens 6e8
+c13: --align 96 --group 16 --seed 1 --tokens 5e8
