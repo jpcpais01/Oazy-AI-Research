@@ -223,8 +223,7 @@ def exam(model: Keep, enc, families, reads_list, n, device, batch=32, seed=0, sa
             for lo in range(0, len(rows), batch):
                 part = rows[lo:lo + batch]
                 L = max(len(s[0]) for s in part)
-                if not model.store:
-                    L = min(L, T)
+                L = min(L, T) if not model.store else -(-L // T) * T      # stores: whole windows, so that the last one holds the scene's end (and most scenes whole)
                 x = np.full((len(part), L), eot, dtype=np.int64)
                 offs = []
                 for r, s in enumerate(part):

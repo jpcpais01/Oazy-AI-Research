@@ -592,6 +592,20 @@ def the_top_points():
         assert float(far[2]["1"][:, 0].abs().max()) == 0 and float(far[2]["1"][:, 1:].min()) > 0, "only the first token has no token before it"
         st.pb.copy_(torch.tensor([3.0, 0, 0, 0, 0]))
         torch.nn.init.normal_(st.pq.weight, std=0.1)
+        # a word that stands twice among the tokens pointed at: its rows get one write, not two (a write at full
+        # strength makes the store say exactly what was written, however the pointer is spread)
+        st.pb.zero_()
+        st.pq.weight.zero_()
+        st.gate.weight.zero_()
+        st.gate.bias.zero_()
+        idx = torch.tensor([[[0, 1, 2, 3]] * 5 + [[9, 9, 9, 9]]])                  # five tokens at one address, then the writing token
+        w = torch.full((1, 6, 4), 0.25)
+        keys = torch.zeros(1, 6, st.pk.out_features)
+        top = torch.randn(1, 1, CFG["d"])
+        S1, _ = st.file(top, torch.randn(1, st.rows, st.dv), (idx[:, 5:], w[:, 5:], keys[:, 5:]), (idx[:, :5], w[:, :5], keys[:, :5]))
+        assert torch.allclose(S1[0, :4].mean(0), st.val(top)[0, 0], atol=1e-5), "a repeated address was written more than once"
+        st.pb.copy_(torch.tensor([3.0, 0, 0, 0, 0]))
+        torch.nn.init.normal_(st.pq.weight, std=0.1)
     p.train()
     p.hidden(x, p.init_state(2))[0][:, 32:].square().sum().backward()
     assert all(float(g.grad.abs().sum()) > 0 for g in (st.pq.weight, st.pk.weight, st.pb))
