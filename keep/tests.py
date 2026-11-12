@@ -563,6 +563,23 @@ def the_top_writes_the_store():
         dumb = m.hidden(x, m.init_state(2))[0]
         m.muted = set()
     assert float((a[:, :8] - dumb[:, :8]).abs().max()) == 0 and float((a[:, 8:] - dumb[:, 8:]).abs().max()) > 0
+    with torch.no_grad():                           # group: a chunk's writes in order, some tokens at a time. The chunk's own reads do not change
+        whole, parts = fed(chunk=32, group=32), fed(chunk=32, group=8)
+        one = fed(chunk=32)
+        hw, sw, _ = whole.hidden(x, whole.init_state(2))
+        hp, sp, bp = parts.hidden(x, parts.init_state(2))
+        ho, so, _ = one.hidden(x, one.init_state(2))
+        assert torch.equal(hw, ho) and torch.equal(sw["1"], so["1"]), "a group as long as the chunk is the chunk"
+        assert torch.equal(hp[:, :32], ho[:, :32]) and float((sp["1"] - so["1"]).abs().max()) > 1e-4 and bp["1"].shape == (2, 64)
+        eight = fed(chunk=8)                        # the writes of chunk 1 (tokens 0..31) in groups of 8 = what chunks of 8 write, given the same final vectors
+        st8, S8, old8 = eight.store["1"], eight.init_state(2)["1"], None
+        low = eight._segment(norm(eight.emb(x[:, :32])), eight.cos[:32], eight.sin[:32], 0, 1, eight.cfg.window)
+        look = st8.look(low, S8)[1]
+        for c in range(0, 32, 8):
+            part = tuple(None if t is None else t[:, c:c + 8] for t in look)
+            S8, _ = st8.file(ho[:, c:c + 8], S8, part, old8)
+            old8 = part if old8 is None else tuple(None if t is None else torch.cat([o, t], 1)[:, -1:] for o, t in zip(old8, part))
+        assert torch.allclose(S8, parts.hidden(x[:, :32], parts.init_state(2))[1]["1"], atol=1e-5), "groups do not land in order"
     m.train()
     val = m.store["1"].val.weight
     for sl, some in ((slice(0, 8), False), (slice(56, 64), True)):
@@ -703,7 +720,7 @@ def thinking_runs():
         when = (out / "th" / "feed" / "ckpt.pt").stat().st_mtime_ns
         Th.main(args + ["--only", "report"])
         Th.main(["--preset", "tiny", "--device", "cpu", "--workers", "0", "--runs", str(out), "--name", "tha", "--tokens", "2e4",
-                 "--every", "1000", "--only", "feed", "--align", "160", "--exam-n", "6", "--ramp", "0.01", "--share", "strength"])
+                 "--every", "1000", "--only", "feed", "--align", "160", "--exam-n", "6", "--ramp", "0.01", "--share", "strength", "--group", "16"])
     finally:
         sys.stdout = old
     al = torch.load(out / "tha" / "feed" / "ckpt.pt", map_location="cpu", weights_only=False)["config"]

@@ -127,7 +127,7 @@ def circuit(i, seed, top=None):
             "qas": [(f"Is {p} on?", "yes" if val[p] else "no", None, {"depth": depth[p]}) for p in asked]}
 
 
-def make(arm: str, preset: dict, vocab: int, point=None, stores=None, align=0, share=None, point_bias=None) -> Keep:
+def make(arm: str, preset: dict, vocab: int, point=None, stores=None, align=0, share=None, point_bias=None, group=None) -> Keep:
     cfg = dict(preset["cfg"], vocab_size=vocab, **THINK[preset["name"]].get("cfg", {}))
     if align:                                       # a window: ALIGN_ROOM chunks, a telling to each, the questions in the last
         cfg["max_len"] = ALIGN_ROOM * align
@@ -146,6 +146,8 @@ def make(arm: str, preset: dict, vocab: int, point=None, stores=None, align=0, s
             cfg["share"] = share
         if point_bias is not None:
             cfg["point_bias"] = point_bias
+        if group:
+            cfg["group"] = group
     return Keep(KeepConfig(**cfg))
 
 
@@ -388,7 +390,7 @@ def train(arm, preset, th, args, enc, device, out: Path, say):
         return None, {}
     torch.manual_seed(args.seed)
     model = make(arm, preset, enc.n_vocab, point=args.point,
-                 stores=tuple(int(i) for i in args.stores.split(",")) if args.stores else None, align=args.align, share=args.share, point_bias=args.point_bias).to(device)
+                 stores=tuple(int(i) for i in args.stores.split(",")) if args.stores else None, align=args.align, share=args.share, point_bias=args.point_bias, group=args.group).to(device)
     T, B = model.cfg.max_len, args.batch or th.get("batch") or preset["batch"]
     total = int(args.tokens or th["tokens"])
     steps = max(1, total // (B * T))
@@ -406,7 +408,8 @@ def train(arm, preset, th, args, enc, device, out: Path, say):
         + (f"{len(model.store)} stores of {model.cfg.side ** 2:,} rows" + (f" written from the top (it may file under one of the {model.cfg.point} tokens before)"
                                                                          if model.cfg.feed else "") if model.store else "no stores")
         + f"; {steps:,} steps of {B} x {T} = {steps * B * T / 1e6:.0f}M tokens; scenes told 1 to {reads} times: {', '.join(args.families)}"
-        + (f"; a telling to a chunk of {args.align} tokens" if args.align else "") + (f"; writes share rows by {model.cfg.share}" if model.cfg.feed and model.cfg.share != "all" else ""))
+        + (f"; a telling to a chunk of {args.align} tokens" if args.align else "") + (f"; writes share rows by {model.cfg.share}" if model.cfg.feed and model.cfg.share != "all" else "")
+        + (f"; writes land {model.cfg.group} tokens at a time" if model.cfg.feed and model.cfg.group else ""))
     if args.align:                                  # a scene whose telling or questions are longer than the chunk is left out: say how many
         fit = [scene_tokens(enc, f, i, (TRAIN_SEED, 0), 1, T, align=args.align) is not None for f in args.families for i in range(300)]
         say(f"[{arm}] {100 * sum(fit) / len(fit):.0f}% of the scenes fit a chunk of {args.align} tokens" + ("" if sum(fit) > 0.9 * len(fit) else ": raise --align"))
@@ -535,6 +538,8 @@ def main(argv=None):
     ap.add_argument("--stores", default=None, help="feed: a store read after each of these blocks, e.g. 2 or 2,5")
     ap.add_argument("--align", type=int, default=0, help="a telling to a chunk of this many tokens (96 for circuits): the fed model takes a whole "
                     "telling in one parallel pass, so a step is 6 passes one after the other instead of 32. 0: tellings follow each other, chunks of 16")
+    ap.add_argument("--group", type=int, default=None, help="feed, with --align: a telling's writes land this many tokens at a time, in order (16), "
+                    "so a later write corrects an earlier one as it does with chunks of 16; default: a telling's writes land together and share their rows")
     ap.add_argument("--point-bias", type=float, default=None, help="feed: how sure the top is at first that its write goes under the token before "
                     "(3 = 57%% of 16 tokens; 0: every token before alike, for sentences whose subject stands far from their end)")
     ap.add_argument("--ramp", type=float, default=0.0, help="circuits by a curriculum, as the token pilots were trained: depth 1 only at first, the next depth "

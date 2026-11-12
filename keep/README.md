@@ -229,6 +229,10 @@ at the last word and has to file it under "lamp", 11 tokens back, while it start
 `--point-bias 0` starts the pointer alike on all 16 tokens before; `--ramp 0.95` is the token pilots' curriculum
 (depth 1 only, the next depth when 95% of the yes/no answers are right); `--share strength` lets a chunk's writes
 share a row by their strength, so that the many held-back writes of a whole telling weaken no real one.
+`--group 16` (with `--align`) lets a telling's writes land 16 tokens at a time, in order, each group on what the
+groups before left: the stack still takes the telling in one parallel pass, and the stores are written as they are
+with chunks of 16 (the layout of the one run that found the loop), where a later write corrects an earlier one
+instead of being averaged with it.
 
 ## The experiment
 
