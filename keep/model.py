@@ -92,6 +92,11 @@ class KeepConfig:
     group: int = 0              # feed: a chunk's writes land this many tokens at a time, in order (a later group corrects what an earlier one
                                 # wrote, as chunks do); 0: the whole chunk's writes together. For chunks as long as a telling (think --align)
     point_bias: float = 3.0     # feed, point: how sure the top is at first that its write goes under the token before (0: any of the `point` tokens alike)
+    pull: int = 0               # feed, point: the other way round. 1: each token's place PULLS its value from the tops of the `point` tokens
+                                # after it (a softmax over those sources), and is written once, under its own address. 2: the same, and
+                                # a place may pull nothing (one more choice in the softmax, by the place's own key). 3: as 2, and the
+                                # sources have no gate of their own: a place is written with what it pulls (1 - nothing), a plain
+                                # attention of the places over the tops that follow them
     share: str = "all"          # feed: how the writes of a chunk share a row. "all": every write on it counts, also one that is held back;
                                 # "strength": a write counts by its strength (beta, up to 1), so a write that is held back weakens no other
     write_cost: float = 0.0     # added to the loss: this x the mean write strength (beta, 0..2) over the stores (0: it closed the stores)
@@ -277,12 +282,15 @@ class Store(nn.Module):
         nn.init.normal_(self.out.weight, std=cfg.dv ** -0.5)
         self.point = cfg.point if cfg.feed else 0
         self.share = cfg.share
+        self.pull = int(cfg.pull) if self.point else 0
         if self.point:
             # the top points at one of the `point` tokens before it; a write goes under that token's address.
             # It starts at the token before (the plain "what followed"), and learns to reach back.
             self.pq = nn.Linear(cfg.d, cfg.d_addr, bias=False)
             self.pk = nn.Linear(cfg.d, cfg.d_addr, bias=False)
             self.pb = nn.Parameter(torch.tensor([float(cfg.point_bias)] + [0.0] * (self.point - 1)))
+            if self.pull >= 2:
+                self.pn = nn.Linear(cfg.d_addr, 1)                  # pull: how much a place would rather pull nothing
         self.top = min(cfg.k, cfg.side)             # the k best rows lie among the k best of each half-key
         self.sparse = True                          # False: the whole table inside autograd (the reference; slow)
 
@@ -367,7 +375,27 @@ class Store(nn.Module):
             K = idx.size(-1)
             beta = 2 * torch.sigmoid(self.gate(top))
             t = torch.arange(n, device=top.device) + c              # each token's place among [old, new]
-            if self.point:
+            given = beta.squeeze(-1)                                # what is reported: each token's own strength
+            if self.pull:
+                # Every place p among [old, new] is written once, under its own address, with what the tops of the J
+                # tokens after it say: a softmax over those sources (of this chunk), each counted by its strength.
+                keys = cat(old[2] if old is not None else None, new[2])
+                J, P = self.point, c + n
+                off = t[None, :] - torch.arange(P, device=top.device)[:, None]             # (P, n): source - place
+                ok = (off >= 1) & (off <= J)
+                sc = torch.einsum("bpd,bnd->bpn", keys, self.pq(top)) / math.sqrt(keys.size(-1)) + self.pb[(off - 1).clamp(0, J - 1)]
+                sc = sc.masked_fill(~ok, -1e9)
+                if self.pull >= 2:
+                    sc = torch.cat([sc, self.pn(keys)], -1)                                 # the last choice: nothing
+                a = sc.softmax(-1)[..., :n] * ok.any(-1, keepdim=True)
+                if self.pull == 3:
+                    given = a.sum(1)                                                        # no gate at the source: a token's strength is how much it is pulled
+                else:
+                    a = a * given[:, None, :]
+                beta = a.sum(-1, keepdim=True)                                              # (B, P, 1): the strength a place is written with
+                top_v = torch.einsum("bpn,bnd->bpd", a, self.val(top)) / beta.clamp(min=1e-6)
+                iw, ww, n = idx, w * ok.any(-1)[None, :, None], P
+            elif self.point:
                 keys = cat(old[2] if old is not None else None, new[2])
                 J = self.point
                 pos = t[:, None] - torch.arange(1, J + 1, device=top.device)[None, :]      # (n, J): the J tokens before
@@ -381,7 +409,7 @@ class Store(nn.Module):
                 ok = (t >= 1)[None, :, None].to(w.dtype)
                 iw, ww = idx[:, (t - 1).clamp(min=0)], w[:, (t - 1).clamp(min=0)] * ok
             R = iw.size(-1)
-            v = self.val(top)
+            v = top_v if self.pull else self.val(top)
             gi = iw.reshape(B, n * R)[..., None].expand(-1, -1, self.dv)
             was = (ww[..., None] * S.gather(1, gi).view(B, n, R, self.dv)).sum(2)          # what the store said would come
             flat = iw.reshape(B, n * R)
@@ -403,7 +431,7 @@ class Store(nn.Module):
                 share = torch.zeros(B, self.rows, device=S.device).scatter_add_(1, flat, aw.reshape(B, n * R)).gather(1, flat).view(B, n, R)
             coef = ww / (ww * share).sum(-1, keepdim=True).clamp_(min=1e-12)
             upd = (coef[..., None] * (beta * (v - was))[:, :, None, :]).reshape(B, n * R, self.dv)
-            return S.scatter_add(1, gi, upd), beta.squeeze(-1) * (ww.sum(-1) > 0)
+            return S.scatter_add(1, gi, upd), given if self.pull else given * (ww.sum(-1) > 0)
 
     def _sparse(self, S, idx, w, idx_w, w_w, coef, v, beta):
         """The chunks, touching only the rows they read and write (_chunks, _Loop). With gradients on, S is copied
