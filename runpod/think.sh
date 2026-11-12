@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Think: is reasoning depth bought with weights, or with reading time? Three models of one size (Keep with its stores
-# written from the top, Keep as it was, the plain twin) are trained on Field1 scenes told 1 to 4 times in a row and
-# examined by the depth of the question and by the number of tellings. One GPU, no data folder needed (the scenes are
+# written from the top, Keep as it was, the plain twin) are trained on scenes told several times in a row (circuits in
+# plain sentences, trained to depth 3; or Field1 scenes) and examined by the depth of the question and by the number of tellings. One GPU, no data folder needed (the scenes are
 # made as they are read). Runs in the tmux window "think" of the session "oazy".
 #
-#   bash runpod/think.sh                                  # the real run (base: ~50M each, 300M tokens each)
+#   bash runpod/think.sh                                  # the real run (base: ~50M each, 300M tokens each) on circuits in plain sentences
 #   bash runpod/think.sh --only feed --name think         # one model (feed | keep | full): they can train side by side
-#   bash runpod/think.sh --families switches --name sw    # one family; extra options go to python3 -m keep.think
+#   bash runpod/think.sh --families switches,rules --name field   # Field1's families; extra options go to python3 -m keep.think
 #   bash runpod/think.sh --only report                    # examine the saved models again and rewrite the report
 # Results: <runs>/think/think.md and think.json.
 set -euo pipefail

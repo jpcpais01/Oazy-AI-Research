@@ -176,10 +176,29 @@ too; they report that running more passes than trained makes them worse. What is
 through an addressed store that is rewritten by its own error (a conclusion that is already there writes nothing),
 training stays parallel inside a chunk, and the depth reached is 4 times the depth trained.
 
-`python3 -m keep.think` is that experiment on real text and at size: the two Field1 families that are chains of
-rules told in any order (switches by depth, rules by hops; `--families` takes others), each scene told 1 to 4 times,
-the three models, the exam by level and by 1 to 8 tellings. Gnosis (300M, 1.8B tokens) guessed on switches at every
-depth.
+Circuits (and, or, not, same over switches and machines, statements in random order, the token-level skeleton of
+Field1's switches; `clock/fb2.py`, one seed each, trained to depth 3, guessing 54 to 58%), share right at depth 8:
+
+| sentence order | `point` | 1 reading | 4 | 6 | 8 | 12 |
+|---|---|---|---|---|---|---|
+| subject last | 0 | 61 | 86 | 98 | 100 | 100 |
+| subject first | 7 | 54 | 82 | 96 | 99 | 100 |
+| mixed | 7 | 57 | 71 | 79 | 86 | 91 |
+| mixed | 0 | 58 | 67 | 78 | 79 | 87 |
+
+Three things were needed before circuits trained at all: the switches are asked too (a lookup is learned before
+computing), the chunk is small next to a scene, and a subject that stands first needs the pointer.
+
+Real Field1 text at 1M weights and 12M tokens on a CPU (switches): the fed model, Keep and the twin all at the floor
+(54 to 56% against 51%): too small to learn Field1's language, so no evidence either way.
+
+`python3 -m keep.think` is the experiment on real text and at size. By default its own family `circuits`: the
+circuits above in bare sentences with the real tokenizer ("The radio is on if the black switch or the white switch is
+on. If the radio is off, the kettle is on."), every part asked, trained to depth 3 and told depth + 1 or + 2 times,
+examined to depth 8 at 1 to 12 tellings. Attention reaches 32 tokens (about three sentences), so a scene is not in
+view and what is known of it has to go through the stores; the twin sees everything. `--families switches,rules` is
+the same on the two Field1 families that are chains of rules told in any order (switches by depth, rules by hops;
+others can be named), each scene told 1 to 4 times. Gnosis (300M, 1.8B tokens) guessed on switches at every depth.
 
 ## The experiment
 
@@ -220,7 +239,8 @@ What would count:
     python3 -m keep.load --name keep                                                 # how much it holds at once: books of 8 to 2,048 facts, the saved models, no training
     python3 -m keep.mute --name keep                                                 # which store carries the facts: the saved model's exam with stores muted
     bash runpod/keep.sh --only keep --stores 6 --name keep-one                       # Keep with one store, after block 6
-    bash runpod/think.sh                                                             # reasoning by reading again: feed, keep, twin on Field1 scenes told 1 to 4 times (no data folder needed)
+    bash runpod/think.sh                                                             # reasoning by reading again: feed, keep, twin on circuits in plain sentences (no data folder needed)
+    bash runpod/think.sh --families switches,rules --name field                      # the same on Field1 scenes told 1 to 4 times
     bash runpod/think.sh --only feed                                                 # one of the three (feed, keep, full); they can train side by side
     python3 -m keep.tests                                                            # CPU, about a minute, no data
     python3 -m keep.speedcheck                                                       # GPU, five minutes, no data: where a training step goes
@@ -282,5 +302,5 @@ Each progress line of a run gives the speed since the line before and the peak m
 | `speedcheck.py` | tokens per second and memory on this machine |
 | `mute.py` | the saved model examined with stores muted |
 | `load.py` | the saved models told books of 8 to 2,048 facts: how much the stores hold at once |
-| `think.py` | reasoning by reading again: Field1 scenes told several times, the fed model, Keep and the twin, the exam by level and by tellings |
+| `think.py` | reasoning by reading again: circuits in plain sentences (or Field1 scenes) told several times, the fed model, Keep and the twin, the exam by level and by tellings |
 | `tests.py` | the checks |

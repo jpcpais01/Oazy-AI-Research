@@ -611,6 +611,30 @@ def the_top_points():
     assert all(float(g.grad.abs().sum()) > 0 for g in (st.pq.weight, st.pk.weight, st.pb))
 
 
+
+def _circuit_said(story: str) -> dict:
+    """What a circuit's sentences say, worked out from the text alone (in whatever order they stand): part -> on?"""
+    import re
+    val, todo = {}, [x.rstrip(".") for x in story.split(". ")]
+    while todo:
+        left = []
+        for x in todo:
+            m = re.fullmatch(r"If (.+), (the .+) is on", x) or re.fullmatch(r"(The .+?) is on if (.+)", x)
+            if not m:
+                part, state = x.rsplit(" is ", 1)
+                val[part.lower()] = state == "on"
+                continue
+            cond, head = (m.group(1), m.group(2)) if x.startswith("If ") else (m.group(2), m.group(1).lower())
+            ins = re.split(r" and | or ", re.sub(r" (is on|is off|are on)$", "", cond))
+            if not all(p in val for p in ins):
+                left.append(x)
+                continue
+            xs = [val[p] for p in ins]
+            val[head] = (not xs[0]) if cond.endswith(" is off") else any(xs) if " or " in cond else all(xs)
+        assert len(left) < len(todo), "a circuit that cannot be worked out"
+        todo = left
+    return val
+
 @check
 def thinking_runs():
     """keep.think: scenes told again and again, a scene never across two windows, the three models, the exam by
@@ -624,16 +648,25 @@ def thinking_runs():
             first = [i for i in range(512) if what[r, i] != D.TEXT]
             assert not first or (what[r, first[0]] == D.STORY and w[r, first[0]] == eot), "a window begins inside a scene"
             assert all(w[r, i] == eot for i in range(512) if what[r, i] == D.TEXT)
+            assert what[r, 511] == D.ASKED and sum(1 for i in first if w[r, i] == eot) == 1, "one scene to a window, its questions at the end"
     told = Th.scene_tokens(ENC, "switches", 0, "t", 3, 1 << 20)
     one = Th.scene_tokens(ENC, "switches", 0, "t", 1, 1 << 20)
-    story, sep, lines = Th.told(ENC, "switches", 0, "t")
+    story, sep, lines, _ = Th.told(ENC, "switches", 0, "t")
     assert told[3] == 3 and len(told[0]) - len(one[0]) == 2 * (len(story) + len(sep)) and told[0][-5:] == one[0][-5:]
     assert Th.scene_tokens(ENC, "switches", 0, "t", 3, len(one[0]) + 5)[3] == 1, "told fewer times when there is no room"
     for p, cands, right, lv, a in told[2]:
         assert told[0][p + 1] == cands[right] and lv.startswith("depth ")
+    for i in range(12):                              # circuits: the plain rung
+        tr, ex = Th.circuit(i, (Th.TRAIN_SEED, 0)), Th.circuit(i, (Th.EXAM_SEED, 0))
+        assert 1 <= tr["depth"] <= Th.CIRCUIT_TRAIN and ex["depth"] >= Th.CIRCUIT_EXAM[i % len(Th.CIRCUIT_EXAM)]
+        for sc in (tr, ex):
+            assert _circuit_said(sc["story"]) == {q[3:-4]: a == "yes" for q, a, _, _ in sc["qas"]}, "the answers follow from the sentences"
+    c3 = Th.scene_tokens(ENC, "circuits", 1, (Th.TRAIN_SEED, 0), None, 1 << 20, rng=random.Random(0), most=3)
+    assert c3[3] in (Th.circuit(1, (Th.TRAIN_SEED, 0))["depth"] + 1, Th.circuit(1, (Th.TRAIN_SEED, 0))["depth"] + 2), "a circuit is told as often as its depth asks"
+    assert {lv for *_, lv, _ in c3[2]} <= {f"depth {d}" for d in range(Th.CIRCUIT_TRAIN + 1)} and "depth 0" in {lv for *_, lv, _ in c3[2]}
     out = TMP / "runs"
     args = ["--preset", "tiny", "--device", "cpu", "--workers", "0", "--runs", str(out), "--name", "th", "--tokens", "4e4",
-            "--families", "switches,rules", "--every", "1000"]
+            "--families", "circuits,switches,rules", "--every", "1000"]
     quiet = open(os.devnull, "w")
     old, sys.stdout = sys.stdout, quiet
     try:
@@ -644,7 +677,7 @@ def thinking_runs():
         sys.stdout = old
     assert (out / "th" / "feed" / "ckpt.pt").stat().st_mtime_ns == when
     res = json.loads((out / "th" / "think.json").read_text())
-    assert set(res["exam"]) == {"feed", "keep", "full"} and set(res["exam"]["feed"]) == {"switches", "rules"}
+    assert set(res["exam"]) == {"feed", "keep", "full"} and set(res["exam"]["feed"]) == {"circuits", "switches", "rules"}
     cell = res["exam"]["feed"]["switches"]["all"]
     assert set(cell) == {"1", "2", "3"} and all(0 <= c[0] <= c[1] and c[2] <= c[1] and c[1] > 0 for c in cell.values())
     assert any(k.startswith("depth ") for k in res["exam"]["full"]["switches"]) and any(k.startswith("hops ") for k in res["exam"]["keep"]["rules"])
@@ -653,6 +686,7 @@ def thinking_runs():
     assert cfg.feed and cfg.point == 4 and cfg.stores == (1,) and not KeepConfig.from_dict(
         torch.load(out / "th" / "keep" / "ckpt.pt", map_location="cpu", weights_only=False)["config"]).feed
     rep = (out / "th" / "think.md").read_text()
+    assert "depth 8" in res["exam"]["feed"]["circuits"] and "## circuits" in rep
     assert "## switches" in rep and "| depth 1 | Keep, stores written from the top |" in rep and "| all | Twin |" in rep and "told 3x" in rep
 
 

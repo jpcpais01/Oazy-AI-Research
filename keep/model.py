@@ -371,27 +371,22 @@ class Store(nn.Module):
                 pi = sc.masked_fill(~ok, -1e9).softmax(-1) * ok.any(-1, keepdim=True)
                 iw = idx[:, pc].reshape(B, n, J * K)
                 ww = (pi[..., None] * w[:, pc]).reshape(B, n, J * K)
-                live = pi[..., None].expand(-1, -1, -1, K).reshape(B, n * J * K)       # how much of a write each row gets
             else:
                 ok = (t >= 1)[None, :, None].to(w.dtype)
                 iw, ww = idx[:, (t - 1).clamp(min=0)], w[:, (t - 1).clamp(min=0)] * ok
-                live = ok.expand(B, -1, K).reshape(B, n * K)
             R = iw.size(-1)
             v = self.val(top)
             gi = iw.reshape(B, n * R)[..., None].expand(-1, -1, self.dv)
             was = (ww[..., None] * S.gather(1, gi).view(B, n, R, self.dv)).sum(2)          # what the store said would come
             flat = iw.reshape(B, n * R)
-            hits = torch.zeros(B, self.rows, device=S.device).scatter_add_(1, flat, live.detach()).gather(1, flat).view(B, n, R)   # writes that share a row share it
-            if self.point:
-                # two of the tokens pointed at may have the same rows (the same word twice): a row's weight in this
-                # write is the sum over them, and the step is sized by those sums. Sized entry by entry it would
-                # overshoot by the number of repeats, and what is written from the top and read again blows up.
-                tok = (torch.arange(n, device=S.device) * self.rows)[None, :, None]
-                per = torch.zeros(B, n * self.rows, device=S.device).scatter_add(1, (iw + tok).reshape(B, n * R), ww.reshape(B, n * R))
-                size = (ww * per.gather(1, (iw + tok).reshape(B, n * R)).view(B, n, R)).sum(-1, keepdim=True)
-            else:
-                size = (ww * ww).sum(-1, keepdim=True)
-            coef = ww / size.clamp_(min=1e-12) / hits.clamp_(min=1.0)
+            # The chunk's writes land together, and tokens share rows (a word said twice, a row two tokens point at).
+            # A write's step is sized by how much of its rows' weight is its own: with a (n, rows) the weights of the
+            # chunk's writes, the step of write t is a_t / (a_t . sum_s a_s). Alone, that is the delta rule (what is
+            # read back is exactly what was written); together, no reading moves by more than the errors ask
+            # (a_t . sum_s a_s bounds the row sums of a a^T, so the joint step cannot overshoot). Sized write by
+            # write, shared rows take every write in full, and what is written from the top and read again blows up.
+            share = torch.zeros(B, self.rows, device=S.device).scatter_add_(1, flat, ww.detach().reshape(B, n * R)).gather(1, flat).view(B, n, R)
+            coef = ww / (ww * share).sum(-1, keepdim=True).clamp_(min=1e-12)
             upd = (coef[..., None] * (beta * (v - was))[:, :, None, :]).reshape(B, n * R, self.dv)
             return S.scatter_add(1, gi, upd), beta.squeeze(-1) * (ww.sum(-1) > 0)
 
