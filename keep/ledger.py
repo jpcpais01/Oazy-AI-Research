@@ -96,3 +96,29 @@ def scene(i, seed="ledger") -> dict:
         lead = (ask.format(p=p, x=x) + " Answer:") if r.random() < 0.6 else cloze.format(p=p, x=x)
         lines.append((lead, say.format(v=v), [say.format(v=c) for c in ch], "changed" if old else "facts"))
     return {"story": " ".join(told), "lines": lines}
+
+
+def book(i, m: int, seed="ledger", per: int = 8) -> dict:
+    """m facts about m different subjects (person, relation, thing), each told once, `per` to a paragraph: how much can
+    be kept at once (keep/load.py). -> {"stories": [a paragraph of `per` facts, ...],
+    "lines": [(lead, answer, choices, kind)] one per fact, in the order told}. The relations are drawn evenly while
+    their subjects last (60 each for the six without a thing, 1,080 each for "keeps" and "colour")."""
+    r = random.Random(f"keep-book|{seed}|{i}|{m}")
+    free = {rel: [(p, x) for p in NAMES for x in (THINGS if RELS[rel][1] else [""])] for rel in RELS}
+    assert m <= sum(len(v) for v in free.values()), f"a book holds at most {sum(len(v) for v in free.values()):,} different subjects"
+    for v in free.values():
+        r.shuffle(v)
+    told, lines = [], []
+    for _ in range(m):
+        rel = r.choice([k for k, v in free.items() if v])
+        p, x = free[rel].pop()
+        pool, _, tellings, ask, say, cloze, _ = RELS[rel]
+        v = _value(rel, r)
+        told.append(r.choice(tellings).format(p=p, x=x, v=v))
+        ch = [v]
+        while len(ch) < N_CHOICES:
+            ch.append(_value(rel, r, but=ch))
+        r.shuffle(ch)
+        lead = (ask.format(p=p, x=x) + " Answer:") if r.random() < 0.6 else cloze.format(p=p, x=x)
+        lines.append((lead, say.format(v=v), [say.format(v=c) for c in ch], "facts"))
+    return {"stories": [" ".join(told[a:a + per]) for a in range(0, m, per)], "lines": lines}

@@ -106,7 +106,8 @@ its attention cut to Keep's 128 tokens on half of the steps (`--narrow 0.5`), wh
 Keep does, and read with the whole window.
 
 What is NOT shown yet: more than one seed, a larger model, and what happens when the store has to hold far more than
-a scene or two.
+a scene or two. The last is what `python3 -m keep.load` measures on the saved models: a book of 8 to 2,048 facts,
+every fact about a different subject, told once, then some of them asked.
 
 ## The experiment
 
@@ -143,6 +144,7 @@ What would count:
     bash runpod/keep.sh --preset big --name keep-big                                 # ~120M each, 1.5B tokens each
     bash runpod/keep.sh --only mixed                                                 # one model only (keep, full, wide, mixed); the report keeps the others
     bash runpod/keep.sh --only report                                                # examine the saved models again
+    python3 -m keep.load --name keep                                                 # how much it holds at once: books of 8 to 2,048 facts, the saved models, no training
     python3 -m keep.mute --name keep                                                 # which store carries the facts: the saved model's exam with stores muted
     bash runpod/keep.sh --only keep --stores 6 --name keep-one                       # Keep with one store, after block 6
     python3 -m keep.tests                                                            # CPU, about a minute, no data
@@ -204,4 +206,5 @@ Each progress line of a run gives the speed since the line before and the peak m
 | `run.py` | trains the models, examines them, writes the report |
 | `speedcheck.py` | tokens per second and memory on this machine |
 | `mute.py` | the saved model examined with stores muted |
+| `load.py` | the saved models told books of 8 to 2,048 facts: how much the stores hold at once |
 | `tests.py` | the checks |
