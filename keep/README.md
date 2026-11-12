@@ -100,13 +100,29 @@ What would count:
     bash runpod/keep.sh --preset big --name keep-big                                 # ~120M each, 1.5B tokens each
     bash runpod/keep.sh --only report                                                # examine the saved models again
     python3 -m keep.tests                                                            # CPU, about a minute, no data
+    python3 -m keep.speedcheck                                                       # GPU, two minutes, no data: tokens per second, one line per speed change
 
-While it trains it prints the loss on the asked tokens ("asked": this is the number that falls when a model starts
-to answer), a short exam at 25, 50 and 75%, and the report at the end (`<runs>/keep/report.md`, `results.json`). The report also gives Keep's write strength on the stories and on the
+While it trains it prints the loss on the question blocks ("asked": the questions' own wording is part of it, so
+read it next to the twin's), a short exam at 25, 50 and 75%, and the report at the end (`<runs>/keep/report.md`, `results.json`). The report also gives Keep's write strength on the stories and on the
 ordinary text: a model that learned what is worth keeping writes hard on the first and little on the second.
 
-Not verified on a GPU: speed and memory. Keep's training keeps copies of each store per 64-token chunk for the
-gradient (roughly 10 GB at the base size, 60 GB at `big`). If memory runs out: `--batch 16`.
+## Speed
+
+The first GPU run (H200, Nov 12, the code before these changes) read 178k tokens per second at the base size: slow for
+50M weights. Three things were wrong with the code, not with the idea, and are changed (`tests.py` checks that each
+gives the same numbers as before):
+
+- **The store touches only its rows.** Under autograd, `S.scatter_add(...)` copied the whole table (16,384 x 64 per
+  row of the batch) once per chunk on the way in and several times on the way back, 32 chunks per window. Now the
+  table is written in place, and on the way back one gradient table is filled by the reads and looked up by the
+  writes that came before them (`_Rows`, `_Put` in `model.py`). A chunk moves 512 rows, whatever the table's size.
+- **Attention is computed over the window only** (`near`): blocks of 128 queries against 256 keys, not a mask over
+  1,024 x 1,024. Its cost per token no longer grows with the length of the training window.
+- **The blocks are compiled** (`torch.compile`, as in Bee6; `--compile 0` turns it off; if it fails the run says so
+  and goes on plain).
+
+Not measured on a GPU yet: `python3 -m keep.speedcheck` prints tokens per second and peak memory with each change on
+and off. Each progress line of a run now gives the speed since the line before and the peak memory.
 
 ## Files
 
@@ -116,4 +132,5 @@ gradient (roughly 10 GB at the base size, 60 GB at `big`). If memory runs out: `
 | `ledger.py` | the plain-fact scenes |
 | `data.py` | the streams and the exam sets |
 | `run.py` | trains both models, examines them, writes the report |
+| `speedcheck.py` | tokens per second and memory on this machine |
 | `tests.py` | the checks |
