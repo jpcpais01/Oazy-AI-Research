@@ -28,7 +28,7 @@ KINDS = (("facts", "Plain facts"), ("changed", "Facts changed after telling"), (
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--name", default="keep")
-    ap.add_argument("--arm", default="keep", choices=["keep", "wide"], help="which saved model: Keep, or Keep-wide")
+    ap.add_argument("--arm", default="keep", choices=["keep", "wide", "mixed"], help="which saved model: Keep, Keep-wide, or Keep-wide mixed")
     ap.add_argument("--runs", default=None)
     ap.add_argument("--data", default=None)
     ap.add_argument("--sub", default="opal")
@@ -63,7 +63,7 @@ def main(argv=None):
         for kind, _ in KINDS:
             cells[(name, kind)] = [f"{g[kind]['right']}% ({g[kind]['chance']}%)" if kind in g else "-" for g in (ex[str(gap)]["groups"] for gap in gaps)]
     model.muted = set()
-    title = "Keep" if args.arm == "keep" else "Keep-wide"
+    title = {"keep": "Keep", "wide": "Keep-wide", "mixed": "Keep-wide mixed"}[args.arm]
     path = out / ("mute.md" if args.arm == "keep" else f"mute-{args.arm}.md")
     L = [f"# {title}: which store carries the facts?", "",
          f"The saved {title} of `{args.name}`, examined again with the reads of some stores thrown away. "

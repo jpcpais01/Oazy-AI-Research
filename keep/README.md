@@ -98,6 +98,13 @@ What follows from it: the choice between attention and stores is not needed. **K
 twin's attention over the whole window and Keep's stores. If it reads 99.8% with the story in view, 95% past it,
 and the twin's loss on ordinary text, it is the model to scale.
 
+Trained plainly, Keep-wide does not get there: at 150M tokens it answered 99.5% of the facts in view and 29% past
+the window (guessing 25%; Keep was at 81% at that point). Attention answers whatever is in the training window, so
+no error asks for the stores there; and for a story in an earlier window the stores' state is detached, so the
+read side learns and the write side does not. **Keep-wide mixed** (`--only mixed`) is the same model trained with
+its attention cut to Keep's 128 tokens on half of the steps (`--narrow 0.5`), where it has to learn the stores as
+Keep does, and read with the whole window.
+
 What is NOT shown yet: more than one seed, a larger model, and what happens when the store has to hold far more than
 a scene or two.
 
@@ -115,7 +122,7 @@ The exam fixes G at 0, 512, 2,048, 8,192 and 32,768 and uses scenes no stream co
 - The twin's score while the story is in view (G up to 512) is the ceiling. Past 1,024 it can only guess.
 - Keep is examined more strictly: the questions are read as a window of their own, so at every gap its answers come
   out of the stores alone.
-- Keep-wide is examined both ways: as a stream is read, the questions at the end of the last 1,024 tokens (a story
+- Keep-wide and Keep-wide mixed are examined both ways: as a stream is read, the questions at the end of the last 1,024 tokens (a story
   still in view is seen), and out of the stores alone, as Keep is.
 - Keep trains on gaps up to 4,096, and no gradient spans more than one window of 1,024. G = 32,768 is 8 times beyond
   anything it trained on.
@@ -134,7 +141,7 @@ What would count:
 
     OAZY_DATA=/workspace/data OAZY_RUNS=/workspace/runs bash runpod/keep.sh          # ~50M each, 600M tokens each
     bash runpod/keep.sh --preset big --name keep-big                                 # ~120M each, 1.5B tokens each
-    bash runpod/keep.sh --only wide                                                  # one model only (keep, full, wide); the report keeps the others
+    bash runpod/keep.sh --only mixed                                                 # one model only (keep, full, wide, mixed); the report keeps the others
     bash runpod/keep.sh --only report                                                # examine the saved models again
     python3 -m keep.mute --name keep                                                 # which store carries the facts: the saved model's exam with stores muted
     bash runpod/keep.sh --only keep --stores 6 --name keep-one                       # Keep with one store, after block 6

@@ -8,6 +8,8 @@ Both are the same small transformer (pre-norm, rotary positions, ReLU² MLPs, ti
          `side*side` rows that is part of the model's state, not of its weights. It is never emptied: not at the end
          of a document, not at the end of a training step.
   wide   both: the stores, and attention over the whole training window (KeepConfig(window=0, stores=...)).
+         Trained plainly its stores stay unused (attention answers whatever is in view, and nothing teaches the
+         writes), so run.py's "mixed" trains it with `model.reach` cut to Keep's 128 tokens on half of the steps.
 
 A store learns, while the model reads, to say what comes next. Per token t:
     address   a_t = addr(h_t)  ->  a score for every row, from a product key: score(i, j) = key1[i].a1 + key2[j].a2;
@@ -340,6 +342,7 @@ class Keep(nn.Module):
         self.register_buffer("cos", ang.cos(), persistent=False)
         self.register_buffer("sin", ang.sin(), persistent=False)
         self._fast = None                           # the compiled blocks (speed_up)
+        self.reach = None                           # attention's reach for now, when not cfg.window (run.py: Keep-wide trained with it cut on some steps)
         self.muted = set()                          # stores whose reads are thrown away (keep/mute.py: which store carries what)
         self.loss_chunk = 4096                      # tokens per slice of the fused loss (oazy/lmloss.py); 1,024 cost 12 ms more a step
 
@@ -362,10 +365,11 @@ class Keep(nn.Module):
         h = norm(self.emb(x))
         new, info = {}, {}
         run = self._fast if (self._fast is not None and self.training) else self._segment
+        win = self.cfg.window if self.reach is None else self.reach
         lo = 0
         for hi in sorted({int(i) for i in self.store} | {len(self.blocks)}):       # the blocks up to a store, the store, and on
             if hi > lo:
-                h = run(h, rot[0], rot[1], lo, hi)
+                h = run(h, rot[0], rot[1], lo, hi, win)
             if str(hi) in self.store:
                 r, new[str(hi)], info[str(hi)] = self.store[str(hi)](h, state[str(hi)])
                 if hi not in self.muted:
@@ -373,14 +377,16 @@ class Keep(nn.Module):
             lo = hi
         return norm(h), new, info
 
-    def _segment(self, h, cos, sin, lo: int, hi: int):
+    def _segment(self, h, cos, sin, lo: int, hi: int, window: int):
         for blk in self.blocks[lo:hi]:
-            h = blk(h, (cos, sin), self.cfg.window)
+            h = blk(h, (cos, sin), window)
         return h
 
     def speed_up(self, on=True):
         """torch.compile for the blocks between the stores, used while training (one shape; the exam's many shapes
         run plain). The stores stay as they are: their loop is short kernels on a few rows. speed_up(False) undoes it."""
+        if on:                                      # one compiled graph per segment and per reach: more than torch's 8 at the big size
+            torch._dynamo.config.cache_size_limit = max(torch._dynamo.config.cache_size_limit, 32)
         self._fast = torch.compile(self._segment) if on else None
 
     def loss(self, x, y, state=None, plain=False, asked=None, asked_weight=1.0):
