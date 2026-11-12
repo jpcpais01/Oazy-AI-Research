@@ -2,8 +2,8 @@
 # Keep: train the model that keeps what it reads and its plain twin on the same streams, examine both at growing
 # gaps, write the report. One GPU. Runs in the tmux window "keep" of the session "oazy".
 #
-#   OAZY_DATA=/workspace/data OAZY_RUNS=/workspace/runs bash runpod/keep.sh          # the real run (base: ~50M each, 400M tokens each)
-#   bash runpod/keep.sh --preset big --name keep-big     # ~120M each, 1B tokens each; extra options go to python3 -m keep.run
+#   OAZY_DATA=/workspace/data OAZY_RUNS=/workspace/runs bash runpod/keep.sh          # the real run (base: ~50M each, 600M tokens each)
+#   bash runpod/keep.sh --preset big --name keep-big     # ~120M each, 1.5B tokens each; extra options go to python3 -m keep.run
 #   bash runpod/keep.sh --only report                    # examine the saved models again and rewrite the report
 # Needs Opal's text on the data folder (<data>/opal). Results: <runs>/keep/report.md and results.json.
 set -euo pipefail
