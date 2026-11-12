@@ -27,7 +27,7 @@ def masked(q, k, v, W):
     return F.scaled_dot_product_attention(q, k, v, attn_mask=(i[None, :] <= i[:, None]) & (i[:, None] - i[None, :] < W))
 
 
-def measure(arm, preset, vocab, B, steps, device, compiled=True, sparse=True, window=True, scores=True, slices=1024, **over):
+def measure(arm, preset, vocab, B, steps, device, compiled=True, sparse=True, window=True, scores=True, slices=4096, **over):
     """-> tokens per second, milliseconds per step, peak GB. A step is what keep.run does: both losses, the way back,
     the clip, the optimizer. scores=False: no scores over the words (a cheap loss on the final vectors in their place).
     over: KeepConfig fields changed for this line (stores=(), chunk=256, ...)."""
@@ -102,7 +102,8 @@ def main(argv=None):
             ("Keep, no stores, no scores over the words", "keep", dict(stores=(), scores=False)),
             (f"Keep, chunks of {2 * ch} (not {ch})", "keep", dict(chunk=2 * ch)),
             (f"Keep, chunks of {4 * ch} (not {ch})", "keep", dict(chunk=4 * ch)),
-            ("Keep, the loss in slices of 4,096 (not 1,024)", "keep", dict(slices=4096)),
+            ("Keep, the loss in slices of 1,024 (not 4,096)", "keep", dict(slices=1024)),
+            ("Keep, the loss in slices of 8,192 (not 4,096)", "keep", dict(slices=8192)),
             (f"Keep, batch {4 * B} (not {B})", "keep", dict(batch=4 * B)),
             (f"twin, batch {4 * B} (not {B})", "full", dict(batch=4 * B))]
     if args.old:

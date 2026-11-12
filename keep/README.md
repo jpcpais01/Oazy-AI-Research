@@ -113,12 +113,18 @@ Measured on an H200 at the base size (batch 32 x 1,024 tokens), Nov 12:
 | | Tokens per second |
 |---|---|
 | The first run | 195k |
-| After the three changes below | 238k |
-| The twin, measured beside a training run | 371k |
+| Sparse store gradient, window attention, compiled blocks | 238k |
+| The store's loop as one graph node (measured beside a training run) | 257k |
+| The loss in slices of 4,096 (beside a training run) | 285k |
+| The twin (beside a training run, slices of 1,024) | 378k |
 
-`python3 -m keep.speedcheck` takes one part of a step away at a time. Beside a training run it gave, for a Keep step
-of 157 ms: the blocks 47 ms, the scores over the 49,152 words 45 ms, the stores 69 ms. The twin's step was 88 ms,
-half of it the scores over the words, which every model of this size pays.
+`python3 -m keep.speedcheck` takes one part of a step away at a time. Beside a training run, with the loop as one
+node, a Keep step of 128 ms was: the blocks 47 ms, the stores 42 ms, the scores over the 49,152 words 37 ms. The
+twin's step was 87 ms, half of it the scores over the words, which every model of this size pays.
+
+Two more levers that were measured and are not the default, because each changes something: `--chunk 128` (the
+stores at 27 ms, 291k; writes land every 128 tokens) and `--batch 128` (367k for Keep, 460k for the twin; a quarter
+of the steps).
 
 What was changed, each checked in `tests.py` to give the same numbers as before:
 
@@ -134,7 +140,8 @@ What was changed, each checked in `tests.py` to give the same numbers as before:
 - **The store's loop is one node of the graph** (`_Loop` in `model.py`), its way back written by hand. The loop is
   32 sequential passes per window (2 stores x 16 chunks), and left to autograd each pass was some fifty small
   kernels and as many graph nodes: launches and bookkeeping, not arithmetic (4 times larger chunks took the stores
-  from 69 to 26 ms). Now a pass is about twenty launches. **Not measured on a GPU yet.**
+  from 69 to 26 ms). Now a pass is about twenty launches: the stores went from 69 to 42 ms.
+- **The loss in slices of 4,096 tokens**, not 1,024: 12 ms less a step, the same numbers.
 
 What bounds it: at 1,024 tokens Keep can come close to the twin's tokens per second, not past it. What it has to
 win on is the tokens it needs, and a cost per token that does not grow with the context.

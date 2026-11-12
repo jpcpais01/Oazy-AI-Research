@@ -158,7 +158,7 @@ def train(arm, preset, args, enc, device, out: Path, say):
             m.load_state_dict(sd["model"])
             return m.to(device), sd.get("summary", {})
     torch.manual_seed(args.seed)
-    model = make(arm, preset, enc.n_vocab, write_cost=args.write_cost, side=args.side, read=args.read).to(device)
+    model = make(arm, preset, enc.n_vocab, write_cost=args.write_cost, side=args.side, read=args.read, chunk=args.chunk).to(device)
     T, B = model.cfg.max_len, args.batch or preset["batch"]
     total = int(args.tokens or preset["tokens"])
     steps = max(1, total // (B * T))
@@ -294,6 +294,8 @@ def main(argv=None):
     ap.add_argument("--lr", type=float, default=None)
     ap.add_argument("--write-cost", type=float, default=None, help="Keep: what a write costs (default: the preset's)")
     ap.add_argument("--read", default=None, choices=["soft", "rows"], help="Keep: read every row softly, or only the k rows it writes")
+    ap.add_argument("--chunk", type=int, default=None, help="Keep: tokens whose writes land together (default: the preset's; "
+                    "no larger than the attention's reach, or the tokens between are seen by neither)")
     ap.add_argument("--side", type=int, default=None, help="Keep: a store has side x side rows (default: the preset's)")
     ap.add_argument("--workers", type=int, default=8, help="processes making the streams (0 = in the trainer itself)")
     ap.add_argument("--compile", type=int, default=1, help="torch.compile for the blocks on a GPU (1/0)")
