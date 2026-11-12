@@ -400,6 +400,9 @@ def train(arm, preset, th, args, enc, device, out: Path, say):
                                                                          if model.cfg.feed else "") if model.store else "no stores")
         + f"; {steps:,} steps of {B} x {T} = {steps * B * T / 1e6:.0f}M tokens; scenes told 1 to {reads} times: {', '.join(args.families)}"
         + (f"; a telling to a chunk of {args.align} tokens" if args.align else ""))
+    if args.align:                                  # a scene whose telling or questions are longer than the chunk is left out: say how many
+        fit = [scene_tokens(enc, f, i, (TRAIN_SEED, 0), 1, T, align=args.align) is not None for f in args.families for i in range(300)]
+        say(f"[{arm}] {100 * sum(fit) / len(fit):.0f}% of the scenes fit a chunk of {args.align} tokens" + ("" if sum(fit) > 0.9 * len(fit) else ": raise --align"))
     if args.compile and device.type == "cuda" and not model.cfg.feed:
         model.speed_up()
     log = open(out / "log.jsonl", "a")

@@ -209,6 +209,19 @@ view and what is known of it has to go through the stores; the twin sees everyth
 the same on the two Field1 families that are chains of rules told in any order (switches by depth, rules by hops;
 others can be named), each scene told 1 to 4 times. Gnosis (300M, 1.8B tokens) guessed on switches at every depth.
 
+**A telling to a chunk (`--align 96`).** A fed step with chunks of 16 is 32 passes through the stack one after the
+other (some 240,000 small operations at the base size, whatever the batch), which is why the fed model trains about
+ten times slower than Keep on a GPU. With `--align C` every telling is padded on its left to C tokens, so is the
+question block, and the fed model's chunk is C: a telling goes through the stack in ONE parallel pass, what its top
+worked out lands in the stores when the telling ends, and the next telling reads it. A step is then 6 passes (44,000
+operations, 5.4 times fewer) over windows of 6 x C tokens. One more telling is exactly one more step of reasoning for
+the whole scene, in whatever order its sentences stand, so depth d asks for d + 1 tellings. Token pilot
+(`clock/fb4.py`, 0.46M weights, trained to depth 3, 45 CPU minutes, two seeds each): it learns in as many steps, and
+the exam is a staircase. Subject last, no pointer: depth 4 = 73-80% at 4 tellings and 98-100% at 6; depth 6 = 84% at
+6 and 100% at 8; depth 8 = 84-86% at 8 and 98-100% at 12. Sentences of both kinds with the pointer: depth 8 = 82-88%
+at 12 tellings (91-92% with chunks of 8). The exam's scenes are deeper, so longer: its chunk is as long as its longest
+telling asks, and the fed model reads a scene in one go.
+
 ## The experiment
 
 Both models read the same endless streams (`data.py`): a scene told once, G tokens of ordinary Opal text, then the
@@ -251,6 +264,7 @@ What would count:
     bash runpod/think.sh                                                             # reasoning by reading again: feed, keep, twin on circuits in plain sentences (no data folder needed)
     bash runpod/think.sh --families switches,rules --name field                      # the same on Field1 scenes told 1 to 4 times
     bash runpod/think.sh --only feed                                                 # one of the three (feed, keep, full); they can train side by side
+    bash runpod/think.sh --align 96 --name aligned                                   # a telling to a chunk: the fed model takes a telling in one pass (6 passes a step instead of 32)
     python3 -m keep.tests                                                            # CPU, about a minute, no data
     python3 -m keep.speedcheck                                                       # GPU, five minutes, no data: where a training step goes
 
