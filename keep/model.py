@@ -89,6 +89,7 @@ class KeepConfig:
     read: str = "rows"          # "rows": a token reads the k rows of its address; "soft": every row, weighted by its score
     feed: bool = False          # the stores are written from the top of the stack (what the last layer says), not from the layer they are read at
     point: int = 0              # feed: the top files a write under the place of one of this many tokens before it (0: the token before)
+    point_bias: float = 3.0     # feed, point: how sure the top is at first that its write goes under the token before (0: any of the `point` tokens alike)
     share: str = "all"          # feed: how the writes of a chunk share a row. "all": every write on it counts, also one that is held back;
                                 # "strength": a write counts by its strength (beta, up to 1), so a write that is held back weakens no other
     write_cost: float = 0.0     # added to the loss: this x the mean write strength (beta, 0..2) over the stores (0: it closed the stores)
@@ -279,7 +280,7 @@ class Store(nn.Module):
             # It starts at the token before (the plain "what followed"), and learns to reach back.
             self.pq = nn.Linear(cfg.d, cfg.d_addr, bias=False)
             self.pk = nn.Linear(cfg.d, cfg.d_addr, bias=False)
-            self.pb = nn.Parameter(torch.tensor([3.0] + [0.0] * (self.point - 1)))
+            self.pb = nn.Parameter(torch.tensor([float(cfg.point_bias)] + [0.0] * (self.point - 1)))
         self.top = min(cfg.k, cfg.side)             # the k best rows lie among the k best of each half-key
         self.sparse = True                          # False: the whole table inside autograd (the reference; slow)
 
