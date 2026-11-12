@@ -1,9 +1,11 @@
 """Think: is reasoning depth bought with weights, or with reading time?  (NEXT-TOKEN)
 
-Three models of one size are trained on Field1 scenes alone (oazy/field1: small simulated worlds told as stories;
-by default the two families that are chains of rules told in any order: "switches", where a machine follows
-machines that follow switches, and "rules", if-then chains). Every scene is told R times in a row (R = 1..--reads)
-and then asked:
+Three models of one size are trained on scenes alone. By default "circuits", this file's own plain rung: switches
+and machines that follow them, in bare sentences, every part asked; trained to depth 3, examined to depth 8.
+With --families switches,rules: Field1 scenes (oazy/field1: small simulated worlds told as stories; these two
+families are chains of rules told in any order: "switches", where a machine follows machines that follow switches,
+and "rules", if-then chains). Every scene is told R times in a row (Field1: R = 1..--reads; a circuit: its depth
++ 1 or + 2) and then asked:
 
     <|endoftext|> story \\n\\n story \\n\\n story \\n question Answer: yes.\\n question Answer: no.
 
@@ -13,16 +15,17 @@ and then asked:
   keep   Keep as it was: the stores read and written at one layer (the control without that wire)
   full   the plain twin: attention over the whole window, no stores
 
-The exam: scenes never trained on, told 1, 2, 3, 4, 6, 8 times, the questions marked on the answer's first piece
+The exam: scenes never trained on, told 1, 2, 3, 4, 6, 8, 12 times, the questions marked on the answer's first piece
 among the scene's choices. Scores by family, by the question's level (the knob a family gives its questions, e.g.
 depth) and by the number of readings. What to look for: does the score rise with the readings (past the --reads of
 training too), and at which level does each model fall to the floor?
 
-    python3 -m keep.think --preset base --name think                    # GPU: the three models, then the exam
+    python3 -m keep.think --preset base --name think                    # GPU: the three models on circuits, then the exam
+    python3 -m keep.think --preset base --name field --families switches,rules      # the same on Field1's two families
     python3 -m keep.think --preset base --name think --only feed        # one of them (they can train side by side)
     python3 -m keep.think --preset base --name think --only report      # the exam and the report from the saved models
 
-Needs no text data: only the SmolLM2 tokenizer and the Field1 generator.
+Needs no text data: only the SmolLM2 tokenizer and the Field1 generator. --families circuits is the quickest answer.
 Writes <runs>/<name>/: feed/, keep/, full/ (ckpt.pt, log.jsonl), think.json, think.md.
 """
 from __future__ import annotations
@@ -44,23 +47,82 @@ from .run import PRESETS, amp, runs_dir
 
 ARMS = ("feed", "keep", "full")
 NAMES = {"feed": "Keep, stores written from the top", "keep": "Keep", "full": "Twin"}
-FAMILIES = ("switches", "rules")           # the two families that are chains of rules told in any order (their questions say how deep)
+FAMILIES = ("circuits",)                   # the default: this file's own plain rung (below)
+FIELD1 = ("switches", "rules")             # Field1's two families that are chains of rules told in any order (their questions say how deep)
 OTHERS = ("places", "compare", "count", "family", "schedule")      # more families whose questions say how many steps they take
 # what differs from run.py's presets: the training window (a scene told several times has to fit in it), the stores
 # of the fed model (where they are read), how far back its top may point, the tokens
 THINK = {
     "tiny": dict(cfg=dict(max_len=512), feed=dict(stores=(1,), point=4), tokens=2e5, reads=3, exam_n=12, exam_reads=(1, 2, 3)),
-    "pilot": dict(cfg=dict(max_len=512), feed=dict(stores=(1,), point=16), tokens=1.2e7, reads=3, exam_n=100, exam_reads=(1, 2, 3, 4, 6)),
-    "base": dict(feed=dict(stores=(2, 5), point=32), tokens=3e8, reads=4, exam_n=300, exam_reads=(1, 2, 3, 4, 6, 8)),
-    "big": dict(feed=dict(stores=(3, 7), point=32), tokens=8e8, reads=4, exam_n=300, exam_reads=(1, 2, 3, 4, 6, 8)),
+    "pilot": dict(cfg=dict(max_len=512), feed=dict(stores=(1,), point=16, chunk=16), tokens=1.2e7, reads=3, exam_n=100, exam_reads=(1, 2, 3, 4, 6, 8)),
+    # base, big: as the pilots that worked, scaled to sentences: attention reaches about three sentences (32 tokens: a scene is
+    # NOT in view, so what is known of it has to go through the stores), a chunk is one or two (16), windows of 512 (a scene told
+    # 5 times fits), small stores (a window's scenes need few rows; the fed tables are dense), many rows a step (a fed step is
+    # 32 chunks one after the other, so its speed comes from the batch)
+    "base": dict(cfg=dict(max_len=512), keep=dict(window=32, side=64), feed=dict(stores=(2, 5), point=16, chunk=16), batch=128, tokens=3e8, reads=4,
+                 exam_n=600, exam_reads=(1, 2, 3, 4, 6, 8, 12)),
+    "big": dict(cfg=dict(max_len=512), keep=dict(window=32, side=64), feed=dict(stores=(3, 7), point=16, chunk=16), batch=128, tokens=8e8, reads=4,
+                exam_n=600, exam_reads=(1, 2, 3, 4, 6, 8, 12)),
 }
 TRAIN_SEED, EXAM_SEED = "think-train", "think-exam"
+
+# ---------------------------------------------------------------- circuits: the plain rung
+# Field1's switches in bare sentences: no setting, no people, no flips, one wording for each rule, and EVERY part asked
+# (the switches too: a plain lookup, learned before computing). Between the token pilots (clock/fb2.py) and Field1.
+#   The red switch is on.  The lamp is on if the pump and the fan are on.  If the red switch is off, the pump is on.
+#   Is the lamp on? Answer: yes.
+# Training: circuits no deeper than CIRCUIT_TRAIN, told (its depth + 1 or + 2) times. Exam: circuits built to depth
+# 1, 2, 3, 4, 6, 8 (each machine follows the one before it), so that the levels past CIRCUIT_TRAIN were never trained.
+CIRCUIT_TRAIN = 3
+CIRCUIT_EXAM = (1, 2, 3, 4, 6, 8)
+C_SWITCH = ["red", "blue", "green", "grey", "white", "black", "brown", "pink", "orange", "purple", "yellow", "silver"]
+C_MACHINE = ["lamp", "pump", "fan", "bell", "radio", "motor", "heater", "siren", "buzzer", "alarm", "light", "clock", "door", "gate", "mill",
+             "drill", "press", "valve", "crane", "oven", "kettle", "robot", "drone", "engine"]
+
+
+def circuit(i, seed):
+    """Scene i as levels.scene gives one: {"story", "qas": [(question, answer, _, {"depth": d})], "depth": its deepest}.
+    A seed that starts with EXAM_SEED gives the exam's circuits."""
+    r = random.Random(f"circuits|{seed}|{i}")
+    exact = CIRCUIT_EXAM[i % len(CIRCUIT_EXAM)] if (seed[0] if isinstance(seed, tuple) else seed) == EXAM_SEED else None
+    while True:
+        nsw = r.randint(2, 3)
+        nm = exact + r.randint(0, 1) if exact else r.randint(2, 5)
+        sw = [f"the {c} switch" for c in r.sample(C_SWITCH, nsw)]
+        ms = [f"the {m}" for m in r.sample(C_MACHINE, nm)]
+        val = {s: r.random() < 0.5 for s in sw}
+        depth = {s: 0 for s in sw}
+        parts, said = list(sw), [f"{s.capitalize()} is {'on' if val[s] else 'off'}." for s in sw]
+        for k, m in enumerate(ms):
+            if exact:
+                first = parts[-1] if k < exact else r.choice(parts)
+            else:
+                first = parts[-1] if (k and r.random() < 0.6) else r.choice(parts)
+            ins = [first]
+            if r.random() < 0.4:
+                ins.append(r.choice([p for p in parts if p != first]))
+            op = r.choice(["same", "not"]) if len(ins) == 1 else r.choice(["and", "or"])
+            xs = [val[p] for p in ins]
+            val[m] = {"same": xs[0], "not": not xs[0], "and": all(xs), "or": any(xs)}[op]
+            depth[m] = 1 + max(depth[p] for p in ins)
+            cond = {"same": f"{ins[0]} is on", "not": f"{ins[0]} is off", "and": f"{ins[0]} and {ins[-1]} are on", "or": f"{ins[0]} or {ins[-1]} is on"}[op]
+            said.append(f"{m.capitalize()} is on if {cond}." if r.random() < 0.5 else f"If {cond}, {m} is on.")
+            parts.append(m)
+        if exact or max(depth.values()) <= CIRCUIT_TRAIN:
+            break
+    r.shuffle(said)
+    asked = parts if not exact else sw + ms[exact - 1:] + ms[:exact - 1]
+    if not exact:
+        r.shuffle(asked)
+    return {"story": " ".join(said), "depth": max(depth.values()),
+            "qas": [(f"Is {p} on?", "yes" if val[p] else "no", None, {"depth": depth[p]}) for p in asked]}
 
 
 def make(arm: str, preset: dict, vocab: int, point=None, stores=None) -> Keep:
     cfg = dict(preset["cfg"], vocab_size=vocab, **THINK[preset["name"]].get("cfg", {}))
     if arm in ("keep", "feed"):
         cfg.update(preset["keep"])
+        cfg.update(THINK[preset["name"]].get("keep", {}))
     if arm == "feed":
         cfg.update(feed=True, **THINK[preset["name"]]["feed"])
         if point is not None:
@@ -86,19 +148,21 @@ def told(enc, family: str, i, seed):
     """Scene i -> (one reading as tokens, what stands between two readings, the question lines
     [(lead tokens, answer tokens, choices, answer, level)])."""
     from oazy.field1 import levels
-    sc = levels.scene(family, i, seed)
+    sc = circuit(i, seed) if family == "circuits" else levels.scene(family, i, seed)
     lines = []
     for q, a, _, qk in sc["qas"]:
         lines.append((enc.encode_ordinary(f"\n{q} Answer:"), enc.encode_ordinary(f" {a}."),
-                      levels.choices(family, q, a, sc["story"], knobs=qk), a, level(qk)))
-    return enc.encode_ordinary(sc["story"]), enc.encode_ordinary("\n\n"), lines
+                      ["yes", "no"] if family == "circuits" else levels.choices(family, q, a, sc["story"], knobs=qk), a, level(qk)))
+    return enc.encode_ordinary(sc["story"]), enc.encode_ordinary("\n\n"), lines, sc.get("depth")
 
 
-def scene_tokens(enc, family, i, seed, reads: int, room: int):
+def scene_tokens(enc, family, i, seed, reads, room: int, rng=None, most=1):
     """A scene told `reads` times and asked, as it stands in a stream: tokens, what each is (D.STORY / D.ASKED), and
     the marks [(place whose next piece is asked, candidate pieces, which is right, level, the answer)].
-    Told fewer times if it would not fit in `room` tokens; None if one telling does not fit."""
-    story, sep, lines = told(enc, family, i, seed)
+    Told fewer times if it would not fit in `room` tokens; None if one telling does not fit. reads None: drawn (training)."""
+    story, sep, lines, deep = told(enc, family, i, seed)
+    if reads is None:                               # training: Field1 1..R times; a circuit as often as its depth asks (+ 1 or 2)
+        reads = rng.randint(1, most) if deep is None else deep + rng.randint(1, 2)
     block = [t for lead, ans, *_ in lines for t in lead + ans]
     while reads > 1 and 1 + reads * len(story) + (reads - 1) * len(sep) + len(block) > room:
         reads -= 1
@@ -119,14 +183,15 @@ def scene_tokens(enc, family, i, seed, reads: int, room: int):
 
 
 def stream(rng: random.Random, enc, T: int, families, reads: int, tag=0):
-    """Yields (tokens, what they are) for ever: scene after scene, each told 1..reads times. A scene never lies
-    across two training windows (the twin would lose its story there): the window is filled up with <|endoftext|>."""
+    """Yields (tokens, what they are) for ever: one scene to a training window, as in the exam: <|endoftext|> up to
+    the scene, then the scene told again and again and its questions at the window's end. (A second scene in the
+    window would find the first one's switches still in the stores: the same names, other states.)"""
     from oazy.field1 import WEIGHTS
-    wts = [WEIGHTS[f] for f in families]
-    pos, n, none = 0, 0, 0
+    wts = [WEIGHTS.get(f, 5) for f in families]
+    n, none = 0, 0
     while True:
         f = rng.choices(families, weights=wts)[0]
-        sc = scene_tokens(enc, f, n, (TRAIN_SEED, tag), rng.randint(1, reads), T)
+        sc = scene_tokens(enc, f, n, (TRAIN_SEED, tag), None, T, rng=rng, most=reads)
         n += 1
         if sc is None:
             none += 1
@@ -134,11 +199,9 @@ def stream(rng: random.Random, enc, T: int, families, reads: int, tag=0):
                 raise RuntimeError(f"scenes of {', '.join(families)} do not fit in a window of {T} tokens")
             continue
         toks, kinds = sc[0], sc[1]
-        if pos + len(toks) > T:
-            yield [enc.eot_token] * (T - pos), D.TEXT
-            pos = 0
+        if len(toks) < T:
+            yield [enc.eot_token] * (T - len(toks)), D.TEXT
         yield (toks, kinds)
-        pos = (pos + len(toks)) % T
 
 
 class Rows:
@@ -257,10 +320,11 @@ def exam(model: Keep, enc, families, reads_list, n, device, batch=32, seed=0, sa
             for R in res[f][lv]:
                 c = res[f][lv][R]
                 res[f][lv][R] = [c[0], c[1], max(c[2].values())]
-        if say:
-            row = res[f].get("all", {})
-            say(f"    {f:10s} " + "  ".join(f"{R}x {100 * c[0] / max(1, c[1]):.0f}%" for R, c in row.items())
-                + (f"   (commonest answer {100 * max(c[2] for c in row.values()) / max(1, max(c[1] for c in row.values())):.0f}%)" if row else ""))
+        if say:                                     # all the questions, then the deepest level alone
+            for key in ["all"] + sorted((k for k in res[f] if k != "all"), key=_order)[-1:]:
+                row = res[f].get(key, {})
+                say(f"    {f + (', ' + key if key != 'all' else ''):20s} " + "  ".join(f"{R}x {100 * c[0] / max(1, c[1]):.0f}%" for R, c in row.items())
+                    + (f"   (commonest answer {100 * max(c[2] for c in row.values()) / max(1, max(c[1] for c in row.values())):.0f}%)" if row else ""))
     model.train()
     return res
 
@@ -281,7 +345,7 @@ def train(arm, preset, th, args, enc, device, out: Path, say):
     torch.manual_seed(args.seed)
     model = make(arm, preset, enc.n_vocab, point=args.point,
                  stores=tuple(int(i) for i in args.stores.split(",")) if args.stores else None).to(device)
-    T, B = model.cfg.max_len, args.batch or preset["batch"]
+    T, B = model.cfg.max_len, args.batch or th.get("batch") or preset["batch"]
     total = int(args.tokens or th["tokens"])
     steps = max(1, total // (B * T))
     lr = args.lr or preset["lr"]
@@ -326,8 +390,7 @@ def train(arm, preset, th, args, enc, device, out: Path, say):
             with amp(device):
                 loss, new, info = model.loss(w[:, :-1], w[:, 1:], state, asked=asked, asked_weight=aw)
             loss.backward()
-        state = model.detach(new) if state is not None else None
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)             # (the stores are empty at every window: a window is one scene)
         opt.step()
         lv = float(info["lm"])
         if not math.isfinite(lv):
@@ -371,8 +434,9 @@ def report(res: dict) -> str:
     reads = [str(r) for r in res["exam_reads"]]
     arms = [a for a in ARMS if a in res["exam"]]
     L = ["# Think: is reasoning depth bought with weights, or with reading time?", "",
-         f"Field1 scenes ({', '.join(res['families'])}), each told again and again before its questions. Training told a scene "
-         f"1 to {res['reads']} times; the exam tells scenes never trained on {', '.join(reads)} times. Share of questions right (%).", ""]
+         f"Scenes ({', '.join(res['families'])}), each told again and again before its questions. Training told a Field1 scene "
+         f"1 to {res['reads']} times and a circuit (trained to depth {CIRCUIT_TRAIN} only) its depth + 1 or + 2 times; the exam tells scenes "
+         f"never trained on {', '.join(reads)} times. Share of questions right (%).", ""]
     L += ["| Model | Weights | Tokens | Speed |", "|---|---|---|---|"]
     for a in arms:
         s = res["train"].get(a, {})
@@ -402,7 +466,7 @@ def main(argv=None):
     ap.add_argument("--preset", default="base", choices=list(THINK))
     ap.add_argument("--runs", default=None)
     ap.add_argument("--name", default="think")
-    ap.add_argument("--families", default=",".join(FAMILIES), help="Field1 families, with commas (default: switches,rules; "
+    ap.add_argument("--families", default=",".join(FAMILIES), help="families, with commas (default: circuits, this file's plain rung; Field1's: switches,rules; "
                     f"others with a level: {', '.join(OTHERS)}; 'all': every family)")
     ap.add_argument("--reads", type=int, default=None, help="training: a scene is told 1 to this many times (default: the preset's)")
     ap.add_argument("--tokens", type=float, default=None, help="training tokens for each model")
@@ -428,7 +492,7 @@ def main(argv=None):
     enc = tok.get("smollm2")
     args.families = list(ALL) if args.families == "all" else [f for f in args.families.split(",") if f]
     for f in args.families:
-        if f not in ALL:
+        if f not in ALL and f != "circuits":
             raise SystemExit(f"no Field1 family {f!r}; there are: {', '.join(ALL)}")
     preset = dict(PRESETS[args.preset], name=args.preset)
     th = THINK[args.preset]
