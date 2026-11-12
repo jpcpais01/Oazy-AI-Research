@@ -382,7 +382,16 @@ class Store(nn.Module):
             was = (ww[..., None] * S.gather(1, gi).view(B, n, R, self.dv)).sum(2)          # what the store said would come
             flat = iw.reshape(B, n * R)
             hits = torch.zeros(B, self.rows, device=S.device).scatter_add_(1, flat, live.detach()).gather(1, flat).view(B, n, R)   # writes that share a row share it
-            coef = ww / (ww * ww).sum(-1, keepdim=True).clamp_(min=1e-12) / hits.clamp_(min=1.0)
+            if self.point:
+                # two of the tokens pointed at may have the same rows (the same word twice): a row's weight in this
+                # write is the sum over them, and the step is sized by those sums. Sized entry by entry it would
+                # overshoot by the number of repeats, and what is written from the top and read again blows up.
+                tok = (torch.arange(n, device=S.device) * self.rows)[None, :, None]
+                per = torch.zeros(B, n * self.rows, device=S.device).scatter_add(1, (iw + tok).reshape(B, n * R), ww.reshape(B, n * R))
+                size = (ww * per.gather(1, (iw + tok).reshape(B, n * R)).view(B, n, R)).sum(-1, keepdim=True)
+            else:
+                size = (ww * ww).sum(-1, keepdim=True)
+            coef = ww / size.clamp_(min=1e-12) / hits.clamp_(min=1.0)
             upd = (coef[..., None] * (beta * (v - was))[:, :, None, :]).reshape(B, n * R, self.dv)
             return S.scatter_add(1, gi, upd), beta.squeeze(-1) * (ww.sum(-1) > 0)
 
