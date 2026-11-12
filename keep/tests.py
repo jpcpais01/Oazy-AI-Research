@@ -18,7 +18,7 @@ import torch
 
 from . import data as D
 from . import ledger
-from .model import Keep, KeepConfig, Store, norm
+from .model import Keep, KeepConfig, Store, near, norm
 
 PASSED, FAILED = [], []
 TMP = Path(tempfile.mkdtemp(prefix="keep-tests-"))
@@ -183,6 +183,57 @@ def soft_read():
     assert int((S.grad.abs().sum(-1) > 0).sum()) == S.shape[0] * s.rows
     out, _, _ = s(torch.randn(2, 16, cfg.d), torch.zeros(2, s.rows, cfg.dv))
     assert out.shape == (2, 16, cfg.d)
+
+
+@check
+def the_window_alone_is_the_mask():
+    """Attention computed over the window only gives what a T x T mask gives: whole blocks, a ragged end, one block."""
+    torch.manual_seed(0)
+    for T, W in ((64, 8), (61, 8), (9, 8), (40, 16), (50, 7)):
+        q, k, v = torch.randn(3, 2, 2, T, 6)
+        i = torch.arange(T)
+        mask = (i[None, :] <= i[:, None]) & (i[:, None] - i[None, :] < W)
+        want = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+        assert torch.allclose(near(q, k, v, W), want, atol=1e-5), f"T {T}, window {W}"
+
+
+@check
+def the_sparse_way_is_the_dense_way():
+    """The store that touches only its rows (in-place writes, a gradient table filled on the way back) against the
+    whole table inside autograd: the same reads, the same store after, the same gradient for every weight and for
+    the vectors that came in. From an empty store and from a full one."""
+    torch.manual_seed(0)
+    cfg = KeepConfig(**CFG, **KEEP)
+    s = Store(cfg)
+    for start in (torch.zeros(3, s.rows, cfg.dv), torch.randn(3, s.rows, cfg.dv)):
+        got = []
+        for sparse in (True, False):
+            s.sparse = sparse
+            s.zero_grad()
+            h = torch.randn(3, 5 * cfg.chunk + 3, cfg.d, generator=torch.Generator().manual_seed(1), requires_grad=True)
+            before = start.clone()
+            out, S, beta = s(h, before)
+            assert torch.equal(before, start), "the caller's store was written into"
+            (out * torch.randn(out.shape, generator=torch.Generator().manual_seed(2))).sum().backward()
+            got.append([out.detach(), S.detach(), h.grad] + [p.grad.clone() for p in s.parameters()])
+        s.sparse = True
+        assert float(got[0][2].abs().sum()) > 0 and all(float(g.abs().sum()) > 0 for g in got[0][3:])
+        for a, b in zip(*got):
+            assert torch.allclose(a, b, atol=1e-5, rtol=1e-4), float((a - b).abs().max())
+    _, m = models()                                 # and through the whole model: two stores, the layers between
+    m.train()
+    x = torch.randint(1, CFG["vocab_size"], (2, 65))
+    grads = []
+    for sparse in (True, False):
+        for st in m.store.values():
+            st.sparse = sparse
+        m.zero_grad()
+        m.loss(x[:, :-1], x[:, 1:], m.init_state(2))[0].backward()
+        grads.append([p.grad.clone() for p in m.parameters()])
+    for st in m.store.values():
+        st.sparse = True
+    for a, b in zip(*grads):
+        assert torch.allclose(a, b, atol=1e-6, rtol=1e-3), float((a - b).abs().max())
 
 
 @check

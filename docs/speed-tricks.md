@@ -320,6 +320,22 @@ Depths (in a routed layer only the routed words reach the MLP). Not with bloom y
 
 ---
 
+### Keep: a store that touches only its rows (Nov 12)
+
+Keep (`keep/`) carries tables of 16,384 rows per stream and changes 8 rows per token, in chunks of 64 tokens. Its
+first GPU run read 178k tokens per second at 50M weights (H200). What was changed, each checked to give the same
+numbers (`python3 -m keep.tests`); the speed after is **not measured yet**:
+
+- **Sparse way back.** `S = S.scatter_add(...)` under autograd copies the whole table once per chunk, and each
+  `gather` on the way back makes and adds another whole table. Two small autograd functions replace them: the table
+  is written in place, the reads add their gradient into one gradient table, the earlier writes look theirs up
+  there. A token of order (the last write's output, fed to the next read) makes autograd walk back in the right
+  order. General rule: a large state changed in a few places per step should never pass through autograd whole.
+- **Window attention over the window.** A 128-token window done as a mask on 1,024 x 1,024 saves nothing. Cut into
+  blocks of 128 queries against the keys of the block before and their own (256), it is the same numbers at a
+  quarter of the work, and the cost per token stops growing with the training window.
+- **Compiled segments.** The blocks between two stores are one compiled function; the stores run plain.
+
 ## Part 2: learning efficiency
 
 ### WSD learning rate with a long cool-down

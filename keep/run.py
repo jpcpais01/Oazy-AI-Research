@@ -175,10 +175,12 @@ def train(arm, preset, args, enc, device, out: Path, say):
     text = D.Text(Path(args.data), "val")
     say(f"[{arm}] {model.n_params() / 1e6:.1f}M weights, attention reaches {model.cfg.window or T} tokens, "
         f"{len(model.store)} stores of {model.cfg.side ** 2:,} rows; {steps:,} steps of {B} x {T} = {steps * B * T / 1e6:.0f}M tokens")
+    if args.compile and device.type == "cuda":
+        model.speed_up()
     log = open(out / "log.jsonl", "a")
     state = model.init_state(B, device) if model.store else None
     t0 = time.time()
-    last = t0
+    last, seen = t0, (0, t0)
     run = run_a = None
     mids = {int(steps * f) for f in (0.25, 0.5, 0.75)} if steps >= 40 else set()
     for step in range(1, steps + 1):
@@ -188,10 +190,21 @@ def train(arm, preset, args, enc, device, out: Path, say):
         w, what = feed.next()
         w = torch.from_numpy(w).to(device, non_blocking=True)
         asked = torch.from_numpy(what[:, 1:] == D.ASKED).to(device, non_blocking=True)
-        with amp(device):
-            loss, state, info = model.loss(w[:, :-1], w[:, 1:], state, asked=asked, asked_weight=preset.get("asked_weight", 1.0))
         opt.zero_grad(set_to_none=True)
-        loss.backward()
+        try:
+            with amp(device):
+                loss, new, info = model.loss(w[:, :-1], w[:, 1:], state, asked=asked, asked_weight=preset.get("asked_weight", 1.0))
+            loss.backward()
+        except Exception as e:                      # a compile that fails must not cost the run: the same step again, plain
+            if model._fast is None:
+                raise
+            say(f"[{arm}] torch.compile failed ({type(e).__name__}: {str(e)[:200]}); going on without it")
+            model.speed_up(False)
+            opt.zero_grad(set_to_none=True)
+            with amp(device):
+                loss, new, info = model.loss(w[:, :-1], w[:, 1:], state, asked=asked, asked_weight=preset.get("asked_weight", 1.0))
+            loss.backward()
+        state = new
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         opt.step()
         if state is not None:
@@ -204,10 +217,12 @@ def train(arm, preset, args, enc, device, out: Path, say):
             run_a = float(info["asked"]) if run_a is None else 0.98 * run_a + 0.02 * float(info["asked"])
         if step % args.every == 0 or step == steps or time.time() - last > 60:
             last = time.time()
-            rate = step * B * T / (time.time() - t0)
+            rate = (step - seen[0]) * B * T / max(1e-9, time.time() - seen[1])     # since the last line (not the compile, not an exam)
+            seen = (step, time.time())
+            mem = f"  {torch.cuda.max_memory_allocated() / 2 ** 30:.1f} GB" if device.type == "cuda" else ""
             wr = " ".join(f"{float(v):.2f}" for v in info["write"])
             say(f"[{arm}] step {step:,}/{steps:,}  {step * B * T / 1e6:.1f}M tokens  loss {run:.3f}  asked {run_a or 0:.3f}  {rate / 1e3:.0f}k tok/s"
-                + (f"  write strength {wr}" if wr else "") + f"  left {(steps - step) * B * T / rate / 60:.0f} min")
+                + (f"  write strength {wr}" if wr else "") + mem + f"  left {(steps - step) * B * T / rate / 60:.0f} min")
             log.write(json.dumps({"kind": "train", "step": step, "tokens": step * B * T, "loss": run, "asked": run_a, "tok_s": rate,
                                   "write": [float(v) for v in info["write"]]}) + "\n")
             log.flush()
@@ -218,6 +233,7 @@ def train(arm, preset, args, enc, device, out: Path, say):
             log.write(json.dumps({"kind": "exam", "step": step, "tokens": step * B * T,
                                   "exam": {g: {k: [x["right"], x["loss"]] for k, x in v["groups"].items()} for g, v in mid.items()}}) + "\n")
             log.flush()
+            seen = (step, time.time())
     feed.close()
     secs = time.time() - t0
     summary = {"params": model.n_params(), "tokens": steps * B * T, "secs": round(secs), "tok_s": round(steps * B * T / secs),
@@ -280,6 +296,7 @@ def main(argv=None):
     ap.add_argument("--read", default=None, choices=["soft", "rows"], help="Keep: read every row softly, or only the k rows it writes")
     ap.add_argument("--side", type=int, default=None, help="Keep: a store has side x side rows (default: the preset's)")
     ap.add_argument("--workers", type=int, default=8, help="processes making the streams (0 = in the trainer itself)")
+    ap.add_argument("--compile", type=int, default=1, help="torch.compile for the blocks on a GPU (1/0)")
     ap.add_argument("--every", type=int, default=100, help="say where it is every this many steps")
     ap.add_argument("--exam-n", type=int, default=None, help="scenes per gap in the final exam")
     ap.add_argument("--only", default="all", choices=["all", "keep", "full", "report"])
