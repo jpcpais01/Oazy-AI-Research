@@ -4,6 +4,7 @@ streams, give both the same exam at growing gaps, write the report.
     python3 -m keep.run --data /workspace/data --sub opal                 # the real run (one GPU; both models, one after the other)
     python3 -m keep.run --data /workspace/data --sub opal --preset big    # ~120M each, 1.5B tokens each
     python3 -m keep.run --only mixed                                      # one model only (keep, full, wide or mixed); the report keeps the others
+    python3 -m keep.run --only keep --books 0.3 --name keep-books         # Keep trained to hold many facts at once (then keep.load)
     python3 -m keep.run --only report                                     # examine the saved models again
     python3 -m keep.run --preset tiny --device cpu --workers 0 ...        # a CPU smoke test
 
@@ -193,7 +194,9 @@ def train(arm, preset, args, enc, device, out: Path, say):
     opt = torch.optim.AdamW([{"params": decay, "weight_decay": 0.05}, {"params": rest, "weight_decay": 0.0}], lr=lr, betas=(0.9, 0.95),
                             fused=device.type == "cuda")
     warm = max(10, steps // 50)
-    how = preset.get("stream", {})
+    how = dict(preset.get("stream", {}))
+    if args.books:
+        how.update(p_book=args.books, book_max=args.book_max)
     feed = D.Feed(Path(args.data), enc, B, T, preset["gap_max"], seed=args.seed, workers=args.workers, **how)
     held = D.Feed(Path(args.data), enc, min(B, 16), T, preset["gap_max"], seed=args.seed + 999, workers=0, split="val", **how)
     held_rows = [held.next() for _ in range(6)]
@@ -202,7 +205,8 @@ def train(arm, preset, args, enc, device, out: Path, say):
     cut, pick = preset["keep"]["window"], random.Random(f"{args.seed}|narrow")
     say(f"[{arm}] {model.n_params() / 1e6:.1f}M weights, attention reaches {model.cfg.window or T} tokens"
         + (f" ({cut} on {narrow:.0%} of the steps)" if narrow else "") +
-        f", {len(model.store)} stores of {model.cfg.side ** 2:,} rows; {steps:,} steps of {B} x {T} = {steps * B * T / 1e6:.0f}M tokens")
+        f", {len(model.store)} stores of {model.cfg.side ** 2:,} rows; {steps:,} steps of {B} x {T} = {steps * B * T / 1e6:.0f}M tokens"
+        + (f"; {args.books:.0%} of the scenes are books of 8 to {args.book_max} facts" if args.books else ""))
     if args.compile and device.type == "cuda":
         model.speed_up()
     log = open(out / "log.jsonl", "a")
@@ -267,7 +271,7 @@ def train(arm, preset, args, enc, device, out: Path, say):
     feed.close()
     secs = time.time() - t0
     summary = {"params": model.n_params(), "tokens": steps * B * T, "secs": round(secs), "tok_s": round(steps * B * T / secs),
-               "loss": run, "held_out_loss": round(text_loss(model, held_rows, device), 4)}
+               "loss": run, "held_out_loss": round(text_loss(model, held_rows, device), 4), "books": args.books or 0.0}
     torch.save({"model": model.state_dict(), "config": model.cfg.to_dict(), "kind": "keep", "arm": arm, "done": True,
                 "tokens": steps * B * T, "summary": summary}, ck)
     say(f"[{arm}] trained: {summary['tokens'] / 1e6:.0f}M tokens in {secs / 60:.0f} min ({summary['tok_s'] / 1e3:.0f}k tok/s), "
@@ -339,6 +343,10 @@ def main(argv=None):
     ap.add_argument("--stores", default=None, help="Keep: a store after each of these blocks, e.g. 6 or 3,6 (default: the preset's)")
     ap.add_argument("--narrow", type=float, default=None, help="mixed: the share of training steps with the attention cut to "
                     "Keep's reach (default 0.5)")
+    ap.add_argument("--books", type=float, default=None, help="this share of the training scenes are books of many plain facts "
+                    "(e.g. 0.3): hundreds of facts open at once, so the stores learn to tell them apart. The held-out loss "
+                    "is then on streams with books, not comparable with a run without")
+    ap.add_argument("--book-max", type=int, default=256, help="the most facts in a book")
     ap.add_argument("--side", type=int, default=None, help="Keep: a store has side x side rows (default: the preset's)")
     ap.add_argument("--workers", type=int, default=8, help="processes making the streams (0 = in the trainer itself)")
     ap.add_argument("--compile", type=int, default=1, help="torch.compile for the blocks on a GPU (1/0)")

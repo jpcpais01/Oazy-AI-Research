@@ -302,6 +302,23 @@ def streams():
         else:
             raise AssertionError("a story that is not this stream's next scene")
     assert n_scenes > 20 and n_blocks >= n_scenes - 1
+    from . import ledger
+    g, told, sizes = D.stream(random.Random(4), TEXT, ENC, 64, p_book=1.0, book_max=40), None, set()   # every scene a book
+    for _ in range(120):
+        t, kind = next(g)
+        assert t[0] == eot
+        if kind == D.STORY:
+            assert told is None, "two books open at once"
+            m = next(m for m in range(8, 41) if ENC.decode(t).count(".") == m and
+                     [eot] + ENC.encode_ordinary(ledger.book(len(sizes), m, (D.TRAIN_SEED, 0))["stories"][0]) == t[:len(ENC.encode_ordinary(ledger.book(len(sizes), m, (D.TRAIN_SEED, 0))["stories"][0])) + 1])
+            told = ledger.book(len(sizes), m, (D.TRAIN_SEED, 0))
+            sizes.add((len(sizes), m))
+        elif kind == D.ASKED:
+            lines = ENC.decode(t[1:]).split("\n")
+            assert 8 <= len(lines) <= 24 and len(set(lines)) == len(lines)
+            assert set(lines) <= {f"{lead} {a}." for lead, a, *_ in told["lines"]}, "a book is asked what it did not tell"
+            told = None
+    assert len(sizes) > 5 and len({m for _, m in sizes}) > 3
     r = D.Rows(TEXT, ENC, 3, 64, 256, seed=0)
     (a, ka), (b, kb) = r.next(), r.next()
     assert a.shape == ka.shape == (3, 65) and (a[:, -1] == b[:, 0]).all() and (ka[:, -1] == kb[:, 0]).all(), \
@@ -422,7 +439,7 @@ def the_whole_run():
     try:
         Mu.main(["--name", "t", "--runs", str(out), "--data", str(TMP / "data"), "--sub", "", "--gaps", "0,128", "--n", "12", "--device", "cpu"])
         Mu.main(["--name", "t", "--arm", "wide", "--runs", str(out), "--data", str(TMP / "data"), "--sub", "", "--gaps", "0", "--n", "12", "--device", "cpu"])
-        R.main(args[:args.index("--name")] + ["--name", "one", "--only", "keep", "--stores", "4", "--tokens", "3e4", "--exam-n", "12", "--every", "1000"])
+        R.main(args[:args.index("--name")] + ["--name", "one", "--only", "keep", "--stores", "4", "--books", "0.5", "--book-max", "16", "--tokens", "3e4", "--exam-n", "12", "--every", "1000"])
     finally:
         sys.stdout = old
     rep = (out / "t" / "mute.md").read_text()
@@ -439,7 +456,7 @@ def the_whole_run():
     got = json.loads((out / "t" / "load.json").read_text())
     assert set(got["exam"]) == set(R.ARMS) and got["exam"]["keep"]["24"]["groups"]["facts"]["n"] >= 8
     sd = torch.load(out / "one" / "keep" / "ckpt.pt", map_location="cpu", weights_only=False)
-    assert KeepConfig.from_dict(sd["config"]).stores == (4,)
+    assert KeepConfig.from_dict(sd["config"]).stores == (4,) and sd["summary"]["books"] == 0.5
 
 
 @check
