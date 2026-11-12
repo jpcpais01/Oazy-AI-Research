@@ -3,6 +3,7 @@ of the other, then of all. No training.
 
     python3 -m keep.mute --name keep-fast                 # about three minutes on the GPU
     python3 -m keep.mute --name keep-fast --gaps 0,2048,32768 --n 256
+    python3 -m keep.mute --name keep-fast --arm wide      # Keep-wide's stores (writes mute-wide.md)
 
 A store whose muting leaves the score where it was is not what answers; one whose muting drops the score to guessing
 is. The model was trained with all its stores, so a drop says "this model uses it", not "no model could do without":
@@ -27,6 +28,7 @@ KINDS = (("facts", "Plain facts"), ("changed", "Facts changed after telling"), (
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--name", default="keep")
+    ap.add_argument("--arm", default="keep", choices=["keep", "wide"], help="which saved model: Keep, or Keep-wide")
     ap.add_argument("--runs", default=None)
     ap.add_argument("--data", default=None)
     ap.add_argument("--sub", default="opal")
@@ -43,7 +45,7 @@ def main(argv=None):
     from oazy import tok
     enc = tok.get("smollm2")
     out = Path(args.runs or runs_dir()) / args.name
-    sd = torch.load(out / "keep" / "ckpt.pt", map_location="cpu", weights_only=False)
+    sd = torch.load(out / args.arm / "ckpt.pt", map_location="cpu", weights_only=False)
     model = Keep(KeepConfig.from_dict(sd["config"]))
     model.load_state_dict(sd["model"])
     model.to(device)
@@ -61,16 +63,18 @@ def main(argv=None):
         for kind, _ in KINDS:
             cells[(name, kind)] = [f"{g[kind]['right']}% ({g[kind]['chance']}%)" if kind in g else "-" for g in (ex[str(gap)]["groups"] for gap in gaps)]
     model.muted = set()
-    L = ["# Keep: which store carries the facts?", "",
-         f"The saved model of `{args.name}`, examined again with the reads of some stores thrown away. "
+    title = "Keep" if args.arm == "keep" else "Keep-wide"
+    path = out / ("mute.md" if args.arm == "keep" else f"mute-{args.arm}.md")
+    L = [f"# {title}: which store carries the facts?", "",
+         f"The saved {title} of `{args.name}`, examined again with the reads of some stores thrown away. "
          f"{args.n} scenes per gap, answers out of the stores alone. Share right (guessing in brackets).", ""]
     for kind, title in KINDS:
         L += [f"**{title}**", "", "| | " + " | ".join(f"gap {g:,}" for g in gaps) + " |", "|---|" + "---|" * len(gaps)]
         L += [f"| {name} | " + " | ".join(cells[(name, kind)]) + " |" for name, _ in cases]
         L.append("")
     report = "\n".join(L)
-    (out / "mute.md").write_text(report)
-    print("\n" + report + f"\nwritten: {out / 'mute.md'}", flush=True)
+    path.write_text(report)
+    print("\n" + report + f"\nwritten: {path}", flush=True)
 
 
 if __name__ == "__main__":
