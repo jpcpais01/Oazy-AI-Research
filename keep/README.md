@@ -176,9 +176,10 @@ too; they report that running more passes than trained makes them worse. What is
 through an addressed store that is rewritten by its own error (a conclusion that is already there writes nothing),
 training stays parallel inside a chunk, and the depth reached is 4 times the depth trained.
 
-`python3 -m keep.think` is that experiment on real text and at size: Field1 families whose questions say how many
-steps they take (switches by depth, rules by hops, places by nesting, ...), each scene told 1 to 4 times, the three
-models, the exam by level and by 1 to 8 tellings. Gnosis (300M, 1.8B tokens) guessed on switches at every depth.
+`python3 -m keep.think` is that experiment on real text and at size: the two Field1 families that are chains of
+rules told in any order (switches by depth, rules by hops; `--families` takes others), each scene told 1 to 4 times,
+the three models, the exam by level and by 1 to 8 tellings. Gnosis (300M, 1.8B tokens) guessed on switches at every
+depth.
 
 ## The experiment
 

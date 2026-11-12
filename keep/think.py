@@ -1,8 +1,9 @@
 """Think: is reasoning depth bought with weights, or with reading time?  (NEXT-TOKEN)
 
 Three models of one size are trained on Field1 scenes alone (oazy/field1: small simulated worlds told as stories;
-the families asked for here need steps of reasoning, e.g. "switches": a machine follows machines that follow
-switches, the rules told in any order). Every scene is told R times in a row (R = 1..--reads) and then asked:
+by default the two families that are chains of rules told in any order: "switches", where a machine follows
+machines that follow switches, and "rules", if-then chains). Every scene is told R times in a row (R = 1..--reads)
+and then asked:
 
     <|endoftext|> story \\n\\n story \\n\\n story \\n question Answer: yes.\\n question Answer: no.
 
@@ -43,7 +44,8 @@ from .run import PRESETS, amp, runs_dir
 
 ARMS = ("feed", "keep", "full")
 NAMES = {"feed": "Keep, stores written from the top", "keep": "Keep", "full": "Twin"}
-FAMILIES = ("switches", "rules", "places", "compare", "count", "family")     # the families whose questions say how many steps they take
+FAMILIES = ("switches", "rules")           # the two families that are chains of rules told in any order (their questions say how deep)
+OTHERS = ("places", "compare", "count", "family", "schedule")      # more families whose questions say how many steps they take
 # what differs from run.py's presets: the training window (a scene told several times has to fit in it), the stores
 # of the fed model (where they are read), how far back its top may point, the tokens
 THINK = {
@@ -401,7 +403,8 @@ def main(argv=None):
     ap.add_argument("--preset", default="base", choices=list(THINK))
     ap.add_argument("--runs", default=None)
     ap.add_argument("--name", default="think")
-    ap.add_argument("--families", default=",".join(FAMILIES), help="Field1 families, with commas")
+    ap.add_argument("--families", default=",".join(FAMILIES), help="Field1 families, with commas (default: switches,rules; "
+                    f"others with a level: {', '.join(OTHERS)}; 'all': every family)")
     ap.add_argument("--reads", type=int, default=None, help="training: a scene is told 1 to this many times (default: the preset's)")
     ap.add_argument("--tokens", type=float, default=None, help="training tokens for each model")
     ap.add_argument("--batch", type=int, default=None)
@@ -424,7 +427,7 @@ def main(argv=None):
     from oazy import tok
     from oazy.field1 import FAMILIES as ALL
     enc = tok.get("smollm2")
-    args.families = [f for f in args.families.split(",") if f]
+    args.families = list(ALL) if args.families == "all" else [f for f in args.families.split(",") if f]
     for f in args.families:
         if f not in ALL:
             raise SystemExit(f"no Field1 family {f!r}; there are: {', '.join(ALL)}")
