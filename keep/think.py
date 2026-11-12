@@ -89,9 +89,9 @@ C_MACHINE = ["lamp", "pump", "fan", "bell", "radio", "motor", "heater", "siren",
              "drill", "press", "valve", "crane", "oven", "kettle", "robot", "drone", "engine"]
 
 
-def circuit(i, seed):
+def circuit(i, seed, top=None):
     """Scene i as levels.scene gives one: {"story", "qas": [(question, answer, _, {"depth": d})], "depth": its deepest}.
-    A seed that starts with EXAM_SEED gives the exam's circuits."""
+    A seed that starts with EXAM_SEED gives the exam's circuits. top: no deeper than this (training's curriculum)."""
     r = random.Random(f"circuits|{seed}|{i}")
     exact = CIRCUIT_EXAM[i % len(CIRCUIT_EXAM)] if (seed[0] if isinstance(seed, tuple) else seed) == EXAM_SEED else None
     while True:
@@ -117,7 +117,7 @@ def circuit(i, seed):
             cond = {"same": f"{ins[0]} is on", "not": f"{ins[0]} is off", "and": f"{ins[0]} and {ins[-1]} are on", "or": f"{ins[0]} or {ins[-1]} is on"}[op]
             said.append(f"{m.capitalize()} is on if {cond}." if r.random() < 0.5 else f"If {cond}, {m} is on.")
             parts.append(m)
-        if exact or max(depth.values()) <= CIRCUIT_TRAIN:
+        if exact or max(depth.values()) <= (top or CIRCUIT_TRAIN):
             break
     r.shuffle(said)
     asked = parts if not exact else sw + ms[exact - 1:] + ms[:exact - 1]
@@ -159,11 +159,11 @@ def level(knobs: dict):
     return None
 
 
-def told(enc, family: str, i, seed):
+def told(enc, family: str, i, seed, top=None):
     """Scene i -> (one reading as tokens, what stands between two readings, the question lines
     [(lead tokens, answer tokens, choices, answer, level)])."""
     from oazy.field1 import levels
-    sc = circuit(i, seed) if family == "circuits" else levels.scene(family, i, seed)
+    sc = circuit(i, seed, top) if family == "circuits" else levels.scene(family, i, seed)
     lines = []
     for q, a, _, qk in sc["qas"]:
         lines.append((enc.encode_ordinary(f"\n{q} Answer:"), enc.encode_ordinary(f" {a}."),
@@ -171,12 +171,12 @@ def told(enc, family: str, i, seed):
     return enc.encode_ordinary(sc["story"]), enc.encode_ordinary("\n\n"), lines, sc.get("depth")
 
 
-def scene_tokens(enc, family, i, seed, reads, room: int, rng=None, most=1, align=0):
+def scene_tokens(enc, family, i, seed, reads, room: int, rng=None, most=1, align=0, top=None):
     """A scene told `reads` times and asked, as it stands in a stream: tokens, what each is (D.STORY / D.ASKED), and
     the marks [(place whose next piece is asked, candidate pieces, which is right, level, the answer)].
     Told fewer times if it would not fit in `room` tokens; None if one telling does not fit. reads None: drawn (training).
     align C: every telling fills a chunk of C tokens (<|endoftext|> on its left), the questions end the next one."""
-    story, sep, lines, deep = told(enc, family, i, seed)
+    story, sep, lines, deep = told(enc, family, i, seed, top)
     if reads is None:                               # training: Field1 1..R times; a circuit as often as its depth asks (+ 1 or 2)
         reads = rng.randint(1, most) if deep is None else deep + rng.randint(1, 2)
     block = [t for lead, ans, *_ in lines for t in lead + ans]
@@ -206,7 +206,7 @@ def scene_tokens(enc, family, i, seed, reads, room: int, rng=None, most=1, align
     return toks, kinds + [D.ASKED] * (len(toks) - len(kinds)), marks, reads
 
 
-def stream(rng: random.Random, enc, T: int, families, reads: int, tag=0, align=0):
+def stream(rng: random.Random, enc, T: int, families, reads: int, tag=0, align=0, cap=None):
     """Yields (tokens, what they are) for ever: one scene to a training window, as in the exam: <|endoftext|> up to
     the scene, then the scene told again and again and its questions at the window's end. (A second scene in the
     window would find the first one's switches still in the stores: the same names, other states.)"""
@@ -215,7 +215,7 @@ def stream(rng: random.Random, enc, T: int, families, reads: int, tag=0, align=0
     n, none = 0, 0
     while True:
         f = rng.choices(families, weights=wts)[0]
-        sc = scene_tokens(enc, f, n, (TRAIN_SEED, tag), None, T, rng=rng, most=reads, align=align)
+        sc = scene_tokens(enc, f, n, (TRAIN_SEED, tag), None, T, rng=rng, most=reads, align=align, top=cap.value if cap is not None else None)
         n += 1
         if sc is None:
             none += 1
@@ -231,10 +231,10 @@ def stream(rng: random.Random, enc, T: int, families, reads: int, tag=0, align=0
 class Rows:
     """`rows` streams cut into windows, as data.Rows: next() -> tokens (rows, T + 1), what each is (rows, T + 1)."""
 
-    def __init__(self, enc, rows, T, seed, families, reads, first_row=0, align=0):
+    def __init__(self, enc, rows, T, seed, families, reads, first_row=0, align=0, cap=None):
         self.T, self.eot = T, enc.eot_token
         assert not align or T % align == 0, "a window is whole chunks"
-        self.gens = [stream(random.Random(f"{seed}|{first_row + r}"), enc, T, families, reads, tag=first_row + r, align=align) for r in range(rows)]
+        self.gens = [stream(random.Random(f"{seed}|{first_row + r}"), enc, T, families, reads, tag=first_row + r, align=align, cap=cap) for r in range(rows)]
         self.buf = [([], []) for _ in range(rows)]
 
     def next(self):
@@ -251,9 +251,9 @@ class Rows:
         return out, what
 
 
-def _worker(q, rows, T, seed, families, reads, first_row, align=0):
+def _worker(q, rows, T, seed, families, reads, first_row, align=0, cap=None):
     from oazy import tok
-    r = Rows(tok.get("smollm2"), rows, T, seed, families, reads, first_row, align)
+    r = Rows(tok.get("smollm2"), rows, T, seed, families, reads, first_row, align, cap)
     while True:
         q.put(r.next())
 
@@ -261,19 +261,20 @@ def _worker(q, rows, T, seed, families, reads, first_row, align=0):
 class Feed:
     """Batches of windows from `workers` processes (0 = made here). Row r is always the same stream."""
 
-    def __init__(self, enc, batch, T, seed, families, reads, workers=8, align=0):
+    def __init__(self, enc, batch, T, seed, families, reads, workers=8, align=0, ramp=False):
         import multiprocessing as mp
         self.procs, self.qs, self.local = [], [], None
         workers = min(workers, batch)
-        if workers <= 0:
-            self.local = Rows(enc, batch, T, seed, families, reads, align=align)
-            return
         ctx = mp.get_context("fork")
+        self.cap = cap = ctx.Value("i", 1) if ramp else None        # the curriculum: circuits no deeper than this (the trainer raises it)
+        if workers <= 0:
+            self.local = Rows(enc, batch, T, seed, families, reads, align=align, cap=cap)
+            return
         first = 0
         for i in range(workers):
             n = batch // workers + (1 if i < batch % workers else 0)
             q = ctx.Queue(maxsize=6)
-            p = ctx.Process(target=_worker, args=(q, n, T, seed, families, reads, first, align), daemon=True)
+            p = ctx.Process(target=_worker, args=(q, n, T, seed, families, reads, first, align, cap), daemon=True)
             p.start()
             self.procs.append(p)
             self.qs.append(q)
@@ -396,7 +397,9 @@ def train(arm, preset, th, args, enc, device, out: Path, say):
                             fused=device.type == "cuda")
     warm = max(10, steps // 50)
     reads = args.reads or th["reads"]
-    feed = Feed(enc, B, T, args.seed, args.families, reads, workers=args.workers, align=args.align)
+    feed = Feed(enc, B, T, args.seed, args.families, reads, workers=args.workers, align=args.align, ramp=bool(args.ramp))
+    yn = [enc.encode_ordinary(" yes.")[0], enc.encode_ordinary(" no.")[0]]       # the curriculum's measure: the share of yes/no answers right
+    right, since = None, 0
     say(f"[{arm}] {model.n_params() / 1e6:.1f}M weights, attention reaches {model.cfg.window or T} tokens, "
         + (f"{len(model.store)} stores of {model.cfg.side ** 2:,} rows" + (f" written from the top (it may file under one of the {model.cfg.point} tokens before)"
                                                                          if model.cfg.feed else "") if model.store else "no stores")
@@ -424,7 +427,7 @@ def train(arm, preset, th, args, enc, device, out: Path, say):
         opt.zero_grad(set_to_none=True)
         try:
             with amp(device):
-                loss, new, info = model.loss(w[:, :-1], w[:, 1:], state, asked=asked, asked_weight=aw)
+                loss, new, info = model.loss(w[:, :-1], w[:, 1:], state, asked=asked, asked_weight=aw, pair=yn if args.ramp else None)
             loss.backward()
         except Exception as e:                      # a compile that fails must not cost the run: the same step again, plain
             if model._fast is None:
@@ -437,6 +440,12 @@ def train(arm, preset, th, args, enc, device, out: Path, say):
             loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)             # (the stores are empty at every window: a window is one scene)
         opt.step()
+        if feed.cap is not None and "right" in info:                 # depth 1 first; the next depth when this one is answered right
+            right = float(info["right"]) if right is None else 0.95 * right + 0.05 * float(info["right"])
+            if right > args.ramp and feed.cap.value < CIRCUIT_TRAIN and step > since + 40:
+                feed.cap.value += 1
+                since, right = step, None
+                say(f"[{arm}] step {step:,}: {100 * args.ramp:.0f}% of the answers right, circuits now up to depth {feed.cap.value}")
         lv = float(info["lm"])
         if not math.isfinite(lv):
             raise SystemExit(f"[{arm}] the loss is not a number at step {step}: lower --lr")
@@ -524,6 +533,8 @@ def main(argv=None):
     ap.add_argument("--stores", default=None, help="feed: a store read after each of these blocks, e.g. 2 or 2,5")
     ap.add_argument("--align", type=int, default=0, help="a telling to a chunk of this many tokens (96 for circuits): the fed model takes a whole "
                     "telling in one parallel pass, so a step is 6 passes one after the other instead of 32. 0: tellings follow each other, chunks of 16")
+    ap.add_argument("--ramp", type=float, default=0.0, help="circuits by a curriculum, as the token pilots were trained: depth 1 only at first, the next depth "
+                    "when this share of the yes/no answers is right (0.95). 0: every depth from the first step")
     ap.add_argument("--share", default=None, choices=["all", "strength"], help="feed: how a chunk's writes share a row (strength: a write that is held back "
                     "weakens no other; meant for --align, where a whole telling's writes land together)")
     ap.add_argument("--workers", type=int, default=8)

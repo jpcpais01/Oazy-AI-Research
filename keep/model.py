@@ -539,7 +539,7 @@ class Keep(nn.Module):
             torch._dynamo.config.cache_size_limit = max(torch._dynamo.config.cache_size_limit, 32)
         self._fast = torch.compile(self._segment) if on else None
 
-    def loss(self, x, y, state=None, plain=False, asked=None, asked_weight=1.0):
+    def loss(self, x, y, state=None, plain=False, asked=None, asked_weight=1.0, pair=None):
         """asked: (B, T) bool, the targets that are part of a question block; they count asked_weight times in the loss.
         -> loss, the stores after x, info {"lm": the plain next-token loss, "asked": the loss on the asked targets,
            "write": mean write strength per store}."""
@@ -553,6 +553,11 @@ class Keep(nn.Module):
         if asked is not None and bool(asked.any()):
             la = F.cross_entropy(h[asked].float() @ self.emb.weight.float().t(), y[asked])
             info["asked"] = la.detach()
+            if pair is not None:                    # the share right where the answer is one of two words (think's curriculum)
+                at = asked & ((y == pair[0]) | (y == pair[1]))
+                if bool(at.any()):
+                    two = h[at].detach().float() @ self.emb.weight.detach().float()[list(pair)].t()
+                    info["right"] = ((two[:, 0] > two[:, 1]) == (y[at] == pair[0])).float().mean()
             if asked_weight != 1.0:
                 loss = loss + (asked_weight - 1.0) * asked.float().mean() * la
         if beta and self.cfg.write_cost:
