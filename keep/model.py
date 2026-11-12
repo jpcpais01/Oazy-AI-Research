@@ -140,49 +140,72 @@ def _rotate(x, rot):
     return torch.stack([a * cos - b * sin, a * sin + b * cos], -1).flatten(-2)
 
 
-class _Table:
-    """One store during one pass: S (B * rows, dv), written in place, and G, the gradient of the loss with respect to
-    the rows as it stands on the way back (made when the first gradient arrives)."""
-    __slots__ = ("S", "G")
-
-    def __init__(self, S):
-        self.S, self.G = S, None
-
-
-class _Rows(torch.autograd.Function):
-    """Rows of the table as it stands now. On the way back, what the loss asks of these rows is added to G, where
-    the writes made before this read find it. `tick` (the last write's token) only fixes the order of the way back:
-    this read's gradient lands in G before that write looks."""
-
-    @staticmethod
-    def forward(ctx, tick, table, at):
-        ctx.table, ctx.at = table, at
-        return table.S.index_select(0, at)
-
-    @staticmethod
-    def backward(ctx, g):
-        t = ctx.table
-        if t.G is None:
-            t.G = torch.zeros_like(t.S)
-        t.G.index_add_(0, ctx.at, g)
-        return g.new_zeros(()), None, None
+def _chunks(table, at, wt, v, beta, coef, chunk: int, keep: bool):
+    """The store's loop, on plain tensors. table (B * rows, dv), written in place; at (2, B, T, K) rows of the table
+    (0: read for the model, 1: read and written by the delta rule); wt (2, B, T, K) their weights; v (B, T, dv) what
+    to write; beta (B, T, 1) how hard; coef (B, T, K) a write's weight on each of its rows.
+    -> what the reads bring (B, T, dv) and, if keep, what the way back needs (the rows read, v - r, the error)."""
+    _, B, T, K = at.shape
+    dv = table.size(1)
+    outs, rows_, d_, e_ = [], [], [], []
+    for c in range(0, T, chunk):
+        sl = slice(c, min(T, c + chunk))
+        n = sl.stop - sl.start
+        rows = table.index_select(0, at[:, :, sl].reshape(-1)).view(2, B, n, K, dv)
+        red = (wt[:, :, sl, :, None] * rows).sum(3)             # what the store says comes next: for the model, and under the write's address
+        d = v[:, sl] - red[1]
+        e = beta[:, sl] * d                                     # how wrong it was, times how hard to write
+        table.index_add_(0, at[1, :, sl].reshape(-1), (e[:, :, None, :] * coef[:, sl, :, None]).view(-1, dv))
+        outs.append(red[0])
+        if keep:
+            rows_.append(rows)
+            d_.append(d)
+            e_.append(e)
+    return torch.cat(outs, 1), (rows_, d_, e_)
 
 
-class _Put(torch.autograd.Function):
-    """Adds upd to the rows `at` of the table, in place. Its gradient is G at those rows: everything read from them
-    later. Only the rows touched are ever copied, where S.scatter_add(...) under autograd copies the whole table
-    once per chunk on the way in and several times on the way back."""
+class _Loop(torch.autograd.Function):
+    """The store's loop as one node of the graph, its way back written by hand.
 
-    @staticmethod
-    def forward(ctx, upd, table, at):
-        ctx.table, ctx.at = table, at
-        table.S.index_add_(0, at, upd)
-        return upd.new_zeros(())
+    Left to autograd, every chunk is some fifty small kernels and as many graph nodes, and the launches and the
+    bookkeeping, not the arithmetic, were 44% of a training step (H200, Nov 12: 69 ms of 157). Here a chunk is about
+    twenty launches and no nodes.
+
+    The way back runs the chunks last to first with one table G, the gradient of the loss with respect to the rows as
+    they stand at that moment: a chunk's write looks up in G what every later read asked of its rows, then the chunk's
+    own reads (made before its write) are added to G. Only rows that were touched are ever moved."""
 
     @staticmethod
-    def backward(ctx, g):
-        G = ctx.table.G
-        return (None if G is None else G.index_select(0, ctx.at)), None, None
+    def forward(ctx, wt, v, beta, coef, box, at, chunk):
+        out, (rows, d, e) = _chunks(box[0], at, wt, v, beta, coef, chunk, True)
+        ctx.box, ctx.at, ctx.chunk, ctx.rows, ctx.d, ctx.e = box, at, chunk, rows, d, e
+        ctx.save_for_backward(wt, beta, coef)
+        return out
+
+    @staticmethod
+    def backward(ctx, g_out):
+        wt, beta, coef = ctx.saved_tensors
+        at, chunk = ctx.at, ctx.chunk
+        _, B, T, K = at.shape
+        G = torch.zeros_like(ctx.box[0])
+        dv = G.size(1)
+        g_wt, g_v, g_beta, g_coef = [], [], [], []
+        starts = list(range(0, T, chunk))
+        for i in range(len(starts) - 1, -1, -1):
+            sl = slice(starts[i], min(T, starts[i] + chunk))
+            n = sl.stop - sl.start
+            rows, d, e = ctx.rows[i], ctx.d[i], ctx.e[i]
+            gu = G.index_select(0, at[1, :, sl].reshape(-1)).view(B, n, K, dv)      # what later reads asked of this chunk's writes
+            ge = (gu * coef[:, sl, :, None]).sum(2)
+            g_coef.append((gu * e[:, :, None, :]).sum(3))
+            g_beta.append((ge * d).sum(-1, keepdim=True))
+            gd = ge * beta[:, sl]
+            g_v.append(gd)
+            gr = torch.stack([g_out[:, sl], -gd])                                   # (2, B, n, dv): for the model's read, for the write's read
+            g_wt.append((gr[:, :, :, None, :] * rows).sum(-1))
+            G.index_add_(0, at[:, :, sl].reshape(-1), (gr[:, :, :, None, :] * wt[:, :, sl, :, None]).view(-1, dv))
+        back = lambda parts, dim: torch.cat(parts[::-1], dim)
+        return back(g_wt, 2), back(g_v, 1), back(g_beta, 1), back(g_coef, 1), None, None, None
 
 
 class Store(nn.Module):
@@ -265,25 +288,18 @@ class Store(nn.Module):
             return self.out(out).to(h.dtype), S, beta.squeeze(-1)
 
     def _sparse(self, S, idx, w, idx_w, w_w, coef, v, beta):
-        """The chunks, touching only the rows they read and write (see _Rows, _Put). With gradients on, S is copied
+        """The chunks, touching only the rows they read and write (_chunks, _Loop). With gradients on, S is copied
         once and the copy written in place; without, S itself is written."""
         B, T, K = idx.shape
-        S = S.detach().clone() if torch.is_grad_enabled() else S.contiguous()
-        table = _Table(S.view(B * self.rows, self.dv))
+        grad = torch.is_grad_enabled()
+        S = S.detach().clone() if grad else S.contiguous()
+        table = S.view(B * self.rows, self.dv)
         off = torch.arange(B, device=S.device)[:, None, None] * self.rows
         at = torch.stack([idx + off, idx_w + off])                  # (2, B, T, K): the rows read for the model, the rows written
-        wt = torch.stack([w, w_w])[..., None]
-        outs, tick = [], None
-        for c in range(0, T, self.chunk):
-            sl = slice(c, min(T, c + self.chunk))
-            n = sl.stop - sl.start
-            rows = _Rows.apply(tick, table, at[:, :, sl].reshape(-1)).view(2, B, n, K, self.dv)
-            red = (wt[:, :, sl] * rows).sum(3)                      # what the store says comes next: for the model, and under the write's address
-            outs.append(red[0])
-            e = beta[:, sl] * (v[:, sl] - red[1])                   # how wrong it was
-            upd = e[:, :, None, :] * coef[:, sl, :, None]
-            tick = _Put.apply(upd.reshape(-1, self.dv), table, at[1, :, sl].reshape(-1))
-        return torch.cat(outs, 1), S
+        wt = torch.stack([w, w_w])
+        if grad and (wt.requires_grad or v.requires_grad):
+            return _Loop.apply(wt, v, beta, coef, (table,), at, self.chunk), S
+        return _chunks(table, at, wt, v, beta, coef, self.chunk, False)[0], S
 
     def _dense(self, S, idx, w, idx_w, w_w, coef, v, beta, p1=None, p2=None):
         """The same chunks with the whole table inside autograd: the reference the sparse way is checked against,
@@ -323,6 +339,7 @@ class Keep(nn.Module):
         self.register_buffer("cos", ang.cos(), persistent=False)
         self.register_buffer("sin", ang.sin(), persistent=False)
         self._fast = None                           # the compiled blocks (speed_up)
+        self.loss_chunk = 1024                      # tokens per slice of the fused loss (oazy/lmloss.py)
 
     # ------------------------------------------------------------ state
     def init_state(self, batch: int, device=None):
@@ -372,7 +389,7 @@ class Keep(nn.Module):
         if plain or h.device.type != "cuda":
             loss = plain_loss(h, self.emb.weight, y)[0]
         else:
-            loss = head_loss(h, self.emb.weight, y)[0]
+            loss = head_loss(h, self.emb.weight, y, chunk=self.loss_chunk)[0]
         info = {"lm": loss.detach(), "write": [b.mean().detach() for b in beta.values()]}
         if asked is not None and bool(asked.any()):
             la = F.cross_entropy(h[asked].float() @ self.emb.weight.float().t(), y[asked])

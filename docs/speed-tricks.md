@@ -322,19 +322,26 @@ Depths (in a routed layer only the routed words reach the MLP). Not with bloom y
 
 ### Keep: a store that touches only its rows (Nov 12)
 
-Keep (`keep/`) carries tables of 16,384 rows per stream and changes 8 rows per token, in chunks of 64 tokens. Its
-first GPU run read 178k tokens per second at 50M weights (H200). What was changed, each checked to give the same
-numbers (`python3 -m keep.tests`); the speed after is **not measured yet**:
+Keep (`keep/`) carries tables of 16,384 rows per stream and changes 8 rows per token, in chunks of 64 tokens.
+Measured on an H200 at 50M weights, batch 32 x 1,024: 195k tokens per second at first, 238k after the first three
+changes below. `python3 -m keep.speedcheck` then split a step (beside a training run): Keep 157 ms = blocks 47 +
+scores over the words 45 + stores 69; the twin 88 ms = blocks 42 + scores over the words 47.
 
 - **Sparse way back.** `S = S.scatter_add(...)` under autograd copies the whole table once per chunk, and each
-  `gather` on the way back makes and adds another whole table. Two small autograd functions replace them: the table
-  is written in place, the reads add their gradient into one gradient table, the earlier writes look theirs up
-  there. A token of order (the last write's output, fed to the next read) makes autograd walk back in the right
-  order. General rule: a large state changed in a few places per step should never pass through autograd whole.
-- **Window attention over the window.** A 128-token window done as a mask on 1,024 x 1,024 saves nothing. Cut into
-  blocks of 128 queries against the keys of the block before and their own (256), it is the same numbers at a
-  quarter of the work, and the cost per token stops growing with the training window.
+  `gather` on the way back makes and adds another whole table. Now the table is written in place, the reads add
+  their gradient into one gradient table, and the earlier writes look theirs up there. General rule: a large
+  state changed in a few places per step should never pass through autograd whole.
+- **Window attention over the window.** Blocks of 128 queries against the keys of the block before and their own
+  (256): the same numbers as a mask, and a cost per token that does not grow with the training window. At 1,024
+  tokens it is no faster than flash attention over everything.
 - **Compiled segments.** The blocks between two stores are one compiled function; the stores run plain.
+- **The loop as one graph node** (`_Loop`, hand-written way back). The store's loop was 44% of the step, and not for
+  its arithmetic: 32 sequential passes, each some fifty small kernels and graph nodes (4 times larger chunks: 69 ms
+  down to 26). One node, about twenty launches a pass. **Not measured yet.** General rule: a short sequential loop
+  of small tensor operations costs its launch count on a GPU; count the kernels, not the FLOPs.
+
+**For every small model:** the scores over 49,152 words cost about 45 ms per 32,768 tokens on the H200, whatever
+the model. At 50M weights that is half the step.
 
 ## Part 2: learning efficiency
 

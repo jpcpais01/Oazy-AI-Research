@@ -27,7 +27,7 @@ def masked(q, k, v, W):
     return F.scaled_dot_product_attention(q, k, v, attn_mask=(i[None, :] <= i[:, None]) & (i[:, None] - i[None, :] < W))
 
 
-def measure(arm, preset, vocab, B, steps, device, compiled=True, sparse=True, window=True, scores=True, **over):
+def measure(arm, preset, vocab, B, steps, device, compiled=True, sparse=True, window=True, scores=True, slices=1024, **over):
     """-> tokens per second, milliseconds per step, peak GB. A step is what keep.run does: both losses, the way back,
     the clip, the optimizer. scores=False: no scores over the words (a cheap loss on the final vectors in their place).
     over: KeepConfig fields changed for this line (stores=(), chunk=256, ...)."""
@@ -35,6 +35,7 @@ def measure(arm, preset, vocab, B, steps, device, compiled=True, sparse=True, wi
     if compiled and device.type == "cuda":
         torch._dynamo.reset()                           # each line compiles afresh: past a few models torch stops compiling, silently
     m = make(arm, preset, vocab, **over).to(device).train()
+    m.loss_chunk = slices
     for s in m.store.values():
         s.sparse = sparse
     near = M.near
@@ -99,12 +100,14 @@ def main(argv=None):
             ("Keep, no scores over the words", "keep", dict(scores=False)),
             ("Keep, no stores (the window alone)", "keep", dict(stores=())),
             ("Keep, no stores, no scores over the words", "keep", dict(stores=(), scores=False)),
+            (f"Keep, chunks of {2 * ch} (not {ch})", "keep", dict(chunk=2 * ch)),
             (f"Keep, chunks of {4 * ch} (not {ch})", "keep", dict(chunk=4 * ch)),
+            ("Keep, the loss in slices of 4,096 (not 1,024)", "keep", dict(slices=4096)),
             (f"Keep, batch {4 * B} (not {B})", "keep", dict(batch=4 * B)),
             (f"twin, batch {4 * B} (not {B})", "full", dict(batch=4 * B))]
     if args.old:
         rows += [("Keep, not compiled", "keep", dict(compiled=False)),
-                 ("Keep, whole tables in autograd", "keep", dict(sparse=False)),
+                 ("Keep, the stores' whole tables in autograd", "keep", dict(sparse=False)),
                  ("Keep, window as a mask", "keep", dict(window=False)),
                  ("Keep, all three off (the first GPU run)", "keep", dict(compiled=False, sparse=False, window=False))]
     print(f"{args.preset}: batch {B} x {preset['cfg']['max_len']} tokens, {args.steps} steps a line, {device}", flush=True)
@@ -115,9 +118,9 @@ def main(argv=None):
         try:
             rate, ms, mem = measure(arm, preset, 49152, b, args.steps, device, **how)
             got[name] = ms * B / b                                      # per `B` rows, to compare the lines
-            print(f"  {name:<44} {rate / 1e3:>6.0f}k tok/s  {ms:>7.1f} ms a step  {mem:5.1f} GB", flush=True)
+            print(f"  {name:<46} {rate / 1e3:>6.0f}k tok/s  {ms:>7.1f} ms a step  {mem:5.1f} GB", flush=True)
         except Exception as e:
-            print(f"  {name:<44} failed: {type(e).__name__}: {str(e)[:120]}", flush=True)
+            print(f"  {name:<46} failed: {type(e).__name__}: {str(e)[:120]}", flush=True)
         if device.type == "cuda":
             torch.cuda.empty_cache()
     try:                                                                # where a Keep step goes
