@@ -664,6 +664,14 @@ def thinking_runs():
     c3 = Th.scene_tokens(ENC, "circuits", 1, (Th.TRAIN_SEED, 0), None, 1 << 20, rng=random.Random(0), most=3)
     assert c3[3] in (Th.circuit(1, (Th.TRAIN_SEED, 0))["depth"] + 1, Th.circuit(1, (Th.TRAIN_SEED, 0))["depth"] + 2), "a circuit is told as often as its depth asks"
     assert {lv for *_, lv, _ in c3[2]} <= {f"depth {d}" for d in range(Th.CIRCUIT_TRAIN + 1)} and "depth 0" in {lv for *_, lv, _ in c3[2]}
+    st, _, ln, _ = Th.told(ENC, "circuits", 1, (Th.TRAIN_SEED, 0))                # a telling to a chunk (--align)
+    C = max(len(st), sum(len(lead) + len(ans) for lead, ans, *_ in ln)) + 5
+    al = Th.scene_tokens(ENC, "circuits", 1, (Th.TRAIN_SEED, 0), 3, 1 << 20, align=C)
+    assert al[3] == 3 and len(al[0]) == 4 * C and al[0][-1] != eot
+    assert all(al[0][c * C:(c + 1) * C] == [eot] * (C - len(st)) + st for c in range(3)), "every telling ends its chunk"
+    assert all(al[0][p + 1] == cands[right] and p >= 3 * C for p, cands, right, lv, a in al[2]), "the questions are the last chunk"
+    assert Th.scene_tokens(ENC, "circuits", 1, (Th.TRAIN_SEED, 0), 3, 2 * C, align=C)[3] == 1
+    assert Th.scene_tokens(ENC, "circuits", 1, (Th.TRAIN_SEED, 0), 3, 1 << 20, align=len(st) - 1) is None
     out = TMP / "runs"
     args = ["--preset", "tiny", "--device", "cpu", "--workers", "0", "--runs", str(out), "--name", "th", "--tokens", "4e4",
             "--families", "circuits,switches,rules", "--every", "1000"]
@@ -673,8 +681,14 @@ def thinking_runs():
         Th.main(args)
         when = (out / "th" / "feed" / "ckpt.pt").stat().st_mtime_ns
         Th.main(args + ["--only", "report"])
+        Th.main(["--preset", "tiny", "--device", "cpu", "--workers", "0", "--runs", str(out), "--name", "tha", "--tokens", "2e4",
+                 "--every", "1000", "--only", "feed", "--align", "160", "--exam-n", "6"])
     finally:
         sys.stdout = old
+    al = torch.load(out / "tha" / "feed" / "ckpt.pt", map_location="cpu", weights_only=False)["config"]
+    assert al["chunk"] == 160 and al["max_len"] == Th.ALIGN_ROOM * 160, "a telling to a chunk: the fed model's chunk is the telling's"
+    tha = json.loads((out / "tha" / "think.json").read_text())
+    assert tha["align"] == 160 and set(tha["exam"]["feed"]["circuits"]["all"]) == {"1", "2", "3"} and "one chunk of 160" in (out / "tha" / "think.md").read_text()
     assert (out / "th" / "feed" / "ckpt.pt").stat().st_mtime_ns == when
     res = json.loads((out / "th" / "think.json").read_text())
     assert set(res["exam"]) == {"feed", "keep", "full"} and set(res["exam"]["feed"]) == {"circuits", "switches", "rules"}
