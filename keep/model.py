@@ -89,6 +89,8 @@ class KeepConfig:
     read: str = "rows"          # "rows": a token reads the k rows of its address; "soft": every row, weighted by its score
     feed: bool = False          # the stores are written from the top of the stack (what the last layer says), not from the layer they are read at
     point: int = 0              # feed: the top files a write under the place of one of this many tokens before it (0: the token before)
+    group: int = 0              # feed: a chunk's writes land this many tokens at a time, in order (a later group corrects what an earlier one
+                                # wrote, as chunks do); 0: the whole chunk's writes together. For chunks as long as a telling (think --align)
     point_bias: float = 3.0     # feed, point: how sure the top is at first that its write goes under the token before (0: any of the `point` tokens alike)
     share: str = "all"          # feed: how the writes of a chunk share a row. "all": every write on it counts, also one that is held back;
                                 # "strength": a write counts by its strength (beta, up to 1), so a write that is held back weakens no other
@@ -521,11 +523,14 @@ class Keep(nn.Module):
                         h = h + r
             h = norm(h)
             outs.append(h)
+            grp = self.cfg.group or (b - a)
             for i, st in self.store.items():
-                S[i], bt = st.file(h, S[i], new[i], old[i])
-                beta[i].append(bt)
-                both = [n_ if o is None or n_ is None else torch.cat([o, n_], 1) for o, n_ in zip(old[i] or (None, None, None), new[i])]
-                old[i] = tuple(None if t is None else t[:, -back:] for t in both)
+                for c in range(0, b - a, grp):                        # the writes, a group at a time: each sees what the groups before wrote
+                    part = tuple(None if t is None else t[:, c:c + grp] for t in new[i])
+                    S[i], bt = st.file(h[:, c:c + grp], S[i], part, old[i])
+                    beta[i].append(bt)
+                    both = [n_ if o is None or n_ is None else torch.cat([o, n_], 1) for o, n_ in zip(old[i] or (None, None, None), part)]
+                    old[i] = tuple(None if t is None else t[:, -back:] for t in both)
         return torch.cat(outs, 1), S, {i: torch.cat(v, 1) for i, v in beta.items()}
 
     def _segment(self, h, cos, sin, lo: int, hi: int, window: int):
