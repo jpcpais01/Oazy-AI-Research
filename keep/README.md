@@ -108,22 +108,38 @@ ordinary text: a model that learned what is worth keeping writes hard on the fir
 
 ## Speed
 
-The first GPU run (H200, Nov 12, the code before these changes) read 178k tokens per second at the base size: slow for
-50M weights. Three things were wrong with the code, not with the idea, and are changed (`tests.py` checks that each
-gives the same numbers as before):
+Measured on an H200 at the base size (batch 32 x 1,024 tokens), Nov 12:
+
+| | Tokens per second |
+|---|---|
+| The first run | 195k |
+| After the three changes below | 238k |
+| The twin, measured beside a training run | 371k |
+
+`python3 -m keep.speedcheck` takes one part of a step away at a time. Beside a training run it gave, for a Keep step
+of 157 ms: the blocks 47 ms, the scores over the 49,152 words 45 ms, the stores 69 ms. The twin's step was 88 ms,
+half of it the scores over the words, which every model of this size pays.
+
+What was changed, each checked in `tests.py` to give the same numbers as before:
 
 - **The store touches only its rows.** Under autograd, `S.scatter_add(...)` copied the whole table (16,384 x 64 per
-  row of the batch) once per chunk on the way in and several times on the way back, 32 chunks per window. Now the
-  table is written in place, and on the way back one gradient table is filled by the reads and looked up by the
-  writes that came before them (`_Rows`, `_Put` in `model.py`). A chunk moves 512 rows, whatever the table's size.
+  row of the batch) once per chunk on the way in and several times on the way back. Now the table is written in
+  place, and on the way back one gradient table is filled by the reads and looked up by the writes that came
+  before them. A chunk moves 512 rows, whatever the table's size.
 - **Attention is computed over the window only** (`near`): blocks of 128 queries against 256 keys, not a mask over
-  1,024 x 1,024. Its cost per token no longer grows with the length of the training window.
+  1,024 x 1,024. At 1,024 tokens this is no faster than flash attention over everything (47 ms against 42); it
+  matters when the training window grows, because its cost per token does not.
 - **The blocks are compiled** (`torch.compile`, as in Bee6; `--compile 0` turns it off; if it fails the run says so
   and goes on plain).
+- **The store's loop is one node of the graph** (`_Loop` in `model.py`), its way back written by hand. The loop is
+  32 sequential passes per window (2 stores x 16 chunks), and left to autograd each pass was some fifty small
+  kernels and as many graph nodes: launches and bookkeeping, not arithmetic (4 times larger chunks took the stores
+  from 69 to 26 ms). Now a pass is about twenty launches. **Not measured on a GPU yet.**
 
-Measured on the H200: 195k before, 238k after, so the larger part of the step lies elsewhere.
-`python3 -m keep.speedcheck` splits a step into the blocks, the stores and the scores over the words (`--old` adds a
-line per change above, turned off). Each progress line of a run now gives the speed since the line before and the peak memory.
+What bounds it: at 1,024 tokens Keep can come close to the twin's tokens per second, not past it. What it has to
+win on is the tokens it needs, and a cost per token that does not grow with the context.
+
+Each progress line of a run gives the speed since the line before and the peak memory.
 
 ## Files
 
