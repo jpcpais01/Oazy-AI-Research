@@ -159,6 +159,15 @@ the pilot's own class gave the same on three seeds (depth 8 at 8 readings: 100, 
   12 times: the steps come from the reading, the weights are the same.
 - The control is the same code with the store written from the layer it is read at. From depth 2 on it stays at
   guessing however often it reads. Keep as it was (store after block 2) does the same.
+- The sharpest control (`clock/fb3.py`, Keep as it was with its writes landing at every token): with ONE store it
+  learns depth 1 and guesses from depth 2 on (48 to 62%). With TWO stores it learns the depths it trains on (depth 1,
+  2, 3 at 100%) and stays flat past them: 26 to 36% at depth 4, 6 and 8 at 1 to 12 readings alike. Two stores are a
+  fixed solution of three steps; more reading buys nothing. Only the store written from the top turns further
+  readings into further depth.
+- Silent tokens instead of reading again (`fb3.py`, THINK=1: the story once, k silent tokens after the question,
+  writes at every token): inside the trained range the fed model's depth follows k (depth 3: 21, 64, 96% at k = 1, 2,
+  3), but it goes no deeper than trained and falls apart at more silent tokens than it trained with. Reading again
+  does not: what is already in the store writes nothing.
 - Reading more than needed costs little: 16 readings of a depth-1 chain are still right; the third seed loses a few
   points at 16 readings of the deepest chains.
 - The twin (4 layers, everything in view) had not learned depth 1 in 20 CPU minutes. That is a twin that did not
