@@ -96,13 +96,13 @@ def circuit(i, seed):
         depth = {s: 0 for s in sw}
         parts, said = list(sw), [f"{s.capitalize()} is {'on' if val[s] else 'off'}." for s in sw]
         for k, m in enumerate(ms):
-            if exact:
-                first = parts[-1] if k < exact else r.choice(parts)
+            if exact:                               # past the chain: a machine on an earlier part, so that none is deeper than asked for
+                first = parts[-1] if k < exact else r.choice(parts[:-1])
             else:
                 first = parts[-1] if (k and r.random() < 0.6) else r.choice(parts)
             ins = [first]
             if r.random() < 0.4:
-                ins.append(r.choice([p for p in parts if p != first]))
+                ins.append(r.choice([p for p in (parts[:-1] if exact and k >= exact else parts) if p != first]))
             op = r.choice(["same", "not"]) if len(ins) == 1 else r.choice(["and", "or"])
             xs = [val[p] for p in ins]
             val[m] = {"same": xs[0], "not": not xs[0], "and": all(xs), "or": any(xs)}[op]
@@ -322,8 +322,9 @@ def exam(model: Keep, enc, families, reads_list, n, device, batch=32, seed=0, sa
             for R in res[f][lv]:
                 c = res[f][lv][R]
                 res[f][lv][R] = [c[0], c[1], max(c[2].values())]
-        if say:                                     # all the questions, then the deepest level alone
-            for key in ["all"] + sorted((k for k in res[f] if k != "all"), key=_order)[-1:]:
+        if say:                                     # all the questions, then a middle level and the deepest (of those asked 10 times or more)
+            lvs = sorted((k for k in res[f] if k != "all" and max(c[1] for c in res[f][k].values()) >= 10), key=_order)
+            for key in ["all"] + sorted({lvs[len(lvs) // 2], lvs[-1]}, key=_order) if lvs else ["all"]:
                 row = res[f].get(key, {})
                 say(f"    {f + (', ' + key if key != 'all' else ''):20s} " + "  ".join(f"{R}x {100 * c[0] / max(1, c[1]):.0f}%" for R, c in row.items())
                     + (f"   (commonest answer {100 * max(c[2] for c in row.values()) / max(1, max(c[1] for c in row.values())):.0f}%)" if row else ""))
@@ -412,7 +413,8 @@ def train(arm, preset, th, args, enc, device, out: Path, say):
             log.flush()
         if step in mids:
             say(f"[{arm}] a short exam at {step * B * T / 1e6:.0f}M tokens (share right by times told):")
-            mid = exam(model, enc, args.families, th["exam_reads"][:4], max(8, th["exam_n"] // 4), device, seed=1, say=say)
+            mid = exam(model, enc, args.families, [r for r in (1, 2, 4, 8) if r in th["exam_reads"]] or th["exam_reads"][:4],
+                       max(8, th["exam_n"] // 2), device, seed=1, say=say)
             log.write(json.dumps({"kind": "exam", "step": step, "tokens": step * B * T, "exam": mid}) + "\n")
             log.flush()
             seen = (step, time.time())
