@@ -1,0 +1,11 @@
+# Nov 12: the runs started by hand, in one table (python3 -m keep.round r1 --table). Does the fed model find the loop?
+# c2: the run that did. c6: the same with another seed. c4, c5: the fast layout. c9, c8: the pointer starts neutral.
+# c10, c11: a telling's writes land in order.
+c2:
+c6: --seed 1
+c4: --align 96
+c5: --align 96 --stores 2
+c9: --align 96 --ramp 0.95 --point-bias 0
+c8: --align 96 --point-bias 0
+c10: --align 96 --group 16
+c11: --align 96 --group 16 --seed 1
