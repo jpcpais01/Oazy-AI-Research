@@ -268,8 +268,7 @@ class Store(nn.Module):
         """The chunks, touching only the rows they read and write (see _Rows, _Put). With gradients on, S is copied
         once and the copy written in place; without, S itself is written."""
         B, T, K = idx.shape
-        if torch.is_grad_enabled():
-            S = S.detach().clone()
+        S = S.detach().clone() if torch.is_grad_enabled() else S.contiguous()
         table = _Table(S.view(B * self.rows, self.dv))
         off = torch.arange(B, device=S.device)[:, None, None] * self.rows
         at = torch.stack([idx + off, idx_w + off])                  # (2, B, T, K): the rows read for the model, the rows written
