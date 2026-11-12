@@ -339,6 +339,7 @@ class Keep(nn.Module):
         self.register_buffer("cos", ang.cos(), persistent=False)
         self.register_buffer("sin", ang.sin(), persistent=False)
         self._fast = None                           # the compiled blocks (speed_up)
+        self.muted = set()                          # stores whose reads are thrown away (keep/mute.py: which store carries what)
         self.loss_chunk = 4096                      # tokens per slice of the fused loss (oazy/lmloss.py); 1,024 cost 12 ms more a step
 
     # ------------------------------------------------------------ state
@@ -366,7 +367,8 @@ class Keep(nn.Module):
                 h = run(h, rot[0], rot[1], lo, hi)
             if str(hi) in self.store:
                 r, new[str(hi)], info[str(hi)] = self.store[str(hi)](h, state[str(hi)])
-                h = h + r
+                if hi not in self.muted:
+                    h = h + r
             lo = hi
         return norm(h), new, info
 

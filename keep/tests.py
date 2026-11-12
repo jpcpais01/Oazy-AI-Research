@@ -387,6 +387,36 @@ def the_whole_run():
     assert "| Keep | plain facts |" in rep and "| Twin | Field1 stories |" in rep and "write strength" in rep
     sd = torch.load(out / "t" / "keep" / "ckpt.pt", map_location="cpu", weights_only=False)
     assert sd["done"] and KeepConfig.from_dict(sd["config"]).stores == (2, 4)
+    from . import mute as Mu                       # the saved model again, with stores muted; and a run with one store
+    sys.stdout = quiet
+    try:
+        Mu.main(["--name", "t", "--runs", str(out), "--data", str(TMP / "data"), "--sub", "", "--gaps", "0,128", "--n", "12", "--device", "cpu"])
+        R.main(args[:args.index("--name")] + ["--name", "one", "--only", "keep", "--stores", "4", "--tokens", "3e4", "--exam-n", "12", "--every", "1000"])
+    finally:
+        sys.stdout = old
+    rep = (out / "t" / "mute.md").read_text()
+    assert "| nothing muted |" in rep and "| store after block 2 muted |" in rep and "| all stores muted |" in rep
+    sd = torch.load(out / "one" / "keep" / "ckpt.pt", map_location="cpu", weights_only=False)
+    assert KeepConfig.from_dict(sd["config"]).stores == (4,)
+
+
+@check
+def a_muted_store_is_not_read():
+    """With every store muted nothing passes from one window to the next; with one muted, the other still carries."""
+    _, m = models()
+    x, y, nxt = (torch.randint(1, CFG["vocab_size"], (2, 64)) for _ in range(3))
+    def carried():
+        with torch.no_grad():
+            sa, sb = m.hidden(x, m.init_state(2))[1], m.hidden(y, m.init_state(2))[1]
+            return float((m.hidden(nxt, sa)[0] - m.hidden(nxt, sb)[0]).abs().max())
+    try:
+        assert carried() > 0
+        m.muted = {1}
+        assert carried() > 0
+        m.muted = {1, 3}
+        assert carried() == 0, "a muted store was read"
+    finally:
+        m.muted = set()
 
 
 if __name__ == "__main__":

@@ -99,6 +99,8 @@ What would count:
     OAZY_DATA=/workspace/data OAZY_RUNS=/workspace/runs bash runpod/keep.sh          # ~50M each, 600M tokens each
     bash runpod/keep.sh --preset big --name keep-big                                 # ~120M each, 1.5B tokens each
     bash runpod/keep.sh --only report                                                # examine the saved models again
+    python3 -m keep.mute --name keep                                                 # which store carries the facts: the saved model's exam with stores muted
+    bash runpod/keep.sh --only keep --stores 6 --name keep-one                       # Keep with one store, after block 6
     python3 -m keep.tests                                                            # CPU, about a minute, no data
     python3 -m keep.speedcheck                                                       # GPU, five minutes, no data: where a training step goes
 
@@ -157,4 +159,5 @@ Each progress line of a run gives the speed since the line before and the peak m
 | `data.py` | the streams and the exam sets |
 | `run.py` | trains both models, examines them, writes the report |
 | `speedcheck.py` | tokens per second and memory on this machine |
+| `mute.py` | the saved model examined with stores muted |
 | `tests.py` | the checks |
