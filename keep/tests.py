@@ -377,7 +377,8 @@ def the_whole_run():
     finally:
         sys.stdout = old
     res = json.loads((out / "t" / "results.json").read_text())
-    assert set(res["train"]) == {"keep", "full", "wide"} and set(res["exam"]) == {"keep", "full", "wide", "wide_alone"}
+    assert set(res["train"]) == {"keep", "full", "wide", "mixed"}
+    assert set(res["exam"]) == {"keep", "full", "wide", "wide_alone", "mixed", "mixed_alone"}
     assert (out / "t" / "keep" / "ckpt.pt").stat().st_mtime_ns == when, "a finished model was trained again"
     for arm in R.ROWS:
         assert set(res["exam"][arm]) == {"0", "128", "512"}
@@ -386,6 +387,7 @@ def the_whole_run():
     assert "write" in res["exam"]["wide_alone"]["0"] and "write" not in res["exam"]["wide"]["0"]
     rep = (out / "t" / "report.md").read_text()
     assert "| Keep | plain facts |" in rep and "| Twin | Field1 stories |" in rep and "write strength" in rep
+    assert "| Keep-wide mixed | plain facts |" in rep and "| Keep-wide mixed, stores alone | plain facts |" in rep
     assert "| Keep-wide | plain facts |" in rep and "| Keep-wide, stores alone | Field1 stories |" in rep and "Keep-wide's write strength" in rep
     sd = torch.load(out / "t" / "wide" / "ckpt.pt", map_location="cpu", weights_only=False)
     wide = KeepConfig.from_dict(sd["config"])
@@ -405,6 +407,24 @@ def the_whole_run():
     assert "# Keep-wide: which store" in (out / "t" / "mute-wide.md").read_text()
     sd = torch.load(out / "one" / "keep" / "ckpt.pt", map_location="cpu", weights_only=False)
     assert KeepConfig.from_dict(sd["config"]).stores == (4,)
+
+
+@check
+def the_reach_can_be_cut():
+    """Keep-wide with its reach cut for a step is Keep, weight for weight; with it left alone it sees the whole window."""
+    _, keep = models()
+    wide = Keep(KeepConfig(**CFG, **dict(KEEP, window=0)))
+    wide.load_state_dict(keep.state_dict())
+    x = torch.randint(1, CFG["vocab_size"], (2, 64))
+    with torch.no_grad():
+        far = wide.hidden(x)[0]
+        wide.reach = KEEP["window"]
+        near_, st, _ = wide.hidden(x)
+        want, st_k, _ = keep.hidden(x)
+        wide.reach = None
+        again = wide.hidden(x)[0]
+    assert torch.allclose(near_, want, atol=1e-6) and all(torch.allclose(st[i], st_k[i], atol=1e-6) for i in st)
+    assert float((far - want).abs().max()) > 1e-3 and torch.equal(far, again)
 
 
 @check
