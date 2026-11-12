@@ -39,9 +39,9 @@ PRESETS = {
     "pilot": dict(cfg=dict(d=128, n_layer=4, n_head=4, max_len=256), keep=dict(window=32, stores=(2, 3), side=64, k=8, dv=32, d_addr=32, chunk=32),
                   batch=16, tokens=1.2e7, gap_max=256, gaps=(0, 64, 256, 1024, 4096), exam_n=96, lr=2e-3, asked_weight=4.0, stream=dict(p_scene=1.0, p_ledger=1.0)),
     "base": dict(cfg=dict(d=512, n_layer=8, n_head=8, max_len=1024), keep=dict(window=128, stores=(3, 6), side=128, k=8, dv=64, d_addr=64, chunk=64),
-                 batch=32, tokens=6e8, gap_max=4096, gaps=(0, 512, 2048, 8192, 32768), exam_n=512, lr=8e-4, asked_weight=4.0),
+                 batch=32, tokens=6e8, gap_max=4096, gaps=(0, 512, 2048, 8192, 32768), exam_n=512, lr=6e-4, asked_weight=4.0),
     "big": dict(cfg=dict(d=768, n_layer=12, n_head=12, max_len=1024), keep=dict(window=128, stores=(4, 8, 11), side=256, k=8, dv=64, d_addr=64, chunk=64),
-                batch=32, tokens=1.5e9, gap_max=4096, gaps=(0, 512, 2048, 8192, 32768), exam_n=512, lr=6e-4, asked_weight=4.0),
+                batch=32, tokens=1.5e9, gap_max=4096, gaps=(0, 512, 2048, 8192, 32768), exam_n=512, lr=4e-4, asked_weight=4.0),
 }
 ARMS = ("keep", "full")
 
@@ -286,6 +286,7 @@ def main(argv=None):
     ap.add_argument("--device", default="auto")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args(argv)
+    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")        # the stream workers are forked
     device = torch.device(("cuda" if torch.cuda.is_available() else "cpu") if args.device == "auto" else args.device)
     if device.type == "cuda":
         torch.backends.cuda.matmul.allow_tf32 = True

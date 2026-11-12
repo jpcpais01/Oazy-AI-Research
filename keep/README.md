@@ -36,18 +36,36 @@ Two choices, each made because the version without it failed in a CPU pilot (Nov
   never got a signal to. Stored as "what followed", a place that comes back finds its continuation from the first
   training step.
 
-The token-level pilot (the real model code, 0.5M weights, 8 CPU minutes, `/mnt/project-files/reads-by-learning/`):
-facts [name value], filler, then [? name] and the value is asked. Trained on gaps up to 64 tokens, each batch from
-an empty store. Chance is 6%.
+## What the CPU pilots show
+
+One seed each, tiny models, hours not days: a reason to run the real test, not a result to quote. All numbers and
+scripts: `/mnt/project-files/reads-by-learning/night3-results.txt`.
+
+**Real text** (`--preset pilot`: 1.3M weights each, 12M tokens, plain-English facts with WikiText between, trained on
+gaps up to 256 tokens). Plain facts answered right, 132 questions on scenes never trained on, guessing = 25%:
+
+| Gap of WikiText tokens | 0 | 64 | 256 | 1,024 | 4,096 |
+|---|---|---|---|---|---|
+| Keep (attention reaches 32 tokens; answers from the stores alone) | 75.8% | 74.2% | 77.3% | 75.8% | 74.2% |
+| Twin (attention over the whole 256-token window) | 29.5% | 30.3% | out of view | out of view | out of view |
+
+- Keep holds flat out to 16 times the longest gap it trained on.
+- The twin, with the story in full view, had not learned to look a fact up at all in 12M tokens. Keep was at 68%
+  after 3M. The store does not only keep: it makes looking things up easy to learn.
+- Keep writes about as hard on ordinary text as on the facts. Nothing is gated: the facts survive because the text
+  is written elsewhere.
+
+**Token-level** (the same model code, 0.5M weights, 8 CPU minutes: facts [name value], random filler, then [? name]).
+Trained on gaps up to 64, each batch from an empty store; guessing = 6%:
 
 | Gap of filler tokens | 0 | 64 | 1,024 | 4,096 |
 |---|---|---|---|---|
-| Keep, loss on the answers (attention reaches 8 tokens, answers from the stores alone) | 99.2% | 98.7% | 98.9% | 98.4% |
+| Keep, loss on the answers only | 99.2% | 98.7% | 98.9% | 98.4% |
 | Keep, loss on every token | 92.9% | 93.3% | 93.8% | 94.0% |
 | Plain transformer, same size, story in view, 2.5x the training steps | 36% | 36% | out of view | out of view |
 
-Keep was at 97% after 300 training steps. Its write strength fell from 1.0 to about 0.2 by itself: it learned to
-write little, with no penalty on writing. One seed each; the table is in `night3-results.txt` there.
+What is NOT shown yet: anything at real scale, gaps past 4,096, reasoning (Field1) after a gap, and what happens when
+the store has to hold far more than a scene or two.
 
 ## The experiment
 

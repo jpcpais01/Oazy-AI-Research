@@ -104,7 +104,7 @@ class Block(nn.Module):
         B, T, D = x.shape
         q, k, v = self.qkv(norm(x)).view(B, T, 3, self.h, D // self.h).permute(2, 0, 3, 1, 4)
         hd = D // self.h
-        q, k = _rotate(F.rms_norm(q, (hd,), self.qn), rot), _rotate(F.rms_norm(k, (hd,), self.kn), rot)
+        q, k = _rotate(F.rms_norm(q, (hd,), self.qn), rot).to(v.dtype), _rotate(F.rms_norm(k, (hd,), self.kn), rot).to(v.dtype)
         if mask is None:
             a = F.scaled_dot_product_attention(q, k, v, is_causal=True)
         else:

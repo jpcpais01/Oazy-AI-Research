@@ -223,7 +223,7 @@ def exam_set(enc, text: Text, gap: int, n: int, q_max: int = 320, seed: int = 0)
         sc = scene(f, r, (EXAM_SEED, seed))
         story = [eot] + enc.encode_ordinary(sc["story"])
         lens.append(len(story))
-        pre.append(story + filler(rng, text, eot, gap))
+        pre.append(np.array(story + filler(rng, text, eot, gap), dtype=np.int64))
         b = [eot]
         for j, (lead, a, ch, kind) in enumerate(sc["lines"]):
             ask = enc.encode_ordinary(("\n" if j else "") + lead)
@@ -241,7 +241,8 @@ def exam_set(enc, text: Text, gap: int, n: int, q_max: int = 320, seed: int = 0)
     spans = np.empty((n, 2), dtype=np.int64)
     for r, p in enumerate(pre):
         pad = P - len(p)
-        prefix[r] = filler(rng, text, eot, pad) + p
+        prefix[r, :pad] = filler(rng, text, eot, pad)
+        prefix[r, pad:] = p
         spans[r] = (pad, pad + lens[r])
     Q = max(len(b) for b in blocks)
     block = np.full((n, Q), eot, dtype=np.int64)
