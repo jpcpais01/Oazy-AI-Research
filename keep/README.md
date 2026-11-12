@@ -123,6 +123,64 @@ that run and `keep.load` on it say.
 
 What is NOT shown yet: more than one seed, a larger model, a book held.
 
+## Written from the top: reading again as thinking
+
+Keep holds what it read. It does not reason any deeper than its twin, and it cannot: a transformer is feed-forward.
+What its last layer works out at one token reaches the first layers of a later token only as a word that was said,
+so the number of steps it can take on a question is the number of its layers. A store that is read and written at
+one layer does not change that: one lookup per store and per pass, however long the model reads.
+
+`KeepConfig(feed=True)` changes one wire. The store is still read where it stands, low in the stack, but it is
+written from the **top**: at token t, under the address the reading layer made at token t - 1, goes what the last
+layer says at t. Now the first layers of every later token read what the whole stack concluded before. Every further
+token read is one more turn of the whole stack, and **reading a story again is thinking about it**: the number of
+steps is set by the reading time, not by the layers and not by the training.
+
+The pilot (`/mnt/project-files/clock/fb.py`, `fb2.py`; CPU, 0.46M weights, 4 layers, attention over 8 tokens, one
+store of 256 rows): facts `name what .` in random order, where `what` is a value or another name whose value it then
+has; the story is read R times; then `? name` is asked. A chain of depth d in the worst order needs d readings.
+Training: depth 1 to 3, read depth or depth + 1 times. Share right (%), guessing among the values said is ~40%:
+
+| Depth | Model | read 1x | 2x | 3x | 4x | 6x | 8x | 12x | 16x |
+|---|---|---|---|---|---|---|---|---|---|
+| 3 (trained) | written from the top | 43 | 63 | 96 | 100 | 100 | 100 | 100 | |
+| 3 | control: written where it is read | 63 | 51 | 56 | 54 | 54 | 50 | 58 | 55 |
+| 4 | written from the top | 56 | 64 | 79 | 97 | 100 | 100 | 100 | |
+| 6 | written from the top | 52 | 57 | 73 | 80 | 98 | 100 | 98 | |
+| 8 | written from the top | 47 | 63 | 75 | 76 | 94 | 100 | 99 | |
+| 8 | control: written where it is read | 55 | 69 | 65 | 49 | 64 | 55 | 48 | 50 |
+| 12 | written from the top (third seed) | 36 | 45 | 67 | 68 | 81 | 88 | 95 | 91 |
+| 12 | control: written where it is read | 49 | 48 | 48 | 51 | 48 | 50 | 49 | 53 |
+
+The rows "written from the top" at depth 3 to 8 are `keep/model.py` itself (`TASK=chains python3 fb2.py feed 1200`);
+the pilot's own class gave the same on three seeds (depth 8 at 8 readings: 100, 100, 93).
+
+- It was trained on chains of at most 3 and on at most 4 readings. Depth 8 and 12 are followed when it reads 8 and
+  12 times: the steps come from the reading, the weights are the same.
+- The control is the same code with the store written from the layer it is read at. From depth 2 on it stays at
+  guessing however often it reads. Keep as it was (store after block 2) does the same.
+- Reading more than needed costs little: 16 readings of a depth-1 chain are still right; the third seed loses a few
+  points at 16 readings of the deepest chains.
+- The twin (4 layers, everything in view) had not learned depth 1 in 20 CPU minutes. That is a twin that did not
+  converge, not evidence about transformers.
+
+`KeepConfig(point=J)`: the top may file its write under the address of any of the J tokens before it, not only the
+last one (it starts at the last one). A conclusion that is only known at the end of a sentence ("the lamp is on when
+the buzzer is on": the lamp's state is known after the buzzer was looked up) has to be filed under its subject, which
+stood at the sentence's start.
+
+What is NOT shown: anything on real text, anything at size, a converged plain baseline, a second kind of task done
+to the end (logic circuits, the skeleton of Field1's "switches", are learned more slowly: `fb2.py`). The wire is
+the one of the Feedback Transformer (Fan et al., 2020), and looped language models (Ouro, 2025) buy depth with passes
+too; they report that running more passes than trained makes them worse. What is different here: the way back goes
+through an addressed store that is rewritten by its own error (a conclusion that is already there writes nothing),
+training stays parallel inside a chunk, and the depth reached is 4 times the depth trained.
+
+`python3 -m keep.think` is that experiment on real text and at size: the two Field1 families that are chains of
+rules told in any order (switches by depth, rules by hops; `--families` takes others), each scene told 1 to 4 times,
+the three models, the exam by level and by 1 to 8 tellings. Gnosis (300M, 1.8B tokens) guessed on switches at every
+depth.
+
 ## The experiment
 
 Both models read the same endless streams (`data.py`): a scene told once, G tokens of ordinary Opal text, then the
@@ -162,6 +220,8 @@ What would count:
     python3 -m keep.load --name keep                                                 # how much it holds at once: books of 8 to 2,048 facts, the saved models, no training
     python3 -m keep.mute --name keep                                                 # which store carries the facts: the saved model's exam with stores muted
     bash runpod/keep.sh --only keep --stores 6 --name keep-one                       # Keep with one store, after block 6
+    bash runpod/think.sh                                                             # reasoning by reading again: feed, keep, twin on Field1 scenes told 1 to 4 times (no data folder needed)
+    bash runpod/think.sh --only feed                                                 # one of the three (feed, keep, full); they can train side by side
     python3 -m keep.tests                                                            # CPU, about a minute, no data
     python3 -m keep.speedcheck                                                       # GPU, five minutes, no data: where a training step goes
 
@@ -215,11 +275,12 @@ Each progress line of a run gives the speed since the line before and the peak m
 
 | File | What |
 |---|---|
-| `model.py` | `Keep`, `KeepConfig`, `Store` (address, read, delta-rule write) |
+| `model.py` | `Keep`, `KeepConfig`, `Store` (address, read, delta-rule write; `feed`: written from the top, `point`: where the top files it) |
 | `ledger.py` | the plain-fact scenes |
 | `data.py` | the streams and the exam sets |
 | `run.py` | trains the models, examines them, writes the report |
 | `speedcheck.py` | tokens per second and memory on this machine |
 | `mute.py` | the saved model examined with stores muted |
 | `load.py` | the saved models told books of 8 to 2,048 facts: how much the stores hold at once |
+| `think.py` | reasoning by reading again: Field1 scenes told several times, the fed model, Keep and the twin, the exam by level and by tellings |
 | `tests.py` | the checks |

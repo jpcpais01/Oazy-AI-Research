@@ -496,6 +496,152 @@ def a_muted_store_is_not_read():
         m.muted = set()
 
 
+FEED = dict(window=8, stores=(1,), side=8, k=4, dv=8, d_addr=8, chunk=8, feed=True)
+
+
+def fed(**over):
+    torch.manual_seed(0)
+    m = Keep(KeepConfig(**CFG, **{**FEED, **over}))
+    for p in m.parameters():
+        if float(p.abs().sum()) == 0:
+            torch.nn.init.normal_(p, std=0.05)
+    return m.eval()
+
+
+@check
+def a_chunk_at_a_time_is_the_block():
+    """The blocks run chunk by chunk, each handed the keys and values still in reach, give what they give on the whole
+    sequence: with a window and without, at a chunk size that divides nothing."""
+    from .model import _step
+    for win in (8, 0):
+        torch.manual_seed(0)
+        m = Keep(KeepConfig(**CFG, window=win))
+        for p in m.parameters():
+            if float(p.abs().sum()) == 0:
+                torch.nn.init.normal_(p, std=0.05)
+        x = torch.randint(1, CFG["vocab_size"], (2, 61))
+        with torch.no_grad():
+            want = m.hidden(x)[0]
+            past, outs = [None] * len(m.blocks), []
+            for a in range(0, 61, 7):
+                h = norm(m.emb(x[:, a:a + 7]))
+                n = h.size(1)
+                for l, blk in enumerate(m.blocks):
+                    h, past[l] = _step(blk, h, (m.cos[a:a + n], m.sin[a:a + n]), past[l], win)
+                outs.append(norm(h))
+                assert win == 0 or past[0][0].size(2) <= win - 1, "more keys were kept than are in reach"
+        assert torch.allclose(torch.cat(outs, 1), want, atol=1e-5)
+
+
+@check
+def the_top_writes_the_store():
+    """feed: only the past is seen; the store holds what the LAST block says (plain Keep's does not depend on it);
+    a chunk reads what the chunks before wrote and not its own writes; a later chunk's loss teaches the writes."""
+    m = fed()
+    x = torch.randint(1, CFG["vocab_size"], (2, 64))
+    y = x.clone()
+    y[:, 40] = (y[:, 40] + 1) % CFG["vocab_size"]
+    with torch.no_grad():
+        a, sa, wa = m.hidden(x, m.init_state(2))
+        b = m.hidden(y, m.init_state(2))[0]
+    assert float((a[:, :40] - b[:, :40]).abs().max()) == 0 and float((a[:, 40:] - b[:, 40:]).abs().max()) > 0
+    assert wa["1"].shape == (2, 64) and float(wa["1"][:, 0].abs().max()) == 0 and float(wa["1"][:, 1:].min()) > 0, "the first token writes nothing"
+    plain = Keep(KeepConfig(**CFG, **{**FEED, "feed": False})).eval()
+    plain.load_state_dict(m.state_dict())
+    def store_after(model, bump):
+        last = model.blocks[-1].down.weight
+        keep_ = last.detach().clone()
+        with torch.no_grad():
+            last.add_(bump)
+            st = model.hidden(x, model.init_state(2))[1]["1"]
+            last.copy_(keep_)
+        return st
+    assert float((store_after(m, 0.0) - store_after(m, 0.3)).abs().max()) > 1e-4, "the store does not hold what the top says"
+    assert float((store_after(plain, 0.0) - store_after(plain, 0.3)).abs().max()) == 0
+    with torch.no_grad():                           # the first chunk reads an empty store: as if the store were muted
+        m.muted = {1}
+        dumb = m.hidden(x, m.init_state(2))[0]
+        m.muted = set()
+    assert float((a[:, :8] - dumb[:, :8]).abs().max()) == 0 and float((a[:, 8:] - dumb[:, 8:]).abs().max()) > 0
+    m.train()
+    val = m.store["1"].val.weight
+    for sl, some in ((slice(0, 8), False), (slice(56, 64), True)):
+        m.zero_grad()
+        m.hidden(x, m.init_state(2))[0][:, sl].square().sum().backward()
+        assert (val.grad is not None and float(val.grad.abs().sum()) > 0) == some, "which reads teach the writes"
+
+
+@check
+def the_top_points():
+    """point: the top files its write under one of the tokens before it. Sure of the token before, it is the plain
+    fed store; pointing elsewhere it is not; the pointer is taught by what later reads need."""
+    m, p = fed(), fed(point=5)
+    p.load_state_dict(m.state_dict(), strict=False)
+    x = torch.randint(1, CFG["vocab_size"], (2, 64))
+    st = p.store["1"]
+    assert st.pb.shape == (5,) and float(st.pb.softmax(0)[0]) > 0.7, "it starts at the token before"
+    with torch.no_grad():
+        want = m.hidden(x, m.init_state(2))
+        st.pb.copy_(torch.tensor([60.0, 0, 0, 0, 0]))
+        st.pq.weight.zero_()
+        got = p.hidden(x, p.init_state(2))
+        assert torch.allclose(got[0], want[0], atol=1e-4) and torch.allclose(got[1]["1"], want[1]["1"], atol=1e-4)
+        st.pb.copy_(torch.tensor([0.0, 0, 60.0, 0, 0]))
+        far = p.hidden(x, p.init_state(2))
+        assert float((far[1]["1"] - want[1]["1"]).abs().max()) > 1e-3
+        assert float(far[2]["1"][:, 0].abs().max()) == 0 and float(far[2]["1"][:, 1:].min()) > 0, "only the first token has no token before it"
+        st.pb.copy_(torch.tensor([3.0, 0, 0, 0, 0]))
+        torch.nn.init.normal_(st.pq.weight, std=0.1)
+    p.train()
+    p.hidden(x, p.init_state(2))[0][:, 32:].square().sum().backward()
+    assert all(float(g.grad.abs().sum()) > 0 for g in (st.pq.weight, st.pk.weight, st.pb))
+
+
+@check
+def thinking_runs():
+    """keep.think: scenes told again and again, a scene never across two windows, the three models, the exam by
+    level and by times told."""
+    from . import think as Th
+    rows = Th.Rows(ENC, 3, 512, 0, ["switches", "rules"], 3)
+    eot = ENC.eot_token
+    for _ in range(4):
+        w, what = rows.next()
+        for r in range(3):
+            first = [i for i in range(512) if what[r, i] != D.TEXT]
+            assert not first or (what[r, first[0]] == D.STORY and w[r, first[0]] == eot), "a window begins inside a scene"
+            assert all(w[r, i] == eot for i in range(512) if what[r, i] == D.TEXT)
+    told = Th.scene_tokens(ENC, "switches", 0, "t", 3, 1 << 20)
+    one = Th.scene_tokens(ENC, "switches", 0, "t", 1, 1 << 20)
+    story, sep, lines = Th.told(ENC, "switches", 0, "t")
+    assert told[3] == 3 and len(told[0]) - len(one[0]) == 2 * (len(story) + len(sep)) and told[0][-5:] == one[0][-5:]
+    assert Th.scene_tokens(ENC, "switches", 0, "t", 3, len(one[0]) + 5)[3] == 1, "told fewer times when there is no room"
+    for p, cands, right, lv, a in told[2]:
+        assert told[0][p + 1] == cands[right] and lv.startswith("depth ")
+    out = TMP / "runs"
+    args = ["--preset", "tiny", "--device", "cpu", "--workers", "0", "--runs", str(out), "--name", "th", "--tokens", "4e4",
+            "--families", "switches,rules", "--every", "1000"]
+    quiet = open(os.devnull, "w")
+    old, sys.stdout = sys.stdout, quiet
+    try:
+        Th.main(args)
+        when = (out / "th" / "feed" / "ckpt.pt").stat().st_mtime_ns
+        Th.main(args + ["--only", "report"])
+    finally:
+        sys.stdout = old
+    assert (out / "th" / "feed" / "ckpt.pt").stat().st_mtime_ns == when
+    res = json.loads((out / "th" / "think.json").read_text())
+    assert set(res["exam"]) == {"feed", "keep", "full"} and set(res["exam"]["feed"]) == {"switches", "rules"}
+    cell = res["exam"]["feed"]["switches"]["all"]
+    assert set(cell) == {"1", "2", "3"} and all(0 <= c[0] <= c[1] and c[2] <= c[1] and c[1] > 0 for c in cell.values())
+    assert any(k.startswith("depth ") for k in res["exam"]["full"]["switches"]) and any(k.startswith("hops ") for k in res["exam"]["keep"]["rules"])
+    sd = torch.load(out / "th" / "feed" / "ckpt.pt", map_location="cpu", weights_only=False)
+    cfg = KeepConfig.from_dict(sd["config"])
+    assert cfg.feed and cfg.point == 4 and cfg.stores == (1,) and not KeepConfig.from_dict(
+        torch.load(out / "th" / "keep" / "ckpt.pt", map_location="cpu", weights_only=False)["config"]).feed
+    rep = (out / "th" / "think.md").read_text()
+    assert "## switches" in rep and "| depth 1 | Keep, stores written from the top |" in rep and "| all | Twin |" in rep and "told 3x" in rep
+
+
 if __name__ == "__main__":
     print(f"\n{len(PASSED)} passed, {len(FAILED)} failed" + (": " + ", ".join(FAILED) if FAILED else ""))
     sys.exit(1 if FAILED else 0)

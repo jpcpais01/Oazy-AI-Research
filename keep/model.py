@@ -41,6 +41,22 @@ land together when it ends (two tokens of a chunk on one row share it). The atte
 Gradients flow through the store inside one training window (later reads teach earlier writes); between windows the
 store is carried on, detached.
 
+FEED (KeepConfig(feed=True)): the store is read where it stands (low in the stack) and written from the TOP.
+A transformer is feed-forward: what its last layer works out at one token reaches the first layers of a later token
+only as a word that was said. A store read and written at one layer does not change that (one lookup per store and
+pass). Written from the top, it does: the first layers of every later token read what the whole stack concluded
+before, so each further token read is one more turn of the whole stack, and reading a story again is thinking about
+it: a chain of d facts told in any order is followed after d readings, whatever the number of layers
+(/mnt/project-files/clock/fb.py: trained on depth 1..3, 100% at depth 8 after 8 readings, 457k weights; the same
+model written from its reading layer stays at guessing from depth 2 on).
+    write     at token t, under the address the reading layer made at token t - 1 (as before), the value
+              val(top_t) and the strength from top_t.
+    point     (KeepConfig(point=J)) the top chooses under which of the J tokens before it its write goes: a
+              statement's conclusion is filed under the place of the thing it is about, wherever that stood in the
+              statement. It starts at the token before.
+The window is then taken chunk by chunk through the whole stack (the reads of a chunk need what the top said in the
+chunks before), each block keeping the keys and values of the tokens still in reach.
+
     model = Keep(KeepConfig(window=128, stores=(3, 6)))       # the twin: KeepConfig()
     state = model.init_state(batch)
     loss, state, info = model.loss(x, y, state)               # state: carry it to the next window of the same streams
@@ -71,6 +87,8 @@ class KeepConfig:
     d_addr: int = 64            # width of the address vector (split in two halves for the product key)
     chunk: int = 64             # tokens whose writes land together
     read: str = "rows"          # "rows": a token reads the k rows of its address; "soft": every row, weighted by its score
+    feed: bool = False          # the stores are written from the top of the stack (what the last layer says), not from the layer they are read at
+    point: int = 0              # feed: the top files a write under the place of one of this many tokens before it (0: the token before)
     write_cost: float = 0.0     # added to the loss: this x the mean write strength (beta, 0..2) over the stores (0: it closed the stores)
     tokenizer: str = "smollm2"
 
@@ -114,6 +132,26 @@ class Block(nn.Module):
             a = near(q, k, v, window)
         x = x + self.o(a.transpose(1, 2).reshape(B, T, D))
         return x + self.down(F.relu(self.up(norm(x))).square())
+
+
+def _step(blk: Block, x, rot, past, window: int):
+    """A block on a chunk of new tokens, given the rotated keys and the values of the tokens before it that are still
+    in reach (past = (k, v), each (B, H, c, hd), or None). The same numbers as the block on the whole sequence.
+    -> the chunk after the block, the keys and values to hand to the next chunk."""
+    B, n, D = x.shape
+    q, k, v = blk.qkv(norm(x)).view(B, n, 3, blk.h, D // blk.h).permute(2, 0, 3, 1, 4)
+    hd = D // blk.h
+    q, k = _rotate(F.rms_norm(q, (hd,), blk.qn), rot).to(v.dtype), _rotate(F.rms_norm(k, (hd,), blk.kn), rot).to(v.dtype)
+    if past is not None:
+        k, v = torch.cat([past[0], k], 2), torch.cat([past[1], v], 2)
+    c = k.size(2) - n
+    i = torch.arange(n, device=x.device)[:, None] + c
+    j = torch.arange(c + n, device=x.device)[None, :]
+    mask = (j <= i) & ((i - j < window) if window else (j >= 0))
+    a = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+    x = x + blk.o(a.transpose(1, 2).reshape(B, n, D))
+    keep = k.size(2) if not window else min(k.size(2), window - 1)
+    return x + blk.down(F.relu(blk.up(norm(x))).square()), (k[:, :, k.size(2) - keep:], v[:, :, v.size(2) - keep:])
 
 
 def near(q, k, v, W: int):
@@ -232,6 +270,13 @@ class Store(nn.Module):
         # there to be used (a linear probe found it 93% of the time) but too faint to learn from before the layers
         # under it had drifted; started here, the token-level pilot answered 89% right after 50 steps
         nn.init.normal_(self.out.weight, std=cfg.dv ** -0.5)
+        self.point = cfg.point if cfg.feed else 0
+        if self.point:
+            # the top points at one of the `point` tokens before it; a write goes under that token's address.
+            # It starts at the token before (the plain "what followed"), and learns to reach back.
+            self.pq = nn.Linear(cfg.d, cfg.d_addr, bias=False)
+            self.pk = nn.Linear(cfg.d, cfg.d_addr, bias=False)
+            self.pb = nn.Parameter(torch.tensor([3.0] + [0.0] * (self.point - 1)))
         self.top = min(cfg.k, cfg.side)             # the k best rows lie among the k best of each half-key
         self.sparse = True                          # False: the whole table inside autograd (the reference; slow)
 
@@ -289,6 +334,57 @@ class Store(nn.Module):
             else:
                 out, S = self._sparse(S, idx, w, idx_w, w_w, coef, v, beta)
             return self.out(out).to(h.dtype), S, beta.squeeze(-1)
+
+    # ---- feed: the read and the write are apart (the read where the store stands, the write after the top)
+    def look(self, h, S):
+        """A chunk at the store's layer: h (B, n, D) -> what the reads bring (B, n, D), and what the writes will need
+        of these tokens: their rows (B, n, K), weights (B, n, K) and, for the pointer, their keys (B, n, d_addr)."""
+        with torch.autocast(h.device.type, enabled=False):
+            hn = norm(h.float())
+            B, n, _ = hn.shape
+            idx, w = self.address(*self.scores(hn))
+            K = idx.size(-1)
+            g = idx.reshape(B, n * K)[..., None].expand(-1, -1, self.dv)
+            r = (w[..., None] * S.gather(1, g).view(B, n, K, self.dv)).sum(2)
+            return self.out(r).to(h.dtype), (idx, w, self.pk(hn) if self.point else None)
+
+    def file(self, top, S, new, old):
+        """The writes of a chunk, after the top: top (B, n, D) the final vectors of the chunk's tokens; new / old:
+        what look() gave for these tokens / for the tokens before them (old may be None at the start of a window: then
+        the first token writes nothing). -> the store after the writes, the write strengths (B, n)."""
+        with torch.autocast(top.device.type, enabled=False):
+            top = top.float()
+            B, n, _ = top.shape
+            cat = (lambda a, b: b if a is None else torch.cat([a, b], 1))
+            idx, w = (cat(old[i] if old is not None else None, new[i]) for i in (0, 1))
+            c = idx.size(1) - n                                      # how many tokens stand before this chunk
+            K = idx.size(-1)
+            beta = 2 * torch.sigmoid(self.gate(top))
+            t = torch.arange(n, device=top.device) + c              # each token's place among [old, new]
+            if self.point:
+                keys = cat(old[2] if old is not None else None, new[2])
+                J = self.point
+                pos = t[:, None] - torch.arange(1, J + 1, device=top.device)[None, :]      # (n, J): the J tokens before
+                ok = pos >= 0
+                pc = pos.clamp(min=0)
+                sc = torch.einsum("bnd,bnjd->bnj", self.pq(top), keys[:, pc]) / math.sqrt(keys.size(-1)) + self.pb
+                pi = sc.masked_fill(~ok, -1e9).softmax(-1) * ok.any(-1, keepdim=True)
+                iw = idx[:, pc].reshape(B, n, J * K)
+                ww = (pi[..., None] * w[:, pc]).reshape(B, n, J * K)
+                live = pi[..., None].expand(-1, -1, -1, K).reshape(B, n * J * K)       # how much of a write each row gets
+            else:
+                ok = (t >= 1)[None, :, None].to(w.dtype)
+                iw, ww = idx[:, (t - 1).clamp(min=0)], w[:, (t - 1).clamp(min=0)] * ok
+                live = ok.expand(B, -1, K).reshape(B, n * K)
+            R = iw.size(-1)
+            v = self.val(top)
+            gi = iw.reshape(B, n * R)[..., None].expand(-1, -1, self.dv)
+            was = (ww[..., None] * S.gather(1, gi).view(B, n, R, self.dv)).sum(2)          # what the store said would come
+            flat = iw.reshape(B, n * R)
+            hits = torch.zeros(B, self.rows, device=S.device).scatter_add_(1, flat, live.detach()).gather(1, flat).view(B, n, R)   # writes that share a row share it
+            coef = ww / (ww * ww).sum(-1, keepdim=True).clamp_(min=1e-12) / hits.clamp_(min=1.0)
+            upd = (coef[..., None] * (beta * (v - was))[:, :, None, :]).reshape(B, n * R, self.dv)
+            return S.scatter_add(1, gi, upd), beta.squeeze(-1) * (ww.sum(-1) > 0)
 
     def _sparse(self, S, idx, w, idx_w, w_w, coef, v, beta):
         """The chunks, touching only the rows they read and write (_chunks, _Loop). With gradients on, S is copied
@@ -361,6 +457,8 @@ class Keep(nn.Module):
         B, T = x.shape
         if self.store and state is None:
             state = self.init_state(B, x.device)
+        if self.cfg.feed and self.store:
+            return self._fed(x, state)
         rot = (self.cos[:T], self.sin[:T])
         h = norm(self.emb(x))
         new, info = {}, {}
@@ -376,6 +474,37 @@ class Keep(nn.Module):
                     h = h + r
             lo = hi
         return norm(h), new, info
+
+    def _fed(self, x, state):
+        """hidden() for feed: chunk after chunk through the whole stack. A chunk's reads see the stores as the chunks
+        before left them; its writes are made from its final vectors and land when it ends."""
+        B, T = x.shape
+        ch, win = self.cfg.chunk, self.cfg.window
+        S = dict(state)
+        past = [None] * len(self.blocks)
+        old = {i: None for i in self.store}
+        back = max(1, self.cfg.point)                                 # how many tokens before a chunk its writes may be filed under
+        outs, beta = [], {i: [] for i in self.store}
+        for a in range(0, T, ch):
+            b = min(T, a + ch)
+            rot = (self.cos[a:b], self.sin[a:b])
+            h = norm(self.emb(x[:, a:b]))
+            new = {}
+            for l, blk in enumerate(self.blocks):
+                h, past[l] = _step(blk, h, rot, past[l], win)
+                i = str(l + 1)
+                if i in self.store:
+                    r, new[i] = self.store[i].look(h, S[i])
+                    if l + 1 not in self.muted:
+                        h = h + r
+            h = norm(h)
+            outs.append(h)
+            for i, st in self.store.items():
+                S[i], bt = st.file(h, S[i], new[i], old[i])
+                beta[i].append(bt)
+                both = [n_ if o is None or n_ is None else torch.cat([o, n_], 1) for o, n_ in zip(old[i] or (None, None, None), new[i])]
+                old[i] = tuple(None if t is None else t[:, -back:] for t in both)
+        return torch.cat(outs, 1), S, {i: torch.cat(v, 1) for i, v in beta.items()}
 
     def _segment(self, h, cos, sin, lo: int, hi: int, window: int):
         for blk in self.blocks[lo:hi]:
