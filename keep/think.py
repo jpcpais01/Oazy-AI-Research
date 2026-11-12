@@ -58,10 +58,12 @@ THINK = {
     # base, big: as the pilots that worked, scaled to sentences: attention reaches about three sentences (32 tokens: a scene is
     # NOT in view, so what is known of it has to go through the stores), a chunk is one or two (16), windows of 512 (a scene told
     # 5 times fits), small stores (a window's scenes need few rows; the fed tables are dense), many rows a step (a fed step is
-    # 32 chunks one after the other, so its speed comes from the batch)
-    "base": dict(cfg=dict(max_len=512), keep=dict(window=32, side=64), feed=dict(stores=(2, 5), point=16, chunk=16), batch=128, tokens=3e8, reads=4,
+    # 32 chunks one after the other, so its speed comes from the batch: a fed step is some 100,000 small operations whatever
+    # the batch, 23k tok/s at 64 rows on a 5090. An address of 4 rows and values of 32 numbers, as in the pilots, keep the
+    # fed tables at about 0.07 GB a row instead of 0.2)
+    "base": dict(cfg=dict(max_len=512), keep=dict(window=32, side=64, k=4, dv=32), feed=dict(stores=(2, 5), point=16, chunk=16), batch=128, tokens=3e8, reads=4,
                  exam_n=600, exam_reads=(1, 2, 3, 4, 6, 8, 12)),
-    "big": dict(cfg=dict(max_len=512), keep=dict(window=32, side=64), feed=dict(stores=(3, 7), point=16, chunk=16), batch=128, tokens=8e8, reads=4,
+    "big": dict(cfg=dict(max_len=512), keep=dict(window=32, side=64, k=4, dv=32), feed=dict(stores=(3, 7), point=16, chunk=16), batch=128, tokens=8e8, reads=4,
                 exam_n=600, exam_reads=(1, 2, 3, 4, 6, 8, 12)),
 }
 TRAIN_SEED, EXAM_SEED = "think-train", "think-exam"
