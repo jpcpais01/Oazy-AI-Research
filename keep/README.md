@@ -100,7 +100,7 @@ What would count:
     bash runpod/keep.sh --preset big --name keep-big                                 # ~120M each, 1.5B tokens each
     bash runpod/keep.sh --only report                                                # examine the saved models again
     python3 -m keep.tests                                                            # CPU, about a minute, no data
-    python3 -m keep.speedcheck                                                       # GPU, two minutes, no data: tokens per second, one line per speed change
+    python3 -m keep.speedcheck                                                       # GPU, five minutes, no data: where a training step goes
 
 While it trains it prints the loss on the question blocks ("asked": the questions' own wording is part of it, so
 read it next to the twin's), a short exam at 25, 50 and 75%, and the report at the end (`<runs>/keep/report.md`, `results.json`). The report also gives Keep's write strength on the stories and on the
@@ -121,8 +121,9 @@ gives the same numbers as before):
 - **The blocks are compiled** (`torch.compile`, as in Bee6; `--compile 0` turns it off; if it fails the run says so
   and goes on plain).
 
-Not measured on a GPU yet: `python3 -m keep.speedcheck` prints tokens per second and peak memory with each change on
-and off. Each progress line of a run now gives the speed since the line before and the peak memory.
+Measured on the H200: 195k before, 238k after, so the larger part of the step lies elsewhere.
+`python3 -m keep.speedcheck` splits a step into the blocks, the stores and the scores over the words (`--old` adds a
+line per change above, turned off). Each progress line of a run now gives the speed since the line before and the peak memory.
 
 ## Files
 
