@@ -743,6 +743,36 @@ def thinking_runs():
     assert "## switches" in rep and "| depth 1 | Keep, stores written from the top |" in rep and "| all | Twin |" in rep and "told 3x" in rep
 
 
+@check
+def a_round_runs_alone():
+    """keep/round.py: the runs of a round file are trained without anyone watching, a run already examined is not
+    trained again, a run that dies does not stop the others, and one table says what each learned."""
+    from . import round as Rd
+    out = TMP / "runs"                                  # thinking_runs left the run "tha" there, examined
+    tiny = "--preset tiny --device cpu --workers 0 --tokens 2e4 --every 1000 --exam-n 6 --align 160"
+    f = TMP / "rt.txt"
+    f.write_text(f"# A round of three.\n# Second line.\ntha: {tiny}\nthb: {tiny} --point-bias 0\nthc: {tiny} --no-such-option 1\n")
+    assert Rd.read_round(f) == ("A round of three. Second line.", [("tha", tiny), ("thb", tiny + " --point-bias 0"), ("thc", tiny + " --no-such-option 1")])
+    when = (out / "tha" / "feed" / "ckpt.pt").stat().st_mtime_ns
+    old, sys.stdout = sys.stdout, open(os.devnull, "w")
+    try:
+        Rd.main([str(f), "--runs", str(out), "--settle", "0", "--poll", "0.5"])
+    finally:
+        sys.stdout = old
+    assert (out / "tha" / "feed" / "ckpt.pt").stat().st_mtime_ns == when, "a run already examined is not trained again"
+    assert torch.load(out / "thb" / "feed" / "ckpt.pt", map_location="cpu", weights_only=False)["config"]["point_bias"] == 0
+    tb = (out / "round-rt.md").read_text()
+    rows = {ln.split("|")[1].strip(): [c.strip() for c in ln.split("|")[2:-1]] for ln in tb.splitlines() if ln.startswith("| th")}
+    assert rows["tha"][0] == rows["thb"][0] == "done" and rows["thc"][0].startswith("failed"), rows
+    assert rows["thb"][1].isdigit() and rows["thb"][3].count("/") == 2 and rows["thb"][4] in ("LOOP", "partly", "fixed steps", "lookup"), rows
+    assert "2 done, 1 failed." in tb and "- thb: `" in tb and "A round of three." in tb
+    row = lambda *v: {str(r): [x, 100, 55] for r, x in zip((1, 4, 8, 12), v)}
+    assert Rd.verdict({"depth 4": row(54, 99, 100, 99), "depth 8": row(62, 85, 99, 99)}) == "LOOP"
+    assert Rd.verdict({"depth 4": row(57, 71, 71, 70), "depth 8": row(58, 65, 64, 64)}) == "fixed steps"
+    assert Rd.verdict({"depth 4": row(55, 58, 57, 56), "depth 8": row(54, 60, 58, 57)}) == "lookup"
+    assert Rd.verdict({"depth 4": row(55, 80, 90, 92), "depth 8": row(54, 60, 70, 80)}) == "partly"
+
+
 if __name__ == "__main__":
     print(f"\n{len(PASSED)} passed, {len(FAILED)} failed" + (": " + ", ".join(FAILED) if FAILED else ""))
     sys.exit(1 if FAILED else 0)

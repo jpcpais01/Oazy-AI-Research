@@ -234,6 +234,12 @@ groups before left: the stack still takes the telling in one parallel pass, and 
 with chunks of 16 (the layout of the one run that found the loop), where a later write corrects an earlier one
 instead of being averaged with it.
 
+**A round of runs, unattended.** `bash runpod/round.sh r2` trains the runs listed in `runpod/rounds/r2.txt` (a name, a
+colon, the options of `keep.think`) two at a time, a new one only while the GPU has memory to spare, and keeps ONE
+table in `<runs>/round-r2.md`: per run, depth 0 after one telling, depth 4 and depth 8 by tellings, and a verdict (LOOP,
+partly, fixed steps, lookup). A run already examined is not trained again; a run that dies of memory is tried once
+more. `python3 -m keep.round r1 --table` starts nothing and prints the table of runs started by hand.
+
 ## The experiment
 
 Both models read the same endless streams (`data.py`): a scene told once, G tokens of ordinary Opal text, then the
