@@ -353,13 +353,13 @@ def the_exam_can_be_passed():
         def scores_at(self, h, rows, cols):
             nxt = self.seen[rows, cols + 1]
             return torch.nn.functional.one_hot(nxt, self.cfg.vocab_size).float()
-    for extra in ({}, KEEP):
+    for extra, alone in (({}, True), (KEEP, True), (dict(KEEP, window=0), False)):     # the twin, Keep, Keep-wide read as a stream
         torch.manual_seed(0)
         m = Told(KeepConfig(**CFG, **extra))
-        res = R.exam(m, ENC, TEXT, (64,), 24, torch.device("cpu"), batch=10)["64"]
+        res = R.exam(m, ENC, TEXT, (64,), 24, torch.device("cpu"), batch=10, alone=alone)["64"]
         assert all(v["right"] == 100.0 for v in res["groups"].values()), res["groups"]
         assert sum(v["n"] for v in res["groups"].values()) == len(answer)
-        assert ("write" in res) == bool(extra)
+        assert ("write" in res) == (bool(extra) and alone)
 
 
 @check
@@ -377,25 +377,32 @@ def the_whole_run():
     finally:
         sys.stdout = old
     res = json.loads((out / "t" / "results.json").read_text())
-    assert set(res["exam"]) == set(res["train"]) == {"keep", "full"}
+    assert set(res["train"]) == {"keep", "full", "wide"} and set(res["exam"]) == {"keep", "full", "wide", "wide_alone"}
     assert (out / "t" / "keep" / "ckpt.pt").stat().st_mtime_ns == when, "a finished model was trained again"
-    for arm in R.ARMS:
+    for arm in R.ROWS:
         assert set(res["exam"][arm]) == {"0", "128", "512"}
         assert "facts" in res["exam"][arm]["0"]["groups"]
     assert "write" in res["exam"]["keep"]["0"] and "write" not in res["exam"]["full"]["0"]
+    assert "write" in res["exam"]["wide_alone"]["0"] and "write" not in res["exam"]["wide"]["0"]
     rep = (out / "t" / "report.md").read_text()
     assert "| Keep | plain facts |" in rep and "| Twin | Field1 stories |" in rep and "write strength" in rep
+    assert "| Keep-wide | plain facts |" in rep and "| Keep-wide, stores alone | Field1 stories |" in rep and "Keep-wide's write strength" in rep
+    sd = torch.load(out / "t" / "wide" / "ckpt.pt", map_location="cpu", weights_only=False)
+    wide = KeepConfig.from_dict(sd["config"])
+    assert wide.window == 0 and wide.stores == (2, 4), "Keep-wide is the whole window and the stores"
     sd = torch.load(out / "t" / "keep" / "ckpt.pt", map_location="cpu", weights_only=False)
     assert sd["done"] and KeepConfig.from_dict(sd["config"]).stores == (2, 4)
     from . import mute as Mu                       # the saved model again, with stores muted; and a run with one store
     sys.stdout = quiet
     try:
         Mu.main(["--name", "t", "--runs", str(out), "--data", str(TMP / "data"), "--sub", "", "--gaps", "0,128", "--n", "12", "--device", "cpu"])
+        Mu.main(["--name", "t", "--arm", "wide", "--runs", str(out), "--data", str(TMP / "data"), "--sub", "", "--gaps", "0", "--n", "12", "--device", "cpu"])
         R.main(args[:args.index("--name")] + ["--name", "one", "--only", "keep", "--stores", "4", "--tokens", "3e4", "--exam-n", "12", "--every", "1000"])
     finally:
         sys.stdout = old
     rep = (out / "t" / "mute.md").read_text()
     assert "| nothing muted |" in rep and "| store after block 2 muted |" in rep and "| all stores muted |" in rep
+    assert "# Keep-wide: which store" in (out / "t" / "mute-wide.md").read_text()
     sd = torch.load(out / "one" / "keep" / "ckpt.pt", map_location="cpu", weights_only=False)
     assert KeepConfig.from_dict(sd["config"]).stores == (4,)
 

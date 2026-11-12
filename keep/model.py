@@ -7,6 +7,7 @@ Both are the same small transformer (pre-norm, rotary positions, ReLU² MLPs, ti
          training window to the next. Everything older reaches the model through its STORES: a store is a table of
          `side*side` rows that is part of the model's state, not of its weights. It is never emptied: not at the end
          of a document, not at the end of a training step.
+  wide   both: the stores, and attention over the whole training window (KeepConfig(window=0, stores=...)).
 
 A store learns, while the model reads, to say what comes next. Per token t:
     address   a_t = addr(h_t)  ->  a score for every row, from a product key: score(i, j) = key1[i].a1 + key2[j].a2;

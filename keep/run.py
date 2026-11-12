@@ -3,6 +3,7 @@ streams, give both the same exam at growing gaps, write the report.
 
     python3 -m keep.run --data /workspace/data --sub opal                 # the real run (one GPU; both models, one after the other)
     python3 -m keep.run --data /workspace/data --sub opal --preset big    # ~120M each, 1.5B tokens each
+    python3 -m keep.run --only wide                                       # one model only (keep, full or wide); the report keeps the others
     python3 -m keep.run --only report                                     # examine the saved models again
     python3 -m keep.run --preset tiny --device cpu --workers 0 ...        # a CPU smoke test
 
@@ -14,7 +15,10 @@ The twin's attention reaches 1,024 tokens, so past that it can only guess; its s
 ceiling. Keep is examined more strictly: it reads the story and the gap window by window, and then the questions as a
 window of their own, so at every gap, 0 included, the answer can only come out of its stores.
 
-Writes <runs>/<name>/: keep/ and full/ (ckpt.pt, log.jsonl), results.json, report.md. A model whose ckpt.pt says it
+The third model, Keep-wide ("wide"), is both at once: the twin's attention over the whole window, and Keep's stores.
+It is examined twice: as a stream is read (a story still in view is seen), and out of its stores alone.
+
+Writes <runs>/<name>/: keep/, full/ and wide/ (ckpt.pt, log.jsonl), results.json, report.md. A model whose ckpt.pt says it
 finished is not trained again; an unfinished one starts over (runs are short).
 """
 from __future__ import annotations
@@ -43,7 +47,7 @@ PRESETS = {
     "big": dict(cfg=dict(d=768, n_layer=12, n_head=12, max_len=1024), keep=dict(window=128, stores=(4, 8, 11), side=256, k=8, dv=64, d_addr=64, chunk=64),
                 batch=32, tokens=1.5e9, gap_max=4096, gaps=(0, 512, 2048, 8192, 32768), exam_n=512, lr=4e-4, asked_weight=4.0),
 }
-ARMS = ("keep", "full")
+ARMS = ("keep", "full", "wide")       # Keep (attention reaches `window`, stores), its plain twin, and both at once: the whole window and the stores
 
 
 def runs_dir():
@@ -56,9 +60,11 @@ def runs_dir():
 
 def make(arm: str, preset: dict, vocab: int, **over) -> Keep:
     cfg = dict(preset["cfg"], vocab_size=vocab)
-    if arm == "keep":
+    if arm in ("keep", "wide"):
         cfg.update(preset["keep"])
         cfg.update({k: v for k, v in over.items() if v is not None})
+    if arm == "wide":
+        cfg["window"] = 0
     return Keep(KeepConfig(**cfg))
 
 
@@ -68,9 +74,13 @@ def amp(device):
 
 # ---------------------------------------------------------------- the exam
 @torch.no_grad()
-def exam(model: Keep, enc, text, gaps, n, device, batch=64, seed=0, say=None):
+def exam(model: Keep, enc, text, gaps, n, device, batch=64, seed=0, say=None, alone=True):
     """-> {gap: {"groups": {facts|changed|field1: {"right": %, "chance": %, "n", "loss": on the answer's piece}}, "families": {kind: [right, n]},
-                 "write": {"story": [per store], "text": [per store]} (Keep only: mean write strength on each)}}"""
+                 "write": {"story": [per store], "text": [per store]} (stores, read alone: mean write strength on each)}}
+    A model with stores reads everything, window by window, its stores carried along. alone=True: the questions are a
+    window of their own, so the answers come out of the stores alone. alone=False: the questions end the last window,
+    as in a stream, so whatever attention still reaches is in view too (the reading for a model whose attention spans
+    the window). A model without stores sees the last max_len tokens and nothing else."""
     model.eval()
     T = model.cfg.max_len
     out = {}
@@ -85,7 +95,15 @@ def exam(model: Keep, enc, text, gaps, n, device, batch=64, seed=0, say=None):
             pre = torch.from_numpy(prefix[lo:lo + batch]).to(device)
             blk = torch.from_numpy(block[lo:lo + batch]).to(device)
             with amp(device):
-                if model.store:                                     # read it all, in windows, the stores carried along
+                if model.store and not alone:                       # as a stream: all but the last window, then the last
+                    seq = torch.cat([pre, blk], 1)
+                    st = model.init_state(pre.size(0), device)
+                    cut = max(0, seq.size(1) - T)
+                    for c in range(0, cut, T):
+                        _, st, _ = model.hidden(seq[:, c:min(cut, c + T)], st)
+                    h, _, _ = model.hidden(seq[:, cut:], st)
+                    off = seq.size(1) - cut - blk.size(1)
+                elif model.store:                                   # read it all, in windows, the stores carried along
                     st = model.init_state(pre.size(0), device)
                     sp = torch.from_numpy(spans[lo:lo + batch]).to(device)
                     pos = torch.arange(pre.size(1), device=device)[None]
@@ -122,7 +140,7 @@ def exam(model: Keep, enc, text, gaps, n, device, batch=64, seed=0, say=None):
         res = {"groups": {k: {"right": round(100 * g[0] / g[1], 1), "chance": round(100 * g[2] / g[1], 1), "n": g[1],
                              "loss": round(g[3] / g[1], 3)} for k, g in groups.items()},
                "families": fam}
-        if model.store:
+        if model.store and alone:
             res["write"] = {"story": [round(w[0] / max(1, wn[0]), 3) for w in wsum.values()],
                             "text": [round(w[1] / max(1, wn[1]), 3) for w in wsum.values()]}
         out[str(gap)] = res
@@ -230,7 +248,7 @@ def train(arm, preset, args, enc, device, out: Path, say):
         if step in mids:
             say(f"[{arm}] a short exam at {step * B * T / 1e6:.0f}M tokens:")
             gs = [g for g in preset["gaps"] if g <= 2 * T][:3]
-            mid = exam(model, enc, text, gs, max(24, preset["exam_n"] // 2), device, seed=1, say=say)
+            mid = exam(model, enc, text, gs, max(24, preset["exam_n"] // 2), device, seed=1, say=say, alone=arm != "wide")
             log.write(json.dumps({"kind": "exam", "step": step, "tokens": step * B * T,
                                   "exam": {g: {k: [x["right"], x["loss"]] for k, x in v["groups"].items()} for g, v in mid.items()}}) + "\n")
             log.flush()
@@ -247,7 +265,8 @@ def train(arm, preset, args, enc, device, out: Path, say):
 
 
 GROUPS = (("facts", "plain facts"), ("changed", "facts changed after telling"), ("field1", "Field1 stories"))
-NAMES = {"keep": "Keep", "full": "Twin"}
+NAMES = {"keep": "Keep", "full": "Twin", "wide": "Keep-wide", "wide_alone": "Keep-wide, stores alone"}
+ROWS = ("keep", "full", "wide", "wide_alone")
 
 
 def report(res: dict) -> str:
@@ -260,7 +279,7 @@ def report(res: dict) -> str:
     def cell(ex, g, key, what):
         v = ex.get(str(g), {}).get("groups", {}).get(key)
         return f"{v[what]}%" if v else "-"
-    for arm in ARMS:
+    for arm in ROWS:
         for key, name in GROUPS:
             if arm in res["exam"]:
                 L.append(f"| {NAMES[arm]} | {name} | " + " | ".join(cell(res["exam"][arm], g, key, "right") for g in gaps) + " |")
@@ -271,15 +290,20 @@ def report(res: dict) -> str:
           "that gap it can only guess. Keep reads the questions as a window of their own, so at every gap, 0 included, its "
           f"answers come out of its stores alone. Keep trained on gaps up to {res['gap_max']:,}; no gradient spans more than "
           f"one window of {res['window_full']:,}.", ""]
+    if "wide" in res["exam"]:
+        L += [f"Keep-wide is Keep with the twin's attention: it sees the last {res['window_full']:,} tokens and has the stores. Its first "
+              "rows read the questions as a stream does, at the end of a window, so a story still in view is seen; \"stores alone\" "
+              "reads them as Keep does, as a window of their own.", ""]
     L += ["| Model | Weights | Tokens | Speed | Held-out loss (streams) |", "|---|---|---|---|---|"]
     for arm in ARMS:
         t = res["train"].get(arm)
         if t:
             L.append(f"| {NAMES[arm]} | {t['params'] / 1e6:.1f}M | {t['tokens'] / 1e6:.0f}M | {t['tok_s'] / 1e3:.0f}k tok/s | {t['held_out_loss']:.3f} |")
-    w = res["exam"].get("keep", {}).get(str(gaps[-1]), {}).get("write")
-    if w:
-        L += ["", "Keep's write strength (0 = writes nothing, 2 = the most), store by store: on the stories "
-              + ", ".join(f"{x:.2f}" for x in w["story"]) + "; on the ordinary text " + ", ".join(f"{x:.2f}" for x in w["text"]) + "."]
+    for arm in ("keep", "wide_alone"):
+        w = res["exam"].get(arm, {}).get(str(gaps[-1]), {}).get("write")
+        if w:
+            L += ["", f"{NAMES[arm].split(',')[0]}'s write strength (0 = writes nothing, 2 = the most), store by store: on the stories "
+                  + ", ".join(f"{x:.2f}" for x in w["story"]) + "; on the ordinary text " + ", ".join(f"{x:.2f}" for x in w["text"]) + "."]
     return "\n".join(L) + "\n"
 
 
@@ -303,7 +327,7 @@ def main(argv=None):
     ap.add_argument("--compile", type=int, default=1, help="torch.compile for the blocks on a GPU (1/0)")
     ap.add_argument("--every", type=int, default=100, help="say where it is every this many steps")
     ap.add_argument("--exam-n", type=int, default=None, help="scenes per gap in the final exam")
-    ap.add_argument("--only", default="all", choices=["all", "keep", "full", "report"])
+    ap.add_argument("--only", default="all", choices=["all", "keep", "full", "wide", "report"])
     ap.add_argument("--device", default="auto")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args(argv)
@@ -337,12 +361,18 @@ def main(argv=None):
         if summary:
             res["train"][arm] = summary
         say(f"[{arm}] the exam:")
-        ex = exam(model, enc, text, preset["gaps"], args.exam_n or preset["exam_n"], device, say=say)
+        ex = exam(model, enc, text, preset["gaps"], args.exam_n or preset["exam_n"], device, say=say, alone=arm != "wide")
+        ex_alone = None
+        if arm == "wide":
+            say(f"[{arm}] the exam again, out of the stores alone:")
+            ex_alone = exam(model, enc, text, preset["gaps"], args.exam_n or preset["exam_n"], device, say=say)
         if res_path.exists():                                       # the other model may have been trained beside this one
             there = json.loads(res_path.read_text())
             for part in ("train", "exam"):
                 res[part] = {**there.get(part, {}), **res[part]}
         res["exam"][arm] = ex
+        if ex_alone is not None:
+            res["exam"]["wide_alone"] = ex_alone
         res_path.write_text(json.dumps(res, indent=1))
         del model
         if device.type == "cuda":

@@ -100,6 +100,7 @@ def main(argv=None):
             ("Keep, no scores over the words", "keep", dict(scores=False)),
             ("Keep, no stores (the window alone)", "keep", dict(stores=())),
             ("Keep, no stores, no scores over the words", "keep", dict(stores=(), scores=False)),
+            ("Keep-wide (the stores and the whole window)", "wide", {}),
             (f"Keep, chunks of {2 * ch} (not {ch})", "keep", dict(chunk=2 * ch)),
             (f"Keep, chunks of {4 * ch} (not {ch})", "keep", dict(chunk=4 * ch)),
             ("Keep, the loss in slices of 1,024 (not 4,096)", "keep", dict(slices=1024)),

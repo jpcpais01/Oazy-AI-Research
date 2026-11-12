@@ -19,12 +19,12 @@ What a store does, at every token:
 So the store is a predictor of what comes next that learns while the model reads, by its own prediction error, with no
 gradient step. The weights only decide what counts as "a place like this", what to write and how hard.
 
-| | Twin (plain transformer) | Keep |
-|---|---|---|
-| Attention reaches | the whole window, 1,024 tokens | 128 tokens |
-| Older text | gone | read back out of the stores |
-| Cost per token as text grows | grows with the context | constant |
-| State carried from window to window | none | the stores (2 x 16,384 rows x 64) |
+| | Twin (plain transformer) | Keep | Keep-wide |
+|---|---|---|---|
+| Attention reaches | the whole window, 1,024 tokens | 128 tokens | the whole window, 1,024 tokens |
+| Older text | gone | read back out of the stores | read back out of the stores |
+| Cost per token as text grows | grows with the context | constant | constant past the window |
+| State carried from window to window | none | the stores (2 x 16,384 rows x 64) | the stores |
 
 Two choices, each made because the version without it failed in a CPU pilot (Nov 11 and 12):
 
@@ -64,8 +64,42 @@ Trained on gaps up to 64, each batch from an empty store; guessing = 6%:
 | Keep, loss on every token | 92.9% | 93.3% | 93.8% | 94.0% |
 | Plain transformer, same size, story in view, 2.5x the training steps | 36% | 36% | out of view | out of view |
 
-What is NOT shown yet: anything at real scale, gaps past 4,096, reasoning (Field1) after a gap, and what happens when
-the store has to hold far more than a scene or two.
+## What the GPU run shows
+
+Nov 12, an H200, the base size (50M weights each), 600M tokens each, one seed (run `keep-fast`). Share of questions
+answered right, 512 scenes per gap that no stream contains:
+
+| Model | Asked about | G = 0 | 512 | 2,048 | 8,192 | 32,768 |
+|---|---|---|---|---|---|---|
+| Keep | plain facts | 93.8% | 95.3% | 96.0% | 96.2% | 95.3% |
+| Keep | facts changed after telling | 91.7% | 95.2% | 94.0% | 92.9% | 95.2% |
+| Keep | Field1 stories | 50.3% | 50.3% | 49.0% | 51.0% | 49.7% |
+| Twin | plain facts | 99.9% | 99.7% | 21.4% | 20.8% | 22.1% |
+| Twin | facts changed after telling | 100.0% | 100.0% | 23.8% | 23.8% | 22.6% |
+| Twin | Field1 stories | 51.0% | 53.5% | 46.7% | 47.0% | 45.2% |
+| Guessing | facts / Field1 | 25% / 33.4% | | | | |
+
+| Model | Weights | Speed | Held-out loss (streams) |
+|---|---|---|---|
+| Keep | 50.5M | 228k tok/s | 3.148 |
+| Twin | 50.3M | 566k tok/s | 3.123 |
+
+- **The stores hold.** Keep's facts are flat from no gap to 32,768 tokens, 8 times the longest gap it trained on,
+  out of the stores alone. The twin is at guessing as soon as the story is out of view.
+- **The stores are a little lossy.** 95% out of the stores against 99.8% with the story in view.
+- **Reasoning is the same.** Field1 is ~50% for both while the twin sees the story: the limit there is 50M weights
+  and 600M tokens, not memory.
+- **No gain on ordinary text yet.** Held-out loss 3.148 against 3.123: 128 tokens of attention cost more than the
+  stores gave back.
+- **It learned what to write, with no cost on writing.** Write strength 1.21 and 1.17 on the stories, 0.27 and 0.53
+  on the ordinary text.
+
+What follows from it: the choice between attention and stores is not needed. **Keep-wide** (`--only wide`) has the
+twin's attention over the whole window and Keep's stores. If it reads 99.8% with the story in view, 95% past it,
+and the twin's loss on ordinary text, it is the model to scale.
+
+What is NOT shown yet: more than one seed, a larger model, and what happens when the store has to hold far more than
+a scene or two.
 
 ## The experiment
 
@@ -81,6 +115,8 @@ The exam fixes G at 0, 512, 2,048, 8,192 and 32,768 and uses scenes no stream co
 - The twin's score while the story is in view (G up to 512) is the ceiling. Past 1,024 it can only guess.
 - Keep is examined more strictly: the questions are read as a window of their own, so at every gap its answers come
   out of the stores alone.
+- Keep-wide is examined both ways: as a stream is read, the questions at the end of the last 1,024 tokens (a story
+  still in view is seen), and out of the stores alone, as Keep is.
 - Keep trains on gaps up to 4,096, and no gradient spans more than one window of 1,024. G = 32,768 is 8 times beyond
   anything it trained on.
 - In training, the tokens of a question block count 4 times in the loss, for both models alike (they are ~3% of the
@@ -98,6 +134,7 @@ What would count:
 
     OAZY_DATA=/workspace/data OAZY_RUNS=/workspace/runs bash runpod/keep.sh          # ~50M each, 600M tokens each
     bash runpod/keep.sh --preset big --name keep-big                                 # ~120M each, 1.5B tokens each
+    bash runpod/keep.sh --only wide                                                  # one model only (keep, full, wide); the report keeps the others
     bash runpod/keep.sh --only report                                                # examine the saved models again
     python3 -m keep.mute --name keep                                                 # which store carries the facts: the saved model's exam with stores muted
     bash runpod/keep.sh --only keep --stores 6 --name keep-one                       # Keep with one store, after block 6
@@ -157,7 +194,7 @@ Each progress line of a run gives the speed since the line before and the peak m
 | `model.py` | `Keep`, `KeepConfig`, `Store` (address, read, delta-rule write) |
 | `ledger.py` | the plain-fact scenes |
 | `data.py` | the streams and the exam sets |
-| `run.py` | trains both models, examines them, writes the report |
+| `run.py` | trains the models, examines them, writes the report |
 | `speedcheck.py` | tokens per second and memory on this machine |
 | `mute.py` | the saved model examined with stores muted |
 | `tests.py` | the checks |
