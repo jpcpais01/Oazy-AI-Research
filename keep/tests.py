@@ -764,14 +764,16 @@ def a_round_runs_alone():
     tb = (out / "round-rt.md").read_text()
     rows = {ln.split("|")[1].strip(): [c.strip() for c in ln.split("|")[2:-1]] for ln in tb.splitlines() if ln.startswith("| th")}
     assert rows["tha"][0] == rows["thb"][0] == "done" and rows["thc"][0].startswith("failed"), rows
-    assert rows["thb"][1].isdigit() and rows["thb"][3].count("/") == 2 and rows["thb"][4] in ("LOOP", "partly", "fixed steps", "lookup"), rows
+    assert rows["thb"][1].isdigit() and rows["thb"][3].count("/") == 2 and (rows["thb"][4] in ("LOOP", "partly", "lookup") or "step" in rows["thb"][4]), rows
     assert "2 done, 1 failed." in tb and "- thb: `" in tb and "A round of three." in tb
     row = lambda *v: {str(r): [x, 100, 55] for r, x in zip((1, 4, 8, 12), v)}
-    assert Rd.verdict({"depth 4": row(54, 99, 100, 99), "depth 8": row(62, 85, 99, 99)}) == "LOOP"
-    assert Rd.verdict({"depth 4": row(57, 71, 71, 70), "depth 8": row(58, 65, 64, 64)}) == "fixed steps"
-    assert Rd.verdict({"depth 4": row(55, 58, 57, 56), "depth 8": row(54, 60, 58, 57)}) == "lookup"
-    assert Rd.verdict({"depth 4": row(55, 80, 90, 92), "depth 8": row(54, 60, 70, 80)}) == "partly"
-
+    deep = {"depth 4": row(54, 99, 100, 99), "depth 8": row(62, 85, 99, 99)}
+    assert Rd.verdict(deep) == "LOOP"
+    half = {"depth 1": row(56, 100, 100, 100), "depth 2": row(49, 93, 90, 84), "depth 3": row(45, 77, 77, 73), "depth 8": row(58, 62, 57, 58)}
+    assert Rd.steps(half) == 2 and Rd.verdict(half) == "2 steps"
+    assert Rd.verdict({"depth 1": row(67, 95, 95, 94), "depth 2": row(60, 84, 79, 76), "depth 8": row(62, 58, 59, 58)}) == "1 step"
+    assert Rd.verdict({"depth 1": row(58, 68, 70, 69), "depth 8": row(54, 60, 58, 57)}) == "lookup"
+    assert Rd.verdict({"depth 1": row(55, 99, 99, 99), "depth 8": row(54, 60, 70, 80)}) == "partly"
 
 if __name__ == "__main__":
     print(f"\n{len(PASSED)} passed, {len(FAILED)} failed" + (": " + ", ".join(FAILED) if FAILED else ""))

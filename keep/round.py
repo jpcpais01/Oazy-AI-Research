@@ -14,8 +14,9 @@ be started again with the same line. A run that dies of memory is tried once mor
 The table says of each run what the fed model learned on circuits (trained to depth 3):
     LOOP          depth 8 right (90% or more) at the most tellings: reading again is reasoning
     partly        depth 8 between 75 and 90%
-    fixed steps   depth 4 at 68% or more, depth 8 below 75%: a routine of about three steps (it would score 74% and 63%)
-    lookup        below that
+    n steps       depth 1 to n right at 90% or more (at their best telling), depth 8 below 75%: the loop is not there,
+                  or half formed (each step still loses accuracy)
+    lookup        not even depth 1
 """
 from __future__ import annotations
 
@@ -68,16 +69,23 @@ def share(row, r):
     return 100 * row[r][0] / max(1, row[r][1])
 
 
+def steps(ex: dict) -> int:
+    """How many steps of reasoning hold: the deepest d with every depth 1..d right at 90% or more at its best telling."""
+    d = 0
+    while f"depth {d + 1}" in ex and max(share(ex[f"depth {d + 1}"], r) for r in ex[f"depth {d + 1}"]) >= 90:
+        d += 1
+    return d
+
+
 def verdict(ex: dict) -> str:
-    d4, d8 = ex.get("depth 4"), ex.get("depth 8")
+    d8 = ex.get("depth 8")
     if not d8:
         return ""
     last = max(d8, key=int)
     if share(d8, last) >= 90:
         return "LOOP"
-    if share(d8, last) >= 75:
-        return "partly"
-    return "fixed steps" if d4 and max(share(d4, r) for r in d4) >= 68 else "lookup"
+    n = steps(ex)
+    return "partly" if share(d8, last) >= 75 else f"{n} step{'s' * (n != 1)}" if n else "lookup"
 
 
 def table(rnd: str, about: str, todo, state: dict, runs: Path, arm: str) -> str:
@@ -99,7 +107,7 @@ def table(rnd: str, about: str, todo, state: dict, runs: Path, arm: str) -> str:
     at = "/".join(f"{r}x" for r in shown) if shown else "tellings"
     L += [f"| Run | State | Depth 0 at 1x | Depth 4 at {at} | Depth 8 at {at} | Verdict |", "|---|---|---|---|---|---|"] + rows
     L += ["", "Share right (%). Trained to depth 3. Depth 8: always giving the commonest answer scores about 57%, a reasoner of three "
-          "steps 63%. LOOP = depth 8 at 90% or more at the most tellings.", ""] + [f"- {name}: `{opts}`" for name, opts in todo]
+          "steps 63%. LOOP = depth 8 at 90% or more at the most tellings; n steps = depth 1 to n at 90% or more, no further.", ""] + [f"- {name}: `{opts}`" for name, opts in todo]
     return "\n".join(L) + "\n"
 
 
