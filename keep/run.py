@@ -78,18 +78,20 @@ def amp(device):
 
 # ---------------------------------------------------------------- the exam
 @torch.no_grad()
-def exam(model: Keep, enc, text, gaps, n, device, batch=64, seed=0, say=None, alone=True):
+def exam(model: Keep, enc, text, gaps, n, device, batch=64, seed=0, say=None, alone=True, make=None, word="gap"):
     """-> {gap: {"groups": {facts|changed|field1: {"right": %, "chance": %, "n", "loss": on the answer's piece}}, "families": {kind: [right, n]},
                  "write": {"story": [per store], "text": [per store]} (stores, read alone: mean write strength on each)}}
     A model with stores reads everything, window by window, its stores carried along. alone=True: the questions are a
     window of their own, so the answers come out of the stores alone. alone=False: the questions end the last window,
     as in a stream, so whatever attention still reaches is in view too (the reading for a model whose attention spans
-    the window). A model without stores sees the last max_len tokens and nothing else."""
+    the window). A model without stores sees the last max_len tokens and nothing else.
+    make: what builds the set for each entry of `gaps` (default data.exam_set; keep/load.py passes data.load_set, and
+    then the entries are numbers of facts)."""
     model.eval()
     T = model.cfg.max_len
     out = {}
     for gap in gaps:
-        prefix, block, marks, spans = D.exam_set(enc, text, gap, n, q_max=min(320, T // 2), seed=seed)
+        prefix, block, marks, spans = (make or D.exam_set)(enc, text, gap, n, q_max=min(320, T // 2), seed=seed)
         got = np.zeros(len(marks), dtype=bool)
         nll = np.zeros(len(marks))
         mrow = np.array([m[0] for m in marks], dtype=np.int64)
@@ -149,7 +151,7 @@ def exam(model: Keep, enc, text, gaps, n, device, batch=64, seed=0, say=None, al
                             "text": [round(w[1] / max(1, wn[1]), 3) for w in wsum.values()]}
         out[str(gap)] = res
         if say:
-            say(f"    gap {gap:>6,}: " + "   ".join(f"{k} {v['right']}% of {v['n']} (guessing {v['chance']}%, loss {v['loss']:.2f})" for k, v in sorted(res["groups"].items())))
+            say(f"    {word} {gap:>6,}: " + "   ".join(f"{k} {v['right']}% of {v['n']} (guessing {v['chance']}%, loss {v['loss']:.2f})" for k, v in sorted(res["groups"].items())))
     model.train()
     return out
 

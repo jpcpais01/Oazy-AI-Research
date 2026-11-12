@@ -187,7 +187,7 @@ class Feed:
 # ---------------------------------------------------------------- the exam
 def group(kind: str) -> str:
     """The report's rows: "facts" (the ledger), "changed" (ledger facts that were changed), "field1" (every Field1 family)."""
-    return kind if kind in ("facts", "changed") else "field1"
+    return "facts" if kind.startswith("facts") else "changed" if kind == "changed" else "field1"
 
 
 def _mark(enc, lead_len, ans, choices, answer):
@@ -224,19 +224,30 @@ def exam_set(enc, text: Text, gap: int, n: int, q_max: int = 320, seed: int = 0)
         story = [eot] + enc.encode_ordinary(sc["story"])
         lens.append(len(story))
         pre.append(np.array(story + filler(rng, text, eot, gap), dtype=np.int64))
-        b = [eot]
-        for j, (lead, a, ch, kind) in enumerate(sc["lines"]):
-            ask = enc.encode_ordinary(("\n" if j else "") + lead)
-            ans = enc.encode_ordinary(f" {a}.")
-            if len(b) + len(ask) + len(ans) > q_max:
-                break
-            b += ask
-            m = _mark(enc, len(b), ans, ch, a)
-            if m is not None:
-                marks.append((r, len(b) - 1 + m[0], m[1], m[2], kind))
-            b += ans
-        blocks.append(b)
-    P = max(len(p) for p in pre)
+        blocks.append(_block(enc, sc["lines"], q_max, r, marks))
+    prefix, block, spans = _pack(rng, text, eot, pre, lens, blocks)
+    return prefix, block, marks, spans
+
+
+def _block(enc, lines, q_max, r, marks):
+    """The question block of row r, as tokens; its marks are added to `marks`."""
+    b = [enc.eot_token]
+    for j, (lead, a, ch, kind) in enumerate(lines):
+        ask = enc.encode_ordinary(("\n" if j else "") + lead)
+        ans = enc.encode_ordinary(f" {a}.")
+        if len(b) + len(ask) + len(ans) > q_max:
+            break
+        b += ask
+        m = _mark(enc, len(b), ans, ch, a)
+        if m is not None:
+            marks.append((r, len(b) - 1 + m[0], m[1], m[2], kind))
+        b += ans
+    return b
+
+
+def _pack(rng, text, eot, pre, lens, blocks):
+    """Rows of different lengths -> prefix (padded on the left with ordinary text), block (padded on the right), spans."""
+    n, P = len(pre), max(len(p) for p in pre)
     prefix = np.empty((n, P), dtype=np.int64)
     spans = np.empty((n, 2), dtype=np.int64)
     for r, p in enumerate(pre):
@@ -248,4 +259,29 @@ def exam_set(enc, text: Text, gap: int, n: int, q_max: int = 320, seed: int = 0)
     block = np.full((n, Q), eot, dtype=np.int64)
     for r, b in enumerate(blocks):
         block[r, :len(b)] = b
+    return prefix, block, spans
+
+
+WHEN = ("facts:early", "facts:middle", "facts:late")
+
+
+def load_set(enc, text: Text, facts: int, n: int, q_max: int = 320, seed: int = 0, ask: int = 24, gap: int = 0):
+    """How much can be kept at once: n books of `facts` plain facts each (ledger.book: every fact about a different
+    subject, 8 to a paragraph, paragraph after paragraph), `gap` tokens of text, then up to `ask` of the facts asked,
+    drawn evenly over the book, in a shuffled order. Returns what exam_set returns; a mark's kind says in which third
+    of the book its fact was told (WHEN), and the spans are the books."""
+    from . import ledger
+    eot = enc.eot_token
+    rng = random.Random(f"{EXAM_SEED}|load|{seed}|{facts}|{gap}")
+    pre, blocks, marks, lens = [], [], [], []
+    for r in range(n):
+        bk = ledger.book(r, facts, (EXAM_SEED, seed))
+        told = [t for s in bk["stories"] for t in [eot] + enc.encode_ordinary(s)]
+        lens.append(len(told))
+        pre.append(np.array(told + filler(rng, text, eot, gap), dtype=np.int64))
+        q = min(ask, facts)
+        which = [rng.randrange(facts * j // q, max(facts * j // q + 1, facts * (j + 1) // q)) for j in range(q)]   # one from each stretch
+        rng.shuffle(which)
+        blocks.append(_block(enc, [bk["lines"][j][:3] + (WHEN[min(2, 3 * j // facts)],) for j in which], q_max, r, marks))
+    prefix, block, spans = _pack(rng, text, eot, pre, lens, blocks)
     return prefix, block, marks, spans

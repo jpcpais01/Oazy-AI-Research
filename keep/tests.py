@@ -337,6 +337,27 @@ def exam_sets():
 
 
 @check
+def load_sets():
+    """The capacity exam: a book of m facts about m different subjects, then some of them asked, evenly over the book."""
+    from . import ledger
+    bk = ledger.book(0, 300)
+    assert len(bk["lines"]) == 300 and len(bk["stories"]) == 38 and len({lead for lead, *_ in bk["lines"]}) > 290
+    assert all(a in ch and len(set(ch)) == 4 for _, a, ch, _ in bk["lines"])
+    eot = ENC.eot_token
+    for m, gap in ((8, 0), (120, 50)):
+        prefix, block, marks, spans = D.load_set(ENC, TEXT, m, 6, q_max=200, gap=gap)
+        assert (prefix.shape[1] - spans[:, 1] == gap).all() and (prefix[np.arange(6), spans[:, 0]] == eot).all()
+        told = ENC.decode(prefix[0, spans[0, 0]:spans[0, 1]])
+        assert all(s in told for s in ledger.book(0, m, (D.EXAM_SEED, 0))["stories"]), "the book is not what was told"
+        assert len(marks) >= 6 * 4 and {D.group(k) for *_, k in marks} == {"facts"} and {k for *_, k in marks} <= set(D.WHEN)
+        if m > 8:
+            assert {k for *_, k in marks} == set(D.WHEN)
+        for r, p, cands, right, kind in marks:
+            assert block[r, p + 1] == cands[right], "a mark does not point at the answer"
+    assert ledger.book(0, 2520) and len(D.load_set(ENC, TEXT, 8, 6)[2]) == len(D.load_set(ENC, TEXT, 8, 6, gap=9)[2])
+
+
+@check
 def the_exam_can_be_passed():
     """A model that is handed the answers scores 100%, one that is not scores as guessing does: the marking is right
     for both ways of reading (Keep's windows, the twin's last max_len tokens)."""
@@ -360,6 +381,8 @@ def the_exam_can_be_passed():
         assert all(v["right"] == 100.0 for v in res["groups"].values()), res["groups"]
         assert sum(v["n"] for v in res["groups"].values()) == len(answer)
         assert ("write" in res) == (bool(extra) and alone)
+        res = R.exam(m, ENC, TEXT, (40,), 6, torch.device("cpu"), batch=4, alone=alone, make=D.load_set)["40"]      # and a book of 40 facts
+        assert res["groups"]["facts"]["right"] == 100.0 and res["groups"]["facts"]["n"] > 15, res["groups"]
 
 
 @check
@@ -405,6 +428,16 @@ def the_whole_run():
     rep = (out / "t" / "mute.md").read_text()
     assert "| nothing muted |" in rep and "| store after block 2 muted |" in rep and "| all stores muted |" in rep
     assert "# Keep-wide: which store" in (out / "t" / "mute-wide.md").read_text()
+    from . import load as Lo                       # how much the saved models hold at once
+    sys.stdout = quiet
+    try:
+        Lo.main(["--name", "t", "--runs", str(out), "--data", str(TMP / "data"), "--sub", "", "--facts", "4,24", "--n", "4", "--gap", "20", "--device", "cpu"])
+    finally:
+        sys.stdout = old
+    rep = (out / "t" / "load.md").read_text()
+    assert "| 4 facts | 24 facts |" in rep and "| Keep |" in rep and "| Twin |" in rep and "| Keep-wide mixed |" in rep and "| In the last third" in rep
+    got = json.loads((out / "t" / "load.json").read_text())
+    assert set(got["exam"]) == set(R.ARMS) and got["exam"]["keep"]["24"]["groups"]["facts"]["n"] >= 8
     sd = torch.load(out / "one" / "keep" / "ckpt.pt", map_location="cpu", weights_only=False)
     assert KeepConfig.from_dict(sd["config"]).stores == (4,)
 
