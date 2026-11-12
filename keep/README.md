@@ -97,7 +97,7 @@ What would count:
 ## Run it
 
     OAZY_DATA=/workspace/data OAZY_RUNS=/workspace/runs bash runpod/keep.sh          # ~50M each, 600M tokens each
-    bash runpod/keep.sh --preset big --name keep-big                                 # ~110M each, 1.5B tokens each
+    bash runpod/keep.sh --preset big --name keep-big                                 # ~120M each, 1.5B tokens each
     bash runpod/keep.sh --only report                                                # examine the saved models again
     python3 -m keep.tests                                                            # CPU, about a minute, no data
 

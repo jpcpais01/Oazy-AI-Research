@@ -2,7 +2,7 @@
 streams, give both the same exam at growing gaps, write the report.
 
     python3 -m keep.run --data /workspace/data --sub opal                 # the real run (one GPU; both models, one after the other)
-    python3 -m keep.run --data /workspace/data --sub opal --preset big    # ~110M each, 1.5B tokens each
+    python3 -m keep.run --data /workspace/data --sub opal --preset big    # ~120M each, 1.5B tokens each
     python3 -m keep.run --only report                                     # examine the saved models again
     python3 -m keep.run --preset tiny --device cpu --workers 0 ...        # a CPU smoke test
 
