@@ -9,6 +9,8 @@ Two kinds of scene, half and half:
     ledger   keep/ledger.py: plain facts. Answering needs no reasoning, so a miss after a gap is a fact that was not kept.
     Field1   oazy/field1: a small simulated world told as a story. Answering needs reasoning too: the harder row.
 One scene is open at a time, so "Rui" in a question means the Rui of the one scene still waiting for its questions.
+With p_book, a share of the scenes are books: up to 256 plain facts about as many subjects, told back to back, and
+8 to 24 of them asked. A scene of 3 to 10 facts teaches the stores to tell ten things apart; a book, hundreds.
 Each row of a batch is its own stream and goes on from window to window: a model with a state can carry it.
 
 The exam (exam_set) is the same thing with the gap fixed: story, exactly G tokens of text, then the questions. A
@@ -98,9 +100,25 @@ def filler(rng: random.Random, text: Text, eot: int, n: int):
     return out[:n]
 
 
-def stream(rng: random.Random, text: Text, enc, gap_max: int, p_scene: float = 0.6, p_ledger: float = P_LEDGER, tag=0):
+def book_parts(enc, rng: random.Random, i, seed, book_max: int):
+    """A book for a stream (ledger.book): 8 to book_max facts about as many subjects, paragraph after paragraph, and a
+    block asking 8 to 24 of them, drawn evenly over the book, in a shuffled order. -> (story tokens, block tokens)."""
+    from . import ledger
+    eot = enc.eot_token
+    m = int(math.exp(rng.uniform(math.log(8), math.log(max(9, book_max)))))
+    bk = ledger.book(i, m, seed)
+    story = [t for s in bk["stories"] for t in [eot] + enc.encode_ordinary(s)]
+    q = min(m, rng.randint(8, 24))
+    which = [rng.randrange(m * j // q, max(m * j // q + 1, m * (j + 1) // q)) for j in range(q)]
+    rng.shuffle(which)
+    return story, enc.encode_ordinary("\n".join(f"{bk['lines'][j][0]} {bk['lines'][j][1]}." for j in which))
+
+
+def stream(rng: random.Random, text: Text, enc, gap_max: int, p_scene: float = 0.6, p_ledger: float = P_LEDGER, tag=0,
+           p_book: float = 0.0, book_max: int = 256):
     """Yields (tokens, what they are), for ever: scenes, text between, questions after the gap.
-    What they are: TEXT, STORY or ASKED (the question block)."""
+    What they are: TEXT, STORY or ASKED (the question block). p_book: this share of the scenes is a book of up to
+    book_max plain facts (book_parts), so that hundreds of facts are open at once and have to be told apart."""
     eot = enc.eot_token
     fams, wts = _families()
     n, wait, block, left = 0, False, None, 0
@@ -109,9 +127,13 @@ def stream(rng: random.Random, text: Text, enc, gap_max: int, p_scene: float = 0
             yield [eot] + block, ASKED
             wait = False
         elif not wait and rng.random() < p_scene:
-            story, block, _ = scene_parts(enc, pick(rng, fams, wts, p_ledger), n, (TRAIN_SEED, tag))
+            if p_book and rng.random() < p_book:
+                story, block = book_parts(enc, rng, n, (TRAIN_SEED, tag), book_max)
+                yield story, STORY
+            else:
+                story, block, _ = scene_parts(enc, pick(rng, fams, wts, p_ledger), n, (TRAIN_SEED, tag))
+                yield [eot] + story, STORY
             n += 1
-            yield [eot] + story, STORY
             left = 0 if rng.random() < 0.25 else int(math.exp(rng.uniform(math.log(32), math.log(max(33, gap_max)))))
             wait = True
         else:
@@ -153,7 +175,8 @@ def _worker(q, data, split, rows, T, gap_max, seed, first_row, how):
 
 class Feed:
     """Batches of windows from `workers` processes (0 = made here). Row r is always the same stream.
-    how: stream()'s p_scene (how often a scene starts when none is open) and p_ledger (the ledger's share of the scenes)."""
+    how: stream()'s p_scene (how often a scene starts when none is open), p_ledger (the ledger's share of the scenes),
+    p_book and book_max (the share of the scenes that are books of many facts, and their largest size)."""
 
     def __init__(self, data: Path, enc, batch: int, T: int, gap_max: int, seed: int = 0, workers: int = 8, split="train", **how):
         self.procs, self.qs, self.local = [], [], None

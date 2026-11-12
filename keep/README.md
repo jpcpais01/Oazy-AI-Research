@@ -105,9 +105,23 @@ read side learns and the write side does not. **Keep-wide mixed** (`--only mixed
 its attention cut to Keep's 128 tokens on half of the steps (`--narrow 0.5`), where it has to learn the stores as
 Keep does, and read with the whole window.
 
-What is NOT shown yet: more than one seed, a larger model, and what happens when the store has to hold far more than
-a scene or two. The last is what `python3 -m keep.load` measures on the saved models: a book of 8 to 2,048 facts,
-every fact about a different subject, told once, then some of them asked.
+**How much it holds at once** (`python3 -m keep.load`, the saved models, no training: a book of plain facts, every
+fact about a different subject, told once, then up to 24 of them asked; 64 books per size):
+
+| Facts in the book | 8 | 32 | 128 | 512 | 2,048 |
+|---|---|---|---|---|---|
+| Tokens in the book | 65 | 257 | 1,064 | 4,228 | 17,830 |
+| Keep, stores alone | 98.1% | 86.2% | 59.2% | 37.6% | 30.0% |
+| Twin (sees the last 1,024 tokens) | 100.0% | 99.2% | 70.5% | 34.4% | 28.3% |
+| Guessing | 25% | 25% | 25% | 25% | 25% |
+
+Keep holds a scene across any amount of unrelated text, and not a book: facts of the same kind overwrite each other,
+the earliest first (128 facts: 47% for the first third of the book, 74% for the last). It trained with one scene of
+3 to 10 facts open at a time, so its addresses only ever had to tell ten things apart. `--books 0.3` makes 30% of
+the training scenes books of 8 to 256 facts, 8 to 24 of them asked: whether capacity is a matter of training is what
+that run and `keep.load` on it say.
+
+What is NOT shown yet: more than one seed, a larger model, a book held.
 
 ## The experiment
 
@@ -143,6 +157,7 @@ What would count:
     OAZY_DATA=/workspace/data OAZY_RUNS=/workspace/runs bash runpod/keep.sh          # ~50M each, 600M tokens each
     bash runpod/keep.sh --preset big --name keep-big                                 # ~120M each, 1.5B tokens each
     bash runpod/keep.sh --only mixed                                                 # one model only (keep, full, wide, mixed); the report keeps the others
+    bash runpod/keep.sh --only keep --books 0.3 --name keep-books                    # Keep trained on books of up to 256 facts (then keep.load --name keep-books)
     bash runpod/keep.sh --only report                                                # examine the saved models again
     python3 -m keep.load --name keep                                                 # how much it holds at once: books of 8 to 2,048 facts, the saved models, no training
     python3 -m keep.mute --name keep                                                 # which store carries the facts: the saved model's exam with stores muted
