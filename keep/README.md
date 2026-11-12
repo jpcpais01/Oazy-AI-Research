@@ -222,6 +222,14 @@ the exam is a staircase. Subject last, no pointer: depth 4 = 73-80% at 4 telling
 at 12 tellings (91-92% with chunks of 8). The exam's scenes are deeper, so longer: its chunk is as long as its longest
 telling asks, and the fed model reads a scene in one go.
 
+**Finding the loop.** On the GPU the fed model found the loop in one run of four (Nov 12: c2 yes; the same with
+another seed, and both runs with `--align`, no). Three options, all off by default, for the step it has to
+discover (where to file a conclusion: in "The lamp is on if the pump and the fan are on." the top knows the answer
+at the last word and has to file it under "lamp", 11 tokens back, while it starts 57% sure of the token before):
+`--point-bias 0` starts the pointer alike on all 16 tokens before; `--ramp 0.95` is the token pilots' curriculum
+(depth 1 only, the next depth when 95% of the yes/no answers are right); `--share strength` lets a chunk's writes
+share a row by their strength, so that the many held-back writes of a whole telling weaken no real one.
+
 ## The experiment
 
 Both models read the same endless streams (`data.py`): a scene told once, G tokens of ordinary Opal text, then the

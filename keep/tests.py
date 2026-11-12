@@ -609,6 +609,25 @@ def the_top_points():
     p.train()
     p.hidden(x, p.init_state(2))[0][:, 32:].square().sum().backward()
     assert all(float(g.grad.abs().sum()) > 0 for g in (st.pq.weight, st.pk.weight, st.pb))
+    # two writes on one address, one of them held back: sharing by strength, the real one lands in full (counted
+    # alike, it is cut in half); both at full strength, the two ways agree and the store says their mean
+    with torch.no_grad():
+        idx = torch.tensor([[[0, 1, 2, 3], [8, 9, 10, 11], [0, 1, 2, 3], [12, 13, 14, 15]]])       # tokens 1 and 3 write under tokens 0 and 2: one address
+        w = torch.full((1, 4, 4), 0.25)
+        top = torch.randn(1, 4, CFG["d"])
+        top[0, :, 0] = torch.tensor([0.0, 0.0, 0.0, -1.0])
+        after = {}
+        for share in ("all", "strength"):
+            for held in (True, False):
+                q = fed(share=share).store["1"]
+                q.gate.weight.zero_()
+                q.gate.bias.zero_()
+                q.gate.weight[0, 0] = 40.0 if held else 0.0                             # token 3: beta 0 or 1; token 1: beta 1
+                after[share, held] = q.file(top, torch.zeros(1, q.rows, q.dv), (idx, w, None), None)[0][0, :4].mean(0)
+                v = q.val(top)[0]
+        assert torch.allclose(after["strength", True], v[1], atol=1e-5), "a held-back write weakened the real one"
+        assert torch.allclose(after["all", True], v[1] / 2, atol=1e-5)
+        assert torch.allclose(after["strength", False], (v[1] + v[3]) / 2, atol=1e-5) and torch.allclose(after["all", False], after["strength", False], atol=1e-5)
 
 
 
@@ -661,6 +680,8 @@ def thinking_runs():
         assert 1 <= tr["depth"] <= Th.CIRCUIT_TRAIN and ex["depth"] >= Th.CIRCUIT_EXAM[i % len(Th.CIRCUIT_EXAM)]
         for sc in (tr, ex):
             assert _circuit_said(sc["story"]) == {q[3:-4]: a == "yes" for q, a, _, _ in sc["qas"]}, "the answers follow from the sentences"
+    assert all(Th.circuit(i, (Th.TRAIN_SEED, 0), top=1)["depth"] == 1 for i in range(12)), "the curriculum's first step: depth 1 only"
+    assert max(Th.circuit(i, (Th.TRAIN_SEED, 0), top=2)["depth"] for i in range(40)) == 2
     c3 = Th.scene_tokens(ENC, "circuits", 1, (Th.TRAIN_SEED, 0), None, 1 << 20, rng=random.Random(0), most=3)
     assert c3[3] in (Th.circuit(1, (Th.TRAIN_SEED, 0))["depth"] + 1, Th.circuit(1, (Th.TRAIN_SEED, 0))["depth"] + 2), "a circuit is told as often as its depth asks"
     assert {lv for *_, lv, _ in c3[2]} <= {f"depth {d}" for d in range(Th.CIRCUIT_TRAIN + 1)} and "depth 0" in {lv for *_, lv, _ in c3[2]}
@@ -682,11 +703,12 @@ def thinking_runs():
         when = (out / "th" / "feed" / "ckpt.pt").stat().st_mtime_ns
         Th.main(args + ["--only", "report"])
         Th.main(["--preset", "tiny", "--device", "cpu", "--workers", "0", "--runs", str(out), "--name", "tha", "--tokens", "2e4",
-                 "--every", "1000", "--only", "feed", "--align", "160", "--exam-n", "6"])
+                 "--every", "1000", "--only", "feed", "--align", "160", "--exam-n", "6", "--ramp", "0.01", "--share", "strength"])
     finally:
         sys.stdout = old
     al = torch.load(out / "tha" / "feed" / "ckpt.pt", map_location="cpu", weights_only=False)["config"]
     assert al["chunk"] == 160 and al["max_len"] == Th.ALIGN_ROOM * 160, "a telling to a chunk: the fed model's chunk is the telling's"
+    assert al["share"] == "strength"
     tha = json.loads((out / "tha" / "think.json").read_text())
     assert tha["align"] == 160 and set(tha["exam"]["feed"]["circuits"]["all"]) == {"1", "2", "3"} and "one chunk of 160" in (out / "tha" / "think.md").read_text()
     assert (out / "th" / "feed" / "ckpt.pt").stat().st_mtime_ns == when

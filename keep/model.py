@@ -89,6 +89,9 @@ class KeepConfig:
     read: str = "rows"          # "rows": a token reads the k rows of its address; "soft": every row, weighted by its score
     feed: bool = False          # the stores are written from the top of the stack (what the last layer says), not from the layer they are read at
     point: int = 0              # feed: the top files a write under the place of one of this many tokens before it (0: the token before)
+    point_bias: float = 3.0     # feed, point: how sure the top is at first that its write goes under the token before (0: any of the `point` tokens alike)
+    share: str = "all"          # feed: how the writes of a chunk share a row. "all": every write on it counts, also one that is held back;
+                                # "strength": a write counts by its strength (beta, up to 1), so a write that is held back weakens no other
     write_cost: float = 0.0     # added to the loss: this x the mean write strength (beta, 0..2) over the stores (0: it closed the stores)
     tokenizer: str = "smollm2"
 
@@ -271,12 +274,13 @@ class Store(nn.Module):
         # under it had drifted; started here, the token-level pilot answered 89% right after 50 steps
         nn.init.normal_(self.out.weight, std=cfg.dv ** -0.5)
         self.point = cfg.point if cfg.feed else 0
+        self.share = cfg.share
         if self.point:
             # the top points at one of the `point` tokens before it; a write goes under that token's address.
             # It starts at the token before (the plain "what followed"), and learns to reach back.
             self.pq = nn.Linear(cfg.d, cfg.d_addr, bias=False)
             self.pk = nn.Linear(cfg.d, cfg.d_addr, bias=False)
-            self.pb = nn.Parameter(torch.tensor([3.0] + [0.0] * (self.point - 1)))
+            self.pb = nn.Parameter(torch.tensor([float(cfg.point_bias)] + [0.0] * (self.point - 1)))
         self.top = min(cfg.k, cfg.side)             # the k best rows lie among the k best of each half-key
         self.sparse = True                          # False: the whole table inside autograd (the reference; slow)
 
@@ -385,7 +389,16 @@ class Store(nn.Module):
             # read back is exactly what was written); together, no reading moves by more than the errors ask
             # (a_t . sum_s a_s bounds the row sums of a a^T, so the joint step cannot overshoot). Sized write by
             # write, shared rows take every write in full, and what is written from the top and read again blows up.
-            share = torch.zeros(B, self.rows, device=S.device).scatter_add_(1, flat, ww.detach().reshape(B, n * R)).gather(1, flat).view(B, n, R)
+            # share "strength": with a whole telling in a chunk, many tokens point a little at every row and most of
+            # them have nothing to say (beta near 0); counted in full they cut the one real write to a fraction. So
+            # write s counts g_s = min(beta_s, 1) on its rows, and a write counts itself in full: the step of write t
+            # is a_t / (a_t . (sum_s g_s a_s + (1 - g_t) a_t)). Alone: the delta rule. All at full strength: "all".
+            aw = ww.detach()
+            if self.share == "strength":
+                g = beta.detach().clamp(max=1.0)
+                share = torch.zeros(B, self.rows, device=S.device).scatter_add_(1, flat, (g * aw).reshape(B, n * R)).gather(1, flat).view(B, n, R) + (1 - g) * aw
+            else:
+                share = torch.zeros(B, self.rows, device=S.device).scatter_add_(1, flat, aw.reshape(B, n * R)).gather(1, flat).view(B, n, R)
             coef = ww / (ww * share).sum(-1, keepdim=True).clamp_(min=1e-12)
             upd = (coef[..., None] * (beta * (v - was))[:, :, None, :]).reshape(B, n * R, self.dv)
             return S.scatter_add(1, gi, upd), beta.squeeze(-1) * (ww.sum(-1) > 0)
@@ -527,7 +540,7 @@ class Keep(nn.Module):
             torch._dynamo.config.cache_size_limit = max(torch._dynamo.config.cache_size_limit, 32)
         self._fast = torch.compile(self._segment) if on else None
 
-    def loss(self, x, y, state=None, plain=False, asked=None, asked_weight=1.0):
+    def loss(self, x, y, state=None, plain=False, asked=None, asked_weight=1.0, pair=None):
         """asked: (B, T) bool, the targets that are part of a question block; they count asked_weight times in the loss.
         -> loss, the stores after x, info {"lm": the plain next-token loss, "asked": the loss on the asked targets,
            "write": mean write strength per store}."""
@@ -541,6 +554,11 @@ class Keep(nn.Module):
         if asked is not None and bool(asked.any()):
             la = F.cross_entropy(h[asked].float() @ self.emb.weight.float().t(), y[asked])
             info["asked"] = la.detach()
+            if pair is not None:                    # the share right where the answer is one of two words (think's curriculum)
+                at = asked & ((y == pair[0]) | (y == pair[1]))
+                if bool(at.any()):
+                    two = h[at].detach().float() @ self.emb.weight.detach().float()[list(pair)].t()
+                    info["right"] = ((two[:, 0] > two[:, 1]) == (y[at] == pair[0])).float().mean()
             if asked_weight != 1.0:
                 loss = loss + (asked_weight - 1.0) * asked.float().mean() * la
         if beta and self.cfg.write_cost:
