@@ -48,7 +48,7 @@ from .run import PRESETS, amp, runs_dir
 ARMS = ("feed", "keep", "full")
 NAMES = {"feed": "Keep, stores written from the top", "keep": "Keep", "full": "Twin"}
 FAMILIES = ("circuits",)                   # the default: this file's own plain rung (below)
-OWN = ("circuits", "newrules")             # this file's own families (newrules: circuits with two more rules, taught at depth 1 only)
+OWN = ("circuits", "newrules", "newrules2")    # this file's own families (newrules: circuits with two more rules, taught at depth 1 only; newrules2: to depth 2)
 FIELD1 = ("switches", "rules")             # Field1's two families that are chains of rules told in any order (their questions say how deep)
 OTHERS = ("places", "compare", "count", "family", "schedule")      # more families whose questions say how many steps they take
 # what differs from run.py's presets: the training window (a scene told several times has to fit in it), the stores
@@ -94,11 +94,14 @@ C_MACHINE = ["lamp", "pump", "fan", "bell", "radio", "motor", "heater", "siren",
 def circuit(i, seed, top=None, new=False):
     """Scene i as levels.scene gives one: {"story", "qas": [(question, answer, _, {"depth": d})], "depth": its deepest}.
     A seed that starts with EXAM_SEED gives the exam's circuits. top: no deeper than this (training's curriculum).
-    new: the family "newrules". Two more rules (NEW_RULES), in training only on machines of depth 1 (half of the machines
-    that follow a switch); in the exam the machine asked for at depth d has one, its inputs worked out by the old rules:
-    its question's level is "new rule at depth d"."""
-    r = random.Random(f"{'newrules' if new else 'circuits'}|{seed}|{i}")
-    exact = CIRCUIT_EXAM[i % len(CIRCUIT_EXAM)] if (seed[0] if isinstance(seed, tuple) else seed) == EXAM_SEED else None
+    new: the family "newrules" (1) or "newrules2" (2). Two more rules (NEW_RULES), in training only on machines of depth
+    1 (half of the machines that follow a switch: both inputs are switches), or of depth 1 and 2 (new = 2: an input may be
+    a machine that follows switches, so the rule is seen once with an input that was worked out); in the exam the machine
+    asked for at depth d has one, its inputs worked out by the old rules: its question's level is "new rule at depth d".
+    The exam's scenes are the same for both families."""
+    exam = (seed[0] if isinstance(seed, tuple) else seed) == EXAM_SEED
+    r = random.Random(f"{'newrules' if new and (exam or new == 1) else 'newrules2' if new else 'circuits'}|{seed}|{i}")
+    exact = CIRCUIT_EXAM[i % len(CIRCUIT_EXAM)] if exam else None
     while True:
         nsw = r.randint(2, 3)
         nm = exact + r.randint(0, 1) if exact else r.randint(2, 5)
@@ -114,9 +117,9 @@ def circuit(i, seed, top=None, new=False):
             else:
                 first = parts[-1] if (k and r.random() < 0.6) else r.choice(parts)
             ins = [first]
-            fresh = new and ((k == exact - 1) if exact else (depth[first] == 0 and r.random() < 0.5))
-            if fresh:                               # a new rule: two inputs (training: two switches, so depth 1)
-                ins.append(r.choice([p for p in (parts if exact else sw) if p != first]))
+            fresh = new and ((k == exact - 1) if exact else (depth[first] < new and r.random() < 0.5))
+            if fresh:                               # a new rule: two inputs (training: two switches, so depth 1; newrules2: parts of depth 0 or 1)
+                ins.append(r.choice([p for p in (parts if exact else [q for q in parts if depth[q] < new]) if p != first]))
             elif r.random() < 0.4:
                 ins.append(r.choice([p for p in (parts[:-1] if exact and k >= exact else parts) if p != first]))
             op = r.choice(list(NEW_RULES)) if fresh else r.choice(["same", "not"]) if len(ins) == 1 else r.choice(["and", "or"])
@@ -181,7 +184,7 @@ def told(enc, family: str, i, seed, top=None):
     """Scene i -> (one reading as tokens, what stands between two readings, the question lines
     [(lead tokens, answer tokens, choices, answer, level)])."""
     from oazy.field1 import levels
-    sc = circuit(i, seed, top, new=family == "newrules") if family in OWN else levels.scene(family, i, seed)
+    sc = circuit(i, seed, top, new=OWN.index(family)) if family in OWN else levels.scene(family, i, seed)
     lines = []
     for q, a, _, qk in sc["qas"]:
         lines.append((enc.encode_ordinary(f"\n{q} Answer:"), enc.encode_ordinary(f" {a}."),
@@ -536,10 +539,12 @@ def report(res: dict) -> str:
             "telling is one more step for the whole scene, so depth d asks for d + 1 tellings." if res.get("align") else ""), ""]
     if res.get("from"):
         L += [f"Every model here started from the run `{res['from']}` (already trained) and was trained on with the tokens below.", ""]
-    if "newrules" in res["families"]:
-        L += ["newrules: circuits with two more rules (\"exactly one of A and B is on\", \"A and B are not both on\"). Training has them only on "
-              "machines of depth 1 (two switches). \"new rule at depth d\": the exam asks a machine with a new rule whose inputs are d - 1 steps deep, "
-              "which training never showed.", ""]
+    if "newrules" in res["families"] or "newrules2" in res["families"]:
+        two = "newrules2" in res["families"]
+        L += [("newrules2" if two else "newrules") + ": circuits with two more rules (\"exactly one of A and B is on\", \"A and B are not both on\"). Training has them only on "
+              + ("machines of depth 1 and 2 (an input may be a machine that follows switches)" if two else "machines of depth 1 (two switches)")
+              + ". \"new rule at depth d\": the exam asks a machine with a new rule whose inputs are d - 1 steps deep, which training never showed"
+              + (" past depth 2" if two else "") + ".", ""]
     L += ["| Model | Weights | Tokens | Speed |", "|---|---|---|---|"]
     for a in arms:
         s = res["train"].get(a, {})

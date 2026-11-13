@@ -1,0 +1,10 @@
+# Round r9: is every loop reusable once a new rule has been seen with an input that was worked out? The family newrules2 has the
+# two new rules on machines of depth 1 AND 2 in training (50M tokens); the exam asks them at depth 3 to 8, never shown. In
+# rounds r4 to r8 (the rules taught at depth 1 only, both inputs switches) only g2 used them deep. m1 to m4: the four loops.
+# m5, m6: the controls without a loop (two steps; no step). If the loop is what counts, m1 to m4 work deep and m5, m6 do not.
+m1: --from c13 --families newrules2 --tokens 5e7 --seed 11
+m2: --from g4 --families newrules2 --tokens 5e7 --seed 11
+m3: --from g2 --families newrules2 --tokens 5e7 --seed 11
+m4: --from c2 --families newrules2 --tokens 5e7 --seed 11
+m5: --from g3 --families newrules2 --tokens 5e7 --seed 11
+m6: --from p1 --families newrules2 --tokens 5e7 --seed 11

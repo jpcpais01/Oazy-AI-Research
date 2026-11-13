@@ -793,6 +793,19 @@ def thinking_runs():
             if "exactly one of" in sent or "not both" in sent:
                 assert sent.count("switch") == 2, sent
     assert any("exactly one of" in Th.circuit(i, (Th.TRAIN_SEED, 0), new=True)["story"] for i in range(20))
+    mixed = 0                                           # newrules2: a new rule may also stand on a machine that follows switches (depth 2), no deeper
+    for i in range(120):
+        assert Th.circuit(i, (Th.EXAM_SEED, 0), new=2) == Th.circuit(i, (Th.EXAM_SEED, 0), new=1), "both families sit the same exam"
+        sc = Th.circuit(i, (Th.TRAIN_SEED, 0), new=2)
+        deep = {q[len("Is "):-len(" on?")]: qk["depth"] for q, _, _, qk in sc["qas"]}
+        for sent in sc["story"].rstrip(".").replace("If ", "").split(". "):
+            if "exactly one of" in sent or "not both" in sent:
+                ins = sent.split("exactly one of ")[1].split(" is on")[0].split(" and ") if "exactly one of" in sent else \
+                    [x.strip() for x in sent.replace(" is on if ", "|").replace(", ", "|").split("|") if " are not both on" in x][0].replace(" are not both on", "").split(" and ")
+                assert len(ins) == 2 and all(deep[x.lower()] <= 1 for x in ins), sent
+                mixed += any(deep[x.lower()] == 1 for x in ins)
+    assert mixed > 5, "newrules2 shows the new rules with an input that was worked out"
+    assert Th.told(ENC, "newrules2", 3, (Th.TRAIN_SEED, 0))[3] is not None
     from . import settle as St                          # keep.settle: the stores' change by telling, and the rule that stops on it
     sdl = torch.load(out / "tha" / "feed" / "ckpt.pt", map_location="cpu", weights_only=False)
     mdl = Keep(KeepConfig.from_dict(sdl["config"]))
