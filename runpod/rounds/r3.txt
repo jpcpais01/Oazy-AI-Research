@@ -1,0 +1,6 @@
+# Round r3: the pull write (each place pulls its value from the tokens after it) on circuits in plain sentences,
+# in the fast layout. Does the loop form in most runs? Three seeds, and one run with a telling's writes landing 16 tokens at a time.
+p1: --align 96 --pull
+p2: --align 96 --pull --seed 1
+p3: --align 96 --pull --seed 2
+p4: --align 96 --pull --group 16
