@@ -1,0 +1,8 @@
+# Round r6: what rounds r4 and r5 opened. In r4 the new rules were used deep only by the run that started from a pull-write
+# model (n3, from p2); r5 turned p2 into a clean loop (g2). n6: is the clean pull loop a reusable organ (the new rules taught at
+# depth 1 only, asked at depth 2 to 8)? f1, f2: a first look at Field1 (switches and rules scenes, circuits kept in the mix so the
+# loop stays in use), 100M tokens, a telling to a chunk of 160 tokens: f1 starts from the loop (g2), f2 from the pull-write run
+# that never formed a step (p1, the control). Read the Field1 levels in <runs>/f1/think.md and f2/think.md (this table shows circuits).
+n6: --from g2 --families newrules --tokens 5e7 --seed 11
+f1: --from g2 --families switches,rules,circuits --align 160 --tokens 1e8 --seed 31
+f2: --from p1 --families switches,rules,circuits --align 160 --tokens 1e8 --seed 31
