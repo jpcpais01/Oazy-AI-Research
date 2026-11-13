@@ -88,6 +88,19 @@ def verdict(ex: dict) -> str:
     return "partly" if share(d8, last) >= 75 else f"{n} step{'s' * (n != 1)}" if n else "lookup"
 
 
+NEW = "new rule at depth "
+
+
+def verdict_new(ex: dict) -> str:
+    """A run on the family newrules (a new rule taught at depth 1 only): is the rule used at depths never trained?"""
+    best = lambda lv: max(share(ex[lv], r) for r in ex[lv]) if lv in ex else 0.0
+    if best(NEW + "1") < 90:
+        return "new rule not learned"
+    deepest = max((lv for lv in ex if lv.startswith(NEW)), key=lambda lv: int(lv[len(NEW):]))
+    last = share(ex[deepest], max(ex[deepest], key=int))
+    return "WORKS DEEP" if last >= 90 else "partly deep" if last >= 75 else "shallow only"
+
+
 def table(rnd: str, about: str, todo, state: dict, runs: Path, arm: str) -> str:
     """One line a run: depth 0 after one telling (is a fact filed where it is looked for at once?), depth 4 and depth 8
     by tellings, and the verdict."""
@@ -95,19 +108,32 @@ def table(rnd: str, about: str, todo, state: dict, runs: Path, arm: str) -> str:
     L = [f"# Round {rnd}", "", about, "", f"Written {time.strftime('%H:%M UTC', time.gmtime())}. "
          + ", ".join(f"{c} {k}" for k in ("done", "running", "waiting", "failed", "no exam yet") for c in [sum(1 for n, _ in todo if state[n].startswith(k))] if c or k == "done") + ".", ""]
     rows = []
+    exs = {name: examined(runs, name, arm) if state[name].startswith("done") else None for name, _ in todo}
+    new = any(ex and NEW + "1" in ex for ex in exs.values())          # a round on the family newrules: other columns
     for name, opts in todo:
-        ex = examined(runs, name, arm) if state[name].startswith("done") else None
+        ex = exs[name]
         cells = ["", "", "", ""]
         if ex:
             tell = sorted(ex.get("all", {}), key=int)
             shown = shown or (["1", "4", "8", "12"] if {"1", "4", "8", "12"} <= set(tell) else tell[:4])
             line = lambda lv: "/".join(f"{share(ex[lv], r):.0f}" for r in shown if r in ex[lv]) if lv in ex else ""
-            cells = [f"{share(ex['depth 0'], tell[0]):.0f}" if "depth 0" in ex else "", line("depth 4"), line("depth 8"), verdict(ex)]
+            if new:
+                cells = [line("depth 4"), line(NEW + "1"), line(NEW + "4"), line(NEW + "8"), verdict_new(ex) if NEW + "1" in ex else verdict(ex)]
+            else:
+                cells = [f"{share(ex['depth 0'], tell[0]):.0f}" if "depth 0" in ex else "", line("depth 4"), line("depth 8"), verdict(ex)]
+        elif new:
+            cells.append("")
         rows.append(f"| {name} | {state[name]} | " + " | ".join(cells) + " |")
     at = "/".join(f"{r}x" for r in shown) if shown else "tellings"
-    L += [f"| Run | State | Depth 0 at 1x | Depth 4 at {at} | Depth 8 at {at} | Verdict |", "|---|---|---|---|---|---|"] + rows
-    L += ["", "Share right (%). Trained to depth 3. Depth 8: always giving the commonest answer scores about 57%, a reasoner of three "
-          "steps 63%. LOOP = depth 8 at 90% or more at the most tellings; n steps = depth 1 to n at 90% or more, no further.", ""] + [f"- {name}: `{opts}`" for name, opts in todo]
+    if new:
+        L += [f"| Run | State | Old rules, depth 4 at {at} | New rule at depth 1 | New rule at depth 4 | New rule at depth 8 | Verdict |", "|---|---|---|---|---|---|---|"] + rows
+        L += ["", "Share right (%). The new rules were trained on machines of depth 1 only. WORKS DEEP = the new rule at depth 8 is right at 90% or "
+              "more at the most tellings; partly deep = 75% or more; shallow only = learned at depth 1, not used deeper.", ""]
+    else:
+        L += [f"| Run | State | Depth 0 at 1x | Depth 4 at {at} | Depth 8 at {at} | Verdict |", "|---|---|---|---|---|---|"] + rows
+        L += ["", "Share right (%). Trained to depth 3. Depth 8: always giving the commonest answer scores about 57%, a reasoner of three "
+              "steps 63%. LOOP = depth 8 at 90% or more at the most tellings; n steps = depth 1 to n at 90% or more, no further.", ""]
+    L += [f"- {name}: `{opts}`" for name, opts in todo]
     return "\n".join(L) + "\n"
 
 

@@ -92,6 +92,8 @@ class KeepConfig:
     group: int = 0              # feed: a chunk's writes land this many tokens at a time, in order (a later group corrects what an earlier one
                                 # wrote, as chunks do); 0: the whole chunk's writes together. For chunks as long as a telling (think --align)
     point_bias: float = 3.0     # feed, point: how sure the top is at first that its write goes under the token before (0: any of the `point` tokens alike)
+    strong: float = 2.0         # the most a write may weigh (beta = strong x sigmoid). At 1 a write is the delta rule in full; above 1 it
+                                # overshoots, and a row written again at every telling can swing from one side of its value to the other
     pull: bool = False          # feed, point: the write the other way round. Each token's place PULLS its value from the tops of the `point`
                                 # tokens after it (a softmax over those sources, each counted by its strength) and is written once,
                                 # under its own address, instead of each token choosing one place to write under
@@ -280,6 +282,7 @@ class Store(nn.Module):
         nn.init.normal_(self.out.weight, std=cfg.dv ** -0.5)
         self.point = cfg.point if cfg.feed else 0
         self.share = cfg.share
+        self.strong = float(cfg.strong)
         self.pull = bool(cfg.pull and self.point)
         if self.point:
             # the top points at one of the `point` tokens before it; a write goes under that token's address.
@@ -327,7 +330,7 @@ class Store(nn.Module):
             if self.soft:
                 p1, p2 = s1.softmax(-1), s2.softmax(-1)
             v = self.val(hn)
-            beta = 2 * torch.sigmoid(self.gate(hn))
+            beta = self.strong * torch.sigmoid(self.gate(hn))
             beta = torch.cat([torch.zeros_like(beta[:, :1]), beta[:, 1:]], 1)
             back = lambda x: torch.cat([x[:, :1], x[:, :-1]], 1)   # each token writes under the address of the token before it
             idx_w, w_w = back(idx), back(w)
@@ -374,7 +377,7 @@ class Store(nn.Module):
             idx, w = (cat(old[i] if old is not None else None, new[i]) for i in (0, 1))
             c = idx.size(1) - n                                      # how many tokens stand before this chunk
             K = idx.size(-1)
-            beta = 2 * torch.sigmoid(self.gate(top))
+            beta = self.strong * torch.sigmoid(self.gate(top))
             t = torch.arange(n, device=top.device) + c              # each token's place among [old, new]
             given = beta.squeeze(-1)                                # what is reported: each token's own strength
             if self.pull:

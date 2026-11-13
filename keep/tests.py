@@ -771,6 +771,8 @@ def thinking_runs():
                  "--every", "1000", "--only", "feed", "--align", "160", "--exam-n", "6", "--ramp", "0.01", "--share", "strength", "--group", "16"])
         Th.main(["--preset", "tiny", "--device", "cpu", "--workers", "0", "--runs", str(out), "--name", "thp", "--tokens", "2e4",
                  "--every", "1000", "--only", "feed", "--align", "160", "--exam-n", "6", "--pull"])
+        Th.main(["--preset", "tiny", "--device", "cpu", "--workers", "0", "--runs", str(out), "--name", "thn", "--tokens", "2e4",
+                 "--every", "1000", "--only", "feed", "--exam-n", "12", "--from", "tha", "--families", "newrules", "--seed", "5"])
     finally:
         sys.stdout = old
     al = torch.load(out / "tha" / "feed" / "ckpt.pt", map_location="cpu", weights_only=False)["config"]
@@ -778,6 +780,19 @@ def thinking_runs():
     assert al["share"] == "strength"
     pl = torch.load(out / "thp" / "feed" / "ckpt.pt", map_location="cpu", weights_only=False)["config"]
     assert pl["pull"] and pl["point_bias"] == 0 and not al["pull"], "the pull write starts with its sources alike"
+    nw = torch.load(out / "thn" / "feed" / "ckpt.pt", map_location="cpu", weights_only=False)["config"]          # --from: fed on from tha, built as tha was
+    assert nw == al, "a run that starts from another is built as that one was (its chunk too)"
+    thn = json.loads((out / "thn" / "think.json").read_text())
+    assert thn["from"] == "tha" and thn["align"] == 160 and "started from the run `tha`" in (out / "thn" / "think.md").read_text()
+    assert {"new rule at depth 1", "new rule at depth 8", "depth 0", "depth 3"} <= set(thn["exam"]["feed"]["newrules"]), "the new rules are asked at every depth"
+    for i in range(60):                                 # newrules: the old circuits are as they were; training has a new rule on two switches only
+        assert Th.circuit(i, (Th.TRAIN_SEED, 0)) == Th.circuit(i, (Th.TRAIN_SEED, 0), new=False)
+        sc = Th.circuit(i, (Th.TRAIN_SEED, 0), new=True)
+        assert all(list(qk) == ["depth"] for *_, qk in sc["qas"])
+        for sent in sc["story"].replace("If ", "").split(". "):
+            if "exactly one of" in sent or "not both" in sent:
+                assert sent.count("switch") == 2, sent
+    assert any("exactly one of" in Th.circuit(i, (Th.TRAIN_SEED, 0), new=True)["story"] for i in range(20))
     tha = json.loads((out / "tha" / "think.json").read_text())
     assert tha["align"] == 160 and set(tha["exam"]["feed"]["circuits"]["all"]) == {"1", "2", "3"} and "one chunk of 160" in (out / "tha" / "think.md").read_text()
     assert (out / "th" / "feed" / "ckpt.pt").stat().st_mtime_ns == when
@@ -826,6 +841,19 @@ def a_round_runs_alone():
     assert Rd.verdict({"depth 1": row(67, 95, 95, 94), "depth 2": row(60, 84, 79, 76), "depth 8": row(62, 58, 59, 58)}) == "1 step"
     assert Rd.verdict({"depth 1": row(58, 68, 70, 69), "depth 8": row(54, 60, 58, 57)}) == "lookup"
     assert Rd.verdict({"depth 1": row(55, 99, 99, 99), "depth 8": row(54, 60, 70, 80)}) == "partly"
+    n1, n8 = Rd.NEW + "1", Rd.NEW + "8"
+    assert Rd.verdict_new({n1: row(60, 99, 99, 99), n8: row(55, 70, 96, 97)}) == "WORKS DEEP"
+    assert Rd.verdict_new({n1: row(60, 99, 99, 99), n8: row(55, 60, 66, 64)}) == "shallow only"
+    assert Rd.verdict_new({n1: row(60, 70, 72, 71), n8: row(55, 60, 66, 64)}) == "new rule not learned"
+    f2 = TMP / "rn.txt"
+    f2.write_text("# New rules.\nthn: --preset tiny\n")       # thinking_runs left "thn" (newrules, from tha) examined: nothing is trained
+    old, sys.stdout = sys.stdout, open(os.devnull, "w")
+    try:
+        Rd.main([str(f2), "--runs", str(out), "--settle", "0", "--poll", "0.5"])
+    finally:
+        sys.stdout = old
+    tn = (out / "round-rn.md").read_text()
+    assert "New rule at depth 8" in tn and "| thn | done |" in tn, tn
 
 if __name__ == "__main__":
     print(f"\n{len(PASSED)} passed, {len(FAILED)} failed" + (": " + ", ".join(FAILED) if FAILED else ""))
