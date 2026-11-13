@@ -793,6 +793,16 @@ def thinking_runs():
             if "exactly one of" in sent or "not both" in sent:
                 assert sent.count("switch") == 2, sent
     assert any("exactly one of" in Th.circuit(i, (Th.TRAIN_SEED, 0), new=True)["story"] for i in range(20))
+    from . import settle as St                          # keep.settle: the stores' change by telling, and the rule that stops on it
+    sdl = torch.load(out / "tha" / "feed" / "ckpt.pt", map_location="cpu", weights_only=False)
+    mdl = Keep(KeepConfig.from_dict(sdl["config"]))
+    mdl.load_state_dict(sdl["model"])
+    sr = St.settle(mdl, ENC, 12, [1, 2, 3], torch.device("cpu"), batch=5)
+    assert set(sr) == set(Th.CIRCUIT_EXAM) and sum(len(v) for v in sr.values()) == 12 and mdl.cfg.chunk == 160
+    assert all(len(ch) == 2 and len(ok) == 3 and all(c >= 0 for c in ch) and all(0 <= o <= 1 for o in ok) for v in sr.values() for ch, ok in v)
+    assert St.rule([([0.5, 0.01], [0, 1, 1]), ([0.5, 0.4], [0, 0, 1])], [1, 2, 3], 0.05) == (3.0, 100.0)
+    assert St.rule([([0.01, 0.01], [0, 1, 0])], [1, 2, 3], 0.05) == (2.0, 100.0)
+    assert "| 8 | 2 |" in St.report("tha", sr, [1, 2, 3], 0.05)
     tha = json.loads((out / "tha" / "think.json").read_text())
     assert tha["align"] == 160 and set(tha["exam"]["feed"]["circuits"]["all"]) == {"1", "2", "3"} and "one chunk of 160" in (out / "tha" / "think.md").read_text()
     assert (out / "th" / "feed" / "ckpt.pt").stat().st_mtime_ns == when
