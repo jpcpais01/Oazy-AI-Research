@@ -1,0 +1,7 @@
+# Round r7: once more, with the controls. In r6 the new rules (taught at depth 1 only) worked deep on the clean pull loop g2
+# (n6: 93% at depth 8). n7 asks the same of the other loop that round r5 grew, g4 (from p4, a telling's writes landing 16
+# tokens at a time). n8 and n9 are pull-write models WITHOUT a loop: p1 (no step at all) and g3 (two steps, then flat). If the
+# loop is what carries a new rule deep, n7 works deep, n9 stops at about two steps and n8 stays shallow.
+n7: --from g4 --families newrules --tokens 5e7 --seed 11
+n8: --from p1 --families newrules --tokens 5e7 --seed 11
+n9: --from g3 --families newrules --tokens 5e7 --seed 11
