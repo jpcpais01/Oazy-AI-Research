@@ -234,6 +234,19 @@ groups before left: the stack still takes the telling in one parallel pass, and 
 with chunks of 16 (the layout of the one run that found the loop), where a later write corrects an earlier one
 instead of being averaged with it.
 
+**The pull write** (`--pull`, `KeepConfig(pull=True)`, off by default). Looked at inside, a small model that does not
+find the loop files a stated fact under its subject but never a derived conclusion (the weight of its pointer on the
+subject: 0.00 to 0.02, against 0.52 in a model that loops): the one step nothing rewards until the loop works. The
+pull write turns the write round. Each token's place takes its value from the final vectors of the 16 tokens after it
+(a softmax over those sources, each counted by its strength) and is written once, under its own address, instead of
+each token choosing one place to write under. A place whose sources lie in two chunks is written by each for its
+share. On the token test that shows the lottery (sentences with the subject 6 to 7 tokens before the conclusion, 55
+minutes a run) the pull write gave, in 3 runs: one loop (depth d at 97 to 100% after d + 1 readings up to depth 3,
+depth 6 at 97% after 12, trained to depth 3), one loop half formed (depth 3 at 86 to 92%), one run with the first
+step in part (77%). An earlier version of it, 5 runs: 2 loops, 1 half formed, 2 with the first step in part. No run
+learned nothing. The pointing write, 6 runs: one loop, and five that learned no step at all. Not shown on the GPU
+yet: `bash runpod/round.sh r3` is that test (three seeds, and one run with `--group 16`).
+
 **A round of runs, unattended.** `bash runpod/round.sh r2` trains the runs listed in `runpod/rounds/r2.txt` (a name, a
 colon, the options of `keep.think`) two at a time, a new one only while the GPU has memory to spare, and keeps ONE
 table in `<runs>/round-r2.md`: per run, depth 0 after one telling, depth 4 and depth 8 by tellings, and a verdict (LOOP,

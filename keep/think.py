@@ -127,7 +127,7 @@ def circuit(i, seed, top=None):
             "qas": [(f"Is {p} on?", "yes" if val[p] else "no", None, {"depth": depth[p]}) for p in asked]}
 
 
-def make(arm: str, preset: dict, vocab: int, point=None, stores=None, align=0, share=None, point_bias=None, group=None) -> Keep:
+def make(arm: str, preset: dict, vocab: int, point=None, stores=None, align=0, share=None, point_bias=None, group=None, pull=False) -> Keep:
     cfg = dict(preset["cfg"], vocab_size=vocab, **THINK[preset["name"]].get("cfg", {}))
     if align:                                       # a window: ALIGN_ROOM chunks, a telling to each, the questions in the last
         cfg["max_len"] = ALIGN_ROOM * align
@@ -148,6 +148,8 @@ def make(arm: str, preset: dict, vocab: int, point=None, stores=None, align=0, s
             cfg["point_bias"] = point_bias
         if group:
             cfg["group"] = group
+        if pull:                                    # the pull write; its sources start alike unless told otherwise
+            cfg.update(pull=True, point_bias=0.0 if point_bias is None else point_bias)
     return Keep(KeepConfig(**cfg))
 
 
@@ -390,7 +392,7 @@ def train(arm, preset, th, args, enc, device, out: Path, say):
         return None, {}
     torch.manual_seed(args.seed)
     model = make(arm, preset, enc.n_vocab, point=args.point,
-                 stores=tuple(int(i) for i in args.stores.split(",")) if args.stores else None, align=args.align, share=args.share, point_bias=args.point_bias, group=args.group).to(device)
+                 stores=tuple(int(i) for i in args.stores.split(",")) if args.stores else None, align=args.align, share=args.share, point_bias=args.point_bias, group=args.group, pull=args.pull).to(device)
     T, B = model.cfg.max_len, args.batch or th.get("batch") or preset["batch"]
     total = int(args.tokens or th["tokens"])
     steps = max(1, total // (B * T))
@@ -405,7 +407,8 @@ def train(arm, preset, th, args, enc, device, out: Path, say):
     yn = [enc.encode_ordinary(" yes.")[0], enc.encode_ordinary(" no.")[0]]       # the curriculum's measure: the share of yes/no answers right
     right, since = None, 0
     say(f"[{arm}] {model.n_params() / 1e6:.1f}M weights, attention reaches {model.cfg.window or T} tokens, "
-        + (f"{len(model.store)} stores of {model.cfg.side ** 2:,} rows" + (f" written from the top (it may file under one of the {model.cfg.point} tokens before)"
+        + (f"{len(model.store)} stores of {model.cfg.side ** 2:,} rows" + ((f" written from the top (each place pulls from the {model.cfg.point} tokens after it)" if model.cfg.pull else
+                                                                          f" written from the top (it may file under one of the {model.cfg.point} tokens before)")
                                                                          if model.cfg.feed else "") if model.store else "no stores")
         + f"; {steps:,} steps of {B} x {T} = {steps * B * T / 1e6:.0f}M tokens; scenes told 1 to {reads} times: {', '.join(args.families)}"
         + (f"; a telling to a chunk of {args.align} tokens" if args.align else "") + (f"; writes share rows by {model.cfg.share}" if model.cfg.feed and model.cfg.share != "all" else "")
@@ -540,6 +543,8 @@ def main(argv=None):
                     "telling in one parallel pass, so a step is 6 passes one after the other instead of 32. 0: tellings follow each other, chunks of 16")
     ap.add_argument("--group", type=int, default=None, help="feed, with --align: a telling's writes land this many tokens at a time, in order (16), "
                     "so a later write corrects an earlier one as it does with chunks of 16; default: a telling's writes land together and share their rows")
+    ap.add_argument("--pull", action="store_true", help="feed: the pull write. Each token's place pulls its value from the tops of the tokens after it "
+                    "and is written once, instead of each token choosing one place to write under (the step the fed model found in few runs)")
     ap.add_argument("--point-bias", type=float, default=None, help="feed: how sure the top is at first that its write goes under the token before "
                     "(3 = 57%% of 16 tokens; 0: every token before alike, for sentences whose subject stands far from their end)")
     ap.add_argument("--ramp", type=float, default=0.0, help="circuits by a curriculum, as the token pilots were trained: depth 1 only at first, the next depth "
