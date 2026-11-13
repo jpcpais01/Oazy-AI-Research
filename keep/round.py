@@ -92,7 +92,7 @@ NEW = "new rule at depth "
 
 
 def verdict_new(ex: dict) -> str:
-    """A run on the family newrules (a new rule taught at depth 1 only): is the rule used at depths never trained?"""
+    """A run on the family newrules or newrules2 (a new rule taught at depth 1, or 1 and 2, only): is the rule used at depths never trained?"""
     best = lambda lv: max(share(ex[lv], r) for r in ex[lv]) if lv in ex else 0.0
     if best(NEW + "1") < 90:
         return "new rule not learned"
@@ -127,7 +127,7 @@ def table(rnd: str, about: str, todo, state: dict, runs: Path, arm: str) -> str:
     at = "/".join(f"{r}x" for r in shown) if shown else "tellings"
     if new:
         L += [f"| Run | State | Old rules, depth 4 at {at} | New rule at depth 1 | New rule at depth 4 | New rule at depth 8 | Verdict |", "|---|---|---|---|---|---|---|"] + rows
-        L += ["", "Share right (%). The new rules were trained on machines of depth 1 only. WORKS DEEP = the new rule at depth 8 is right at 90% or "
+        L += ["", "Share right (%). The new rules were trained on machines of depth " + ("1 and 2" if any("newrules2" in o for _, o in todo) else "1") + " only. WORKS DEEP = the new rule at depth 8 is right at 90% or "
               "more at the most tellings; partly deep = 75% or more; shallow only = learned at depth 1, not used deeper.", ""]
     else:
         L += [f"| Run | State | Depth 0 at 1x | Depth 4 at {at} | Depth 8 at {at} | Verdict |", "|---|---|---|---|---|---|"] + rows

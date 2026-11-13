@@ -265,6 +265,19 @@ taught more, and what it is taught shallow it uses deep. `bash runpod/round.sh r
 `bash runpod/round.sh r5` feeds the three runs of round r3 that learned real steps but no clean loop (p2, p3, p4) 300M
 more tokens of the same circuits, to see whether a sprout becomes a loop when it is trained on.
 
+**What the GPU said (rounds r4 to r8, 13 November, 50M weights).** Feeding works: of the three sprouts, two became
+loops (g2, from p2: 96% at depth 8 after 12 tellings; g4, from p4: 94%), one stayed at two steps (g3). The new rules
+are another matter. Taught at depth 1 only, they are right at depth 8 in one loop, g2 (93% and 99%, two seeds), and as
+deep as the model's own loop goes in g2b and p2 (the same line of models). In the three other loops (g4, c13, c2) the
+old rules stay right to depth 8 and the new rules are right at depth 1 only (g4: two steps). The controls without a
+loop (p1, g3, c12) do not use them deeper than their own steps. So a loop alone is not enough for a rule that was
+shown only with switches as its inputs. The family `newrules2` separates the two things that test mixed: its training
+has the new rules on machines of depth 1 and 2, so a new rule is seen with an input that was worked out, and the exam
+(the same scenes as `newrules`) asks it at depth 3 to 8. `bash runpod/round.sh r9` runs it on the four loops and two
+controls. A first look at Field1 (`--families switches,rules,circuits --align 160`, 100M tokens, from g2 and from the
+control p1): its switches scenes were not learned by either (55 and 59%, the commonest answer 53%), the loop kept on
+circuits; the steps between the plain circuits and Field1 are still to be built.
+
 **When has it read enough?** (`python3 -m keep.settle --name c13`, runs trained with `--align`.) A model that loops
 works a scene out one step a telling and writes the results into the stores; once every value is in place, a further
 telling writes the same values and the stores stand still. `keep.settle` measures, on the exam's circuits, how much
@@ -272,7 +285,8 @@ the stores change from one telling to the next, and tries the rule "stop reading
 (`--bar`), each scene on its own: the tellings it uses, the share right when it stops, the share right after 12.
 On the token test (two models that loop) the rule scores what 12 tellings score at every depth and uses 5 tellings
 at depth 1, 6 at depth 4 and 7.5 to 8.4 at depth 8: the model is never told the depth, and reads longer when the
-problem is deeper. Not measured on the GPU's models yet. It writes `<runs>/<name>/settle.md`.
+problem is deeper. On the GPU's loops (g2, c13, g4) it does not hold: the stores change less with every telling but
+about equally at every depth, and the 5% rule reads 10 to 12 times even at depth 1. It writes `<runs>/<name>/settle.md`.
 
 **A round of runs, unattended.** `bash runpod/round.sh r2` trains the runs listed in `runpod/rounds/r2.txt` (a name, a
 colon, the options of `keep.think`) two at a time, a new one only while the GPU has memory to spare, and keeps ONE
