@@ -1,0 +1,7 @@
+# Round r5: feed the ones that sprouted. The three runs of round r3 that learned real steps but no clean loop (p2, p3, p4) are
+# trained on: 300M more tokens of the same circuits, new scenes, the learning rate back at its start (g2b: a third of it).
+# Does a sprout become a loop when it is fed?
+g2: --from p2 --tokens 3e8 --seed 21
+g3: --from p3 --tokens 3e8 --seed 22
+g4: --from p4 --tokens 3e8 --seed 23
+g2b: --from p2 --tokens 3e8 --seed 21 --lr 2e-4

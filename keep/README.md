@@ -262,6 +262,8 @@ d after d + 1 tellings up to depth 4, at 96 to 100% at depth 6 and 82 to 96% at 
 ones are; after 5 minutes they already stand at 94 to 99% at depth 4. So a model that loops keeps the loop when it is
 taught more, and what it is taught shallow it uses deep. `bash runpod/round.sh r4` asks the same of the GPU's models
 (c13 and c2 loop, p2 almost, c12 does not: the control); its table has the new rule at depth 1, 4 and 8.
+`bash runpod/round.sh r5` feeds the three runs of round r3 that learned real steps but no clean loop (p2, p3, p4) 300M
+more tokens of the same circuits, to see whether a sprout becomes a loop when it is trained on.
 
 **A round of runs, unattended.** `bash runpod/round.sh r2` trains the runs listed in `runpod/rounds/r2.txt` (a name, a
 colon, the options of `keep.think`) two at a time, a new one only while the GPU has memory to spare, and keeps ONE
