@@ -48,6 +48,7 @@ from .run import PRESETS, amp, runs_dir
 ARMS = ("feed", "keep", "full")
 NAMES = {"feed": "Keep, stores written from the top", "keep": "Keep", "full": "Twin"}
 FAMILIES = ("circuits",)                   # the default: this file's own plain rung (below)
+OWN = ("circuits", "newrules")             # this file's own families (newrules: circuits with two more rules, taught at depth 1 only)
 FIELD1 = ("switches", "rules")             # Field1's two families that are chains of rules told in any order (their questions say how deep)
 OTHERS = ("places", "compare", "count", "family", "schedule")      # more families whose questions say how many steps they take
 # what differs from run.py's presets: the training window (a scene told several times has to fit in it), the stores
@@ -84,15 +85,19 @@ ALIGN_ROOM = 6                              # chunks to a training window: a cir
 # 1, 2, 3, 4, 6, 8 (each machine follows the one before it), so that the levels past CIRCUIT_TRAIN were never trained.
 CIRCUIT_TRAIN = 3
 CIRCUIT_EXAM = (1, 2, 3, 4, 6, 8)
+NEW_RULES = ("one", "notboth")              # newrules: "exactly one of A and B is on", "A and B are not both on"
 C_SWITCH = ["red", "blue", "green", "grey", "white", "black", "brown", "pink", "orange", "purple", "yellow", "silver"]
 C_MACHINE = ["lamp", "pump", "fan", "bell", "radio", "motor", "heater", "siren", "buzzer", "alarm", "light", "clock", "door", "gate", "mill",
              "drill", "press", "valve", "crane", "oven", "kettle", "robot", "drone", "engine"]
 
 
-def circuit(i, seed, top=None):
+def circuit(i, seed, top=None, new=False):
     """Scene i as levels.scene gives one: {"story", "qas": [(question, answer, _, {"depth": d})], "depth": its deepest}.
-    A seed that starts with EXAM_SEED gives the exam's circuits. top: no deeper than this (training's curriculum)."""
-    r = random.Random(f"circuits|{seed}|{i}")
+    A seed that starts with EXAM_SEED gives the exam's circuits. top: no deeper than this (training's curriculum).
+    new: the family "newrules". Two more rules (NEW_RULES), in training only on machines of depth 1 (half of the machines
+    that follow a switch); in the exam the machine asked for at depth d has one, its inputs worked out by the old rules:
+    its question's level is "new rule at depth d"."""
+    r = random.Random(f"{'newrules' if new else 'circuits'}|{seed}|{i}")
     exact = CIRCUIT_EXAM[i % len(CIRCUIT_EXAM)] if (seed[0] if isinstance(seed, tuple) else seed) == EXAM_SEED else None
     while True:
         nsw = r.randint(2, 3)
@@ -102,19 +107,26 @@ def circuit(i, seed, top=None):
         val = {s: r.random() < 0.5 for s in sw}
         depth = {s: 0 for s in sw}
         parts, said = list(sw), [f"{s.capitalize()} is {'on' if val[s] else 'off'}." for s in sw]
+        newly = set()
         for k, m in enumerate(ms):
             if exact:                               # past the chain: a machine on an earlier part, so that none is deeper than asked for
                 first = parts[-1] if k < exact else r.choice(parts[:-1])
             else:
                 first = parts[-1] if (k and r.random() < 0.6) else r.choice(parts)
             ins = [first]
-            if r.random() < 0.4:
+            fresh = new and ((k == exact - 1) if exact else (depth[first] == 0 and r.random() < 0.5))
+            if fresh:                               # a new rule: two inputs (training: two switches, so depth 1)
+                ins.append(r.choice([p for p in (parts if exact else sw) if p != first]))
+            elif r.random() < 0.4:
                 ins.append(r.choice([p for p in (parts[:-1] if exact and k >= exact else parts) if p != first]))
-            op = r.choice(["same", "not"]) if len(ins) == 1 else r.choice(["and", "or"])
+            op = r.choice(list(NEW_RULES)) if fresh else r.choice(["same", "not"]) if len(ins) == 1 else r.choice(["and", "or"])
             xs = [val[p] for p in ins]
-            val[m] = {"same": xs[0], "not": not xs[0], "and": all(xs), "or": any(xs)}[op]
+            val[m] = {"same": xs[0], "not": not xs[0], "and": all(xs), "or": any(xs), "one": xs[0] != xs[-1], "notboth": not all(xs)}[op]
             depth[m] = 1 + max(depth[p] for p in ins)
-            cond = {"same": f"{ins[0]} is on", "not": f"{ins[0]} is off", "and": f"{ins[0]} and {ins[-1]} are on", "or": f"{ins[0]} or {ins[-1]} is on"}[op]
+            if fresh:
+                newly.add(m)
+            cond = {"same": f"{ins[0]} is on", "not": f"{ins[0]} is off", "and": f"{ins[0]} and {ins[-1]} are on", "or": f"{ins[0]} or {ins[-1]} is on",
+                    "one": f"exactly one of {ins[0]} and {ins[-1]} is on", "notboth": f"{ins[0]} and {ins[-1]} are not both on"}[op]
             said.append(f"{m.capitalize()} is on if {cond}." if r.random() < 0.5 else f"If {cond}, {m} is on.")
             parts.append(m)
         if exact or max(depth.values()) <= (top or CIRCUIT_TRAIN):
@@ -124,7 +136,7 @@ def circuit(i, seed, top=None):
     if not exact:
         r.shuffle(asked)
     return {"story": " ".join(said), "depth": max(depth.values()),
-            "qas": [(f"Is {p} on?", "yes" if val[p] else "no", None, {"depth": depth[p]}) for p in asked]}
+            "qas": [(f"Is {p} on?", "yes" if val[p] else "no", None, {"new rule at depth" if exact and p in newly else "depth": depth[p]}) for p in asked]}
 
 
 def make(arm: str, preset: dict, vocab: int, point=None, stores=None, align=0, share=None, point_bias=None, group=None, pull=False) -> Keep:
@@ -156,7 +168,7 @@ def make(arm: str, preset: dict, vocab: int, point=None, stores=None, align=0, s
 # ---------------------------------------------------------------- scenes told R times
 def level(knobs: dict):
     """The level of a question: its depth when the family gives one, else the first knob it gives, else None."""
-    for k in ("depth", "hops", "nest", "gap", "changes", "rel", "false_belief"):
+    for k in ("new rule at depth", "depth", "hops", "nest", "gap", "changes", "rel", "false_belief"):
         if k in knobs:
             return f"{k} {int(knobs[k]) if isinstance(knobs[k], bool) else knobs[k]}"
     for k, v in knobs.items():
@@ -169,11 +181,11 @@ def told(enc, family: str, i, seed, top=None):
     """Scene i -> (one reading as tokens, what stands between two readings, the question lines
     [(lead tokens, answer tokens, choices, answer, level)])."""
     from oazy.field1 import levels
-    sc = circuit(i, seed, top) if family == "circuits" else levels.scene(family, i, seed)
+    sc = circuit(i, seed, top, new=family == "newrules") if family in OWN else levels.scene(family, i, seed)
     lines = []
     for q, a, _, qk in sc["qas"]:
         lines.append((enc.encode_ordinary(f"\n{q} Answer:"), enc.encode_ordinary(f" {a}."),
-                      ["yes", "no"] if family == "circuits" else levels.choices(family, q, a, sc["story"], knobs=qk), a, level(qk)))
+                      ["yes", "no"] if family in OWN else levels.choices(family, q, a, sc["story"], knobs=qk), a, level(qk)))
     return enc.encode_ordinary(sc["story"]), enc.encode_ordinary("\n\n"), lines, sc.get("depth")
 
 
@@ -378,6 +390,16 @@ def exam(model: Keep, enc, families, reads_list, n, device, batch=32, seed=0, sa
 
 
 # ---------------------------------------------------------------- training
+def start_from(args, arm, out: Path):
+    """--from: the checkpoint this arm starts from (a run's name in the same runs folder, or a path), or None."""
+    if not getattr(args, "start", None):
+        return None
+    for p in (Path(args.start), Path(args.start) / arm / "ckpt.pt", out.parent.parent / args.start / arm / "ckpt.pt"):
+        if p.is_file():
+            return p
+    raise SystemExit(f"--from {args.start}: no trained {arm} model there ({out.parent.parent / args.start / arm / 'ckpt.pt'})")
+
+
 def train(arm, preset, th, args, enc, device, out: Path, say):
     out.mkdir(parents=True, exist_ok=True)
     ck = out / "ckpt.pt"
@@ -391,8 +413,18 @@ def train(arm, preset, th, args, enc, device, out: Path, say):
     if args.only == "report":
         return None, {}
     torch.manual_seed(args.seed)
-    model = make(arm, preset, enc.n_vocab, point=args.point,
-                 stores=tuple(int(i) for i in args.stores.split(",")) if args.stores else None, align=args.align, share=args.share, point_bias=args.point_bias, group=args.group, pull=args.pull).to(device)
+    src = start_from(args, arm, out)
+    if src is not None:                             # feed the one that sprouted: go on from a trained model, as it was built
+        sd = torch.load(src, map_location="cpu", weights_only=False)
+        model = Keep(KeepConfig.from_dict(sd["config"]))
+        model.load_state_dict(sd["model"])
+        if args.align:                              # the chunk and the window may differ from the first training's (longer scenes)
+            model.cfg.chunk, model.cfg.max_len = args.align, ALIGN_ROOM * args.align
+        model = model.to(device)
+        say(f"[{arm}] starts from {src} ({sd.get('tokens', 0) / 1e6:.0f}M tokens of training already)")
+    else:
+        model = make(arm, preset, enc.n_vocab, point=args.point,
+                     stores=tuple(int(i) for i in args.stores.split(",")) if args.stores else None, align=args.align, share=args.share, point_bias=args.point_bias, group=args.group, pull=args.pull).to(device)
     T, B = model.cfg.max_len, args.batch or th.get("batch") or preset["batch"]
     total = int(args.tokens or th["tokens"])
     steps = max(1, total // (B * T))
@@ -502,6 +534,12 @@ def report(res: dict) -> str:
          f"never trained on {', '.join(reads)} times. Share of questions right (%)."
          + (f" A telling fills one chunk of {res['align']} tokens (longer in the exam): the fed model takes a telling in one pass, and one more "
             "telling is one more step for the whole scene, so depth d asks for d + 1 tellings." if res.get("align") else ""), ""]
+    if res.get("from"):
+        L += [f"Every model here started from the run `{res['from']}` (already trained) and was trained on with the tokens below.", ""]
+    if "newrules" in res["families"]:
+        L += ["newrules: circuits with two more rules (\"exactly one of A and B is on\", \"A and B are not both on\"). Training has them only on "
+              "machines of depth 1 (two switches). \"new rule at depth d\": the exam asks a machine with a new rule whose inputs are d - 1 steps deep, "
+              "which training never showed.", ""]
     L += ["| Model | Weights | Tokens | Speed |", "|---|---|---|---|"]
     for a in arms:
         s = res["train"].get(a, {})
@@ -545,6 +583,8 @@ def main(argv=None):
                     "so a later write corrects an earlier one as it does with chunks of 16; default: a telling's writes land together and share their rows")
     ap.add_argument("--pull", action="store_true", help="feed: the pull write. Each token's place pulls its value from the tops of the tokens after it "
                     "and is written once, instead of each token choosing one place to write under (the step the fed model found in few runs)")
+    ap.add_argument("--from", dest="start", default=None, help="start from a trained run (its name, or the path of its ckpt.pt) instead of from nothing: "
+                    "feed the one that sprouted. The model is built as that run built it (stores, write, group); --align is taken from it unless given")
     ap.add_argument("--point-bias", type=float, default=None, help="feed: how sure the top is at first that its write goes under the token before "
                     "(3 = 57%% of 16 tokens; 0: every token before alike, for sentences whose subject stands far from their end)")
     ap.add_argument("--ramp", type=float, default=0.0, help="circuits by a curriculum, as the token pilots were trained: depth 1 only at first, the next depth "
@@ -569,16 +609,22 @@ def main(argv=None):
     enc = tok.get("smollm2")
     args.families = list(ALL) if args.families == "all" else [f for f in args.families.split(",") if f]
     for f in args.families:
-        if f not in ALL and f != "circuits":
+        if f not in ALL and f not in OWN:
             raise SystemExit(f"no Field1 family {f!r}; there are: {', '.join(ALL)}")
     preset = dict(PRESETS[args.preset], name=args.preset)
     th = THINK[args.preset]
     out = Path(args.runs or runs_dir()) / args.name
     out.mkdir(parents=True, exist_ok=True)
     say = lambda s: print(s, flush=True)
+    if args.start and not args.align:               # a telling to a chunk, if the first training had it so
+        for arm in [a for a in ARMS if args.only in ("all", a)]:
+            src = start_from(args, arm, out / arm)
+            c0 = torch.load(src, map_location="cpu", weights_only=False)["config"]
+            if c0.get("feed") and c0["max_len"] == ALIGN_ROOM * c0["chunk"]:
+                args.align = c0["chunk"]
     res_path = out / "think.json"
     res = json.loads(res_path.read_text()) if res_path.exists() else {}
-    res.update({"preset": args.preset, "families": args.families, "exam_reads": list(th["exam_reads"]), "reads": args.reads or th["reads"], "align": args.align})
+    res.update({"preset": args.preset, "from": args.start, "families": args.families, "exam_reads": list(th["exam_reads"]), "reads": args.reads or th["reads"], "align": args.align})
     res.setdefault("train", {})
     res.setdefault("exam", {})
     for arm in [a for a in ARMS if args.only in ("all", "report", a)]:

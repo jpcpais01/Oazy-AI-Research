@@ -244,8 +244,24 @@ share. On the token test that shows the lottery (sentences with the subject 6 to
 minutes a run) the pull write gave, in 3 runs: one loop (depth d at 97 to 100% after d + 1 readings up to depth 3,
 depth 6 at 97% after 12, trained to depth 3), one loop half formed (depth 3 at 86 to 92%), one run with the first
 step in part (77%). An earlier version of it, 5 runs: 2 loops, 1 half formed, 2 with the first step in part. No run
-learned nothing. The pointing write, 6 runs: one loop, and five that learned no step at all. Not shown on the GPU
-yet: `bash runpod/round.sh r3` is that test (three seeds, and one run with `--group 16`).
+learned nothing. The pointing write, 6 runs: one loop, and five that learned no step at all. With seeds made
+reproducible, four more runs: one clean loop, two that never file a fact, and one that answers right only after an odd
+number of tellings (a write may weigh up to 2; `KeepConfig(strong=1.0)` caps it at 1 and that seed then forms most of a
+loop). All 13 runs: 4 loops, 3 dead. **On the GPU (round r3, four runs, 300M tokens) the pull write gave no clean
+loop:** one run close to it (depth 4 at 96% after 6 tellings, depth 8 at 82% after 12), one of two steps, one of one
+step, one without a step. Three of the four file facts after one telling (two of six with the pointing write), so the
+first hurdle is lower; the loop is as rare as before. In all, 14 fed runs on the GPU: 2 clean loops.
+
+**Feed the one that sprouted** (`--from RUN`, the family `newrules`). The loop is found by few runs, but it has to be
+found once. `--from c13` starts a run from the trained model of the run `c13` (built as that run built it; `--align` is
+taken from it unless given). The family `newrules` is circuits with two more rules, "exactly one of A and B is on" and
+"A and B are not both on", which training shows only on machines of depth 1 (two switches); its exam asks a machine
+with a new rule at depth 1 to 8 ("new rule at depth d"), next to the old rules. On the token test (two models that
+loop, 25 minutes more training with two new operators at depth 1 only): the new operators are right at 100% at depth
+d after d + 1 tellings up to depth 4, at 96 to 100% at depth 6 and 82 to 96% at depth 8 after 12 tellings, as the old
+ones are; after 5 minutes they already stand at 94 to 99% at depth 4. So a model that loops keeps the loop when it is
+taught more, and what it is taught shallow it uses deep. `bash runpod/round.sh r4` asks the same of the GPU's models
+(c13 and c2 loop, p2 almost, c12 does not: the control); its table has the new rule at depth 1, 4 and 8.
 
 **A round of runs, unattended.** `bash runpod/round.sh r2` trains the runs listed in `runpod/rounds/r2.txt` (a name, a
 colon, the options of `keep.think`) two at a time, a new one only while the GPU has memory to spare, and keeps ONE

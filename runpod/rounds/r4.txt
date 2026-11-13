@@ -1,0 +1,8 @@
+# Round r4: feed the one that sprouted. Models that are already trained are taught two new rules ("exactly one of A and B is on",
+# "A and B are not both on") on machines of depth 1 only, for 50M tokens. Is the new rule then used at depth 2 to 8, which training
+# never showed? c13 and c2 loop, p2 almost does, c12 does not (the control). n5: as n1, a third of the learning rate.
+n1: --from c13 --families newrules --tokens 5e7 --seed 11
+n2: --from c2 --families newrules --tokens 5e7 --seed 11
+n3: --from p2 --families newrules --tokens 5e7 --seed 11
+n4: --from c12 --families newrules --tokens 5e7 --seed 11
+n5: --from c13 --families newrules --tokens 5e7 --seed 11 --lr 2e-4
