@@ -589,6 +589,54 @@ def the_top_writes_the_store():
 
 
 @check
+def the_places_pull():
+    """pull: each token's place takes its value from the tops of the tokens after it and is written once. Sure of the
+    token after, it is the plain fed store; a source that is held back is not pulled; only the past is seen; what
+    later reads need teaches which source a place pulls."""
+    m, p = fed(), fed(point=5, pull=True)
+    p.load_state_dict(m.state_dict(), strict=False)
+    x = torch.randint(1, CFG["vocab_size"], (2, 64))
+    st = p.store["1"]
+    with torch.no_grad():
+        want = m.hidden(x, m.init_state(2))
+        st.pb.copy_(torch.tensor([60.0, 0, 0, 0, 0]))
+        st.pq.weight.zero_()
+        got = p.hidden(x, p.init_state(2))
+        assert torch.allclose(got[0], want[0], atol=1e-4) and torch.allclose(got[1]["1"], want[1]["1"], atol=1e-4), "sure of the token after, a pull is the plain write"
+        torch.nn.init.normal_(st.pq.weight, std=0.1)
+        st.pb.zero_()
+        y = x.clone()
+        y[:, 40] = (y[:, 40] + 1) % CFG["vocab_size"]
+        a, b = p.hidden(x, p.init_state(2))[0], p.hidden(y, p.init_state(2))[0]
+        assert float((a[:, :40] - b[:, :40]).abs().max()) == 0 and float((a[:, 40:] - b[:, 40:]).abs().max()) > 0
+        # six tokens at six addresses, all strengths 1: a place takes the mean of the tokens after it it can reach, the
+        # last place nothing; with one source held back, the other's value alone, at the strength of its share
+        st.pq.weight.zero_()
+        st.gate.weight.zero_()
+        st.gate.bias.zero_()
+        idx = (torch.arange(6)[:, None] * 4 + torch.arange(4)[None, :])[None]
+        w = torch.full((1, 6, 4), 0.25)
+        keys = torch.zeros(1, 6, st.pk.out_features)
+        top = torch.randn(1, 6, CFG["d"])
+        S0 = torch.randn(1, st.rows, st.dv)
+        S1, strength = st.file(top, S0, (idx, w, keys), None)
+        v = st.val(top)[0]
+        assert torch.allclose(S1[0, 0:4].mean(0), v[1:6].mean(0), atol=1e-5) and torch.allclose(S1[0, 12:16].mean(0), v[4:6].mean(0), atol=1e-5)
+        assert torch.equal(S1[0, 20:24], S0[0, 20:24]) and strength.shape == (1, 6), "the last place has nothing to pull"
+        st.gate.weight.copy_(torch.zeros_like(st.gate.weight))
+        st.gate.weight[0, 0] = 40.0
+        top[0, :, 0] = torch.tensor([0.0, 0, 0, 0, -1.0, 0])        # token 4 is held back
+        S2, _ = st.file(top, S0, (idx, w, keys), None)
+        half = 0.5 * (S0[0, 12:16].mean(0) + st.val(top)[0, 5])     # half of place 3's pull is on token 4, which says nothing: it moves half way to token 5's value
+        assert torch.allclose(S2[0, 12:16].mean(0), half, atol=1e-4), "a source that is held back was pulled"
+        st.gate.weight.zero_()
+        torch.nn.init.normal_(st.pq.weight, std=0.1)
+    p.train()
+    p.hidden(x, p.init_state(2))[0][:, 32:].square().sum().backward()
+    assert all(float(g.grad.abs().sum()) > 0 for g in (st.pq.weight, st.pk.weight, st.pb, st.val.weight))
+
+
+@check
 def the_top_points():
     """point: the top files its write under one of the tokens before it. Sure of the token before, it is the plain
     fed store; pointing elsewhere it is not; the pointer is taught by what later reads need."""
@@ -721,11 +769,15 @@ def thinking_runs():
         Th.main(args + ["--only", "report"])
         Th.main(["--preset", "tiny", "--device", "cpu", "--workers", "0", "--runs", str(out), "--name", "tha", "--tokens", "2e4",
                  "--every", "1000", "--only", "feed", "--align", "160", "--exam-n", "6", "--ramp", "0.01", "--share", "strength", "--group", "16"])
+        Th.main(["--preset", "tiny", "--device", "cpu", "--workers", "0", "--runs", str(out), "--name", "thp", "--tokens", "2e4",
+                 "--every", "1000", "--only", "feed", "--align", "160", "--exam-n", "6", "--pull"])
     finally:
         sys.stdout = old
     al = torch.load(out / "tha" / "feed" / "ckpt.pt", map_location="cpu", weights_only=False)["config"]
     assert al["chunk"] == 160 and al["max_len"] == Th.ALIGN_ROOM * 160, "a telling to a chunk: the fed model's chunk is the telling's"
     assert al["share"] == "strength"
+    pl = torch.load(out / "thp" / "feed" / "ckpt.pt", map_location="cpu", weights_only=False)["config"]
+    assert pl["pull"] and pl["point_bias"] == 0 and not al["pull"], "the pull write starts with its sources alike"
     tha = json.loads((out / "tha" / "think.json").read_text())
     assert tha["align"] == 160 and set(tha["exam"]["feed"]["circuits"]["all"]) == {"1", "2", "3"} and "one chunk of 160" in (out / "tha" / "think.md").read_text()
     assert (out / "th" / "feed" / "ckpt.pt").stat().st_mtime_ns == when

@@ -92,11 +92,9 @@ class KeepConfig:
     group: int = 0              # feed: a chunk's writes land this many tokens at a time, in order (a later group corrects what an earlier one
                                 # wrote, as chunks do); 0: the whole chunk's writes together. For chunks as long as a telling (think --align)
     point_bias: float = 3.0     # feed, point: how sure the top is at first that its write goes under the token before (0: any of the `point` tokens alike)
-    pull: int = 0               # feed, point: the other way round. 1: each token's place PULLS its value from the tops of the `point` tokens
-                                # after it (a softmax over those sources), and is written once, under its own address. 2: the same, and
-                                # a place may pull nothing (one more choice in the softmax, by the place's own key). 3: as 2, and the
-                                # sources have no gate of their own: a place is written with what it pulls (1 - nothing), a plain
-                                # attention of the places over the tops that follow them
+    pull: bool = False          # feed, point: the write the other way round. Each token's place PULLS its value from the tops of the `point`
+                                # tokens after it (a softmax over those sources, each counted by its strength) and is written once,
+                                # under its own address, instead of each token choosing one place to write under
     share: str = "all"          # feed: how the writes of a chunk share a row. "all": every write on it counts, also one that is held back;
                                 # "strength": a write counts by its strength (beta, up to 1), so a write that is held back weakens no other
     write_cost: float = 0.0     # added to the loss: this x the mean write strength (beta, 0..2) over the stores (0: it closed the stores)
@@ -282,15 +280,13 @@ class Store(nn.Module):
         nn.init.normal_(self.out.weight, std=cfg.dv ** -0.5)
         self.point = cfg.point if cfg.feed else 0
         self.share = cfg.share
-        self.pull = int(cfg.pull) if self.point else 0
+        self.pull = bool(cfg.pull and self.point)
         if self.point:
             # the top points at one of the `point` tokens before it; a write goes under that token's address.
             # It starts at the token before (the plain "what followed"), and learns to reach back.
             self.pq = nn.Linear(cfg.d, cfg.d_addr, bias=False)
             self.pk = nn.Linear(cfg.d, cfg.d_addr, bias=False)
             self.pb = nn.Parameter(torch.tensor([float(cfg.point_bias)] + [0.0] * (self.point - 1)))
-            if self.pull >= 2:
-                self.pn = nn.Linear(cfg.d_addr, 1)                  # pull: how much a place would rather pull nothing
         self.top = min(cfg.k, cfg.side)             # the k best rows lie among the k best of each half-key
         self.sparse = True                          # False: the whole table inside autograd (the reference; slow)
 
@@ -362,6 +358,11 @@ class Store(nn.Module):
             r = (w[..., None] * S.gather(1, g).view(B, n, K, self.dv)).sum(2)
             return self.out(r).to(h.dtype), (idx, w, self.pk(hn) if self.point else None)
 
+    def sources(self, top):
+        """pull: what the places' pulls are matched against, for the final vectors of some tokens (B, n, d_addr)."""
+        with torch.autocast(top.device.type, enabled=False):
+            return self.pq(top.float())
+
     def file(self, top, S, new, old):
         """The writes of a chunk, after the top: top (B, n, D) the final vectors of the chunk's tokens; new / old:
         what look() gave for these tokens / for the tokens before them (old may be None at the start of a window: then
@@ -377,21 +378,23 @@ class Store(nn.Module):
             t = torch.arange(n, device=top.device) + c              # each token's place among [old, new]
             given = beta.squeeze(-1)                                # what is reported: each token's own strength
             if self.pull:
-                # Every place p among [old, new] is written once, under its own address, with what the tops of the J
-                # tokens after it say: a softmax over those sources (of this chunk), each counted by its strength.
+                # Every place p among [old, new] is written under its own address with what the tops of the J tokens
+                # after it say: a softmax over those sources, each counted by its strength. A place whose sources lie
+                # in two chunks is written by each chunk for its share (the softmax is over all its sources read so
+                # far: new[3] / old[3], what sources() gave for them; without them, over this chunk's alone).
                 keys = cat(old[2] if old is not None else None, new[2])
                 J, P = self.point, c + n
-                off = t[None, :] - torch.arange(P, device=top.device)[:, None]             # (P, n): source - place
+                q = new[3] if len(new) > 3 else self.pq(top)
+                if old is not None and len(old) > 3:
+                    q = torch.cat([old[3], q], 1)
+                first = P - q.size(1)                                                       # the place of the first source in sight
+                off = (torch.arange(q.size(1), device=top.device) + first)[None, :] - torch.arange(P, device=top.device)[:, None]      # (P, sources): source - place
                 ok = (off >= 1) & (off <= J)
-                sc = torch.einsum("bpd,bnd->bpn", keys, self.pq(top)) / math.sqrt(keys.size(-1)) + self.pb[(off - 1).clamp(0, J - 1)]
-                sc = sc.masked_fill(~ok, -1e9)
-                if self.pull >= 2:
-                    sc = torch.cat([sc, self.pn(keys)], -1)                                 # the last choice: nothing
-                a = sc.softmax(-1)[..., :n] * ok.any(-1, keepdim=True)
-                if self.pull == 3:
-                    given = a.sum(1)                                                        # no gate at the source: a token's strength is how much it is pulled
-                else:
-                    a = a * given[:, None, :]
+                sc = torch.einsum("bpd,bnd->bpn", keys, q) / math.sqrt(keys.size(-1)) + self.pb[(off - 1).clamp(0, J - 1)]
+                a = (sc.masked_fill(~ok, -1e9).softmax(-1) * ok.any(-1, keepdim=True))[..., -n:]
+                ok = ok[:, -n:]
+                mine = a.sum(-1, keepdim=True)                                              # (B, P, 1): how much of a place's pull is on this chunk
+                a = a * given[:, None, :]
                 beta = a.sum(-1, keepdim=True)                                              # (B, P, 1): the strength a place is written with
                 top_v = torch.einsum("bpn,bnd->bpd", a, self.val(top)) / beta.clamp(min=1e-6)
                 iw, ww, n = idx, w * ok.any(-1)[None, :, None], P
@@ -423,9 +426,11 @@ class Store(nn.Module):
             # them have nothing to say (beta near 0); counted in full they cut the one real write to a fraction. So
             # write s counts g_s = min(beta_s, 1) on its rows, and a write counts itself in full: the step of write t
             # is a_t / (a_t . (sum_s g_s a_s + (1 - g_t) a_t)). Alone: the delta rule. All at full strength: "all".
+            # pull: a place counts on its rows by how much of its pull is on this chunk (a place that pulls elsewhere
+            # weakens no other), and itself in full, by the same rule.
             aw = ww.detach()
-            if self.share == "strength":
-                g = beta.detach().clamp(max=1.0)
+            if self.share == "strength" or self.pull:
+                g = beta.detach().clamp(max=1.0) if self.share == "strength" else mine.detach()
                 share = torch.zeros(B, self.rows, device=S.device).scatter_add_(1, flat, (g * aw).reshape(B, n * R)).gather(1, flat).view(B, n, R) + (1 - g) * aw
             else:
                 share = torch.zeros(B, self.rows, device=S.device).scatter_add_(1, flat, aw.reshape(B, n * R)).gather(1, flat).view(B, n, R)
@@ -555,9 +560,11 @@ class Keep(nn.Module):
             for i, st in self.store.items():
                 for c in range(0, b - a, grp):                        # the writes, a group at a time: each sees what the groups before wrote
                     part = tuple(None if t is None else t[:, c:c + grp] for t in new[i])
+                    if st.pull:                                       # a place may pull from this group and from the ones before
+                        part = part + (st.sources(h[:, c:c + grp]),)
                     S[i], bt = st.file(h[:, c:c + grp], S[i], part, old[i])
                     beta[i].append(bt)
-                    both = [n_ if o is None or n_ is None else torch.cat([o, n_], 1) for o, n_ in zip(old[i] or (None, None, None), part)]
+                    both = [n_ if o is None or n_ is None else torch.cat([o, n_], 1) for o, n_ in zip(old[i] or (None,) * len(part), part)]
                     old[i] = tuple(None if t is None else t[:, -back:] for t in both)
         return torch.cat(outs, 1), S, {i: torch.cat(v, 1) for i, v in beta.items()}
 
