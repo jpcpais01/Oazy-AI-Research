@@ -265,6 +265,15 @@ taught more, and what it is taught shallow it uses deep. `bash runpod/round.sh r
 `bash runpod/round.sh r5` feeds the three runs of round r3 that learned real steps but no clean loop (p2, p3, p4) 300M
 more tokens of the same circuits, to see whether a sprout becomes a loop when it is trained on.
 
+**When has it read enough?** (`python3 -m keep.settle --name c13`, runs trained with `--align`.) A model that loops
+works a scene out one step a telling and writes the results into the stores; once every value is in place, a further
+telling writes the same values and the stores stand still. `keep.settle` measures, on the exam's circuits, how much
+the stores change from one telling to the next, and tries the rule "stop reading when they changed by less than 5%"
+(`--bar`), each scene on its own: the tellings it uses, the share right when it stops, the share right after 12.
+On the token test (two models that loop) the rule scores what 12 tellings score at every depth and uses 5 tellings
+at depth 1, 6 at depth 4 and 7.5 to 8.4 at depth 8: the model is never told the depth, and reads longer when the
+problem is deeper. Not measured on the GPU's models yet. It writes `<runs>/<name>/settle.md`.
+
 **A round of runs, unattended.** `bash runpod/round.sh r2` trains the runs listed in `runpod/rounds/r2.txt` (a name, a
 colon, the options of `keep.think`) two at a time, a new one only while the GPU has memory to spare, and keeps ONE
 table in `<runs>/round-r2.md`: per run, depth 0 after one telling, depth 4 and depth 8 by tellings, and a verdict (LOOP,
