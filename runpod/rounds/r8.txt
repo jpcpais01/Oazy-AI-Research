@@ -1,0 +1,7 @@
+# Round r8: second seeds. The new rules (taught at depth 1 only) worked deep on the loop g2 (n6: 93% at depth 8) and not on the
+# loop g4 (n7: 59%), each with one seed. n6b and n7b repeat both with another seed. n10: the same from g2b (p2 fed at a third of
+# the learning rate, a loop with a lossy step). n3b: the same from p2 itself, another seed (n3 gave 78% at depth 8).
+n6b: --from g2 --families newrules --tokens 5e7 --seed 12
+n7b: --from g4 --families newrules --tokens 5e7 --seed 12
+n10: --from g2b --families newrules --tokens 5e7 --seed 11
+n3b: --from p2 --families newrules --tokens 5e7 --seed 12
