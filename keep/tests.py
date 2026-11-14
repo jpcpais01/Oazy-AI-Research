@@ -872,6 +872,60 @@ def thinking_runs():
     cs = Th.scene_tokens(ENC, "colours", 2, (Th.EXAM_SEED, 0), 4, 1 << 30, align=112)
     assert cs is not None and len(cs[2]) == len(ct[2]) and all(len(set(c)) == 8 for _, c, *_ in cs[2]), "the 8 colours part on one piece, so every question is marked"
     assert all(Th.colours(i, (Th.TRAIN_SEED, 0), top=1)["depth"] == 1 for i in range(12))
+    for fam in Th.CSTEPS:                               # the steps on the family circuits: switches kept, the old families untouched
+        txt = ""
+        for i in range(60):
+            sc = Th.circuit(i, (Th.TRAIN_SEED, 0), step=fam[1:])
+            txt += sc["story"]
+            assert "switch" in sc["story"] and sc["depth"] <= 3 and Th.circuit(i, (Th.EXAM_SEED, 0), step=fam[1:])["depth"] == Th.CIRCUIT_EXAM[i % len(Th.CIRCUIT_EXAM)]
+        assert ("turned" in txt) == (fam in ("csets", "cflips", "csteps")) and ("flipped" in txt) == (fam in ("cflips", "csteps")) and ("At first" in txt) == (fam in ("cwords", "csteps"))
+        assert Th.told(ENC, fam, 3, (Th.TRAIN_SEED, 0))[3] is not None
+    def tale_answers(sc):                               # tales: read the story back by its wordings and work every person out
+        q0 = sc["qas"][0][0]
+        P = q0[len("Is " + q0.split()[1] + " "):-1]
+        N = dict(Th.T_STATES)[P]
+        p, n, w = re.escape(P), re.escape(N), r"(\w+)"
+        forms = [("or", [f"{w} is {p} if {w} or {w} is {p}\\.", f"When {w} or {w} is {p}, {w} is {p} too\\.", f"{w} is {p} whenever {w} or {w} is\\.", f"{w} is {p} as soon as one of {w} and {w} is\\."]),
+                 ("and", [f"{w} is {p} if {w} and {w} are both {p}\\.", f"When {w} and {w} are {p}, {w} is {p} too\\.", f"{w} is {p} only when both {w} and {w} are\\.", f"{w} needs both {w} and {w} to be {p}\\."]),
+                 ("not", [f"{w} is {p} if {w} is {n}\\.", f"When {w} is {n}, {w} is {p}\\.", f"{w} is {p} only when {w} is not\\.", f"{w} is never the same as {w}\\."]),
+                 ("same", [f"{w} is {p} if {w} is {p}\\.", f"When {w} is {p}, {w} is {p} too\\.", f"{w} is {p} whenever {w} is\\.", f"{w} is always the same as {w}\\."])]
+        val, rules = {}, []
+        for x in re.findall(r"[^.]+\.", sc["story"]):
+            x = x.strip()
+            if x in Th.C_IDLE:
+                continue
+            x = x[len("Today "):] if x.startswith("Today ") else x
+            m = re.fullmatch(f"{w} is ({p}|{n})\\.", x)
+            if m:
+                val[m.group(1)] = m.group(2) == P
+                continue
+            for op, pats in forms:
+                hit = [(k, re.fullmatch(pt, x)) for k, pt in enumerate(pats)]
+                hit = [(k, m) for k, m in hit if m]
+                if hit:
+                    k, m = hit[0]
+                    g = list(m.groups())
+                    who, ins = (g[-1], g[:-1]) if k == 1 else (g[0], g[1:])      # "When A ..., M ...": the one who follows stands last
+                    rules.append((who, op, ins))
+                    break
+            else:
+                raise AssertionError(("a sentence of tales that reads as nothing", x))
+        while len(val) < len({r[0] for r in rules}) + sum(1 for v in val if v not in {r[0] for r in rules}):
+            for who, op, ins in rules:
+                if who not in val and all(i in val for i in ins):
+                    xs = [val[i] for i in ins]
+                    val[who] = {"same": xs[0], "not": not xs[0], "and": all(xs), "or": any(xs)}[op]
+        return {q.split()[1]: a for q, a, _, _ in sc["qas"]}, {k: "yes" if v else "no" for k, v in val.items()}
+    words = ""
+    for i in range(150):
+        for sd in ((Th.TRAIN_SEED, 0), (Th.EXAM_SEED, 0)):
+            sc = Th.tales(i, sd)
+            words += sc["story"]
+            asked, worked = tale_answers(sc)
+            assert asked == worked, (sc["story"], asked, worked)
+            assert sc["depth"] == Th.CIRCUIT_EXAM[i % len(Th.CIRCUIT_EXAM)] if sd[0] == Th.EXAM_SEED else sc["depth"] <= Th.CIRCUIT_TRAIN
+    assert all(x in words for x in ("never the same as", "as soon as one of", "needs both", "only when", "Today ", "asleep", "at home")) and any(x in words for x in Th.C_IDLE)
+    assert Th.told(ENC, "tales", 3, (Th.TRAIN_SEED, 0))[3] is not None and all(ch == ["yes", "no"] for _, _, ch, _, _ in Th.told(ENC, "tales", 3, (Th.TRAIN_SEED, 0))[2])
     from . import settle as St                          # keep.settle: the stores' change by telling, and the rule that stops on it
     sdl = torch.load(out / "tha" / "feed" / "ckpt.pt", map_location="cpu", weights_only=False)
     mdl = Keep(KeepConfig.from_dict(sdl["config"]))
