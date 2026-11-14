@@ -840,6 +840,30 @@ def thinking_runs():
         assert Th.told(ENC, fam, 3, (Th.TRAIN_SEED, 0))[3] is not None
     assert "turned" in seen["sets"] and "flipped" not in seen["sets"] and "flipped" in seen["flips"] and "Then" not in seen["words"]
     assert "At first" in seen["words"] and "does the opposite of" in seen["words"] and any(x in seen["words"] for x in Th.C_IDLE) and "flipped" in seen["steps"] and "At first" in seen["steps"]
+    for i in range(120):                                # colours: a colour passed along; an answer is the colour at the chain's start, a level is its links
+        for sd in ((Th.TRAIN_SEED, 0), (Th.EXAM_SEED, 0)):
+            sc = Th.colours(i, sd)
+            assert sc == Th.colours(i, sd) and sc["depth"] == (Th.CIRCUIT_EXAM[i % len(Th.CIRCUIT_EXAM)] if sd[0] == Th.EXAM_SEED else sc["depth"]) <= 8
+            assert sd[0] == Th.EXAM_SEED or sc["depth"] <= Th.CIRCUIT_TRAIN
+            src, col = {}, {}
+            for x in sc["story"].rstrip(".").split(". "):
+                if " has the colour of " in x or " is the same colour as " in x:
+                    a, b = x.replace(" is the same colour as ", " has the colour of ").split(" has the colour of ")
+                    src[a.lower()] = b
+                else:
+                    a, c = x.split(" is ")
+                    col[a.lower()] = c
+            assert len(set(col.values())) == len(col) and set(col.values()) <= set(Th.C_COLOUR)
+            for q, a, _, qk in sc["qas"]:
+                name, n = q[len("What colour is "):-1], 0
+                while name in src:
+                    name, n = src[name], n + 1
+                assert col[name] == a and qk["links"] == n, (sc["story"], q)
+    ct = Th.told(ENC, "colours", 2, (Th.EXAM_SEED, 0))
+    assert ct[3] == 3 and all(ch == Th.C_COLOUR and lv.startswith("links ") for _, _, ch, _, lv in ct[2])
+    cs = Th.scene_tokens(ENC, "colours", 2, (Th.EXAM_SEED, 0), 4, 1 << 30, align=112)
+    assert cs is not None and len(cs[2]) == len(ct[2]) and all(len(set(c)) == 8 for _, c, *_ in cs[2]), "the 8 colours part on one piece, so every question is marked"
+    assert all(Th.colours(i, (Th.TRAIN_SEED, 0), top=1)["depth"] == 1 for i in range(12))
     from . import settle as St                          # keep.settle: the stores' change by telling, and the rule that stops on it
     sdl = torch.load(out / "tha" / "feed" / "ckpt.pt", map_location="cpu", weights_only=False)
     mdl = Keep(KeepConfig.from_dict(sdl["config"]))
