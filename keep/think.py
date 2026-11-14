@@ -51,8 +51,9 @@ FAMILIES = ("circuits",)                   # the default: this file's own plain 
 THINGS = ("things", "sets", "flips", "words", "steps")     # circuits without switches (what is given and what is worked out share their names), and the
                                                             # steps from them toward Field1: a given part set on or off later; or flipped; other wordings and
                                                             # sentences that do not matter; all of these
-OWN = ("circuits", "newrules", "newrules2", "newthings") + THINGS   # this file's own families (newrules: circuits with two more rules, taught at depth 1 only;
-                                                            # newrules2: to depth 2; newthings: newrules on the family things)
+OWN = ("circuits", "newrules", "newrules2", "newthings") + THINGS + ("colours",)   # this file's own families (newrules: circuits with two more rules, taught at
+                                                            # depth 1 only; newrules2: to depth 2; newthings: newrules on the family things; colours: nothing is
+                                                            # worked out, a colour is passed along a chain of things)
 FIELD1 = ("switches", "rules")             # Field1's two families that are chains of rules told in any order (their questions say how deep)
 OTHERS = ("places", "compare", "count", "family", "schedule")      # more families whose questions say how many steps they take
 # what differs from run.py's presets: the training window (a scene told several times has to fit in it), the stores
@@ -182,6 +183,45 @@ def circuit(i, seed, top=None, new=False, one=False):
             "qas": [(f"Is {p} on?", "yes" if val[p] else "no", None, {"new rule at depth" if exact and p in newly else "depth": depth[p]}) for p in asked]}
 
 
+C_COLOUR = ["red", "blue", "green", "grey", "white", "black", "brown", "pink"]
+
+
+def colours(i, seed, top=None):
+    """The family "colours": the loop with nothing to work out. A thing is given a colour (one of 8), or has the colour of
+    another thing, which may have its own from a third: "The lamp is red. The pump has the colour of the lamp. The fan is
+    the same colour as the pump. What colour is the fan? Answer: red." One pool of names, as the family things. A
+    question's level is its number of links ("links d": d steps of passing a value on; "links 0" is given). Training: no
+    more than CIRCUIT_TRAIN links; the exam: chains of 1, 2, 3, 4, 6, 8. On the small CPU model this loop forms in a few
+    hundred steps in every training, and a model that has it learns the circuits' loop where a new model does not
+    (clock/fb7.py, TASK=mix), so the family is meant to be mixed with things: --families things,colours."""
+    exam = (seed[0] if isinstance(seed, tuple) else seed) == EXAM_SEED
+    r = random.Random(f"colours|{seed}|{i}")
+    exact = CIRCUIT_EXAM[i % len(CIRCUIT_EXAM)] if exam else None
+    while True:
+        ng = r.randint(2, 3)
+        nm = exact + r.randint(0, 1) if exact else r.randint(2, 5)
+        names = [f"the {m}" for m in r.sample(C_MACHINE, ng + nm)]
+        given, ms = names[:ng], names[ng:]
+        val = dict(zip(given, r.sample(C_COLOUR, ng)))
+        depth = {s: 0 for s in given}
+        parts, said = list(given), [f"{s.capitalize()} is {val[s]}." for s in given]
+        for k, m in enumerate(ms):
+            if exact:                               # past the chain: a thing on an earlier part, so that none is deeper than asked for
+                src = parts[-1] if k < exact else r.choice(parts[:-1])
+            else:
+                src = parts[-1] if (k and r.random() < 0.6) else r.choice(parts)
+            val[m], depth[m] = val[src], depth[src] + 1
+            said.append(f"{m.capitalize()} has the colour of {src}." if r.random() < 0.5 else f"{m.capitalize()} is the same colour as {src}.")
+            parts.append(m)
+        if exact or max(depth.values()) <= (top or CIRCUIT_TRAIN):
+            break
+    r.shuffle(said)
+    asked = parts if not exact else given + ms[exact - 1:] + ms[:exact - 1]
+    if not exact:
+        r.shuffle(asked)
+    return {"story": " ".join(said), "depth": max(depth.values()), "qas": [(f"What colour is {p}?", val[p], None, {"links": depth[p]}) for p in asked]}
+
+
 def make(arm: str, preset: dict, vocab: int, point=None, stores=None, align=0, share=None, point_bias=None, group=None, pull=False) -> Keep:
     cfg = dict(preset["cfg"], vocab_size=vocab, **THINK[preset["name"]].get("cfg", {}))
     if align:                                       # a window: ALIGN_ROOM chunks, a telling to each, the questions in the last
@@ -224,11 +264,11 @@ def told(enc, family: str, i, seed, top=None):
     """Scene i -> (one reading as tokens, what stands between two readings, the question lines
     [(lead tokens, answer tokens, choices, answer, level)])."""
     from oazy.field1 import levels
-    sc = circuit(i, seed, top, new={"newrules": 1, "newrules2": 2, "newthings": 1}.get(family, 0), one="things" if family == "newthings" else family in THINGS and family) if family in OWN else levels.scene(family, i, seed)
+    sc = colours(i, seed, top) if family == "colours" else circuit(i, seed, top, new={"newrules": 1, "newrules2": 2, "newthings": 1}.get(family, 0), one="things" if family == "newthings" else family in THINGS and family) if family in OWN else levels.scene(family, i, seed)
     lines = []
     for q, a, _, qk in sc["qas"]:
         lines.append((enc.encode_ordinary(f"\n{q} Answer:"), enc.encode_ordinary(f" {a}."),
-                      ["yes", "no"] if family in OWN else levels.choices(family, q, a, sc["story"], knobs=qk), a, level(qk)))
+                      C_COLOUR if family == "colours" else ["yes", "no"] if family in OWN else levels.choices(family, q, a, sc["story"], knobs=qk), a, level(qk)))
     return enc.encode_ordinary(sc["story"]), enc.encode_ordinary("\n\n"), lines, sc.get("depth")
 
 
@@ -585,6 +625,9 @@ def report(res: dict) -> str:
               + ("machines of depth 1 and 2 (an input may be a machine that follows switches)" if two else "machines of depth 1 (both inputs given)")
               + ". \"new rule at depth d\": the exam asks a machine with a new rule whose inputs are d - 1 steps deep, which training never showed"
               + (" past depth 2" if two else "") + ".", ""]
+    if "colours" in res["families"]:
+        L += ["colours: nothing is worked out, a colour (one of 8) is passed along a chain of things. \"links d\": the thing asked for has its colour through d "
+              f"others; training has no more than {CIRCUIT_TRAIN} links.", ""]
     L += ["| Model | Weights | Tokens | Speed |", "|---|---|---|---|"]
     for a in arms:
         s = res["train"].get(a, {})
