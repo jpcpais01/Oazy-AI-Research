@@ -133,6 +133,15 @@ def table(rnd: str, about: str, todo, state: dict, runs: Path, arm: str) -> str:
         L += [f"| Run | State | Depth 0 at 1x | Depth 4 at {at} | Depth 8 at {at} | Verdict |", "|---|---|---|---|---|---|"] + rows
         L += ["", "Share right (%). Trained to depth 3. Depth 8: always giving the commonest answer scores about 57%, a reasoner of three "
               "steps 63%. LOOP = depth 8 at 90% or more at the most tellings; n steps = depth 1 to n at 90% or more, no further.", ""]
+    tl = {}
+    for name, _ in todo:                                # runs trained with ordinary text in the mix (--text): their loss on held-out text
+        p = runs / name / "think.json"
+        if state[name].startswith("done") and p.exists():
+            v = json.loads(p.read_text()).get("text_loss", {}).get(arm)
+            if v is not None:
+                tl[name] = v
+    if tl:
+        L += ["Loss on held-out ordinary text: " + ", ".join(f"{n} {v:.3f}" for n, v in tl.items()) + ".", ""]
     L += [f"- {name}: `{opts}`" for name, opts in todo]
     return "\n".join(L) + "\n"
 

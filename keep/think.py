@@ -307,14 +307,22 @@ def scene_tokens(enc, family, i, seed, reads, room: int, rng=None, most=1, align
     return toks, kinds + [D.ASKED] * (len(toks) - len(kinds)), marks, reads
 
 
-def stream(rng: random.Random, enc, T: int, families, reads: int, tag=0, align=0, cap=None):
+def stream(rng: random.Random, enc, T: int, families, reads: int, tag=0, align=0, cap=None, text=None, share=0.0):
     """Yields (tokens, what they are) for ever: one scene to a training window, as in the exam: <|endoftext|> up to
     the scene, then the scene told again and again and its questions at the window's end. (A second scene in the
-    window would find the first one's switches still in the stores: the same names, other states.)"""
+    window would find the first one's switches still in the stores: the same names, other states.)
+    text, share: this share of the windows is ordinary text instead (data.Text: a span of T tokens from a random place),
+    so that one model learns to read on and to reason by reading again."""
     from oazy.field1 import WEIGHTS
     wts = [WEIGHTS.get(f, 5) for f in families]
     n, none = 0, 0
     while True:
+        if text is not None and rng.random() < share:
+            sp = text.span(rng, T)
+            if len(sp) < T:
+                sp = [enc.eot_token] * (T - len(sp)) + sp
+            yield sp, D.TEXT
+            continue
         f = rng.choices(families, weights=wts)[0]
         sc = scene_tokens(enc, f, n, (TRAIN_SEED, tag), None, T, rng=rng, most=reads, align=align, top=cap.value if cap is not None else None)
         n += 1
@@ -332,10 +340,11 @@ def stream(rng: random.Random, enc, T: int, families, reads: int, tag=0, align=0
 class Rows:
     """`rows` streams cut into windows, as data.Rows: next() -> tokens (rows, T + 1), what each is (rows, T + 1)."""
 
-    def __init__(self, enc, rows, T, seed, families, reads, first_row=0, align=0, cap=None):
+    def __init__(self, enc, rows, T, seed, families, reads, first_row=0, align=0, cap=None, text=None, share=0.0):
         self.T, self.eot = T, enc.eot_token
         assert not align or T % align == 0, "a window is whole chunks"
-        self.gens = [stream(random.Random(f"{seed}|{first_row + r}"), enc, T, families, reads, tag=first_row + r, align=align, cap=cap) for r in range(rows)]
+        self.gens = [stream(random.Random(f"{seed}|{first_row + r}"), enc, T, families, reads, tag=first_row + r, align=align, cap=cap, text=text, share=share)
+                     for r in range(rows)]
         self.buf = [([], []) for _ in range(rows)]
 
     def next(self):
@@ -352,9 +361,9 @@ class Rows:
         return out, what
 
 
-def _worker(q, rows, T, seed, families, reads, first_row, align=0, cap=None):
+def _worker(q, rows, T, seed, families, reads, first_row, align=0, cap=None, data=None, share=0.0):
     from oazy import tok
-    r = Rows(tok.get("smollm2"), rows, T, seed, families, reads, first_row, align, cap)
+    r = Rows(tok.get("smollm2"), rows, T, seed, families, reads, first_row, align, cap, D.Text(Path(data), log=lambda *a: None) if data and share else None, share)
     while True:
         q.put(r.next())
 
@@ -362,20 +371,22 @@ def _worker(q, rows, T, seed, families, reads, first_row, align=0, cap=None):
 class Feed:
     """Batches of windows from `workers` processes (0 = made here). Row r is always the same stream."""
 
-    def __init__(self, enc, batch, T, seed, families, reads, workers=8, align=0, ramp=False):
+    def __init__(self, enc, batch, T, seed, families, reads, workers=8, align=0, ramp=False, data=None, share=0.0):
         import multiprocessing as mp
         self.procs, self.qs, self.local = [], [], None
         workers = min(workers, batch)
         ctx = mp.get_context("fork")
         self.cap = cap = ctx.Value("i", 1) if ramp else None        # the curriculum: circuits no deeper than this (the trainer raises it)
         if workers <= 0:
-            self.local = Rows(enc, batch, T, seed, families, reads, align=align, cap=cap)
+            self.local = Rows(enc, batch, T, seed, families, reads, align=align, cap=cap, text=D.Text(Path(data)) if data and share else None, share=share)
             return
+        if data and share:
+            D.Text(Path(data))                              # fail here, with the message, not in a worker
         first = 0
         for i in range(workers):
             n = batch // workers + (1 if i < batch % workers else 0)
             q = ctx.Queue(maxsize=6)
-            p = ctx.Process(target=_worker, args=(q, n, T, seed, families, reads, first, align, cap), daemon=True)
+            p = ctx.Process(target=_worker, args=(q, n, T, seed, families, reads, first, align, cap, data, share), daemon=True)
             p.start()
             self.procs.append(p)
             self.qs.append(q)
@@ -518,7 +529,7 @@ def train(arm, preset, th, args, enc, device, out: Path, say):
                             fused=device.type == "cuda")
     warm = max(10, steps // 50)
     reads = args.reads or th["reads"]
-    feed = Feed(enc, B, T, args.seed, args.families, reads, workers=args.workers, align=args.align, ramp=bool(args.ramp))
+    feed = Feed(enc, B, T, args.seed, args.families, reads, workers=args.workers, align=args.align, ramp=bool(args.ramp), data=args.data, share=args.text)
     yn = [enc.encode_ordinary(" yes.")[0], enc.encode_ordinary(" no.")[0]]       # the curriculum's measure: the share of yes/no answers right
     right, since = None, 0
     say(f"[{arm}] {model.n_params() / 1e6:.1f}M weights, attention reaches {model.cfg.window or T} tokens, "
@@ -526,6 +537,7 @@ def train(arm, preset, th, args, enc, device, out: Path, say):
                                                                           f" written from the top (it may file under one of the {model.cfg.point} tokens before)")
                                                                          if model.cfg.feed else "") if model.store else "no stores")
         + f"; {steps:,} steps of {B} x {T} = {steps * B * T / 1e6:.0f}M tokens; scenes told 1 to {reads} times: {', '.join(args.families)}"
+        + (f"; {100 * args.text:.0f}% of the windows are ordinary text" if args.text else "")
         + (f"; a telling to a chunk of {args.align} tokens" if args.align else "") + (f"; writes share rows by {model.cfg.share}" if model.cfg.feed and model.cfg.share != "all" else "")
         + (f"; writes land {model.cfg.group} tokens at a time" if model.cfg.feed and model.cfg.group else ""))
     if args.align:                                  # a scene whose telling or questions are longer than the chunk is left out: say how many
@@ -602,6 +614,26 @@ def train(arm, preset, th, args, enc, device, out: Path, say):
     return model, summary
 
 
+@torch.no_grad()
+def text_loss(model: Keep, enc, data, device, windows=64, batch=16, seed=0):
+    """The next-token loss on held-out ordinary text, in windows as training's (the stores empty at each window's start;
+    the fed model's chunk as it was trained)."""
+    model.eval()
+    text, rng, T = D.Text(Path(data), "val", log=lambda *a: None), random.Random(f"think-text|{seed}"), model.cfg.max_len
+    tot, n = 0.0, 0
+    for lo in range(0, windows, batch):
+        rows = [text.span(rng, T + 1) for _ in range(min(batch, windows - lo))]
+        L = min(len(r) for r in rows)
+        x = torch.tensor([r[:L] for r in rows], dtype=torch.long, device=device)
+        if model.cfg.feed and model.cfg.chunk:
+            x = x[:, :1 + (L - 1) // model.cfg.chunk * model.cfg.chunk]         # whole chunks
+        with amp(device):
+            _, _, info = model.loss(x[:, :-1], x[:, 1:], model.init_state(len(rows), device) if model.store else None)
+        tot, n = tot + float(info["lm"]) * len(rows), n + len(rows)
+    model.train()
+    return tot / max(1, n)
+
+
 # ---------------------------------------------------------------- the report
 def _order(lv: str):
     k, _, v = lv.rpartition(" ")
@@ -628,11 +660,15 @@ def report(res: dict) -> str:
     if "colours" in res["families"]:
         L += ["colours: nothing is worked out, a colour (one of 8) is passed along a chain of things. \"links d\": the thing asked for has its colour through d "
               f"others; training has no more than {CIRCUIT_TRAIN} links.", ""]
-    L += ["| Model | Weights | Tokens | Speed |", "|---|---|---|---|"]
+    if res.get("text"):
+        L += [f"{100 * res['text']:.0f}% of the training windows were ordinary text (Opal) instead of a scene. \"Text loss\": the next-token loss on held-out "
+              "ordinary text, in windows as training's, the stores empty at each window's start.", ""]
+    tl = res.get("text_loss", {})
+    L += ["| Model | Weights | Tokens | Speed |" + (" Text loss |" if tl else ""), "|---|---|---|---|" + ("---|" if tl else "")]
     for a in arms:
         s = res["train"].get(a, {})
         if s:
-            L.append(f"| {NAMES[a]} | {s['params'] / 1e6:.1f}M | {s['tokens'] / 1e6:.0f}M | {s['tok_s'] / 1e3:.0f}k tok/s |")
+            L.append(f"| {NAMES[a]} | {s['params'] / 1e6:.1f}M | {s['tokens'] / 1e6:.0f}M | {s['tok_s'] / 1e3:.0f}k tok/s |" + (f" {tl[a]:.3f} |" if a in tl else " |" if tl else ""))
     for f in res["families"]:
         levels = sorted({lv for a in arms for lv in res["exam"][a].get(f, {}) if lv != "all"}, key=_order) + ["all"]
         L += ["", f"## {f}", "", "| Level | Model | " + " | ".join(f"told {r}x" for r in reads) + " | Asked | Commonest answer |",
@@ -679,6 +715,10 @@ def main(argv=None):
                     "when this share of the yes/no answers is right (0.95). 0: every depth from the first step")
     ap.add_argument("--share", default=None, choices=["all", "strength"], help="feed: how a chunk's writes share a row (strength: a write that is held back "
                     "weakens no other; meant for --align, where a whole telling's writes land together)")
+    ap.add_argument("--text", type=float, default=0.0, help="this share of the training windows is ordinary text (Opal) instead of a scene, and the report "
+                    "gives each model's loss on held-out text: does a model that reasons by reading again still learn to read on?")
+    ap.add_argument("--data", default=None, help="--text: the data folder (default: $OAZY_DATA or /workspace/oazy_data)")
+    ap.add_argument("--sub", default="opal", help="--text: sub-folder of the data folder holding the text (opal; '' = the folder itself)")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--compile", type=int, default=1)
     ap.add_argument("--every", type=int, default=100)
@@ -699,6 +739,12 @@ def main(argv=None):
     for f in args.families:
         if f not in ALL and f not in OWN:
             raise SystemExit(f"no Field1 family {f!r}; there are: {', '.join(ALL)}")
+    if args.text or args.data:                      # ordinary text: where it is
+        if args.data is None:
+            from oazy.data import default_dir
+            args.data = default_dir("data")
+        if args.sub and (Path(args.data) / args.sub).exists():
+            args.data = str(Path(args.data) / args.sub)
     preset = dict(PRESETS[args.preset], name=args.preset)
     th = THINK[args.preset]
     out = Path(args.runs or runs_dir()) / args.name
@@ -712,9 +758,10 @@ def main(argv=None):
                 args.align = c0["chunk"]
     res_path = out / "think.json"
     res = json.loads(res_path.read_text()) if res_path.exists() else {}
-    res.update({"preset": args.preset, "from": args.start, "families": args.families, "exam_reads": list(th["exam_reads"]), "reads": args.reads or th["reads"], "align": args.align})
+    res.update({"preset": args.preset, "from": args.start, "families": args.families, "exam_reads": list(th["exam_reads"]), "reads": args.reads or th["reads"], "align": args.align, "text": args.text})
     res.setdefault("train", {})
     res.setdefault("exam", {})
+    res.setdefault("text_loss", {})
     for arm in [a for a in ARMS if args.only in ("all", "report", a)]:
         model, summary = train(arm, preset, th, args, enc, device, out / arm, say)
         if model is None:
@@ -725,9 +772,12 @@ def main(argv=None):
         ex = exam(model, enc, args.families, th["exam_reads"], args.exam_n or th["exam_n"], device, say=say, align=args.align)
         if res_path.exists():                                       # another model may have been trained beside this one
             there = json.loads(res_path.read_text())
-            for part in ("train", "exam"):
+            for part in ("train", "exam", "text_loss"):
                 res[part] = {**there.get(part, {}), **res[part]}
         res["exam"][arm] = json.loads(json.dumps(ex))               # the keys as json has them
+        if args.data:                                               # ordinary text is at hand: this model's loss on it
+            res["text_loss"][arm] = text_loss(model, enc, args.data, device)
+            say(f"[{arm}] loss on held-out ordinary text: {res['text_loss'][arm]:.3f}")
         res_path.write_text(json.dumps(res, indent=1))
         del model
         if device.type == "cuda":

@@ -1,0 +1,7 @@
+# Round r17: the controls of round r16, without the wire (start it with --arm full: bash runpod/round.sh r17 --arm full).
+# The plain twin on the same mix of ordinary text and things: w1 with as many tokens as x2 (300M), w2 with as much GPU
+# time (the twin is about 2.5 times faster: 750M). What to read: the loss on held-out text under the table, against x1
+# and x2 of round r16 (the fed model sees 32 tokens back and has its stores; the twin sees the whole window), and
+# whether the twin learns the circuits at all (round r10's question, on the control).
+w1: --align 96 --families things --text 0.5 --seed 22
+w2: --align 96 --families things --text 0.5 --seed 22 --tokens 7.5e8
