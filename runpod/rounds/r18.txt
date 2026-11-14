@@ -1,16 +1,16 @@
 # Round r18: from templates toward natural language, one step a run, each from x1 (round r16: the loop g2 after 300M
 # tokens of half ordinary text; depth 8 = 98%, text loss 3.92). Half of every run's windows stay ordinary text. 150M
 # tokens each, about 45 minutes of an H200 for the four.
-# n1: things. One pool of names instead of switches and machines. From nothing it never looped on the GPU (round r10,
+# h1: things. One pool of names instead of switches and machines. From nothing it never looped on the GPU (round r10,
 #     0 of 4): does a loop that exists carry over to it?
-# n2: cwords. The circuits in four wordings of each rule, "At first, ...", sentences that say nothing.
-# n3: csteps. cwords and parts that are set or flipped later.
-# n4: tales. The same logic told about people, a pair of states a scene (awake / asleep, at home / out, ...), a negation
+# h2: cwords. The circuits in four wordings of each rule, "At first, ...", sentences that say nothing.
+# h3: csteps. cwords and parts that are set or flipped later.
+# h4: tales. The same logic told about people, a pair of states a scene (awake / asleep, at home / out, ...), a negation
 #     by its own word, four wordings, sentences that say nothing: "Rui is awake only when Ana is not."
 # Rule stated before the run, for each: LOOP or 4 steps on its own exam = the loop carries to that step; lookup or 1
-# step = it does not. n4 at 4 steps or more would be the first reasoning by reading again outside on and off.
+# step = it does not. h4 at 4 steps or more would be the first reasoning by reading again outside on and off.
 # Each run's loss on held-out text is under the table (x1: 3.920): it should not rise.
-n1: --from x1 --families things --text 0.5 --tokens 1.5e8 --seed 31
-n2: --from x1 --families cwords --align 128 --text 0.5 --tokens 1.5e8 --seed 32
-n3: --from x1 --families csteps --align 128 --text 0.5 --tokens 1.5e8 --seed 33
-n4: --from x1 --families tales --align 128 --text 0.5 --tokens 1.5e8 --seed 34
+h1: --from x1 --families things --text 0.5 --tokens 1.5e8 --seed 31
+h2: --from x1 --families cwords --align 128 --text 0.5 --tokens 1.5e8 --seed 32
+h3: --from x1 --families csteps --align 128 --text 0.5 --tokens 1.5e8 --seed 33
+h4: --from x1 --families tales --align 128 --text 0.5 --tokens 1.5e8 --seed 34
