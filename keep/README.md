@@ -308,7 +308,24 @@ round's verdict still reads the circuits).
 share of `keep.think`'s training windows is ordinary text (Opal: `--data`, `--sub` as in `keep.run`), and the report and
 the round table give each model's loss on held-out text. Round `r16`: a model that loops trained on with half text (does
 the loop survive learning to read on?) and one from nothing; round `r17` (`bash runpod/round.sh r17 --arm full`): the
-plain twin on the same mix, with as many tokens and with as much GPU time. Not run yet.
+plain twin on the same mix, with as many tokens and with as much GPU time.
+
+**What the GPU said on 14 November (H200, 50.6M weights, 300M tokens, share right at 12 tellings).** Round `r10`: the
+family `things` did not loop in any of 4 trainings (given parts 99%, depth 1 at 75 to 79%, depth 8 at 61 to 67%), and
+its control `p5` on `circuits` looped from nothing (depth 8 = 99%). The CPU finding on names did not carry over to 50M
+weights; neither had the pull write before it. Round `r15`, two runs: things mixed with `colours` reached 4 clean steps
+in one (depth 4 = 91%, depth 8 = 73%) and stayed at lookup in the other. Round `r16`: `x1`, the loop `g2` trained on
+with half ordinary text, kept its loop (depth 8 = 98%, 96% before); its loss on held-out text is 3.920. `x2`, the same
+mix from nothing on things: no loop, text loss 3.819. Round `r17`: the twin on that mix learned none of the scenes
+(given parts 55 to 60%), text loss 3.702 with as many tokens and 3.420 with as much GPU time (750M tokens). So the loop
+and ordinary text live in one model, which reads worse than a plain one (its attention reaches 32 tokens; it is about
+2.5 times slower a token).
+
+**Toward natural language (`r18`, not run).** The steps of `things` exist on `circuits` too, where the loop forms on the
+GPU: `csets`, `cflips`, `cwords`, `csteps`. `tales` tells the same logic about people: a pair of states a scene (awake /
+asleep, at home / out, ...), a negation by its own word, four wordings of each rule, sentences that say nothing ("Rui
+is awake only when Ana is not. Is Rui awake?"). Round `r18` trains `x1` on things, cwords, csteps and tales, one run
+each, half ordinary text.
 
 **When has it read enough?** (`python3 -m keep.settle --name c13`, runs trained with `--align`.) A model that loops
 works a scene out one step a telling and writes the results into the stores; once every value is in place, a further
