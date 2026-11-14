@@ -1,0 +1,11 @@
+# Round r10: does one pool of names make the loop common? On the small CPU model the loop formed in 1 of 8 trainings when
+# switches and machines never share a name (as in the family circuits), in 4 of 8 with one pool of names, and in 6 of 6
+# with one pool and --group 16. t1 to t4: the family "things" (no switches: what is given and what is worked out are things
+# from the same names), pull write, --group 16, four seeds, 300M tokens each. p5: the control, the same options on the
+# family circuits (as p4 of round r3, another seed; p4 was at 67% at depth 8). Rule stated before the run: if 3 of the 4
+# things runs are LOOP or hold 4 steps and p5 does not, the names were what made the loop rare.
+t1: --align 96 --pull --group 16 --families things
+t2: --align 96 --pull --group 16 --families things --seed 1
+t3: --align 96 --pull --group 16 --families things --seed 2
+t4: --align 96 --pull --group 16 --families things --seed 3
+p5: --align 96 --pull --group 16 --seed 1

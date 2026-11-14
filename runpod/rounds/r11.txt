@@ -1,0 +1,6 @@
+# Round r11: is a loop on things a reusable organ? The family "newthings" teaches two more rules on machines of depth 1 only
+# (both inputs given), 50M tokens; the exam asks them at depth 2 to 8, never shown. Here nothing in a name says whether a
+# part is given or worked out, so the gap of rounds r4 to r8 (a rule taught on switches meets machines in the exam) is gone.
+# o1, o2: from the two best loops of round r10 (put their names here). If the loop is general, both WORK DEEP.
+o1: --from t1 --families newthings --tokens 5e7 --seed 11
+o2: --from t2 --families newthings --tokens 5e7 --seed 11

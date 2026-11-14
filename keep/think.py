@@ -48,7 +48,11 @@ from .run import PRESETS, amp, runs_dir
 ARMS = ("feed", "keep", "full")
 NAMES = {"feed": "Keep, stores written from the top", "keep": "Keep", "full": "Twin"}
 FAMILIES = ("circuits",)                   # the default: this file's own plain rung (below)
-OWN = ("circuits", "newrules", "newrules2")    # this file's own families (newrules: circuits with two more rules, taught at depth 1 only; newrules2: to depth 2)
+THINGS = ("things", "sets", "flips", "words", "steps")     # circuits without switches (what is given and what is worked out share their names), and the
+                                                            # steps from them toward Field1: a given part set on or off later; or flipped; other wordings and
+                                                            # sentences that do not matter; all of these
+OWN = ("circuits", "newrules", "newrules2", "newthings") + THINGS   # this file's own families (newrules: circuits with two more rules, taught at depth 1 only;
+                                                            # newrules2: to depth 2; newthings: newrules on the family things)
 FIELD1 = ("switches", "rules")             # Field1's two families that are chains of rules told in any order (their questions say how deep)
 OTHERS = ("places", "compare", "count", "family", "schedule")      # more families whose questions say how many steps they take
 # what differs from run.py's presets: the training window (a scene told several times has to fit in it), the stores
@@ -87,29 +91,56 @@ CIRCUIT_TRAIN = 3
 CIRCUIT_EXAM = (1, 2, 3, 4, 6, 8)
 NEW_RULES = ("one", "notboth")              # newrules: "exactly one of A and B is on", "A and B are not both on"
 C_SWITCH = ["red", "blue", "green", "grey", "white", "black", "brown", "pink", "orange", "purple", "yellow", "silver"]
+C_IDLE = ["It was a cold day.", "Outside, the wind was blowing.", "Upstairs, someone was singing.", "The whole place smelled of soap.",
+          "Nobody had been here for weeks.", "It had rained all night.", "A dog barked in the street.", "The floor was still wet."]
+C_WORDS = {"same": ["{m} is on if {a} is on.", "If {a} is on, {m} is on.", "{m} is on whenever {a} is on.", "{m} follows {a}."],
+           "not": ["{m} is on if {a} is off.", "If {a} is off, {m} is on.", "{m} is on whenever {a} is off.", "{m} does the opposite of {a}."],
+           "and": ["{m} is on if {a} and {b} are on.", "If {a} and {b} are on, {m} is on.", "{m} is on only when {a} and {b} are both on.", "{m} needs both {a} and {b} on."],
+           "or": ["{m} is on if {a} or {b} is on.", "If {a} or {b} is on, {m} is on.", "{m} is on whenever {a} or {b} is on.", "Either {a} or {b} being on turns {m} on."]}
 C_MACHINE = ["lamp", "pump", "fan", "bell", "radio", "motor", "heater", "siren", "buzzer", "alarm", "light", "clock", "door", "gate", "mill",
              "drill", "press", "valve", "crane", "oven", "kettle", "robot", "drone", "engine"]
 
 
-def circuit(i, seed, top=None, new=False):
+def circuit(i, seed, top=None, new=False, one=False):
     """Scene i as levels.scene gives one: {"story", "qas": [(question, answer, _, {"depth": d})], "depth": its deepest}.
     A seed that starts with EXAM_SEED gives the exam's circuits. top: no deeper than this (training's curriculum).
     new: the family "newrules" (1) or "newrules2" (2). Two more rules (NEW_RULES), in training only on machines of depth
     1 (half of the machines that follow a switch: both inputs are switches), or of depth 1 and 2 (new = 2: an input may be
     a machine that follows switches, so the rule is seen once with an input that was worked out); in the exam the machine
     asked for at depth d has one, its inputs worked out by the old rules: its question's level is "new rule at depth d".
-    The exam's scenes are the same for both families."""
+    The exam's scenes are the same for both families.
+    one: the family "things" (True, or a name in THINGS). No switches: the parts whose state is given are things as the
+    machines are ("The lamp is on. The pump is on if the lamp is off."), drawn from the same names, so a name is given in
+    one scene and worked out in another, and nothing in a name says which. The steps toward Field1 stand on it:
+    "sets": about half of the given parts are set later ("Then the lamp is turned off."), somewhere after their first
+    state; the machines follow what a part is in the end, and its own question asks that. "flips": set, or flipped ("Then
+    the lamp is flipped."). "words": four wordings of each rule, two of a first state, and up to two sentences that say
+    nothing about the circuit. "steps": all of these."""
+    one = "things" if one is True else one
     exam = (seed[0] if isinstance(seed, tuple) else seed) == EXAM_SEED
-    r = random.Random(f"{'newrules' if new and (exam or new == 1) else 'newrules2' if new else 'circuits'}|{seed}|{i}")
+    r = random.Random(f"{'newrules' if new and (exam or new == 1) else 'newrules2' if new else one if one else 'circuits'}|{seed}|{i}")
     exact = CIRCUIT_EXAM[i % len(CIRCUIT_EXAM)] if exam else None
     while True:
         nsw = r.randint(2, 3)
         nm = exact + r.randint(0, 1) if exact else r.randint(2, 5)
-        sw = [f"the {c} switch" for c in r.sample(C_SWITCH, nsw)]
-        ms = [f"the {m}" for m in r.sample(C_MACHINE, nm)]
+        if one:
+            names = [f"the {m}" for m in r.sample(C_MACHINE, nsw + nm)]
+            sw, ms = names[:nsw], names[nsw:]
+        else:
+            sw = [f"the {c} switch" for c in r.sample(C_SWITCH, nsw)]
+            ms = [f"the {m}" for m in r.sample(C_MACHINE, nm)]
         val = {s: r.random() < 0.5 for s in sw}
         depth = {s: 0 for s in sw}
-        parts, said = list(sw), [f"{s.capitalize()} is {'on' if val[s] else 'off'}." for s in sw]
+        wordy, later = one in ("words", "steps"), []
+        parts, said = list(sw), [("At first, " + s if wordy and r.random() < 0.5 else s.capitalize()) + f" is {'on' if val[s] else 'off'}." for s in sw]
+        for s in sw if one in ("sets", "flips", "steps") else []:
+            if r.random() < 0.5:                    # what is done to a given part after its first state: the last word counts
+                if one != "sets" and r.random() < 0.5:
+                    val[s] = not val[s]
+                    later.append((s, f"Then {s} is flipped."))
+                else:
+                    val[s] = r.random() < 0.5
+                    later.append((s, f"Then {s} is turned {'on' if val[s] else 'off'}."))
         newly = set()
         for k, m in enumerate(ms):
             if exact:                               # past the chain: a machine on an earlier part, so that none is deeper than asked for
@@ -130,11 +161,20 @@ def circuit(i, seed, top=None, new=False):
                 newly.add(m)
             cond = {"same": f"{ins[0]} is on", "not": f"{ins[0]} is off", "and": f"{ins[0]} and {ins[-1]} are on", "or": f"{ins[0]} or {ins[-1]} is on",
                     "one": f"exactly one of {ins[0]} and {ins[-1]} is on", "notboth": f"{ins[0]} and {ins[-1]} are not both on"}[op]
-            said.append(f"{m.capitalize()} is on if {cond}." if r.random() < 0.5 else f"If {cond}, {m} is on.")
+            if wordy and not fresh:
+                line = C_WORDS[op][r.randrange(4)].format(m=m, a=ins[0], b=ins[-1])
+                said.append(line[0].upper() + line[1:])
+            else:
+                said.append(f"{m.capitalize()} is on if {cond}." if r.random() < 0.5 else f"If {cond}, {m} is on.")
             parts.append(m)
         if exact or max(depth.values()) <= (top or CIRCUIT_TRAIN):
             break
     r.shuffle(said)
+    for s, line in later:                           # an event stands somewhere after its part's first state
+        at = next(j for j, x in enumerate(said) if x.startswith((f"{s.capitalize()} is o", f"At first, {s} is o")))
+        said.insert(r.randint(at + 1, len(said)), line)
+    for _ in range(r.randint(0, 2) if wordy else 0):
+        said.insert(r.randint(0, len(said)), r.choice(C_IDLE))
     asked = parts if not exact else sw + ms[exact - 1:] + ms[:exact - 1]
     if not exact:
         r.shuffle(asked)
@@ -184,7 +224,7 @@ def told(enc, family: str, i, seed, top=None):
     """Scene i -> (one reading as tokens, what stands between two readings, the question lines
     [(lead tokens, answer tokens, choices, answer, level)])."""
     from oazy.field1 import levels
-    sc = circuit(i, seed, top, new=OWN.index(family)) if family in OWN else levels.scene(family, i, seed)
+    sc = circuit(i, seed, top, new={"newrules": 1, "newrules2": 2, "newthings": 1}.get(family, 0), one="things" if family == "newthings" else family in THINGS and family) if family in OWN else levels.scene(family, i, seed)
     lines = []
     for q, a, _, qk in sc["qas"]:
         lines.append((enc.encode_ordinary(f"\n{q} Answer:"), enc.encode_ordinary(f" {a}."),
@@ -539,10 +579,10 @@ def report(res: dict) -> str:
             "telling is one more step for the whole scene, so depth d asks for d + 1 tellings." if res.get("align") else ""), ""]
     if res.get("from"):
         L += [f"Every model here started from the run `{res['from']}` (already trained) and was trained on with the tokens below.", ""]
-    if "newrules" in res["families"] or "newrules2" in res["families"]:
+    if {"newrules", "newrules2", "newthings"} & set(res["families"]):
         two = "newrules2" in res["families"]
-        L += [("newrules2" if two else "newrules") + ": circuits with two more rules (\"exactly one of A and B is on\", \"A and B are not both on\"). Training has them only on "
-              + ("machines of depth 1 and 2 (an input may be a machine that follows switches)" if two else "machines of depth 1 (two switches)")
+        L += [("newrules2" if two else "newthings" if "newthings" in res["families"] else "newrules") + ": circuits with two more rules (\"exactly one of A and B is on\", \"A and B are not both on\"). Training has them only on "
+              + ("machines of depth 1 and 2 (an input may be a machine that follows switches)" if two else "machines of depth 1 (both inputs given)")
               + ". \"new rule at depth d\": the exam asks a machine with a new rule whose inputs are d - 1 steps deep, which training never showed"
               + (" past depth 2" if two else "") + ".", ""]
     L += ["| Model | Weights | Tokens | Speed |", "|---|---|---|---|"]
@@ -574,7 +614,7 @@ def main(argv=None):
     ap.add_argument("--preset", default="base", choices=list(THINK))
     ap.add_argument("--runs", default=None)
     ap.add_argument("--name", default="think")
-    ap.add_argument("--families", default=",".join(FAMILIES), help="families, with commas (default: circuits, this file's plain rung; Field1's: switches,rules; "
+    ap.add_argument("--families", default=",".join(FAMILIES), help="families, with commas (default: circuits, this file's plain rung; its other own ones: " + ", ".join(OWN[1:]) + "; Field1's: switches,rules; "
                     f"others with a level: {', '.join(OTHERS)}; 'all': every family)")
     ap.add_argument("--reads", type=int, default=None, help="training: a scene is told 1 to this many times (default: the preset's)")
     ap.add_argument("--tokens", type=float, default=None, help="training tokens for each model")
