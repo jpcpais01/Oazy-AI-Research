@@ -1,0 +1,11 @@
+# Round r15: are colour chains a way into the loop on the GPU too? The family "colours" has nothing to work out: a colour
+# is passed along a chain of things. On the small CPU model that loop formed in every training within a few hundred steps,
+# circuits started from it looped in 3 of 3 trainings (a new model on the same scenes: 0 of 3 in the same hour, 1 of 2
+# after two), and a model trained on both at once looped on both. m1 to m4: things and colours mixed, half and half, the
+# options of round r10, four seeds, 300M tokens (so half the circuits of t1 to t4). The verdict reads the circuits only
+# (colours' levels are "links d"). Rule stated before the run: more of m1 to m4 than of t1 to t4 are LOOP or hold 4 steps
+# = the warm-up helps here too; as many or fewer = it does not, and things alone is the recipe.
+m1: --align 96 --pull --group 16 --families things,colours
+m2: --align 96 --pull --group 16 --families things,colours --seed 1
+m3: --align 96 --pull --group 16 --families things,colours --seed 2
+m4: --align 96 --pull --group 16 --families things,colours --seed 3

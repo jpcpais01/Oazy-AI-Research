@@ -294,6 +294,16 @@ while (depth 4 from 95 to 57% after 25 minutes, back at 90% after 25 more); taug
 and the flipped parts were right at 84%. So the order is things, sets, flips, then `steps` (all of them): rounds `r12`, `r13`, `r14`, each
 `--from` the one before.
 
+**Corrected counts, smaller models, and a second task (CPU, 14 November).** Ungated and at the same number of steps,
+one pool of names with `--pull --group 16` looped in 10 of 12 trainings and the two kinds of names in 0 of 4 (the
+counts above were cut by a timer and understate both). The loop survives shrinking: 2 layers and 19k weights still
+do 8 steps (82%), 10k do not. A second task, a value among 8 passed along a chain of names, loops with the same
+recipe, in every training and within a few hundred steps; one model trained on both tasks loops on both; and circuits
+started from the chains model looped in 3 of 3 trainings where a new model looped in 0 of 3 in the same hour (1 of 2
+after two hours). The family `colours` is that task in sentences ("The lamp is red. The pump has the colour of the
+lamp."), meant to be mixed with things: `--families things,colours`, round `r15` (its levels are "links d", so a
+round's verdict still reads the circuits).
+
 **When has it read enough?** (`python3 -m keep.settle --name c13`, runs trained with `--align`.) A model that loops
 works a scene out one step a telling and writes the results into the stores; once every value is in place, a further
 telling writes the same values and the stores stand still. `keep.settle` measures, on the exam's circuits, how much
