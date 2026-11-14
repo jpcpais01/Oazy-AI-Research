@@ -304,6 +304,12 @@ after two hours). The family `colours` is that task in sentences ("The lamp is r
 lamp."), meant to be mixed with things: `--families things,colours`, round `r15` (its levels are "links d", so a
 round's verdict still reads the circuits).
 
+**Ordinary text in the mix (`--text 0.5`).** The fed model had only ever read generated scenes. With `--text S` this
+share of `keep.think`'s training windows is ordinary text (Opal: `--data`, `--sub` as in `keep.run`), and the report and
+the round table give each model's loss on held-out text. Round `r16`: a model that loops trained on with half text (does
+the loop survive learning to read on?) and one from nothing; round `r17` (`bash runpod/round.sh r17 --arm full`): the
+plain twin on the same mix, with as many tokens and with as much GPU time. Not run yet.
+
 **When has it read enough?** (`python3 -m keep.settle --name c13`, runs trained with `--align`.) A model that loops
 works a scene out one step a telling and writes the results into the stores; once every value is in place, a further
 telling writes the same values and the stores stand still. `keep.settle` measures, on the exam's circuits, how much

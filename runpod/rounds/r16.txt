@@ -1,0 +1,9 @@
+# Round r16: ordinary text. Until now the fed model has only read generated scenes. Here half of the training windows are
+# ordinary text (Opal) and half are scenes of the family things (--text 0.5). x1: a model that already loops (put the name
+# of a LOOP of round r10 in place of t1), 300M tokens more: does the loop survive learning to read on? x2: from nothing:
+# does the loop form at all with text in the mix? Each run's loss on held-out text is under the table. Its controls are
+# round r17 (the same mix without the wire). Rule stated before the run: x1 still LOOP (depth 8 at 90% or more) = the
+# loop and ordinary text can live in one model; x1 below 75% = they cannot yet, and the steps toward Field1 are aimed
+# at the wrong problem.
+x1: --from t1 --families things --text 0.5 --seed 21
+x2: --align 96 --pull --group 16 --families things --text 0.5 --seed 22

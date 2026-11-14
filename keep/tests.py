@@ -773,8 +773,16 @@ def thinking_runs():
                  "--every", "1000", "--only", "feed", "--align", "160", "--exam-n", "6", "--pull"])
         Th.main(["--preset", "tiny", "--device", "cpu", "--workers", "0", "--runs", str(out), "--name", "thn", "--tokens", "2e4",
                  "--every", "1000", "--only", "feed", "--exam-n", "12", "--from", "tha", "--families", "newrules", "--seed", "5"])
+        for arm in ("feed", "full"):                    # ordinary text in the mix: half the windows, and each model's loss on held-out text
+            Th.main(["--preset", "tiny", "--device", "cpu", "--workers", "0", "--runs", str(out), "--name", "thx", "--tokens", "2e4", "--every", "1000",
+                     "--only", arm, "--align", "160", "--exam-n", "6", "--pull", "--families", "things", "--text", "0.5", "--data", str(TMP / "data"), "--sub", ""])
     finally:
         sys.stdout = old
+    tx = json.loads((out / "thx" / "think.json").read_text())
+    assert tx["text"] == 0.5 and set(tx["text_loss"]) == {"feed", "full"} and all(0 < v < 20 for v in tx["text_loss"].values()) and "Text loss" in (out / "thx" / "think.md").read_text()
+    g = Th.stream(random.Random(0), ENC, 480, ["things"], 3, align=160, text=TEXT, share=0.5)
+    got = [next(g) for _ in range(60)]
+    assert any(k == D.TEXT and len(t) == 480 and t[0] != ENC.eot_token for t, k in got) and any(isinstance(k, list) for t, k in got), "text windows and scenes, both whole windows"
     al = torch.load(out / "tha" / "feed" / "ckpt.pt", map_location="cpu", weights_only=False)["config"]
     assert al["chunk"] == 160 and al["max_len"] == Th.ALIGN_ROOM * 160, "a telling to a chunk: the fed model's chunk is the telling's"
     assert al["share"] == "strength"
