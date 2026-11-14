@@ -1,0 +1,3 @@
+# Round r14: all the steps together (sets, flips, wordings, idle sentences: the family "steps"), from f1 of round r13,
+# 100M tokens. What is left between this and Field1's switches: people, tenses, joined sentences, "now" in the questions.
+a1: --from f1 --families steps --tokens 1e8 --seed 13

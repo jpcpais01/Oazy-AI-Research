@@ -1,0 +1,8 @@
+# Round r12: the first steps from things toward Field1, each alone, from a loop of round r10 (50M tokens each). s1: a given
+# part is set on or off later ("Then the lamp is turned off."). w1: four wordings of each rule, "At first, ...", and sentences
+# that say nothing about the circuit. f0: a given part is set or flipped later, taught cold. On the CPU model s1 and w1 were
+# learned in 25 minutes with the loop kept, and f0 broke the loop for a while. LOOP in this table = the step is learned and
+# the loop is kept (the exam is the step's own, depth 8); depth 0 after one telling shows the events themselves.
+s1: --from t1 --families sets --tokens 5e7 --seed 11
+w1: --from t1 --families words --tokens 5e7 --seed 11
+f0: --from t1 --families flips --tokens 5e7 --seed 11

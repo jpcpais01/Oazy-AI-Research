@@ -278,6 +278,22 @@ controls. A first look at Field1 (`--families switches,rules,circuits --align 16
 control p1): its switches scenes were not learned by either (55 and 59%, the commonest answer 53%), the loop kept on
 circuits; the steps between the plain circuits and Field1 are still to be built.
 
+**Names, and the steps toward Field1 (CPU, 13 and 14 November, 0.46M weights).** In the family `circuits` what is
+given is always a switch ("the red switch") and what is worked out is always a machine ("the lamp"). The CPU pilots
+before had drawn both from one pool of names. With the two kinds kept apart on CPU the loop formed in 1 of 8 trainings
+(5 stayed at one lossy step); with one pool in 4 of 8; with one pool and the grouped pull write (`--pull --group 16`)
+in 6 of 6 (depth 4 at 94 to 100%). A model that can tell a given part from a worked-out one by its name can look the
+first up and do one step on it, and stop there; with one kind of name it has to treat every value alike. The family
+`things` is `circuits` without switches: "The lamp is on. The pump is on if the lamp is off." `bash runpod/round.sh r10`
+plants it four times next to a control on `circuits`. `newthings` is `newrules` on things (`r11`): there a rule
+taught on given parts meets nothing new when its inputs are worked out. The steps from `things` toward Field1's
+switches are families too, each learned on CPU by a model that loops, in 25 minutes, the loop kept: `sets` (a given
+part is set later: "Then the lamp is turned off."; the last word counts), `words` (four wordings of each rule, "At
+first, ...", sentences that say nothing). `flips` ("Then the lamp is flipped.") taught cold broke the CPU loop for a
+while (depth 4 from 95 to 57% after 25 minutes, back at 90% after 25 more); taught after `sets` the loop held (88%)
+and the flipped parts were right at 84%. So the order is things, sets, flips, then `steps` (all of them): rounds `r12`, `r13`, `r14`, each
+`--from` the one before.
+
 **When has it read enough?** (`python3 -m keep.settle --name c13`, runs trained with `--align`.) A model that loops
 works a scene out one step a telling and writes the results into the stores; once every value is in place, a further
 telling writes the same values and the stores stand still. `keep.settle` measures, on the exam's circuits, how much

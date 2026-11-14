@@ -806,6 +806,40 @@ def thinking_runs():
                 mixed += any(deep[x.lower()] == 1 for x in ins)
     assert mixed > 5, "newrules2 shows the new rules with an input that was worked out"
     assert Th.told(ENC, "newrules2", 3, (Th.TRAIN_SEED, 0))[3] is not None
+    given, worked = set(), set()                        # things: no switches; a name is given in one scene and worked out in another
+    for i in range(120):
+        sc = Th.circuit(i, (Th.TRAIN_SEED, 0), one=True)
+        assert "switch" not in sc["story"] and sc["depth"] <= 3
+        for q, _, _, qk in sc["qas"]:
+            (given if qk["depth"] == 0 else worked).add(q[len("Is "):-len(" on?")])
+        ex = Th.circuit(i, (Th.EXAM_SEED, 0), one=True)
+        assert "switch" not in ex["story"] and ex["depth"] == Th.CIRCUIT_EXAM[i % len(Th.CIRCUIT_EXAM)]
+    assert given == worked == {f"the {m}" for m in Th.C_MACHINE}, "every name is given somewhere and worked out somewhere"
+    assert Th.told(ENC, "things", 3, (Th.TRAIN_SEED, 0))[3] is not None
+    nt = Th.told(ENC, "newthings", 4, (Th.EXAM_SEED, 0))                # newthings: the new rules on things; the exam asks them at a depth
+    assert any(lv and lv.startswith("new rule at depth") for *_, lv in nt[2])
+    assert all("switch" not in Th.circuit(i, (Th.TRAIN_SEED, 0), new=1, one="things")["story"] for i in range(40))
+    assert any("exactly one of" in Th.circuit(i, (Th.TRAIN_SEED, 0), new=1, one="things")["story"] for i in range(40))
+    import re                                           # the steps toward Field1: an event stands after its part's first state, and the answers follow the last word
+    seen = {f: "" for f in ("sets", "flips", "words", "steps")}
+    for fam in seen:
+        for i in range(80):
+            sc = Th.circuit(i, (Th.TRAIN_SEED, 0), one=fam)
+            seen[fam] += sc["story"]
+            assert "switch" not in sc["story"] and sc["depth"] <= 3
+            ans = {q[len("Is "):-len(" on?")]: a for q, a, _, _ in sc["qas"]}
+            sents = [x.strip() for x in re.findall(r"[^.]+\.", sc["story"])]
+            for j, x in enumerate(sents):
+                if x.startswith("Then "):
+                    name = x[len("Then "):].split(" is ")[0]
+                    first = [k for k, y in enumerate(sents) if y.lower().replace("at first, ", "").startswith(name + " is o") and y.endswith((" is on.", " is off.")) and " if " not in y and " whenever " not in y]
+                    assert first and first[0] < j, (sc["story"], x)
+                    was = "on" if sents[first[0]].endswith(" is on.") else "off"
+                    now = ("off" if was == "on" else "on") if "flipped" in x else x.split("turned ")[1].rstrip(".")
+                    assert ans[name] == ("yes" if now == "on" else "no"), (sc["story"], x)
+        assert Th.told(ENC, fam, 3, (Th.TRAIN_SEED, 0))[3] is not None
+    assert "turned" in seen["sets"] and "flipped" not in seen["sets"] and "flipped" in seen["flips"] and "Then" not in seen["words"]
+    assert "At first" in seen["words"] and "does the opposite of" in seen["words"] and any(x in seen["words"] for x in Th.C_IDLE) and "flipped" in seen["steps"] and "At first" in seen["steps"]
     from . import settle as St                          # keep.settle: the stores' change by telling, and the rule that stops on it
     sdl = torch.load(out / "tha" / "feed" / "ckpt.pt", map_location="cpu", weights_only=False)
     mdl = Keep(KeepConfig.from_dict(sdl["config"]))

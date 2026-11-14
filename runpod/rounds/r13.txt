@@ -1,0 +1,3 @@
+# Round r13: flips taught after sets (from s1 of round r12, 50M tokens). On the CPU model this order kept the loop
+# (depth 4 = 88%) where flips taught cold broke it (57%).
+f1: --from s1 --families flips --tokens 5e7 --seed 12
