@@ -77,6 +77,8 @@ class Bee6Config(Bee5Config):
     expert_capacity: float = 1.25   # training: each expert's queue holds this x its fair share of the words
     expert_balance: float = 1e-3    # how fast the balancing biases move per step (DeepSeek-V3's gamma, as Coral)
     expert_aux: float = 1e-4        # the small balance loss (DeepSeek-V3, as Coral)
+    expert_kernel: str = "queues"   # "queues": fixed queues of 1.25x, one batched product (Bee6-MoE); "grouped": dropless,
+                                    # one grouped product per grid (torch's grouped_mm; MoE-150M), checked at start
 
     def __post_init__(self):
         super().__post_init__()

@@ -32,7 +32,7 @@ from .data import default_dir, EOT
 from .mix import SOURCES, source_path
 from . import tok
 
-FOLDER = {"smollm2": "smol"}
+FOLDER = {"smollm2": "smol", "oazy8k": "opal8k"}     # oazy8k: Opal re-cut by oazy/tok8k.py
 
 
 def target_dir(data: Path, name: str) -> Path:
@@ -145,7 +145,7 @@ def ratio(folder: Path, split: str = "val", default: float = 1.0) -> float:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--to", default="smollm2", choices=list(FOLDER))
+    ap.add_argument("--to", default="smollm2", choices=["smollm2"])     # oazy8k is cut from Opal by oazy/tok8k.py
     ap.add_argument("--data", default=None)
     ap.add_argument("--sources", default="fwe,dclm,chat")
     ap.add_argument("--max-tokens", type=float, default=0, help="at most this many GPT-2 tokens of each source's training text")

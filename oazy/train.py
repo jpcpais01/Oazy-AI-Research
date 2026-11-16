@@ -112,17 +112,20 @@ RECIPE["gnosis"] = dict(RECIPE["bee6"])
 RECIPE["lucid"] = dict(RECIPE["bee6"])
 GNOSIS = dict(n_layer=22, mod_layers="2,4,6,8,10,12,14,16,18,20", key_offset="3,7,11,15,19")
 # MoE-150M (bee6/moe150.py, Nov 16; João: "30M active, 150M total ... aiming to tackle SmolLM2-135M ... 100B tokens of
-# Opal"). Bee6-MoE's experts in a small deep body: 16 layers of 512, 1 shared + 32 routed experts of 192 (5 routed per word).
-# 152.3M weights in all, 29.6M of the body at work per word (67.4M counting the word table and the value tables).
+# Opal"). Bee6-MoE's experts in a small deep body: 16 layers of 512.
 # Only the clean speed tricks: everything that keeps the maths (compile, bf16, one q/k/v product, loss slices of 4,096,
 # batched NorMuon, short windows first, plain causal attention, the stored RoPE table); FP8 and Mixture of Depths off
 # (both cost quality per word, and this run is limited by its words). No mentor. The 3-word early lesson only for the
 # first 5% (5B of 100B). Opal with Field1 at 2% and a lighter chat share in the cool-down (oazy/mix.py OPAL100_TEXT_MIX).
-# Dense-30M is its twin: the same body with one ReLU² MLP of 1,152 (= the 6 experts a word runs), 67.1M in all, the same
-# 29.4M at work per word: the fair test of what the experts buy.
+# Dense-30M is its twin: the same body with one ReLU² MLP of 1,152 (= what a word runs in the MoE): the fair test of what
+# the experts buy.
+# Nov 16, v2 (João: "8k" pieces and more speed): our own 8,192 pieces (oazy/tok8k.py) instead of SmolLM2's 49,152, so the
+# score head is a sixth and 31M weights move from the word and value tables into the experts; fewer, wider experts
+# (1 shared + 20 routed of 384, 2 routed per word: the same 1,152 neurons a word runs) in one dropless grouped product.
+# MoE-150M = 149.1M in all, 29.4M of the layers at work per word; Dense-30M = 35.7M in all, the same 29.4M of layers.
 SMALL_BODY = dict(d_model=512, n_layer=16, attn_heads=8, attn_kv_heads=2, attn_head_dim=64, key_offset="3,7,11,15",
-                  mod_layers="", fp8=0, mtp_until=0.05)
-MOE150 = dict(SMALL_BODY, experts=32, expert_top=5, expert_hidden=192, shared_experts=1)
+                  mod_layers="", fp8=0, mtp_until=0.05, vocab_size=8192, tokenizer="oazy8k")
+MOE150 = dict(SMALL_BODY, experts=20, expert_top=2, expert_hidden=384, shared_experts=1, expert_kernel="grouped")
 DENSE30 = dict(SMALL_BODY, mlp_hidden=1152)
 RECIPE["moe150"] = dict(RECIPE["bee6"])
 RECIPE["dense30"] = dict(RECIPE["bee6"])
@@ -1185,6 +1188,15 @@ def main():
             if args.mix is None and not (root / sub / "think" / "train.bin").exists():
                 say("[mix] Opal2's think part (text that shows its thinking) is not built: this run reads the rest a "
                     "little more. Build it on a GPU with  python3 -m oazy.think --tokens 400e6")
+        elif tk == "oazy8k":                                 # our 8k pieces (oazy/tok8k.py): Opal re-cut, in <data>/opal8k
+            if sub not in (None, "opal", "opal8k"):
+                raise SystemExit("the 8k-piece models read Opal re-cut (<data>/opal8k): use --data-sub opal")
+            sub = "opal8k"
+            for part, how in (("train.bin", "python3 -m oazy.tok8k cut"), ("field1/train.bin", "python3 -m oazy.tok8k cut")):
+                if not (root / sub / part).exists():
+                    raise SystemExit(f"no {root / sub / part} yet: run  python3 -m oazy.tok8k train  then  {how}  first")
+            if world_w > 0:
+                raise SystemExit("Opal already holds the world (Field1): leave out --world")
         elif sub == "opal":                                  # Opal (oazy/opal.py) = our text + Field1, in <data>/opal (old name sado)
             sub = "opal" if (root / "opal" / "train.bin").exists() else "sado"
             if not (root / sub / "field1" / "train.bin").exists():
@@ -1392,6 +1404,12 @@ def main():
                          "*_own fields are per own token"} if tk != "gpt2" else {}),
     }
     (run.dir / "config.json").write_text(json.dumps(info, indent=1))
+    if tk == "oazy8k":                                 # our own pieces: the run keeps its tokenizer beside its weights
+        import shutil
+        try:
+            shutil.copy2(tok.oazy8k_path(), run.dir / "tokenizer.json")
+        except Exception as e:
+            say(f"[tokenizer] could not copy the 8k tokenizer into the run folder ({e})")
     summary(info, run.dir, f"resumed at {term.tokens(tokens)}" if tokens else None)
     if done():
         say("this run is already finished. Use --tokens to train longer or --fresh to start over.")
