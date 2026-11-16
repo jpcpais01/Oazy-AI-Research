@@ -33,6 +33,14 @@ A language model that is not a neural network: no weights, no gradients, no loss
 | + memory of the current document (cache) | 119.6 |
 | + four different clusterings (24 pattern views), two caches (run4.py) | 115.4 |
 | + soft memory: kernel vote over all past contexts with count-made meaning vectors (run5.py, about 18 min) | 114.5 |
+| + patterns over phrase units and kinds of units (run6.py): unit views alone 170-480, in the blend | 115.6 (no gain) |
 | Published: KN5 141.2, KN5 + cache 125.7, RNN 124.7 (Mikolov 2011), Transformer-XL 54.5 | |
 
 Blend weights are fitted by EM on the validation set (ten numbers).
+
+## Reading (16 Nov 2026)
+
+Counting finds the kinds in seconds (meaning vectors and classes are good). Predicting with them stalls near 115:
+more class views, context-dependent weights, a soft kernel memory and phrase units each add 0-3%.
+Rule set before the phrase test: under 100 or the counting form is at its ceiling. It is at its ceiling.
+What is missing is a learned way to combine several context words into one judgement.
