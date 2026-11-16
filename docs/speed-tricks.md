@@ -502,3 +502,17 @@ These sped up models we have retired (Bee0.2B to Frog), and they still work if t
 | `--set mod_layers=` | Bee6: no Mixture of Depths (`mod_cap=0.125` for the paper's share) |
 | `--set bloom=on` | Bee6: grow 4x512 -> 12x1,024 |
 | `--set sparse_mlp=0.10` | Bee6: each word runs 10% of each MLP (`sparse_block=64` finer blocks, `sparse_from=0.1` the dense start) |
+
+### MoE-150M (Nov 16): our 8k pieces and the grouped expert product
+
+MoE-150M (`bee6/moe150.py`, 16 x 512, 149M, 29M at work per word) carries only the tricks that keep the maths (FP8 and
+Mixture of Depths off) and adds two:
+
+- **Our own 8,192 pieces** (`oazy/tok8k.py`). At 512 wide, scoring SmolLM2's 49,152 pieces for every word was ~40% of a
+  step. With 8,192 the score head is a sixth of that. A piece holds ~15% less text, so compare runs by bits per byte.
+- **The experts as one grouped product per grid** (`expert_kernel="grouped"`, `bee6/experts.py`; torch's `grouped_mm`,
+  as MegaBlocks / ScatterMoE). Every word's picks are sorted by expert and all experts run back to back on their own rows:
+  no fixed queues, no 1.25x spare room, no word dropped, shapes fixed by the word count (so compile and CUDA graphs see
+  one graph). Checked at start against plain products; Bee6-MoE's queues if the GPU or torch cannot.
+- `python3 -m bee6.moe150_tests --device cuda` times Dense-30M, the queues, the grouped product at micro 64 and 128, and
+  with CUDA graphs, and prints the fastest. Not measured yet.

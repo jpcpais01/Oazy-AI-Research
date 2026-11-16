@@ -46,8 +46,47 @@ class Bee6MoE(Bee6):
         c = self.cfg
         return f"{c.n_layer} layers of {c.d_model}, {c.experts} experts a layer"
 
+    def startup_check(self, device, say=print):
+        """Bee6's FP8 check, then the grouped expert product (expert_kernel="grouped"): one tiny product forward and
+        back on this device against the plain one; if it fails or disagrees, the experts use Bee6-MoE's queues."""
+        super().startup_check(device, say)
+        from .experts import Experts
+        layers = [m for m in self.modules() if isinstance(m, Experts)]
+        if not layers or self.cfg.expert_kernel != "grouped":
+            return
+        ok, why = grouped_works(device, self.cfg.d_model, self.cfg.expert_hidden)
+        for m in layers:
+            m.kernel = "grouped" if ok else "queues"
+        say(f"[experts] {'dropless grouped product (one call per grid)' if ok else 'queues of 1.25x (the grouped product ' + why + ')'}")
+
     def active_params(self):
         """The weights a word uses: everything but the routed experts it did not pick."""
         c = self.cfg
         unused = c.n_layer * (c.experts - c.expert_top) * 2 * c.d_model * c.expert_hidden
         return self.num_params() - unused
+
+
+def grouped_works(device, D, h, E=4):
+    """(ok, why): torch's grouped product runs forward and back on this device and matches expert-by-expert products."""
+    import torch
+    import torch.nn.functional as F
+    if not hasattr(F, "grouped_mm"):
+        return False, "needs torch 2.9 or newer"
+    try:
+        dt = torch.bfloat16 if device.type == "cuda" else torch.float32
+        g = torch.Generator(device="cpu").manual_seed(0)
+        x = torch.randn(200, D, generator=g).to(device, dt).requires_grad_()
+        w = (torch.randn(E, D, h, generator=g) * D ** -0.5).to(device, dt).requires_grad_()
+        offs = torch.tensor([17, 17, 120, 200], device=device, dtype=torch.int32)
+        y = F.grouped_mm(x, w, offs=offs)
+        ref = torch.cat([x[a:b] @ w[e] for e, (a, b) in enumerate(zip([0, 17, 17, 120], [17, 17, 120, 200]))])
+        gy = torch.randn(y.shape, generator=g).to(device, dt)
+        y.backward(gy)
+        gx, gw = x.grad.clone(), w.grad.clone()
+        x.grad = w.grad = None
+        ref.backward(gy)
+        err = max(float((y - ref).abs().max() / ref.abs().max()), float((gx - x.grad).abs().max() / x.grad.abs().max()),
+                  float((gw - w.grad).abs().max() / w.grad.abs().max()))
+        return err < 0.03, f"disagrees by {err:.3f}"
+    except Exception as e:
+        return False, f"failed: {type(e).__name__}: {str(e).splitlines()[0][:120] if str(e) else ''}"

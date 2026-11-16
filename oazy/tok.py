@@ -13,6 +13,10 @@ comparisons fair (see oazy/train.py: val_bpb and the "GPT-2-equivalent" loss).
 Both objects offer the same few calls (tiktoken's names): encode_ordinary, encode_ordinary_batch,
 decode, decode_single_token_bytes, n_vocab, eot_token, plus .name.
 
+  oazy8k   our own 8,192 pieces (Nov 16, oazy/tok8k.py), learned from Opal's text: MoE-150M uses it, so the score
+           head over all pieces costs a sixth of SmolLM2's. Its file is <data>/opal8k/tokenizer.json (or
+           $OAZY_8K_TOKENIZER); every run that reads it keeps a copy in its run folder.
+
 Offline / tests: $OAZY_SMOL_TOKENIZER may point at a tokenizer.json (the real one, or a stand-in).
 """
 from __future__ import annotations
@@ -22,7 +26,7 @@ import os
 
 import numpy as np
 
-NAMES = ("gpt2", "smollm2")
+NAMES = ("gpt2", "smollm2", "oazy8k")
 SMOL_REPO = "HuggingFaceTB/SmolLM2-360M"        # the 135M, 360M and 1.7B models all share this tokenizer
 
 
@@ -84,6 +88,34 @@ class SmolTokenizer:
             return s.encode()
 
 
+def oazy8k_path():
+    """Where our 8k tokenizer's file is: $OAZY_8K_TOKENIZER, else <data>/opal8k/tokenizer.json."""
+    from pathlib import Path
+    p = os.environ.get("OAZY_8K_TOKENIZER")
+    if p:
+        return Path(p)
+    from .data import default_dir
+    return Path(default_dir("data")) / "opal8k" / "tokenizer.json"
+
+
+class Oazy8kTokenizer(SmolTokenizer):
+    """Our 8,192-piece byte-level BPE (oazy/tok8k.py), with the same calls as SmolLM2's."""
+    name = "oazy8k"
+
+    def __init__(self):
+        from tokenizers import Tokenizer
+        path = oazy8k_path()
+        if not path.exists():
+            raise SystemExit(f"no 8k tokenizer at {path}: run  python3 -m oazy.tok8k train  first "
+                             f"(or point OAZY_8K_TOKENIZER at a run folder's tokenizer.json)")
+        self.tk = Tokenizer.from_file(str(path))
+        self.n_vocab = self.tk.get_vocab_size(with_added_tokens=True)
+        self.eot_token = self.tk.token_to_id("<|endoftext|>")
+        if self.eot_token != 0:
+            raise SystemExit("the 8k tokenizer must have <|endoftext|> as piece 0")
+        self._special = {"<|endoftext|>"}
+
+
 @functools.lru_cache(maxsize=None)
 def get(name: str = "gpt2"):
     if name == "gpt2":
@@ -91,10 +123,12 @@ def get(name: str = "gpt2"):
         return get_tokenizer()
     if name == "smollm2":
         return SmolTokenizer()
+    if name == "oazy8k":
+        return Oazy8kTokenizer()
     raise ValueError(f"unknown tokenizer {name!r}; known: {NAMES}")
 
 
-EOT_ID = {"gpt2": 50256, "smollm2": 0}          # <|endoftext|>, without loading the tokenizer
+EOT_ID = {"gpt2": 50256, "smollm2": 0, "oazy8k": 0}          # <|endoftext|>, without loading the tokenizer
 
 
 def eot_id(name: str) -> int:
