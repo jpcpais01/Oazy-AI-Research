@@ -52,6 +52,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+HAS_GROUPED = hasattr(F, "grouped_mm")      # torch 2.9+: one product over many weight grids, each on its own rows
+
+
 class Experts(nn.Module):
     """Bee6's MLP as 1 shared + n routed ReLU² experts, stored as stacked grids: w_up (E+1, h, D), w_down (E+1, D, h).
     Grid 0 is the shared expert; grids 1..E are the routed ones (the router scores those E)."""
@@ -76,6 +79,7 @@ class Experts(nn.Module):
         self.register_buffer("sd_route", torch.ones(E))         # (running averages: reading centres with these)
         self.register_buffer("seen_route", torch.tensor(0))
         self.small = 8                                           # reading this many words or fewer: weights directly
+        self.kernel = "grouped" if getattr(cfg, "expert_kernel", "queues") == "grouped" and HAS_GROUPED else "queues"
         self.reset(3 ** 0.5 * D ** -0.5)
 
     @torch.no_grad()
@@ -143,6 +147,27 @@ class Experts(nn.Module):
         out.index_add_(0, src, y.float() * gs[:, None])                 # empty slots land on the spare row N
         return out[:N], (~keep).sum().float()
 
+    def grouped(self, x, idx, w):
+        """Dropless, one grouped product per grid (MegaBlocks / ScatterMoE style; torch's grouped_mm): every word's k
+        picks are sorted by expert, the experts run back to back on their own rows (no queues, no spare room, no word
+        dropped), and the answers are weighted and added back into their words in float32. The shapes are fixed by the
+        number of words alone (N x k rows), so torch.compile and CUDA graphs see one graph."""
+        N, D = x.shape
+        E, k, S = self.E, self.k, self.S
+        flat = idx.reshape(-1)                                          # (N k)
+        order = torch.sort(flat, stable=True).indices
+        tok = torch.div(order, k, rounding_mode="floor")
+        counts = torch.zeros(E, device=x.device, dtype=torch.int32).scatter_add_(
+            0, flat, torch.ones_like(flat, dtype=torch.int32))
+        offs = counts.cumsum(0).to(torch.int32)
+        xin = x[tok]                                                    # (N k, D), sorted by expert
+        wu, wd = self.w_up[S:].to(x.dtype), self.w_down[S:].to(x.dtype)
+        a = F.relu(F.grouped_mm(xin, wu.mT, offs=offs)).square()       # (N k, h)
+        y = F.grouped_mm(a, wd.mT, offs=offs)                           # (N k, D)
+        out = torch.zeros(N, D, device=x.device, dtype=torch.float32)
+        out.index_add_(0, tok, y.float() * w.reshape(-1)[order, None])
+        return out
+
     def direct(self, x, idx, w):
         """A few words (chat): each word's own experts' weights, gathered. Reads only k / E of the routed weights."""
         S = self.S
@@ -158,7 +183,9 @@ class Experts(nn.Module):
         xf = x.reshape(-1, self.D)
         N = xf.shape[0]
         idx, w, aux, counts, mean, sq = self.route(xf)
-        if self.training:
+        if getattr(self, "kernel", "queues") == "grouped" and N > self.small:
+            r, dropped = self.grouped(xf, idx, w), xf.new_zeros(())
+        elif self.training:
             C = max(8, int(math.ceil(self.cfg.expert_capacity * N * self.k / self.E / 8) * 8))
             r, dropped = self.queued(xf, idx, w, C)
         elif N <= self.small:
