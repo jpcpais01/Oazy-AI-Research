@@ -172,6 +172,7 @@ class Chain:
         pre = np.full(n, x[-1]) if hist is None else hist[-n:]
         xx = np.concatenate([pre, x]); pos = np.arange(n, len(xx))
         p = np.full(len(x), 1.0 / self.V)
+        self.bucket = np.zeros(len(x), dtype=np.int64)
         for sid in range(len(self.specs) - 1, -1, -1):
             L = self.levels[sid]
             ch = self._ctx(xx, pos, self.specs[sid], sid)
@@ -187,6 +188,8 @@ class Chain:
             with np.errstate(divide="ignore", invalid="ignore"):
                 q = (np.maximum(c - d, 0) + gam * p) / tot
             p = np.where(tot > 0, q, p)
+            lt = np.minimum(3, np.log2(np.maximum(tot, 1)).astype(np.int64) // 2)
+            self.bucket = np.where(tot > 0, (len(self.specs) - sid) * 4 + lt, self.bucket)
         return p
 
 

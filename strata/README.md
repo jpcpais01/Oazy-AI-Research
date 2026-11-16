@@ -21,6 +21,8 @@ A language model that is not a neural network: no weights, no gradients, no loss
     python3 run1.py ptb                 # pure memory (Kneser-Ney), checks the harness: 140.7 vs 141.2 published
     python3 run2.py ptb 1000,150,20     # builds the three class layers
     python3 run3.py ptb 1000,150,20     # patterns + blend
+    python3 run4.py ptb 800,100,16 1500,200,30 600,60,10   # more views, caches, weights by context
+    python3 run5.py ptb                 # soft memory on top of run4
 
 ## First result, Penn Treebank test perplexity (16 Nov 2026)
 
@@ -29,6 +31,8 @@ A language model that is not a neural network: no weights, no gradients, no loss
 | Pure memory, 5-gram | 141.1 |
 | + patterns over three class layers | 129.3 |
 | + memory of the current document (cache) | 119.6 |
+| + four different clusterings (24 pattern views), two caches (run4.py) | 115.4 |
+| + soft memory: kernel vote over all past contexts with count-made meaning vectors (run5.py, about 18 min) | 114.5 |
 | Published: KN5 141.2, KN5 + cache 125.7, RNN 124.7 (Mikolov 2011), Transformer-XL 54.5 | |
 
 Blend weights are fitted by EM on the validation set (ten numbers).
