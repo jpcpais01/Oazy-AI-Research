@@ -998,6 +998,52 @@ def a_round_runs_alone():
     tn = (out / "round-rn.md").read_text()
     assert "New rule at depth 8" in tn and "| thn | done |" in tn, tn
 
+
+@check
+def the_ladder():
+    """keep/rival.py: a normal model (here a small random one in SmolLM2's shape) is fine-tuned on keep.think's scenes
+    with the loss on the answers, sits keep.think's exam (the same scenes and marks), is not trained twice, and the
+    ladder puts it beside a run of the fed model."""
+    try:
+        import transformers  # noqa: F401
+    except ImportError:
+        print("        (transformers is not installed here: the ladder is not checked)", flush=True)
+        return
+    from . import rival as Rv, think as Th
+    g = Rv.scenes(random.Random(0), ENC, ["tales"], "t")
+    told = set()
+    for _ in range(60):                                 # training scenes: depth 3 at most, the answer's piece stands after its place
+        toks, _, marks, R = next(g)
+        told.add(R)
+        assert len(toks) <= Rv.ROOM and all(toks[p + 1] == cands[right] and int(lv.split()[1]) <= Th.CIRCUIT_TRAIN for p, cands, right, lv, _ in marks)
+    assert 1 in told and max(told) > 1, "half told once, half told again and again"
+    rows = [next(g) for _ in range(3)]
+    x, marks = Rv.batch_of(rows, ENC.eot_token, torch.device("cpu"))
+    assert all(x[b, p + 1] == cands[right] for b, p, cands, right, _, _ in marks) and len(marks) == sum(len(r[2]) for r in rows)
+    out = TMP / "runs"
+    args = ["--size", "tiny", "--device", "cpu", "--runs", str(out), "--tokens", "8e3", "--batch", "4", "--short-n", "6", "--exam-n", "6", "--every", "5", "--lrs", "1e-3,2e-3"]
+    old, sys.stdout = sys.stdout, open(os.devnull, "w")
+    try:
+        Rv.main(args)
+        when = (out / "rival-tiny" / "lr-0.001" / "result.json").stat().st_mtime_ns
+        Rv.main(args)
+    finally:
+        sys.stdout = old
+    assert (out / "rival-tiny" / "lr-0.001" / "result.json").stat().st_mtime_ns == when, "a learning rate already done is not trained again"
+    res = json.loads((out / "rival-tiny" / "rival.json").read_text())
+    assert set(res["lrs"]) == {"0.001", "0.002"} and res["best"] in res["lrs"]
+    ex = res["lrs"]["0.001"]["exam"]["tales"]
+    assert set(ex["depth 8"]) == {str(r) for r in Rv.READS} and res["lrs"]["0.001"]["curve"]
+    asked = sum(len(Th.scene_tokens(ENC, "tales", i, (Th.EXAM_SEED, 0), 1, 1 << 30)[2]) for i in range(6))      # every question of keep.think's exam scenes
+    assert ex["all"]["1"][1] == asked, (ex["all"]["1"], asked)
+    assert "Depth 8, best seen" in (out / "rival-tiny" / "rival.md").read_text()
+    row = lambda v: {str(r): [v, 100, 55] for r in (1, 4, 12)}
+    (out / "ours").mkdir(exist_ok=True)
+    (out / "ours" / "think.json").write_text(json.dumps({"train": {"feed": {"params": 50600000}}, "exam": {"feed": {"tales": {f"depth {d}": row(95) for d in (1, 2, 3, 4, 6, 8)}}}}))
+    t = Rv.table(out, "ours")
+    assert "| The fed model (`ours`) | 51M | 1x | no | 95 | 95 | 95 | 95 | 95 | 95 |" in t and "SmolLM2-TINY" in t, t
+    assert "No rival comes within 5 points" in t or "The smallest rival within 5 points" in t, t
+
 if __name__ == "__main__":
     print(f"\n{len(PASSED)} passed, {len(FAILED)} failed" + (": " + ", ".join(FAILED) if FAILED else ""))
     sys.exit(1 if FAILED else 0)

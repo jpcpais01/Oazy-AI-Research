@@ -327,6 +327,21 @@ asleep, at home / out, ...), a negation by its own word, four wordings of each r
 is awake only when Ana is not. Is Rui awake?"). Round `r18` trains `x1` on things, cwords, csteps and tales, one run
 each, half ordinary text.
 
+**The ladder (`keep/rival.py`, `bash runpod/ladder.sh h4`, not run).** How much bigger must a normal pretrained model
+be to reason as deep as the fed model? SmolLM2-135M, 360M and 1.7B (2.7, 7 and 34 times the fed model's 50M weights)
+are fine-tuned on the same scenes as `h4` (the family `tales`, trained to depth 3 only) and sit the same exam: the same
+scenes, the same marks, nothing written out between the story and the answer. The rival is given what suits it: its
+pretrained weights and attention over the whole scene, the loss on the answers alone, half of its scenes told once and
+half told again and again (the exam at 1, 2, 4, 8 and 12 tellings), three learning rates of which the table takes the
+best, and training until the trained depths are right and depth 8 has stopped rising; the table shows its exam at the
+end and the best depth 8 it showed at any short exam on the way. `<runs>/ladder.md` puts the fed model and the three
+rivals in one table and names the smallest rival within 5 points of the fed model at depth 8. How to read the levels:
+an exam scene built to depth d asks its deepest part first, before any worked-out answer is written, so "depth 8" is
+8 steps with nothing to lean on; "depth 4" and "depth 6" also count the parts of deeper scenes, asked after the
+shallower answers stand written above them (one step from a written answer). The headline is depth 8. What stays
+different and is said with the result: the fed model is told the story 12 times and pays that compute, the rival may
+read it once.
+
 **When has it read enough?** (`python3 -m keep.settle --name c13`, runs trained with `--align`.) A model that loops
 works a scene out one step a telling and writes the results into the stores; once every value is in place, a further
 telling writes the same values and the stores stand still. `keep.settle` measures, on the exam's circuits, how much
