@@ -33,17 +33,17 @@ from memtrix.model import Memtrix, MemtrixConfig
 from memtrix import memory
 from . import hellaswag, probes, term
 
-KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "seed", "smol", "smolbee", "black", "blackt", "logos", "bee6moe", "gnosis", "gnosis2", "lucid", "gpt"]
+KINDS = ["memtrix", "tide", "fern", "ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "seed", "smol", "smolbee", "black", "blackt", "logos", "bee6moe", "gnosis", "gnosis2", "lucid", "moe150", "dense30", "gpt"]
 NICE = {"memtrix": "Memtrix", "tide": "Tide", "fern": "Fern", "ember": "Ember", "fern2": "Fern2", "fern3": "Fern3",
         "bee": "Bee0.2B", "bee2": "Bee_v2_0.2B", "bee3": "Bee3", "frog": "Frog", "coral": "Coral", "bee4": "Bee4-200M", "coralmini": "Coral Mini",
-        "pegasus": "Pegasus 1", "pegasusmini": "Pegasus 1 Mini", "pegasus2": "Pegasus 2 Mini", "plain100": "Plain-100M", "plain100f": "Plain-100F", "alphastar": "Pegasus Alpha Star", "pegasusbeta": "Pegasus Beta", "bee5": "Bee5-200M", "bee6": "Bee6-200M", "logos": "Logos1-200M", "bee6moe": "Bee6-MoE", "gnosis": "Gnosis-300M", "gnosis2": "Gnosis2-300M", "lucid": "Lucid-300M", "seed": "Seed", "smol": "SmolLM2 (their recipe)", "smolbee": "SmolLM2 (our recipe)", "black": "Code Black",
+        "pegasus": "Pegasus 1", "pegasusmini": "Pegasus 1 Mini", "pegasus2": "Pegasus 2 Mini", "plain100": "Plain-100M", "plain100f": "Plain-100F", "alphastar": "Pegasus Alpha Star", "pegasusbeta": "Pegasus Beta", "bee5": "Bee5-200M", "bee6": "Bee6-200M", "logos": "Logos1-200M", "bee6moe": "Bee6-MoE", "moe150": "MoE-150M", "dense30": "Dense-30M (twin)", "gnosis": "Gnosis-300M", "gnosis2": "Gnosis2-300M", "lucid": "Lucid-300M", "seed": "Seed", "smol": "SmolLM2 (their recipe)", "smolbee": "SmolLM2 (our recipe)", "black": "Code Black",
         "blackt": "Black-T", "gpt": "GPT"}
-FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "logos", "bee6moe", "gnosis", "gnosis2", "lucid", "seed", "smolbee", "black", "blackt")    # raised the fast way: Muon (and a mentor, where MENTOR names one)
+FAST = ("ember", "fern2", "fern3", "bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "logos", "bee6moe", "moe150", "dense30", "gnosis", "gnosis2", "lucid", "seed", "smolbee", "black", "blackt")    # raised the fast way: Muon (and a mentor, where MENTOR names one)
 # default mentor (the others: gpt2-medium). Code Black and Black-T race without one, so the architectures are compared alone.
 MENTOR = {"bee": "gpt2-large", "bee2": "smollm2-360m", "bee3": "smollm2-360m", "frog": "smollm2-360m", "coral": "smollm2-360m",
           "bee4": "smollm2-360m", "coralmini": "smollm2-360m", "pegasus": "smollm2-360m", "pegasusmini": "smollm2-360m", "pegasus2": "smollm2-360m",
-          "plain100": "smollm2-360m", "plain100f": "smollm2-360m", "alphastar": "smollm2-360m", "pegasusbeta": "smollm2-360m", "bee5": "smollm2-360m", "bee6": "smollm2-360m", "logos": "smollm2-360m", "bee6moe": "smollm2-360m", "gnosis": "smollm2-360m", "gnosis2": "smollm2-360m", "lucid": "smollm2-360m", "seed": "smollm2-360m", "smolbee": "smollm2-360m", "black": "none", "blackt": "none"}
-BEES = ("bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "logos", "bee6moe", "gnosis", "gnosis2", "lucid", "seed", "smol", "smolbee", "black", "blackt")    # the text mix (Tagus), WSD, growing windows
+          "plain100": "smollm2-360m", "plain100f": "smollm2-360m", "alphastar": "smollm2-360m", "pegasusbeta": "smollm2-360m", "bee5": "smollm2-360m", "bee6": "smollm2-360m", "logos": "smollm2-360m", "bee6moe": "smollm2-360m", "moe150": "none", "dense30": "none", "gnosis": "smollm2-360m", "gnosis2": "smollm2-360m", "lucid": "smollm2-360m", "seed": "smollm2-360m", "smolbee": "smollm2-360m", "black": "none", "blackt": "none"}
+BEES = ("bee", "bee2", "bee3", "frog", "coral", "bee4", "coralmini", "pegasus", "pegasusmini", "pegasus2", "plain100", "plain100f", "alphastar", "pegasusbeta", "bee5", "bee6", "logos", "bee6moe", "moe150", "dense30", "gnosis", "gnosis2", "lucid", "seed", "smol", "smolbee", "black", "blackt")    # the text mix (Tagus), WSD, growing windows
 # Bee3's recipe (bee3/README.md): the mentor stays the whole run, weight decay on the Muon grids, a batch ramp,
 # a 1-minus-square-root cool-down, twice Bee2's learning rates (the presets' lr_bee3 / muon_lr_bee3)
 RECIPE = {"bee3": dict(mentor_floor=0.25, mentor_off=0.1, muon_wd=0.1, batch_ramp="65536:0.1", decay_shape="sqrt")}
@@ -111,6 +111,26 @@ RECIPE["gnosis"] = dict(RECIPE["bee6"])
 # slots claim the surprise, a shared law). Gnosis's recipe exactly, so the race differs only in the body.
 RECIPE["lucid"] = dict(RECIPE["bee6"])
 GNOSIS = dict(n_layer=22, mod_layers="2,4,6,8,10,12,14,16,18,20", key_offset="3,7,11,15,19")
+# MoE-150M (bee6/moe150.py, Nov 16; João: "30M active, 150M total ... aiming to tackle SmolLM2-135M ... 100B tokens of
+# Opal"). Bee6-MoE's experts in a small deep body: 16 layers of 512.
+# Only the clean speed tricks: everything that keeps the maths (compile, bf16, one q/k/v product, loss slices of 4,096,
+# batched NorMuon, short windows first, plain causal attention, the stored RoPE table); FP8 and Mixture of Depths off
+# (both cost quality per word, and this run is limited by its words). No mentor. The 3-word early lesson only for the
+# first 5% (5B of 100B). Opal with Field1 at 2% and a lighter chat share in the cool-down (oazy/mix.py OPAL100_TEXT_MIX).
+# Dense-30M is its twin: the same body with one ReLU² MLP of 1,152 (= what a word runs in the MoE): the fair test of what
+# the experts buy.
+# Nov 16, v2 (João: "8k" pieces and more speed): our own 8,192 pieces (oazy/tok8k.py) instead of SmolLM2's 49,152, so the
+# score head is a sixth and 31M weights move from the word and value tables into the experts; fewer, wider experts
+# (1 shared + 20 routed of 384, 2 routed per word: the same 1,152 neurons a word runs) in one dropless grouped product.
+# MoE-150M = 149.1M in all, 29.4M of the layers at work per word; Dense-30M = 35.7M in all, the same 29.4M of layers.
+SMALL_BODY = dict(d_model=512, n_layer=16, attn_heads=8, attn_kv_heads=2, attn_head_dim=64, key_offset="3,7,11,15",
+                  mod_layers="", fp8=0, mtp_until=0.05, vocab_size=8192, tokenizer="oazy8k")
+MOE150 = dict(SMALL_BODY, experts=20, expert_top=2, expert_hidden=384, shared_experts=1, expert_kernel="grouped")
+DENSE30 = dict(SMALL_BODY, mlp_hidden=1152)
+RECIPE["moe150"] = dict(RECIPE["bee6"])
+RECIPE["dense30"] = dict(RECIPE["bee6"])
+SMALL_OPAL_PLAN = "flat:0.02"                 # MoE-150M and its twin: Field1 at 2% of every phase (Opal's default is 20%)
+SMALL_KINDS = ("moe150", "dense30")
 # Gnosis2 (gnosis2/, Nov 11): Gnosis + Canon layers (a 4-word causal mix on attention's and the MLP's input in the 12
 # layers every word goes through). Gnosis's recipe exactly; it reads Opal2 (oazy/opal2.py: Opal + the logic warm-up,
 # Field1 worked out, text that shows its thinking) and is finished by gnosis2/rl.py. The best shot, João's words.
@@ -417,6 +437,8 @@ for _p in PRESETS.values():           # Logos1-200M and Bee6-MoE: Bee6's batch a
     for _k in [k for k in _p if k.endswith("_bee6")]:
         _p[_k[:-4] + "logos"] = _p[_k]
         _p[_k[:-4] + "bee6moe"] = _p[_k]
+        _p[_k[:-4] + "moe150"] = _p[_k]
+        _p[_k[:-4] + "dense30"] = _p[_k]
         _p[_k[:-4] + "gnosis"] = _p[_k]
         _p[_k[:-4] + "gnosis2"] = _p[_k]
         _p[_k[:-4] + "lucid"] = _p[_k]
@@ -593,6 +615,19 @@ def build(kind, preset, overrides=None):
         cfg = Gnosis2Config(**{**GNOSIS, **small, **p.get("bee5", {}), **p.get("bee6", {}), **p.get("gnosis", {}),
                                **p.get("gnosis2", {}), **(overrides or {})})
         return Gnosis2(cfg), cfg
+    if kind in SMALL_KINDS:
+        small = {k: v for k, v in p.get("bee", {}).items() if k in ("d_model", "n_layer", "attn_heads", "attn_kv_heads",
+                                                                     "attn_head_dim", "max_len")}
+        if small:                       # a test preset: Bee's small body, one window length, small experts
+            small.update(ctx=f"{small['max_len']}:0", key_offset="1")
+            small.update(dict(experts=8, expert_top=2, expert_hidden=16) if kind == "moe150" else dict(mlp_hidden=48))
+        if kind == "moe150":
+            Bee6MoE, Bee6MoEConfig = _bee6moe()
+            cfg = Bee6MoEConfig(**{**MOE150, **small, **p.get("bee5", {}), **p.get("bee6", {}), **p.get("moe150", {}), **(overrides or {})})
+            return Bee6MoE(cfg), cfg
+        Bee6, Bee6Config = _bee6()
+        cfg = Bee6Config(**{**DENSE30, **small, **p.get("bee5", {}), **p.get("bee6", {}), **p.get("dense30", {}), **(overrides or {})})
+        return Bee6(cfg), cfg
     if kind == "bee6moe":
         Bee6MoE, Bee6MoEConfig = _bee6moe()
         small = {k: v for k, v in p.get("bee", {}).items() if k in ("d_model", "n_layer", "attn_heads", "attn_kv_heads",
@@ -705,6 +740,12 @@ def load_model(ckpt: Path, device, mmap=False):
     elif kind == "gnosis2":
         Gnosis2, Gnosis2Config = _gnosis2()
         model = Gnosis2(Gnosis2Config.from_dict(st["config"]))
+    elif kind == "moe150":
+        Bee6MoE, Bee6MoEConfig = _bee6moe()
+        model = Bee6MoE(Bee6MoEConfig.from_dict(st["config"]))
+    elif kind == "dense30":
+        Bee6, Bee6Config = _bee6()
+        model = Bee6(Bee6Config.from_dict(st["config"]))
     elif kind == "bee6moe":
         Bee6MoE, Bee6MoEConfig = _bee6moe()
         model = Bee6MoE(Bee6MoEConfig.from_dict(st["config"]))
@@ -1089,7 +1130,7 @@ def main():
             raise SystemExit("Opal holds Field1, not Emerald's world: give --opal-plan, not --emerald / --emerald-plan")
         if args.data_sub not in (None, "opal"):
             raise SystemExit("--opal-plan reads Opal: leave out --data-sub or use --data-sub opal")
-        args.opal_plan = args.opal_plan or OPAL_PLAN
+        args.opal_plan = args.opal_plan or (SMALL_OPAL_PLAN if args.model in SMALL_KINDS else OPAL_PLAN)
         if ":" not in args.opal_plan:
             args.opal_plan = "flat:" + args.opal_plan
         try:
@@ -1147,6 +1188,15 @@ def main():
             if args.mix is None and not (root / sub / "think" / "train.bin").exists():
                 say("[mix] Opal2's think part (text that shows its thinking) is not built: this run reads the rest a "
                     "little more. Build it on a GPU with  python3 -m oazy.think --tokens 400e6")
+        elif tk == "oazy8k":                                 # our 8k pieces (oazy/tok8k.py): Opal re-cut, in <data>/opal8k
+            if sub not in (None, "opal", "opal8k"):
+                raise SystemExit("the 8k-piece models read Opal re-cut (<data>/opal8k): use --data-sub opal")
+            sub = "opal8k"
+            for part, how in (("train.bin", "python3 -m oazy.tok8k cut"), ("field1/train.bin", "python3 -m oazy.tok8k cut")):
+                if not (root / sub / part).exists():
+                    raise SystemExit(f"no {root / sub / part} yet: run  python3 -m oazy.tok8k train  then  {how}  first")
+            if world_w > 0:
+                raise SystemExit("Opal already holds the world (Field1): leave out --world")
         elif sub == "opal":                                  # Opal (oazy/opal.py) = our text + Field1, in <data>/opal (old name sado)
             sub = "opal" if (root / "opal" / "train.bin").exists() else "sado"
             if not (root / sub / "field1" / "train.bin").exists():
@@ -1216,7 +1266,7 @@ def main():
         if args.mix is None:      # SmolLM2-tokenizer Bees read Tagus when it is there (oazy/tagus.py)
             emerald = args.data_sub == "emerald" or args.emerald is not None
             args.mix = ("opal2" if args.data_sub == "opal2" else
-                        f"opal:{args.opal_plan}" if args.opal_plan is not None else
+                        f"{'opal100' if args.model in SMALL_KINDS else 'opal'}:{args.opal_plan}" if args.opal_plan is not None else
                         f"emerald:{args.emerald_plan}" if args.emerald_plan is not None else
                         f"emerald:{0.10 if args.emerald is None else args.emerald:g}" if emerald else
                         "sado-best" if tk == "smollm2" and (data / "best" / "train.bin").exists() else   # Sado (oazy/sado.py)
@@ -1354,6 +1404,12 @@ def main():
                          "*_own fields are per own token"} if tk != "gpt2" else {}),
     }
     (run.dir / "config.json").write_text(json.dumps(info, indent=1))
+    if tk == "oazy8k":                                 # our own pieces: the run keeps its tokenizer beside its weights
+        import shutil
+        try:
+            shutil.copy2(tok.oazy8k_path(), run.dir / "tokenizer.json")
+        except Exception as e:
+            say(f"[tokenizer] could not copy the 8k tokenizer into the run folder ({e})")
     summary(info, run.dir, f"resumed at {term.tokens(tokens)}" if tokens else None)
     if done():
         say("this run is already finished. Use --tokens to train longer or --fresh to start over.")

@@ -32,7 +32,7 @@ from .data import default_dir, run_dir
 from . import tok
 from .train import load_model, make_optimizer, amp, save_ckpt, say, NICE
 
-CHAT_APP = {"gnosis": "bee6", "gnosis2": "bee6", "bee6moe": "bee6", "logos": "bee6"}    # kinds without a package of their own
+CHAT_APP = {"gnosis": "bee6", "gnosis2": "bee6", "bee6moe": "bee6", "moe150": "bee6", "dense30": "bee6", "logos": "bee6"}    # kinds without a package of their own
 TURN = re.compile(r"(?:^|\n\n)(User|Assistant|System): ", re.S)
 
 

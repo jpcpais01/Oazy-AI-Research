@@ -29,6 +29,8 @@
 #   OAZY_DATA=/workspace/data bash runpod/train.sh lucid --preset big --tokens 10e9 --micro 32 --data-sub opal --mentor none --name lucid-opal-10b   # Lucid-300M: a mind that settles by surprise
 #   OAZY_DATA=/workspace/data bash runpod/train.sh gnosis --preset big --tokens 10e9 --micro 32 --data-sub opal --mentor none --name gnosis-opal-10b   # Gnosis-300M: Bee6 with 22 layers
 #     (Opal, our training set: our text + Field1, the world told in natural speech, 20%; build: python3 -m oazy.opal build)
+#   OAZY_DATA=/workspace/data bash runpod/train.sh moe150 --preset big --tokens 100e9 --micro 128 --data-sub opal --mentor none --name moe150-opal8k-100b   # MoE-150M (bee6/moe150.py): 149M, 29M at work per word, our 8k pieces (first: python3 -m oazy.tok8k train, then cut)
+#   OAZY_DATA=/workspace/data bash runpod/train.sh dense30 --preset big --tokens 10e9 --micro 128 --data-sub opal --mentor none --name dense30-opal8k-10b   # its dense twin
 #   OAZY_DATA=/workspace/data bash runpod/train.sh gnosis2 --preset big --tokens 10e9 --micro 32 --data-sub opal2 --mentor none --name gnosis2-10b   # Gnosis2 (gnosis2/): Gnosis + Canon layers on Opal2
 #     (Opal2: Opal + the logic warm-up, Field1 worked out, text that shows its thinking; build: python3 -m oazy.opal2 build, python3 -m oazy.think)
 #   OAZY_DATA=/root/data bash runpod/train.sh seed --preset big --tokens 0.5e9 --micro 32 --name seed-smoke   # Seed (seed/): growing core + library, reads Sado
@@ -52,7 +54,7 @@ cd "$(dirname "$0")/.."
 REPO="$(pwd)"
 MODEL="${1:-}"
 [ "$MODEL" = engram ] && MODEL=memtrix          # Memtrix's old name
-case "$MODEL" in memtrix|tide|fern|ember|fern2|fern3|bee|bee2|bee3|frog|coral|bee4|coralmini|pegasus|pegasusmini|pegasus2|plain100|plain100f|alphastar|pegasusbeta|bee5|bee6|gnosis|gnosis2|lucid|seed|smol|smolbee|black|blackt|gpt) shift ;; *) echo "usage: bash runpod/train.sh memtrix|tide|fern|ember|fern2|fern3|bee|bee2|bee3|frog|coral|bee4|coralmini|pegasus|pegasusmini|pegasus2|plain100|plain100f|alphastar|pegasusbeta|bee5|bee6|gnosis|gnosis2|lucid|seed|smol|smolbee|black|blackt|gpt [--gpt] [trainer options]"; exit 1 ;; esac
+case "$MODEL" in memtrix|tide|fern|ember|fern2|fern3|bee|bee2|bee3|frog|coral|bee4|coralmini|pegasus|pegasusmini|pegasus2|plain100|plain100f|alphastar|pegasusbeta|bee5|bee6|bee6moe|moe150|dense30|gnosis|gnosis2|lucid|seed|smol|smolbee|black|blackt|gpt) shift ;; *) echo "usage: bash runpod/train.sh memtrix|tide|fern|ember|fern2|fern3|bee|bee2|bee3|frog|coral|bee4|coralmini|pegasus|pegasusmini|pegasus2|plain100|plain100f|alphastar|pegasusbeta|bee5|bee6|bee6moe|moe150|dense30|gnosis|gnosis2|lucid|seed|smol|smolbee|black|blackt|gpt [--gpt] [trainer options]"; exit 1 ;; esac
 WITH_GPT=0
 ARGS=()
 WIN="$MODEL"

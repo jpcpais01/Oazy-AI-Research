@@ -137,10 +137,17 @@ OPAL_TEXT_MIX = SADO_MIX                    # Opal's text part: books, web, math
 OPAL_PLAN = "flat:0.20"                    # Opal's default: Field1 is 20% of every phase (the reference run bee6-w20-emerald-10b)
 
 
-def opal_mix(plan=OPAL_PLAN) -> str:
+# MoE-150M's Opal text (Nov 16): a 100B-token run reads Opal's ~21B tokens of text about 5 times. Sado was built for a
+# 20B run, so every part repeats about evenly, except the chat, which was half short (1.1B): at 27% of the cool-down it
+# would be read ~9 times. Here the cool-down's chat is 12% and the 15 points go to the parts with the most left in them.
+OPAL100_TEXT_MIX = (SADO_MIX.split(";")[0] + ";"
+                    "fwe:0.3499,dclm:0.08,cosmo:0.13,books:0.06,wiki:0.06,math:0.12,code:0.06,chat:0.12,religion:0.0195,faith:0.0005,creed:0.0001@0.8")
+
+
+def opal_mix(plan=OPAL_PLAN, base: str = OPAL_TEXT_MIX) -> str:
     """Opal (oazy/opal.py): the text part with Field1, its world part, at the share `plan` gives over the run (the same
     plans as Emerald's: "flat:0.20", "0.30:0.1,0.15", or an average share w = 3w for the first 20%, then w/2)."""
-    return emerald_mix(plan, OPAL_TEXT_MIX, name="field1")
+    return emerald_mix(plan, base, name="field1")
 
 
 # Opal2 (oazy/opal2.py, Nov 11): Opal taught to think. The logic warm-up alone for the first 0.2% of the run, then
@@ -198,13 +205,14 @@ def resolve_mix(text):
     """A mix by name ("tagus", "v1", "opal", "opal:0.30:0.1,0.15", "emerald", "emerald:0.05", "emerald:flat:0.20") or written out."""
     if text == "opal2":
         return OPAL2_MIX
-    if text and (text == "opal" or text.startswith("opal:")):
+    if text and (text in ("opal", "opal100") or text.startswith(("opal:", "opal100:"))):
+        base = OPAL100_TEXT_MIX if text.startswith("opal100") else OPAL_TEXT_MIX
         spec = text.split(":", 1)[1] if ":" in text else OPAL_PLAN
         try:
             spec = float(spec)
         except ValueError:
             pass
-        return opal_mix(spec)
+        return opal_mix(spec, base)
     if text and (text == "emerald" or text.startswith("emerald:")):
         spec = text.split(":", 1)[1] if ":" in text else EMERALD_SHARE
         try:
