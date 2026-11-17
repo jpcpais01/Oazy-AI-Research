@@ -55,7 +55,7 @@ const ours = () => RUNS.filter((r) => !r.reference);
 const REF_NAMES = { "smollm2-135m": "SmolLM2-135M", "smollm2-360m": "SmolLM2-360M", "smollm2-1.7b": "SmolLM2-1.7B", "openai-gpt2": "OpenAI GPT-2" };
 const yardsticks = (k) => RUNS.filter((r) => r.reference && r[k] != null).map((r) => ({ y: r[k], label: REF_NAMES[r.name] || r.name, always: true }));
 const isLive = (r) => LIVE.has(r.live);
-const nice = (r) => NICE[r.model] || r.model || "";
+const nice = (r) => r.label || NICE[r.model] || r.model || "";
 const fracOf = (r) => r.total ? Math.min(1, (r.tokens || 0) / r.total) : (r.live === "done" ? 1 : 0);
 
 // the race: the live runs and their siblings (same ending of the name: bee6-teach-emerald-2b, logos-emerald-2b

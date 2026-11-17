@@ -365,6 +365,15 @@ def overview(runs: Path):
     return sorted(out, key=lambda r: r["updated"], reverse=True)
 
 
+def _label(cf: dict):
+    """A name of its own for a body that shares its kind with another model (the 135M race, gnosis2/race135.py):
+    Phi-135 = the Gnosis2 body at 576 wide with the phrase hint, Bee-135 = the same body without it."""
+    c = cf.get("config") or {}
+    if cf.get("model") == "gnosis2" and c.get("d_model") == 576:
+        return "Phi-135" if c.get("hint_rows") else "Bee-135"
+    return None
+
+
 def _tile(d: Path):
     """One run's tile on the visual dashboard."""
     cf, st = read_json(d / "config.json") or {}, read_json(d / "status.json") or {}
@@ -375,7 +384,7 @@ def _tile(d: Path):
     L = st.get("latest") or {}
     last = lambda k, i=1: (lambda a: a[i] if len(a) > i else None)((s.get(k) or [[]])[-1])  # noqa: E731
     return {
-        "name": d.name, "model": cf.get("model"), "params": cf.get("params"), "active": cf.get("params_active"),
+        "name": d.name, "model": cf.get("model"), "label": _label(cf), "params": cf.get("params"), "active": cf.get("params_active"),
         "gpu": cf.get("gpu"), "total": cf.get("total_tokens"), "tokens": st.get("tokens") or 0, "state": st.get("state"),
         "live": live, "age": age, "updated": max(mt, st.get("updated") or 0), "tok_s": st.get("tok_s"), "eta_s": st.get("eta_s"),
         "elapsed": st.get("elapsed"), "ended_early": st.get("ended_early"), "reference": bool(cf.get("trained_tokens")),
