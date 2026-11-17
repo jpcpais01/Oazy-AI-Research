@@ -44,6 +44,15 @@ class Gnosis2Config(Bee6Config):
     key_offset: str = "3,7,11,15,19"
     canon: str = "AC"          # where the Canon layers go in the non-routed layers: A = attention's input, C = the MLP's
     canon_k: int = 4           # words each one reads (the word itself and the 3 before)
+    hint_rows: int = 0         # phrase hint (0 = off): rows in each hashed table. Every word's input also gets a vector
+                               # looked up by the phrase that ends at it (the last 2 words, the last 3), so the first
+                               # layers need not rebuild common phrases (DeepSeek's Engram, arXiv 2601.07372)
+    hint_dim: int = 32         # numbers per row
+    hint_heads: int = 4        # hash functions per phrase length (a phrase clashes with another in one, rarely in all)
+    hint_orders: str = "2,3"   # phrase lengths, in words
+
+    def hint_ns(self):
+        return [int(s) for s in str(self.hint_orders).split(",") if s.strip()]
 
 
 class Canon(nn.Module):
@@ -116,12 +125,78 @@ class Block7(Block6):
         return x + self.mlp(h), {"attn": sa, "a": ha, "c": hc}, info
 
 
+HINT_MULT = (0x9E3779B1, 0x85EBCA77, 0xC2B2AE3D, 0x27D4EB2F, 0x165667B1, 0xD3A2646C, 0xFD7046C5, 0xB55A4F09)
+
+
 class Gnosis2(Bee6):
     Block = Block7
 
+    def __init__(self, cfg: Gnosis2Config):
+        super().__init__(cfg)
+        self._tail = None                      # reading on: the words just before this piece (set around _read)
+        self.hint = self.hint_out = None
+        if cfg.hint_rows > 0:
+            ns = cfg.hint_ns()
+            self.hint_n = max(ns)
+            self.hint = nn.Embedding(len(ns) * cfg.hint_heads * cfg.hint_rows, cfg.hint_dim)
+            self.hint_out = nn.Linear(len(ns) * cfg.hint_heads * cfg.hint_dim, cfg.d_model, bias=False)
+            nn.init.normal_(self.hint.weight, std=0.02)
+            nn.init.zeros_(self.hint_out.weight)       # starts as nothing: the model starts exactly as without it
+            g = torch.Generator().manual_seed(1234)
+            mult = torch.randint(1, 2 ** 31 - 1, (len(ns), cfg.hint_heads, self.hint_n), generator=g) * 2 + 1
+            self.register_buffer("hint_mult", mult, persistent=False)
+
+    def hint_params(self):
+        return 0 if self.hint is None else self.hint.weight.numel() + self.hint_out.weight.numel()
+
+    def _hint(self, idx, tail=None):
+        """(B, T) words -> (B, T, D): for each word, the rows its phrases (the 2 and the 3 words ending at it) hash
+        to, squeezed to the stream's width. Looks back only. A phrase that would start before the text adds nothing."""
+        cfg, B, T, n = self.cfg, idx.shape[0], idx.shape[1], self.hint_n
+        if tail is None:
+            tail = idx.new_full((B, n - 1), -1)
+        elif tail.shape[1] < n - 1:
+            tail = torch.cat([idx.new_full((B, n - 1 - tail.shape[1]), -1), tail], dim=1)
+        full = torch.cat([tail, idx], dim=1)                                        # (B, n - 1 + T)
+        back = torch.stack([full[:, n - 1 - j:n - 1 - j + T] for j in range(n)], dim=-1)     # [..., j] = the word j back
+        parts = []
+        for o, order in enumerate(cfg.hint_ns()):
+            known = (back[..., :order] >= 0).all(-1)                                # the whole phrase is in the text
+            key = (back[..., None, :order] * self.hint_mult[o, :, :order]).sum(-1)   # (B, T, heads), wraps in 64 bits
+            key = (key ^ (key >> 17)) * 0x9E3779B1
+            row = torch.remainder(key ^ (key >> 29), cfg.hint_rows)
+            row = row + (o * cfg.hint_heads + torch.arange(cfg.hint_heads, device=idx.device)) * cfg.hint_rows
+            v = self.hint(row).flatten(-2)                                          # (B, T, heads * dim)
+            parts.append(v * known[..., None].to(v.dtype))
+        return self.hint_out(torch.cat(parts, dim=-1))
+
+    def _embed(self, idx, prev=None):
+        e, raw_last = super()._embed(idx, prev)
+        if self.hint is not None:
+            e = e + self._hint(idx, self._tail).to(e.dtype)
+        return e, raw_last
+
+    def _read(self, idx, states=None, looks=False):
+        if self.hint is None:
+            return super()._read(idx, states, looks)
+        tail = states.get("tail") if states else None
+        self._tail = tail
+        try:
+            logits, st, infos = super()._read(idx, states, looks)
+        finally:
+            self._tail = None
+        full = idx if tail is None else torch.cat([tail, idx], dim=1)
+        st["tail"] = full[:, -(self.hint_n - 1):]
+        return logits, st, infos
+
     def layout(self):
         n = sum((b.canon_a is not None) + (b.canon_c is not None) for b in self.blocks)
-        return super().layout() + f", {n} Canon layers ({self.cfg.canon_k} words wide)"
+        hint = ""
+        if self.hint is not None:
+            c = self.cfg
+            hint = (f", phrase hint ({c.hint_orders} words, {c.hint_heads} x {c.hint_rows:,} rows of {c.hint_dim}: "
+                    f"{self.hint_params() / 1e6:.1f}M)")
+        return super().layout() + f", {n} Canon layers ({self.cfg.canon_k} words wide)" + hint
 
     def canon_params(self):
         return sum(p.numel() for n, p in self.named_parameters() if ".canon_" in n)

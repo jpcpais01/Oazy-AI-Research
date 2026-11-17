@@ -128,7 +128,7 @@ def groups(model):
             muon.append((n, p))
         elif n == "embed.weight":
             adam["table"].append(p)
-        elif n.startswith("ve."):
+        elif n.startswith("ve.") or n == "hint.weight":      # Gnosis2's phrase-hint rows: read rarely, like a value table
             adam["ve"].append(p)
         elif n in ("lam", "mu", "skip_lam", "skip_w", "smear_lam", "backout_lam"):
             adam["scalars"].append(p)
