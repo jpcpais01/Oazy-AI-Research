@@ -204,7 +204,7 @@ function liveCard(r) {
     <div class="nums">${numTile("Held-out loss", s.val, fmtL, true)}
       ${numTile("HellaSwag", s.hs, (v) => pct(v), false, hsFull.length ? "final, all 10,042" : "")}
       ${numTile("CommonsenseQA", s.csqa, (v) => pct(v), false)}
-      ${numTile("World secret", s.world, (v) => pct(v), false)}</div>
+      ${(s.world || []).length ? numTile("World secret", s.world, (v) => pct(v), false) : numTile("PIQA", s.piqa, (v) => pct(v), false)}</div>
     <div class="lc-ctl">${controls(r)}<span class="meta">${r.tok_s ? Math.round(r.tok_s / 1e3) + "k tok/s" : ""}${r.elapsed ? " · " + fmtDur(r.elapsed) + " in" : ""}</span></div>
   </article>`;
 }
@@ -410,6 +410,13 @@ function drawRace(set) {
   const sOf = (r, k) => ((SER[r.name] || {}).d || {})[k] || [];
   const base = (k) => R.map((r) => ({ name: r.name, color: colorOf(r.name), pts: sOf(r, k), live: r.live === "live" }));
   const empty = R.length ? null : "Tap a run below to draw it here";
+  // a world chart (world exams, Real World, Field1) with nothing to draw for the charted runs is left off the page:
+  // runs trained without world text never take those checks (João, Nov 17)
+  const worldChart = (id, opt) => {
+    const fig = $(id).closest("figure"), has = !R.length || opt.series.some((x) => x.pts.some((q) => q[0] > 0));
+    fig.style.display = has ? "" : "none";
+    if (has) lineChart(id, opt); else HOV[id] = null;
+  };
   lineChart("cLoss", { series: R.map((r) => ({ name: r.name, color: colorOf(r.name), pts: sOf(r, "val"), faint: sOf(r, "train"), live: r.live === "live" })),
     turns, xmax, fmt: fmtL, crop: 0.08, faintInRange: true, minSpan: 0.02, empty, label: "Held-out loss" });
   const hs = base("hs"), hsVals = hs.flatMap((s) => s.pts.map((p) => p[1]));
@@ -418,13 +425,13 @@ function drawRace(set) {
   // CommonsenseQA (5 choices): a quick check on the tests' schedule, every question at the end (the ring)
   lineChart("cCsqa", { series: base("csqa"), turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.01,
     refs: [{ y: 0.2, label: "guessing" }, ...yardsticks("csqa")], empty: R.length ? "No CommonsenseQA checks yet" : empty, label: "CommonsenseQA" });
-  lineChart("cWorld", { series: base("world"), turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.02, refs: yardsticks("world_secret"),
+  worldChart("cWorld", { series: base("world"), turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.02, refs: yardsticks("world_secret"),
     empty: R.length ? "No world exams in these runs (only runs with world text take them)" : empty, label: "World exams" });
   // Real World (solid): the practised scenes told in words no practice uses; Pro (dashed): new names and things too
-  lineChart("cReal", { series: [...base("real"), ...R.map((r) => ({ name: `${r.name} · Pro`, color: colorOf(r.name), pts: sOf(r, "pro"), dash: true, tag: "Pro" }))],
+  worldChart("cReal", { series: [...base("real"), ...R.map((r) => ({ name: `${r.name} · Pro`, color: colorOf(r.name), pts: sOf(r, "pro"), dash: true, tag: "Pro" }))],
     turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.02, refs: yardsticks("world_real"),
     empty: R.length ? "No Real World exams in these runs (only runs with world text take them)" : empty, label: "Real World" });
-  lineChart("cWval", { series: base("wval"), turns, xmax, fmt: fmtL, crop: 0.08, minSpan: 0.02,
+  worldChart("cWval", { series: base("wval"), turns, xmax, fmt: fmtL, crop: 0.08, minSpan: 0.02,
     empty: R.length ? "No held-out world text in these runs (Opal and Emerald runs only)" : empty, label: "World held-out loss" });
   // PIQA (2 choices) and ARC-Easy (4): a quick check on the tests' schedule, every question at the end (the ring)
   lineChart("cPiqa", { series: base("piqa"), turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.01,
@@ -434,13 +441,13 @@ function drawRace(set) {
     turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.01,
     refs: [{ y: 0.25, label: "guessing" }], empty: R.length ? "No ARC checks yet" : empty, label: "ARC" });
   // Real World 2 (oazy/realworld2.py): the same scenes, each choice in its natural forms; Pro 2 dashed
-  lineChart("cReal2", { series: [...base("real2"), ...R.map((r) => ({ name: `${r.name} · Pro 2`, color: colorOf(r.name), pts: sOf(r, "pro2"), dash: true, tag: "Pro 2" }))],
+  worldChart("cReal2", { series: [...base("real2"), ...R.map((r) => ({ name: `${r.name} · Pro 2`, color: colorOf(r.name), pts: sOf(r, "pro2"), dash: true, tag: "Pro 2" }))],
     turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.02, refs: [{ y: 0.227, label: "guessing" }, ...yardsticks("world_real2")],
     empty: R.length ? "No Real World 2 checks yet (runs started or resumed since Nov 11 take them)" : empty, label: "Real World 2" });
   // Field1's level table (oazy/field1/levels.py): fresh Field1 scenes, every family weighing the same; the floor is
   // guessing (or always the commonest answer), the same for every run because the scenes are the same
   const f1 = base("field1"), f1floor = f1.flatMap((s) => s.pts.map((p) => p[3])).filter((v) => v != null);
-  lineChart("cField1", { series: f1, turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.02,
+  worldChart("cField1", { series: f1, turns, xmax, fmt: (v) => pct(v), pctAxis: true, minSpan: 0.02,
     refs: [...(f1floor.length ? [{ y: f1floor[f1floor.length - 1], label: "guessing" }] : []), ...yardsticks("field1")],
     empty: R.length ? "No Field1 checks yet (Opal runs take them; older runs: python3 -m oazy.field1.levels --watch <run>)" : empty, label: "Field1" });
   drawF1Fam(R, sOf);
@@ -451,6 +458,7 @@ function drawF1Fam(R, sOf) {
   const box = $("f1Fam");
   if (!box) return;
   const r = [...R.filter(isLive), ...R].find((x) => sOf(x, "field1_fam") && sOf(x, "field1_fam").families);
+  box.closest("figure").style.display = r || !R.length ? "" : "none";
   if (!r) { box.innerHTML = `<div class="empty">No Field1 checks in these runs yet</div>`; return; }
   const F = sOf(r, "field1_fam"), fams = Object.entries(F.families);
   const rows = fams.map(([f, x]) => {
