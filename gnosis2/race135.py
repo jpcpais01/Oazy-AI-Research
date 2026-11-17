@@ -1,8 +1,8 @@
 """The 135M race: SmolLM2-135M's own body and recipe from random weights, against ours at the same size.
 
-    A  smol135-a   `smol`: SmolLM2-135M's body (30 x 576, a Llama) and their recipe (AdamW 3e-3, 2,048-word windows)
-    B  bee135-b    Bee-135: the Bee6 body at 24 layers of 576 with Canon layers, our recipe, about 132M counting all
-    C  bee135-c    Bee-135 with the phrase hint in place of the two value tables (the same size as B to within 0.1M)
+    A  smol-race-135   `smol`: SmolLM2-135M's body (30 x 576, a Llama) and their recipe (AdamW 3e-3, 2,048-word windows)
+    B  bee-race-135    Bee-135: the Bee6 body at 24 layers of 576 with Canon layers, our recipe, about 132M counting all
+    C  beehint-race-135    Bee-135 with the phrase hint in place of the two value tables (the same size as B to within 0.1M)
 
 All three are NEXT-WORD models, read the same text (Opal with Field1 off) for the same number of tokens, no mentor.
 
@@ -24,7 +24,7 @@ B135 = dict(n_layer=24, d_model=576, attn_heads=9, attn_kv_heads=3, attn_head_di
             mod_layers="", key_offset="3,7,11,15,19,23", fp8=0)
 C135 = dict(B135, n_ve=0, hint_rows=73000, hint_dim=32, hint_heads=4, hint_orders="2,3")
 ARMS = {"b": B135, "c": C135}
-RUNS = [("smol135-a", "A  SmolLM2-135M body, their recipe"), ("bee135-b", "B  Bee-135"), ("bee135-c", "C  Bee-135 + phrase hint")]
+RUNS = [("smol-race-135", "A  SmolLM2-135M body, their recipe"), ("bee-race-135", "B  Bee-135"), ("beehint-race-135", "C  Bee-135 + phrase hint")]
 NEED_FEWER, NEED_GAIN, MAX_SLOWER = 1.3, 0.02, 0.10
 
 
