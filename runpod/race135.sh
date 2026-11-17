@@ -27,7 +27,9 @@ run() {     # run <name> <model> <trainer options...>
     echo "== $name =="
     python3 -m oazy.train --model "$model" "${COMMON[@]}" --name "$name" "$@" 2>&1 | tee -a "$RUNS/$name.log"
 }
-python3 -m gnosis2.hint_tests            # the bodies are checked before any GPU hour is spent
+# the bodies are checked before any GPU hour is spent (SKIP_CHECKS=1 leaves the checks out: they run on the CPU and
+# the toy training among them is slow on a many-core pod)
+[ -n "${SKIP_CHECKS:-}" ] || python3 -m gnosis2.hint_tests
 run smol-race-135 smol
 run bee-race-135 gnosis2 --set $(python3 -m gnosis2.race135 --set b)
 run phi-race-135 gnosis2 --set $(python3 -m gnosis2.race135 --set c)
