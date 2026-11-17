@@ -92,8 +92,10 @@ class SmolConfig:
         except Exception as e:                       # no internet, no transformers: the copy in SIZES
             log(f"[smol] SmolLM2-{self.size}'s config.json not reachable ({type(e).__name__}); using the copy in smol/model.py")
             return False
+        # transformers 5 keeps the rotation base in rope_parameters; older ones as rope_theta
+        theta = (getattr(hc, "rope_parameters", None) or {}).get("rope_theta") or getattr(hc, "rope_theta", None) or self.rope_theta
         got = dict(d_model=hc.hidden_size, n_layer=hc.num_hidden_layers, attn_heads=hc.num_attention_heads,
-                   attn_kv_heads=hc.num_key_value_heads, mlp_hidden=hc.intermediate_size, rope_theta=float(hc.rope_theta),
+                   attn_kv_heads=hc.num_key_value_heads, mlp_hidden=hc.intermediate_size, rope_theta=float(theta),
                    init_std=float(hc.initializer_range))
         diff = {k: (getattr(self, k), v) for k, v in got.items() if getattr(self, k) != v}
         for k, v in got.items():
