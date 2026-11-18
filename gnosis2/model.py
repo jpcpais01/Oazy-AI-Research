@@ -44,6 +44,9 @@ class Gnosis2Config(Bee6Config):
     key_offset: str = "3,7,11,15,19"
     canon: str = "AC"          # where the Canon layers go in the non-routed layers: A = attention's input, C = the MLP's
     canon_k: int = 4           # words each one reads (the word itself and the 3 before)
+    canon_impl: str = "pad"    # how the same sum is computed: "pad" (pad once, k sliced adds), "inplace" (no padded copy:
+                               # k-1 in-place adds on slices), "conv" (one depthwise convolution). Same numbers, other speed
+                               # (gnosis2/speed135.py --only canon measures them)
     hint_rows: int = 0         # phrase hint (0 = off): rows in each hashed table. Every word's input also gets a vector
                                # looked up by the phrase that ends at it (the last 2 words, the last 3), so the first
                                # layers need not rebuild common phrases (DeepSeek's Engram, arXiv 2601.07372)
@@ -58,15 +61,26 @@ class Gnosis2Config(Bee6Config):
 class Canon(nn.Module):
     """h + sum_k w_k * h shifted by k words (causal, per channel). w starts at zero: the layer starts as nothing."""
 
-    def __init__(self, dim: int, k: int):
+    def __init__(self, dim: int, k: int, impl: str = "pad"):
         super().__init__()
-        self.k = k
+        if impl not in ("pad", "inplace", "conv"):
+            raise ValueError(f"canon_impl must be pad, inplace or conv, not {impl!r}")
+        self.k, self.impl = k, impl
         self.w = nn.Parameter(torch.zeros(k, dim))
 
     def forward(self, h):
         """h (B, T, D) -> (B, T, D)."""
         T = h.shape[1]
         w = self.w.to(h.dtype)
+        if self.impl == "inplace":                       # the word itself, then each earlier word added where it exists
+            out = torch.addcmul(h, h, w[0])
+            for j in range(1, min(self.k, T)):
+                out[:, j:].addcmul_(h[:, :T - j], w[j])
+            return out
+        if self.impl == "conv":                          # the same sum as one depthwise convolution over the words
+            x = h.transpose(1, 2)
+            y = F.conv1d(x, w.flip(0).t().unsqueeze(1), padding=self.k - 1, groups=x.shape[1])[..., :T]
+            return h + y.transpose(1, 2)
         hp = F.pad(h, (0, 0, self.k - 1, 0))
         out = h
         for j in range(self.k):
@@ -92,8 +106,8 @@ class Block7(Block6):
     def __init__(self, cfg: Gnosis2Config, layer: int):
         super().__init__(cfg, layer)
         on = not self.routed
-        self.canon_a = Canon(cfg.d_model, cfg.canon_k) if on and "A" in cfg.canon else None
-        self.canon_c = Canon(cfg.d_model, cfg.canon_k) if on and "C" in cfg.canon else None
+        self.canon_a = Canon(cfg.d_model, cfg.canon_k, cfg.canon_impl) if on and "A" in cfg.canon else None
+        self.canon_c = Canon(cfg.d_model, cfg.canon_k, cfg.canon_impl) if on and "C" in cfg.canon else None
 
     def _a(self, h):
         return self.canon_a(h) if self.canon_a is not None else h
