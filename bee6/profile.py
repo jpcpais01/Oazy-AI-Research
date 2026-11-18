@@ -41,12 +41,12 @@ def kind_of(name):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--model", default="bee6", choices=["bee6", "bee5"])
+    ap.add_argument("--model", default="bee6", choices=["bee6", "bee5", "gnosis", "gnosis2"])
     ap.add_argument("--preset", default="big")
     ap.add_argument("--micro", type=int, default=None)
     ap.add_argument("--ctx", type=int, default=None, help="window length (default the longest, 2,048)")
     ap.add_argument("--steps", type=int, default=4)
-    ap.add_argument("--kernels", type=int, default=15)
+    ap.add_argument("--kernels", type=int, default=15, help="how many of the slowest GPU kernels to list (0 = skip the trace)")
     ap.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE")
     ap.add_argument("--trace", action="store_true")
     ap.add_argument("--device", default=None)
@@ -122,8 +122,9 @@ def main(argv=None):
                                                for k, v in ms.items()], right=(1, 2))
     term.rows([("speed", term.rate(tok_s) + (f"  ({mfu * 100:.0f}% of the chip's bf16 arithmetic)" if mfu else ""))])
 
-    res = {"gpu": gpu, "ms": ms, "tok_s": tok_s, "mfu": mfu, "kernels": []}
-    if cuda:
+    res = {"gpu": gpu, "ms": ms, "tok_s": tok_s, "mfu": mfu, "kernels": [], "tokens": B * Tw,
+           "flops_per_token": flops_per_token(model, Tw), "params": sum(p.numel() for p in model.parameters())}
+    if cuda and a.kernels > 0:
         from torch.profiler import profile, ProfilerActivity
         with profile(activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU]) as prof:
             for _ in range(a.steps):
