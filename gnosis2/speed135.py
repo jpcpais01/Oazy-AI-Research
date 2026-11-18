@@ -4,6 +4,7 @@ at ~530k tokens a second on a B300, far under what its size suggests).
     python3 -m gnosis2.speed135                 # about 10 minutes on a free GPU; trains nothing, reads no data
     python3 -m gnosis2.speed135 --only bee,phi  # some rows only
     python3 -m gnosis2.speed135 --only glue     # round 2: the small operations around the matrix products, off one at a time
+    python3 -m gnosis2.speed135 --only canon    # round 3: the Canon sum computed three ways (same model, same numbers)
 
 Each row builds the body at full size, compiles it, and times a training pass of 32 x 2,048 words on made-up tokens
 (bee6/profile.py): the whole pass, the layers alone, the word table + loss alone, one optimizer step. The first row
@@ -41,7 +42,11 @@ ROWS = [
     ("nomtp", "Bee-135 without the many-word loss", ["mtp_until=0"], [], "the loss on the words after next"),
     ("bare", "Bee-135 bare (all of the above off)", ["canon=", "smear=0", "x0=0", "backout=0", "attn_gate=0", "unet=0", "n_ve=0",
                                                     "doc_mask=0", "mtp_until=0"], [], "the floor: only attention and MLPs"),
+    # round 3 (--only canon): the same Canon sum computed another way (the model and its numbers are unchanged)
+    ("canon_inplace", "Bee-135, Canon without the padded copy", ["canon_impl=inplace"], [], "same model, Canon as in-place adds"),
+    ("canon_conv", "Bee-135, Canon as a convolution", ["canon_impl=conv"], [], "same model, Canon as one depthwise convolution"),
 ]
+CANON = "bee,canon_inplace,canon_conv,nocanon"
 GLUE = "bee,nocanon,canon_a,nosmear,nounet,nove,nomask,nomtp,bare"
 
 
@@ -59,8 +64,7 @@ def main(argv=None):
     from bee6 import profile
     from oazy import term
     from oazy.data import default_dir
-    if a.only == "glue":
-        a.only = GLUE
+    a.only = {"glue": GLUE, "canon": CANON}.get(a.only, a.only)
     pick = set(a.only.split(",")) if a.only else {k for k, *_ in ROWS[:8]}
     base = a.set if a.set is not None else set_words("b")
     phi = (a.set + ["n_ve=0", "hint_rows=73000", "hint_dim=32", "hint_heads=4", "hint_orders=2,3"]) if a.set is not None else set_words("c")
@@ -104,7 +108,7 @@ def main(argv=None):
                body, right=(1, 2, 3, 4, 5, 6, 7, 8))
     term.out(term.c("  layers / table + loss = their share of a pass, each timed alone (they need not add to 100%). run speed = with "
                     "the optimizer step, without tests and data loading: a real run sits a little under it.", "dim"))
-    out = Path(a.runs or default_dir("runs")) / ("speed135-glue.json" if a.only == GLUE else "speed135.json")
+    out = Path(a.runs or default_dir("runs")) / ({GLUE: "speed135-glue.json", CANON: "speed135-canon.json"}.get(a.only, "speed135.json"))
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps([{"key": k, "name": n, "result": r, "error": e} for k, n, _, r, e in got], indent=1, default=str))
