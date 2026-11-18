@@ -275,25 +275,24 @@ function ticks(lo, hi, n) {
 const dec = (step) => { for (let d = 0; d < 5; d++) if (Math.abs(Math.round(step * 10 ** d) - step * 10 ** d) < 1e-6) return d; return 5; };
 const HOV = {};    // chart id -> its hover state, so a refresh keeps the readout working
 
-// smoothing: a plain centred moving average over tokens (Gaussian weights, width h in tokens). It looks the same
-// distance back and forward, so it does not lag; near the two ends the window shrinks to stay centred, so the line
-// eases into the first and newest checks by itself (João, Nov 18: "just make it a normal softening").
-// Final scores (the ring) are full tests: kept as they are. Every smoothed point keeps its measured value in .raw.
-function smooth(pts, h) {
-  const P = pts.filter((p) => !p[2]);
-  if (P.length < 3 || !(h > 0)) return pts;
-  const x0 = P[0][0], x1 = P[P.length - 1][0], out = new Map();
-  let a = 0, b = 0;
-  for (let i = 0; i < P.length; i++) {
-    const x = P[i][0], r = Math.min(3 * h, x - x0, x1 - x);     // half-window, centred, shrinking at the ends
-    while (P[a][0] < x - r) a++;
-    while (b < P.length && P[b][0] <= x + r) b++;
-    const sig = Math.max(r / 3, 1e-9);
-    let sw = 0, sy = 0;
-    for (let j = a; j < b; j++) { const d = (P[j][0] - x) / sig, w = Math.exp(-0.5 * d * d); sw += w; sy += w * P[j][1]; }
-    out.set(P[i], sw > 0 ? sy / sw : P[i][1]);
+// Smooth (João, Nov 18: "just a normal softening"): the data are never changed. The line is drawn as a soft curve
+// through every check (a monotone cubic: it bends between points but never swings above or below them), instead of
+// straight segments. Every value, the newest included, is exactly the measured one.
+function curve(xy) {
+  const n = xy.length;
+  if (n < 3) return xy.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join("");
+  const d = [], m = new Array(n);
+  for (let i = 0; i < n - 1; i++) d.push((xy[i + 1][1] - xy[i][1]) / ((xy[i + 1][0] - xy[i][0]) || 1e-9));
+  m[0] = d[0]; m[n - 1] = d[n - 2];
+  for (let i = 1; i < n - 1; i++) m[i] = 0;                      // a turning point stays flat: no overshoot
+  for (let i = 1; i < n - 1; i++) if (d[i - 1] * d[i] > 0) {                 // weighted harmonic mean of the two slopes (Fritsch-Carlson)
+    const w1 = 2 * (xy[i + 1][0] - xy[i][0]) + (xy[i][0] - xy[i - 1][0]), w2 = (xy[i + 1][0] - xy[i][0]) + 2 * (xy[i][0] - xy[i - 1][0]); m[i] = (w1 + w2) / (w1 / d[i - 1] + w2 / d[i]); }
+  let s = `M${xy[0][0].toFixed(1)},${xy[0][1].toFixed(1)}`;
+  for (let i = 0; i < n - 1; i++) {
+    const h = (xy[i + 1][0] - xy[i][0]) / 3;
+    s += `C${(xy[i][0] + h).toFixed(1)},${(xy[i][1] + m[i] * h).toFixed(1)} ${(xy[i + 1][0] - h).toFixed(1)},${(xy[i + 1][1] - m[i + 1] * h).toFixed(1)} ${xy[i + 1][0].toFixed(1)},${xy[i + 1][1].toFixed(1)}`;
   }
-  return pts.map((p) => { if (!out.has(p)) return p; const q = p.slice(); q[1] = out.get(p); q.raw = p[1]; return q; });
+  return s;
 }
 
 // opt: series [{name, color, pts [[x, y, final?]], faint [[x, y]], live}], turns [{at, short}], xmax, fmt, refs [{y, label}],
@@ -303,14 +302,6 @@ function lineChart(id, opt) {
   // the check at 0 tokens is an untrained model (loss ~10.8, chance-level tests): it only squashes the picture
   const S = opt.series.map((s) => ({ ...s, pts: s.pts.filter((p) => p[0] > 0), faint: (s.faint || []).filter((p) => p[0] > 0) }))
     .filter((s) => s.pts.length || s.faint.length);
-  if (SMOOTH && S.length) {
-    const span = Math.max(...S.flatMap((s) => s.pts.concat(s.faint).map((p) => p[0])));
-    // width: 4% of the tokens read so far, at least 2 checks' worth (a run checked every 200M and a training loss logged
-    // every few million smooth over a like stretch)
-    const width = (P) => { const d = P.slice(1).map((p, i) => p[0] - P[i][0]).sort((a, b) => a - b);
-      return Math.max(0.04 * span, 2 * (d[d.length >> 1] || 0)) || 1; };
-    for (const s of S) { s.pts = smooth(s.pts, width(s.pts)); s.faint = smooth(s.faint, width(s.faint)); }
-  }
   if (!S.length) { el.innerHTML = `<div class="empty">${opt.empty || "No checks yet"}</div>`; HOV[id] = null; return; }
   const m = { l: 44, r: 52, t: 20, b: 24 };
   const xmax = opt.xmax || Math.max(...S.flatMap((s) => s.pts.concat(s.faint || []).map((p) => p[0])));
@@ -342,7 +333,8 @@ function lineChart(id, opt) {
     used.push(ty);
     g += `<line class="refl" x1="${m.l}" x2="${W - m.r}" y1="${Y(r.y)}" y2="${Y(r.y)}"/><text class="reft" x="${W - m.r - 4}" y="${ty}" text-anchor="end">${esc(r.label)}</text>`;
   }
-  const path = (pts) => pts.map((p, i) => `${i ? "L" : "M"}${X(p[0]).toFixed(1)},${Y(Math.min(hi, Math.max(lo, p[1]))).toFixed(1)}`).join("");
+  const path = (pts) => { const xy = pts.map((p) => [X(p[0]), Y(Math.min(hi, Math.max(lo, p[1])))]);
+    return SMOOTH ? curve(xy) : xy.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(""); };
   let lines = "", dots = "", ends = [];
   for (const s of S) {
     // the training line starts where it comes into the picture (no wall dropping from far above the chart)
