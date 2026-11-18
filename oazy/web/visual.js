@@ -275,18 +275,30 @@ function ticks(lo, hi, n) {
 const dec = (step) => { for (let d = 0; d < 5; d++) if (Math.abs(Math.round(step * 10 ** d) - step * 10 ** d) < 1e-6) return d; return 5; };
 const HOV = {};    // chart id -> its hover state, so a refresh keeps the readout working
 
-// smoothing: an EMA over tokens, not over points, so a run checked every 200M and the training loss logged every few
-// million smooth over a like stretch (tau = 8% of the tokens read so far, at least 4 checks' worth); debiased like TensorBoard's, so the line starts
-// on the first check instead of climbing out of zero. The final score (the ring) is the full test: kept as it is.
+// smoothing: a local straight-line fit over tokens (Gaussian weights, width h in tokens), not an EMA. An EMA only looks
+// back, so on a falling curve it lags: its newest point sat above the real reading (João, Nov 18). A local line fit has
+// no lag on a trend, at the end too, where it only sees one side. The newest check stays the measured value, so the
+// labelled latest number is the real one. Final scores (the ring) are full tests: kept as they are.
 // Every smoothed point keeps its measured value in .raw for the hover readout.
-function smooth(pts, tau) {
-  let m = 0, w = 0, px = null;
-  return pts.map((p) => {
-    if (p[2]) return p;
-    const a = px == null ? 0 : Math.exp(-(p[0] - px) / tau);
-    m = a * m + (1 - a) * p[1]; w = a * w + (1 - a); px = p[0];
-    const q = p.slice(); q[1] = m / w; q.raw = p[1]; return q;
-  });
+function smooth(pts, h, keepLast) {
+  const P = pts.filter((p) => !p[2]);
+  if (P.length < 3 || !(h > 0)) return pts;
+  const out = new Map();
+  let a = 0, b = 0;                                // window [a, b) of points within 3h
+  for (let i = 0; i < P.length; i++) {
+    const x0 = P[i][0];
+    while (P[a][0] < x0 - 3 * h) a++;
+    while (b < P.length && P[b][0] <= x0 + 3 * h) b++;
+    let sw = 0, sx = 0, sy = 0, sxx = 0, sxy = 0;
+    for (let j = a; j < b; j++) {
+      const dx = (P[j][0] - x0) / h, w = Math.exp(-0.5 * dx * dx), y = P[j][1];
+      sw += w; sx += w * dx; sy += w * y; sxx += w * dx * dx; sxy += w * dx * y;
+    }
+    const det = sw * sxx - sx * sx;
+    const v = Math.abs(det) > 1e-12 * sw * sw ? (sy * sxx - sx * sxy) / det : sy / sw;   // the fitted line at x0
+    out.set(P[i], keepLast && i === P.length - 1 ? P[i][1] : v);
+  }
+  return pts.map((p) => { if (!out.has(p)) return p; const q = p.slice(); q[1] = out.get(p); q.raw = p[1]; return q; });
 }
 
 // opt: series [{name, color, pts [[x, y, final?]], faint [[x, y]], live}], turns [{at, short}], xmax, fmt, refs [{y, label}],
@@ -298,9 +310,11 @@ function lineChart(id, opt) {
     .filter((s) => s.pts.length || s.faint.length);
   if (SMOOTH && S.length) {
     const span = Math.max(...S.flatMap((s) => s.pts.concat(s.faint).map((p) => p[0])));
-    const tau = (P) => { const d = P.slice(1).map((p, i) => p[0] - P[i][0]).sort((a, b) => a - b);
-      return Math.max(0.08 * span, 4 * (d[d.length >> 1] || 0)) || 1; };
-    for (const s of S) { s.pts = smooth(s.pts, tau(s.pts)); s.faint = smooth(s.faint, tau(s.faint)); }
+    // width: 4% of the tokens read so far, at least 2 checks' worth (a run checked every 200M and a training loss logged
+    // every few million smooth over a like stretch)
+    const width = (P) => { const d = P.slice(1).map((p, i) => p[0] - P[i][0]).sort((a, b) => a - b);
+      return Math.max(0.04 * span, 2 * (d[d.length >> 1] || 0)) || 1; };
+    for (const s of S) { s.pts = smooth(s.pts, width(s.pts), true); s.faint = smooth(s.faint, width(s.faint), false); }
   }
   if (!S.length) { el.innerHTML = `<div class="empty">${opt.empty || "No checks yet"}</div>`; HOV[id] = null; return; }
   const m = { l: 44, r: 52, t: 20, b: 24 };
