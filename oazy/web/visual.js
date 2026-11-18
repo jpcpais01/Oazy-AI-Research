@@ -275,9 +275,17 @@ function ticks(lo, hi, n) {
 const dec = (step) => { for (let d = 0; d < 5; d++) if (Math.abs(Math.round(step * 10 ** d) - step * 10 ** d) < 1e-6) return d; return 5; };
 const HOV = {};    // chart id -> its hover state, so a refresh keeps the readout working
 
-// Smooth (João, Nov 18: "just a normal softening"): the data are never changed. The line is drawn as a soft curve
-// through every check (a monotone cubic: it bends between points but never swings above or below them), instead of
-// straight segments. Every value, the newest included, is exactly the measured one.
+// Smooth (João, Nov 18: "each should be averaged out with the previous and next one"): every check becomes the
+// average of itself and its two neighbours (at the two ends, of itself and its one neighbour), and the line is drawn
+// as a soft curve through those values (a monotone cubic: it bends between points, never above or below them).
+// Final scores (the ring) are full tests: kept as they are. Every point keeps its measured value in .raw for the hover.
+function avg3(pts) {
+  const P = pts.filter((p) => !p[2]);
+  if (P.length < 2) return pts;
+  const out = new Map();
+  P.forEach((p, i) => { const n = [P[i - 1], p, P[i + 1]].filter(Boolean); out.set(p, n.reduce((t, q) => t + q[1], 0) / n.length); });
+  return pts.map((p) => { if (!out.has(p)) return p; const q = p.slice(); q[1] = out.get(p); q.raw = p[1]; return q; });
+}
 function curve(xy) {
   const n = xy.length;
   if (n < 3) return xy.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join("");
@@ -302,6 +310,7 @@ function lineChart(id, opt) {
   // the check at 0 tokens is an untrained model (loss ~10.8, chance-level tests): it only squashes the picture
   const S = opt.series.map((s) => ({ ...s, pts: s.pts.filter((p) => p[0] > 0), faint: (s.faint || []).filter((p) => p[0] > 0) }))
     .filter((s) => s.pts.length || s.faint.length);
+  if (SMOOTH) for (const s of S) { s.pts = avg3(s.pts); s.faint = avg3(s.faint); }
   if (!S.length) { el.innerHTML = `<div class="empty">${opt.empty || "No checks yet"}</div>`; HOV[id] = null; return; }
   const m = { l: 44, r: 52, t: 20, b: 24 };
   const xmax = opt.xmax || Math.max(...S.flatMap((s) => s.pts.concat(s.faint || []).map((p) => p[0])));
