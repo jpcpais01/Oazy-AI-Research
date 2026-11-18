@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Opal3's test (oazy/opal3.py), all of it in one go:
-#   1. build Opal3's five new parts on the CPUs (about 20 minutes; a training run on the GPU is not disturbed)
+#   1. build Opal3's six new parts on the CPUs (minutes; a training run on the GPU is not disturbed)
 #   2. wait until no training run is using the GPU
 #   3. train Bee-135 (the 135M race's arm B, NEXT-WORD) on Opal3: the same tokens, Field1 off, no mentor
 #   4. print the table against bee-race-135 (the same model on Opal) with the verdict
