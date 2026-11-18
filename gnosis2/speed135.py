@@ -59,7 +59,11 @@ def main(argv=None):
     ap.add_argument("--device", default=None)
     ap.add_argument("--runs", default=None)
     ap.add_argument("--set", nargs="*", default=None, metavar="KEY=VALUE", help="replace Bee-135's switches (for a small try-out)")
+    ap.add_argument("--book", default=None, help="a memory table's file (oazy/book.py): times Bee-135 with and without it")
     a = ap.parse_args(argv)
+    if a.book:
+        ROWS.append(("book", "Bee-135 + memory table", [f"book={a.book}"], [], "what looking phrases up costs"))
+        a.only = a.only or "bee,book"
     import torch
     from bee6 import profile
     from oazy import term
@@ -108,7 +112,7 @@ def main(argv=None):
                body, right=(1, 2, 3, 4, 5, 6, 7, 8))
     term.out(term.c("  layers / table + loss = their share of a pass, each timed alone (they need not add to 100%). run speed = with "
                     "the optimizer step, without tests and data loading: a real run sits a little under it.", "dim"))
-    out = Path(a.runs or default_dir("runs")) / ({GLUE: "speed135-glue.json", CANON: "speed135-canon.json"}.get(a.only, "speed135.json"))
+    out = Path(a.runs or default_dir("runs")) / ({GLUE: "speed135-glue.json", CANON: "speed135-canon.json"}.get(a.only, "speed135-book.json" if a.book else "speed135.json"))
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps([{"key": k, "name": n, "result": r, "error": e} for k, n, _, r, e in got], indent=1, default=str))
