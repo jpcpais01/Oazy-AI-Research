@@ -48,6 +48,23 @@ try { PICK = JSON.parse(localStorage.getItem("oazy.v.pick") || "null"); } catch 
 // smoothing for every race chart at once (João's toggle), remembered in this browser
 let SMOOTH = false;
 try { SMOOTH = localStorage.getItem("oazy.v.smooth") === "1"; } catch (e) { SMOOTH = false; }
+// the race charts by tokens read or by training time (João's toggle, Nov 18), remembered in this browser
+let XTIME = false;
+try { XTIME = localStorage.getItem("oazy.v.x") === "time"; } catch (e) { XTIME = false; }
+// hours of training a run took to reach `tok` tokens, from its clock (training seconds logged with every training
+// step); past its newest step, at its recent pace (where a live run will be when it reaches its end)
+function hoursAt(run, tok) {
+  const C = ((SER[run] || {}).d || {}).clock || [];
+  if (!C.length) return null;
+  if (tok <= C[0][0]) return C[0][0] > 0 ? (tok / C[0][0]) * C[0][1] / 3600 : 0;
+  let lo = 0, hi = C.length - 1;
+  if (tok >= C[hi][0]) { const a = C[Math.max(0, Math.floor(hi * 0.8) - 1)], b = C[hi], r = (b[1] - a[1]) / ((b[0] - a[0]) || 1);
+    return (b[1] + (tok - b[0]) * (r > 0 ? r : b[1] / (b[0] || 1))) / 3600; }
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (C[m][0] <= tok) lo = m; else hi = m; }
+  const f = (tok - C[lo][0]) / ((C[hi][0] - C[lo][0]) || 1);
+  return (C[lo][1] + f * (C[hi][1] - C[lo][1])) / 3600;
+}
+const fmtH = (h) => h < 1 ? Math.round(h * 60) + " min" : (+h.toFixed(1)) + " h";
 const savePick = () => { try { localStorage.setItem("oazy.v.pick", JSON.stringify(PICK)); } catch (e) { /* */ } };
 const runOf = (n) => RUNS.find((r) => r.name === n);
 const ours = () => RUNS.filter((r) => !r.reference);
@@ -260,6 +277,8 @@ document.addEventListener("click", async (e) => {
   const f = e.target.closest("#filter button");
   if (f) { FILTER = f.dataset.f; MORE = false; document.querySelectorAll("#filter button").forEach((x) => x.classList.toggle("on", x === f)); drawTiles(compareSet()); return; }
   const sm = e.target.closest("#smooth button");
+  const xb = e.target.closest("#xaxis button");
+  if (xb) { XTIME = xb.dataset.x === "time"; try { localStorage.setItem("oazy.v.x", XTIME ? "time" : "tok"); } catch (err) { /* */ } drawRace(compareSet()); return; }
   if (sm) { SMOOTH = sm.dataset.s === "1"; try { localStorage.setItem("oazy.v.smooth", SMOOTH ? "1" : "0"); } catch (err) { /* */ } drawRace(compareSet()); return; }
   if (e.target.closest("#raceReset")) { PICK = null; savePick(); refresh(); return; }
   if (e.target.closest(".vmore")) { MORE = true; drawTiles(compareSet()); }
@@ -310,6 +329,17 @@ function lineChart(id, opt) {
   // the check at 0 tokens is an untrained model (loss ~10.8, chance-level tests): it only squashes the picture
   const S = opt.series.map((s) => ({ ...s, pts: s.pts.filter((p) => p[0] > 0), faint: (s.faint || []).filter((p) => p[0] > 0) }))
     .filter((s) => s.pts.length || s.faint.length);
+  if (XTIME) {             // by training time: every point moves to the hour its run reached it (x in hours)
+    const runOf_ = (s) => s.run || s.name.split(" · ")[0];
+    const toH = (s) => (P) => P.map((p) => { const h = hoursAt(runOf_(s), p[0]); if (h == null) return null; const q = p.slice(); q[0] = h; return q; }).filter(Boolean);
+    const total = (s) => { const r = RUNS.find((x) => x.name === runOf_(s)); return r ? Math.max(r.total || 0, r.tokens || 0) : 0; };
+    const ends = S.map((s) => hoursAt(runOf_(s), total(s))).filter((h) => h > 0);
+    const t0 = S.length ? runOf_(S[0]) : null;
+    opt = { ...opt, xmax: ends.length ? Math.max(...ends) : null,
+      turns: (opt.turns || []).map((t) => ({ ...t, at: t0 ? hoursAt(t0, t.at) : null })).filter((t) => t.at != null) };
+    for (const s of S) { s.pts = toH(s)(s.pts); s.faint = toH(s)(s.faint); }
+  }
+  const fx = XTIME ? fmtH : fmtM;
   if (SMOOTH) for (const s of S) { s.pts = avg3(s.pts); s.faint = avg3(s.faint); }
   if (!S.length) { el.innerHTML = `<div class="empty">${opt.empty || "No checks yet"}</div>`; HOV[id] = null; return; }
   const m = { l: 44, r: 52, t: 20, b: 24 };
@@ -329,7 +359,7 @@ function lineChart(id, opt) {
   const xt = ticks(0, xmax, W < 420 ? 3 : 5).filter((v) => v > 0);
   const fy = opt.pctAxis ? (v) => (v * 100).toFixed(Math.max(0, yd - 2)) + "%" : (v) => v.toFixed(yd);
   let g = `<g class="grid">${yt.map((v) => `<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${m.l - 7}" y="${Y(v) + 3.5}" text-anchor="end">${fy(v)}</text>`).join("")}
-    ${xt.map((v) => `<text x="${X(v)}" y="${H - 6}" text-anchor="middle">${fmtM(v)}</text>`).join("")}</g>`;
+    ${xt.map((v) => `<text x="${X(v)}" y="${H - 6}" text-anchor="middle">${fx(v)}</text>`).join("")}</g>`;
   for (const t of opt.turns || []) {
     if (!(t.at > 0 && t.at < xmax)) continue;
     const x = X(t.at), anchor = x > W - m.r - 40 ? "end" : x < m.l + 40 ? "start" : "middle";
@@ -365,7 +395,7 @@ function lineChart(id, opt) {
     return `<text class="endv" x="${tx}" y="${e.y + 4}" fill="${e.c}">${esc(e.v)}</text>`; }).join("");
   el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opt.label || "")}"><defs><clipPath id="${id}clip"><rect x="${m.l - 6}" y="${m.t - 6}" width="${W - m.l - m.r + 14}" height="${H - m.t - m.b + 12}"/></clipPath></defs>
     ${g}<g clip-path="url(#${id}clip)">${lines}${dots}</g>${endT}<g class="hov"></g><rect x="${m.l}" y="0" width="${W - m.l - m.r}" height="${H}" fill="transparent" class="hit"/></svg>`;
-  HOV[id] = { S, X, Y, xmax, m, W, H, fmt: opt.fmt, inv: (px) => (px - m.l) / (W - m.l - m.r) * xmax, lo, hi };
+  HOV[id] = { S, X, Y, xmax, m, W, H, fmt: opt.fmt, at: XTIME ? (v) => fmtDur(v * 3600) + " of training" : (v) => fmtM(v) + " tokens", inv: (px) => (px - m.l) / (W - m.l - m.r) * xmax, lo, hi };
   hookHover(id);
 }
 function hookHover(id) {
@@ -387,7 +417,7 @@ function hookHover(id) {
     }
     hov.innerHTML = mark;
     if (!rows.length) { tip.hidden = true; return; }
-    tip.innerHTML = `<div class="h">at ${fmtM(x)} tokens</div>${rows.join("")}`;
+    tip.innerHTML = `<div class="h">at ${h.at(x)}</div>${rows.join("")}`;
     tip.hidden = false;
     const tw = tip.offsetWidth, th = tip.offsetHeight;
     let left = ev.clientX + 14, top = box.top + 8;
@@ -408,6 +438,7 @@ function drawRace(set) {
   const auto = !PICK;
   $("raceReset").hidden = auto;
   document.querySelectorAll("#smooth button").forEach((b) => b.classList.toggle("on", (b.dataset.s === "1") === SMOOTH));
+  document.querySelectorAll("#xaxis button").forEach((b) => b.classList.toggle("on", (b.dataset.x === "time") === XTIME));
   const groups = auto ? autoSet().groups : [];
   $("raceTitle").textContent = auto && groups.length === 1 && R.length > 1 ? `The race · ${groups[0]}` : R.length > 1 ? "Side by side" : "The run";
   const lineKey = (dash) => `<svg viewBox="0 0 22 8"><line x1="1" x2="21" y1="4" y2="4" stroke="#b4b3c4" stroke-width="${dash ? 1.2 : 2.4}" stroke-opacity="${dash ? 0.5 : 1}"/></svg>`;
