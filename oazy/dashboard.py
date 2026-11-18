@@ -281,13 +281,15 @@ def series(d: Path):
     if hit and hit[0] == key:
         return hit[1]
     train, val, hs, logt, world, arc, piqa, share, csqa, arcc = [], [], [], [], [], [], [], [], [], []
-    real, pro, wval, field1, f1fam, real2, pro2 = [], [], [], [], None, [], []
+    real, pro, wval, field1, f1fam, real2, pro2, clock = [], [], [], [], None, [], [], []
     for x in read_jsonl(f):
         k, t = x.get("kind"), x.get("tokens")
         if not _fin(t):
             continue
         if k == "train" and _fin(x.get("loss")):
             train.append([t, x["loss"]])
+            if _fin(x.get("elapsed")):                 # the run's clock: training seconds at each token count
+                clock.append([t, x["elapsed"]])
             if _fin(x.get("world_share")):
                 share.append([t, x["world_share"]])
         elif k == "eval" and _fin(x.get("val_loss")):
@@ -323,7 +325,8 @@ def series(d: Path):
                 csqa.append([t, x["csqa"], 1 if x.get("full") else 0])
     out = {"train": _thin(train), "val": val, "hs": hs, "logt": logt, "world": world, "arc": arc, "piqa": piqa,
            "share": _thin(share, 120), "real": real, "pro": pro, "wval": wval, "csqa": csqa, "arcc": arcc,
-           "field1": field1, "field1_fam": f1fam, "real2": real2, "pro2": pro2}
+           "field1": field1, "field1_fam": f1fam, "real2": real2, "pro2": pro2,
+           "clock": clock[:: max(1, len(clock) // 400)] + clock[-1:]}
     _SERIES[str(f)] = (key, out)
     return out
 
