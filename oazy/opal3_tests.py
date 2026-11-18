@@ -25,14 +25,14 @@ def main():
     assert mix.resolve_mix("opal3") == mix.resolve_mix("opal3:flat:0") == mix.OPAL3_TEXT_MIX
     for (at0, w0), (at1, w1) in zip(old, new):
         assert at0 == at1 and abs(sum(w1.values()) - 1) < 1e-6 and "field1" not in w1
-        assert abs(sum(w1[p] for p in opal3.PARTS) - 0.10) < 1e-9
-        assert abs(w0["fwe"] - w1["fwe"] - 0.08) < 1e-6 and abs(w0["dclm"] - w1["dclm"] - 0.02) < 1e-6
+        assert abs(sum(w1[p] for p in opal3.PARTS) - 0.20) < 1e-9
+        assert abs(w0["fwe"] - w1["fwe"] - 0.16) < 1e-6 and abs(w0["dclm"] - w1["dclm"] - 0.04) < 1e-6
         assert all(abs(w0[k] - w1[k]) < 1e-9 for k in w0 if k not in ("fwe", "dclm"))
     with_f1 = mix.parse_mix(mix.resolve_mix("opal3:flat:0.20"))
     assert abs(with_f1[0][1]["field1"] - 0.20) < 1e-6 and abs(with_f1[0][1]["howto"] - 0.048 * 0.8) < 1e-6
     need = opal3.needs(4e9)
     assert set(need) == set(opal3.PARTS) and abs(need["howto"] - 4e9 * 0.048 * 1.05) < 1e3, need
-    print("✓ mix: 10% new, 8 points from FineWeb-Edu and 2 from DCLM in both phases; a 4B run needs",
+    print("✓ mix: 20% new, 16 points from FineWeb-Edu and 4 from DCLM-Edu in both phases; a 4B run needs",
           {k: f"{v / 1e6:.0f}M" for k, v in need.items()})
 
     # stand-in datasets behind opal3.rows
@@ -61,6 +61,8 @@ def main():
         for i in range(0, n, 97):
             yield {c: d[c][i:i + 97] for c in columns}
     opal3.rows = fake_rows
+    web = [t + " " + " ".join(fake_docs(8, rng)) for t in fake_docs(700, rng)]
+    opal3.DATASETS["web"] = [("DCLM-baseline, unfiltered", 1.0, lambda: iter([web[i:i + 100] for i in range(0, 700, 100)]))]
 
     pages = [p for b in opal3.generics() for p in b]
     assert len(pages) == 100 and pages[0].startswith("Thing0 does act 0. Thing0 does act 1.") and "Alone." not in " ".join(pages)
@@ -107,7 +109,7 @@ def main():
     assert m["from"]["ROCStories"] == "not available" and m["from"]["TinyStories"] == 1.0, m["from"]
     assert np.fromfile(base / "opal" / "train.bin", dtype=np.uint16).size == 10          # Opal itself untouched
     assert opal3.ready(base / "opal", "howto", 10 ** 12)             # ran out = as much as there is: not built again
-    print("✓ build: five parts written, 2 documents with test questions left out (HellaSwag, CommonsenseQA), "
+    print("✓ build: six parts written, 2 documents with test questions left out (HellaSwag, CommonsenseQA), "
           "a dataset that cannot be fetched is reported and the part still written")
 
     # a part with nothing to read is not written, and check says so

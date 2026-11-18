@@ -59,13 +59,13 @@ SOURCES = {"fwe": "", "dclm": "dclm", "chat": "chat",          # name -> sub-fol
            "cosmo": "cosmo", "wiki": "wiki", "math": "math", "code": "code", "books": "books", "best": "best",
            "faith": "faith", "religion": "religion", "creed": "creed", "world": "world", "field1": "field1",
            "proc": "proc", "work": "field1work", "think": "think",      # Opal2's new parts (oazy/opal2.py)
-           "howto": "howto", "stories": "stories", "facts": "facts", "science": "science", "scenes": "scenes"}   # Opal3's (oazy/opal3.py)
+           "howto": "howto", "stories": "stories", "facts": "facts", "science": "science", "scenes": "scenes", "web": "web"}   # Opal3's (oazy/opal3.py)
 WORLD_SOURCES = ("world", "field1", "work")       # the world's text: Emerald's old practice text, or Opal's Field1 (oazy/field1/)
 PREPARE = {"faith": "python3 -m oazy.faith build", "religion": "python3 -m oazy.religion fetch, then build",
            "creed": "python3 -m oazy.religion creed", "world": "python3 -m oazy.emerald build",
            "field1": "python3 -m oazy.opal build", "proc": "python3 -m oazy.opal2 build --part proc",
            "work": "python3 -m oazy.opal2 build --part work", "think": "python3 -m oazy.think --tokens 400e6 (a GPU)",
-           **{k: "python3 -m oazy.opal3 build" for k in ("howto", "stories", "facts", "science", "scenes")}}     # how a source that is not made by this file is made
+           **{k: "python3 -m oazy.opal3 build" for k in ("howto", "stories", "facts", "science", "scenes", "web")}}     # how a source that is not made by this file is made
 
 
 def with_cooldown(mix: str, start: float) -> str:
@@ -187,9 +187,11 @@ OPAL2_MIX = opal2_mix()
 
 # Opal3 (oazy/opal3.py, Nov 18): Opal plus the everyday text the tests ask about and Opal is thin on: how things are
 # done step by step, short stories of ordinary life, plain facts in plain words, school science, scenes told as they
-# happen. 10% of every phase, taken 8 points from FineWeb-Edu and 2 from DCLM; the rest of Opal is untouched. Field1
+# happen: 10% of every phase. And "web", 10% more: plain DCLM pages, which Opal's two web parts filter out (both keep
+# only pages of teaching value 3+). The 20 points come 16 from FineWeb-Edu and 4 from DCLM-Edu; the rest is untouched. Field1
 # is a separate dial, off unless a plan is given ("opal3" = no Field1, "opal3:flat:0.20" = with it).
-OPAL3_PARTS = {"howto": 0.048, "stories": 0.025, "facts": 0.015, "science": 0.010, "scenes": 0.002}
+OPAL3_PARTS = {"howto": 0.048, "stories": 0.025, "facts": 0.015, "science": 0.010, "scenes": 0.002,
+               "web": 0.10}      # web = plain DCLM pages, no teaching-value filter (the everyday web SmolLM2's small models read)
 OPAL3_FROM = {"fwe": 0.8, "dclm": 0.2}
 
 

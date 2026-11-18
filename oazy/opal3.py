@@ -1,9 +1,9 @@
 """Opal3: Opal plus the everyday text the tests ask about and Opal is thin on (João, Nov 18).
 
     python3 -m oazy.opal3 plan                       # what a run reads of each new part, and what is there
-    nice -n 10 python3 -m oazy.opal3 build           # build the five new parts (CPU and network only; ~20 min)
+    nice -n 10 python3 -m oazy.opal3 build           # build the six new parts (CPU and network only; minutes)
     python3 -m oazy.opal3 show --part howto --n 3    # read a few documents of a part
-    python3 -m oazy.opal3 check                      # exit 1 unless all five parts are there (a run SKIPS a missing part)
+    python3 -m oazy.opal3 check                      # exit 1 unless all six parts are there (a run SKIPS a missing part)
     python3 -m oazy.opal3 verdict                    # Bee-135 on Opal3 against Bee-135 on Opal, by the rule below
     bash runpod/opal3.sh                             # all of it: build, wait for the GPU, the run, the verdict
     bash runpod/train.sh <model> ... --data-sub opal3 --mentor none      # a run that reads it (Field1 off; next-token)
@@ -11,7 +11,8 @@
 Opal's text is school-like web pages, textbooks, old books, Wikipedia, maths, code and chat. HellaSwag asks what
 happens next in an everyday scene or a how-to, PIQA how a thing is done with one's hands, CommonsenseQA what
 everybody knows, ARC school science in plain words. Opal has little of that written plainly, so Opal3 adds five
-parts, 10% of every phase of the run (8 points from FineWeb-Edu, 2 from DCLM; the rest of Opal is untouched):
+parts, 10% of every phase of the run, and a sixth, 10% more (16 points from FineWeb-Edu and 4 from DCLM-Edu in all;
+the rest of Opal is untouched):
 
   howto    4.8%  how things are done, step by step: Cosmopedia's wikiHow-style articles (written by a model from
                  wikiHow titles; real wikiHow is what HellaSwag was cut from, and its copies were taken down), and
@@ -24,6 +25,12 @@ parts, 10% of every phase of the run (8 points from FineWeb-Edu, 2 from DCLM; th
   scenes   0.2%  scenes told as they happen: VATEX's descriptions of short video clips (ten tellings of each clip;
                  its train part only). HellaSwag's other half was cut from ActivityNet's video captions, which are
                  NOT used here; VATEX describes other clips (Kinetics).
+
+  web     10.0%  the everyday web: plain DCLM pages with no teaching-value filter (forums, guides, shops, people
+                 talking). Opal's two web parts keep only pages a grader scored 3+ out of 5 for teaching value, which
+                 drops exactly this; SmolLM2's small models read DCLM with the low scores kept. It is the one part
+                 with no size limit, so it is what a 30B-100B run can lean on. (A few of its pages are also in
+                 Opal's DCLM-Edu part: DCLM-Edu is a slice of DCLM. At these sizes the overlap is small.)
 
 Left out on purpose: the train parts of the tests themselves (HellaSwag, PIQA, CommonsenseQA, ARC), real wikiHow,
 ActivityNet captions, ConceptNet (CommonsenseQA was written from it).
@@ -60,8 +67,8 @@ from . import term
 PARTS = tuple(OPAL3_PARTS)
 ABOUT = {"howto": "how things are done, step by step", "stories": "short stories of ordinary life",
          "facts": "plain facts in plain words", "science": "school science (OpenStax)",
-         "scenes": "scenes told as they happen"}
-VAL_TOKENS = {"howto": 500_000, "stories": 500_000, "facts": 500_000, "science": 300_000, "scenes": 100_000}
+         "scenes": "scenes told as they happen", "web": "the everyday web (plain DCLM, no teaching-value filter)"}
+VAL_TOKENS = {"howto": 500_000, "stories": 500_000, "facts": 500_000, "science": 300_000, "scenes": 100_000, "web": 1_000_000}
 NOT_TRAIN = ("test", "valid", "val-", "val_", "/val/", "dev")       # file names that are not the train part
 
 
@@ -171,6 +178,15 @@ def captions(repo="HuggingFaceM4/vatex", config="v1.1", column="enCap"):
             yield out
 
 
+def web_pages(min_chars=400):
+    """Plain DCLM pages, shards in a shuffled order (each is downloaded, read and deleted), as Tagus read them."""
+    from .sado import _parquet_docs
+    for b in _parquet_docs("mlfoundations/dclm-baseline-1.0-parquet", ["filtered/", ""], "text"):
+        out = [t for t in b if len(t) >= min_chars]
+        if out:
+            yield out
+
+
 # name -> [(dataset's name here, its share of the part's text, how to read it)]. Shares are of what is read first;
 # when a dataset runs out, the others fill the part.
 DATASETS = {
@@ -182,6 +198,7 @@ DATASETS = {
               ("GenericsKB best", 0.2, generics)],
     "science": [("OpenStax textbooks", 1.0, lambda: joined_lines("crumb/openstax-text", ["data/"]))],
     "scenes": [("VATEX clip descriptions", 1.0, captions)],
+    "web": [("DCLM-baseline, unfiltered", 1.0, lambda: web_pages())],
 }
 
 
@@ -244,7 +261,7 @@ def build(base: Path, run_tokens: float, parts, workers: int, decontam: bool = T
     from . import sado
     opal = opal_dir(base)
     want = needs(run_tokens)
-    term.header("Opal3", f"five everyday parts for a {term.tokens(run_tokens)}-token run · {opal}")
+    term.header("Opal3", f"six everyday parts for a {term.tokens(run_tokens)}-token run · {opal}")
     todo = [p for p in parts if again or not ready(opal, p, want[p])]
     if not todo:
         term.out(term.c("  every part is there already", "green"))
