@@ -370,7 +370,7 @@ def _label(cf: dict):
     Phi-135 = the Gnosis2 body at 576 wide with the phrase hint, Bee-135 = the same body without it."""
     c = cf.get("config") or {}
     if cf.get("model") == "gnosis2" and c.get("d_model") == 576:
-        return "Phi-135" if c.get("hint_rows") else "Bee-135"
+        return ("Phi-135" if c.get("hint_rows") else "Bee-135") + (" · Opal3" if "howto:" in str(cf.get("mix") or "") else "")
     return None
 
 

@@ -58,12 +58,14 @@ MIXES = {"default": DEFAULT_MIX, "v1": DEFAULT_MIX, "tagus": TAGUS_MIX, "bundle"
 SOURCES = {"fwe": "", "dclm": "dclm", "chat": "chat",          # name -> sub-folder of the data folder
            "cosmo": "cosmo", "wiki": "wiki", "math": "math", "code": "code", "books": "books", "best": "best",
            "faith": "faith", "religion": "religion", "creed": "creed", "world": "world", "field1": "field1",
-           "proc": "proc", "work": "field1work", "think": "think"}      # Opal2's new parts (oazy/opal2.py)
+           "proc": "proc", "work": "field1work", "think": "think",      # Opal2's new parts (oazy/opal2.py)
+           "howto": "howto", "stories": "stories", "facts": "facts", "science": "science", "scenes": "scenes"}   # Opal3's (oazy/opal3.py)
 WORLD_SOURCES = ("world", "field1", "work")       # the world's text: Emerald's old practice text, or Opal's Field1 (oazy/field1/)
 PREPARE = {"faith": "python3 -m oazy.faith build", "religion": "python3 -m oazy.religion fetch, then build",
            "creed": "python3 -m oazy.religion creed", "world": "python3 -m oazy.emerald build",
            "field1": "python3 -m oazy.opal build", "proc": "python3 -m oazy.opal2 build --part proc",
-           "work": "python3 -m oazy.opal2 build --part work", "think": "python3 -m oazy.think --tokens 400e6 (a GPU)"}     # how a source that is not made by this file is made
+           "work": "python3 -m oazy.opal2 build --part work", "think": "python3 -m oazy.think --tokens 400e6 (a GPU)",
+           **{k: "python3 -m oazy.opal3 build" for k in ("howto", "stories", "facts", "science", "scenes")}}     # how a source that is not made by this file is made
 
 
 def with_cooldown(mix: str, start: float) -> str:
@@ -183,6 +185,31 @@ def opal2_mix(base: str = OPAL_TEXT_MIX) -> str:
 OPAL2_MIX = opal2_mix()
 
 
+# Opal3 (oazy/opal3.py, Nov 18): Opal plus the everyday text the tests ask about and Opal is thin on: how things are
+# done step by step, short stories of ordinary life, plain facts in plain words, school science, scenes told as they
+# happen. 10% of every phase, taken 8 points from FineWeb-Edu and 2 from DCLM; the rest of Opal is untouched. Field1
+# is a separate dial, off unless a plan is given ("opal3" = no Field1, "opal3:flat:0.20" = with it).
+OPAL3_PARTS = {"howto": 0.048, "stories": 0.025, "facts": 0.015, "science": 0.010, "scenes": 0.002}
+OPAL3_FROM = {"fwe": 0.8, "dclm": 0.2}
+
+
+def opal3_text_mix(base: str = OPAL_TEXT_MIX) -> str:
+    total, out = sum(OPAL3_PARTS.values()), []
+    for part in base.split(";"):
+        ws, at = part.split("@")
+        w = {k: float(v) for k, v in (s.split(":") for s in ws.split(","))}
+        for k, f in OPAL3_FROM.items():
+            w[k] -= total * f
+            if w[k] <= 0:
+                raise ValueError(f"Opal3 takes more from {k} than this mix has")
+        w.update(OPAL3_PARTS)
+        out.append(",".join(f"{k}:{v:.6g}" for k, v in w.items()) + "@" + at)
+    return ";".join(out)
+
+
+OPAL3_TEXT_MIX = opal3_text_mix()
+
+
 def emerald_mix(w=EMERALD_SHARE, base: str = SADO_MIX, name: str = "world") -> str:
     """Emerald (oazy/emerald.py): Sado with the world's practice text. w = the average share (3w for the first 20%,
     then w/2 to the end, cool-down included: 0.10 -> 30% then 5%; 0 = plain Sado; like --world, oazy/worldmix.py),
@@ -205,6 +232,13 @@ def resolve_mix(text):
     """A mix by name ("tagus", "v1", "opal", "opal:0.30:0.1,0.15", "emerald", "emerald:0.05", "emerald:flat:0.20") or written out."""
     if text == "opal2":
         return OPAL2_MIX
+    if text and (text == "opal3" or text.startswith("opal3:")):
+        spec = text.split(":", 1)[1] if ":" in text else "flat:0"
+        try:
+            spec = float(spec)
+        except ValueError:
+            pass
+        return opal_mix(spec, OPAL3_TEXT_MIX)
     if text and (text in ("opal", "opal100") or text.startswith(("opal:", "opal100:"))):
         base = OPAL100_TEXT_MIX if text.startswith("opal100") else OPAL_TEXT_MIX
         spec = text.split(":", 1)[1] if ":" in text else OPAL_PLAN
