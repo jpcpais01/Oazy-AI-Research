@@ -3,6 +3,7 @@ at ~530k tokens a second on a B300, far under what its size suggests).
 
     python3 -m gnosis2.speed135                 # about 10 minutes on a free GPU; trains nothing, reads no data
     python3 -m gnosis2.speed135 --only bee,phi  # some rows only
+    python3 -m gnosis2.speed135 --only glue     # round 2: the small operations around the matrix products, off one at a time
 
 Each row builds the body at full size, compiles it, and times a training pass of 32 x 2,048 words on made-up tokens
 (bee6/profile.py): the whole pass, the layers alone, the word table + loss alone, one optimizer step. The first row
@@ -30,8 +31,18 @@ ROWS = [
     ("micro64", "Bee-135, 64 sequences a pass", [], ["--micro", "64"], "is the pass too small for this chip"),
     ("ctx1024", "Bee-135, 1,024-word windows", [], ["--ctx", "1024"], "attention's share"),
     ("chunk", "Bee-135, loss in bigger chunks", ["loss_chunk=16384"], [], "the word table + loss step"),
-    ("wide", "12 layers of 832 (wider, bigger)", WIDE, [], "do wide layers use the chip better (a different, bigger model)"),
+    ("wide", "12 layers of 832 (wider, bigger)", WIDE, [], "do wide layers use the chip better (a different, bigger model)"),    # round 2 (--only glue): the small operations around the matrix products, off one at a time (each changes the model)
+    ("nocanon", "Bee-135 without Canon layers", ["canon="], [], "the 48 Canon mixes"),
+    ("canon_a", "Bee-135, Canon on attention only", ["canon=A"], [], "half the Canon mixes"),
+    ("nosmear", "Bee-135 without smear, x0, back-out, gate", ["smear=0", "x0=0", "backout=0", "attn_gate=0"], [], "the residual-stream extras"),
+    ("nounet", "Bee-135 without U-net skips", ["unet=0"], [], "the skips"),
+    ("nove", "Bee-135 without value tables", ["n_ve=0"], [], "the value tables"),
+    ("nomask", "Bee-135 without the document mask", ["doc_mask=0"], [], "attention's document mask"),
+    ("nomtp", "Bee-135 without the many-word loss", ["mtp_until=0"], [], "the loss on the words after next"),
+    ("bare", "Bee-135 bare (all of the above off)", ["canon=", "smear=0", "x0=0", "backout=0", "attn_gate=0", "unet=0", "n_ve=0",
+                                                    "doc_mask=0", "mtp_until=0"], [], "the floor: only attention and MLPs"),
 ]
+GLUE = "bee,nocanon,canon_a,nosmear,nounet,nove,nomask,nomtp,bare"
 
 
 def main(argv=None):
@@ -48,7 +59,9 @@ def main(argv=None):
     from bee6 import profile
     from oazy import term
     from oazy.data import default_dir
-    pick = set(a.only.split(",")) if a.only else None
+    if a.only == "glue":
+        a.only = GLUE
+    pick = set(a.only.split(",")) if a.only else {k for k, *_ in ROWS[:8]}
     base = a.set if a.set is not None else set_words("b")
     phi = (a.set + ["n_ve=0", "hint_rows=73000", "hint_dim=32", "hint_heads=4", "hint_orders=2,3"]) if a.set is not None else set_words("c")
     got = []
@@ -57,7 +70,7 @@ def main(argv=None):
             continue
         sets = phi if extra is None else (extra if key == "wide" and a.set is None else base + extra)
         term.header(f"{name}", why, color="blue")
-        argv2 = ["--model", "gnosis2", "--preset", a.preset, "--steps", str(a.steps), "--kernels", "15" if not got else "0",
+        argv2 = ["--model", "gnosis2", "--preset", a.preset, "--steps", str(a.steps), "--kernels", "40" if not got else "0",
                  *(["--device", a.device] if a.device else []), *(["--runs", a.runs] if a.runs else []), *opts, "--set", *sets]
         try:
             r = profile.main(argv2)
@@ -91,7 +104,7 @@ def main(argv=None):
                body, right=(1, 2, 3, 4, 5, 6, 7, 8))
     term.out(term.c("  layers / table + loss = their share of a pass, each timed alone (they need not add to 100%). run speed = with "
                     "the optimizer step, without tests and data loading: a real run sits a little under it.", "dim"))
-    out = Path(a.runs or default_dir("runs")) / "speed135.json"
+    out = Path(a.runs or default_dir("runs")) / ("speed135-glue.json" if a.only == GLUE else "speed135.json")
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps([{"key": k, "name": n, "result": r, "error": e} for k, n, _, r, e in got], indent=1, default=str))
