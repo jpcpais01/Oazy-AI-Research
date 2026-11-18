@@ -14,7 +14,7 @@ What changed from Tagus, and why:
                   reason LAMBADA (guess the last word of a passage from a novel) stayed weak.
   2. Stricter web.  FineWeb-Edu keeps only pages its teaching-value grader scored 3 or more out of 5 (Tagus: 2.5 and
                   up), and DCLM is replaced by DCLM-Edu (DCLM pages that also pass that grader; SmolLM2/3 use it).
-  3. No test questions.  A document that shares any run of 13 words with HellaSwag, ARC-Easy, PIQA, LAMBADA (or MMLU,
+  3. No test questions.  A document that shares any run of 13 words with HellaSwag, ARC (Easy, Challenge), PIQA, CommonsenseQA, Winogrande, LAMBADA (or MMLU,
                   when it can be fetched) is left out, so our scores stay honest. ("Decontamination".)
   4. No duplicates.  The same document (ignoring case and spacing) is kept once across all sources.
   5. More chat.     smol-smoltalk, then the larger smoltalk, so the cool-down's conversations are not repeated.
@@ -226,8 +226,10 @@ def bench_texts(root: Path):
         except OSError:
             return []
     for name, p in (("hellaswag", root / "hellaswag_val.jsonl"), ("arc_easy", root / "evals" / "arc_easy.jsonl"),
-                    ("piqa", root / "evals" / "piqa.jsonl")):
-        out[name] = [r["ctx"] + " " + e for r in rows(p) for e in r.get("endings", [])]
+                    ("piqa", root / "evals" / "piqa.jsonl"), ("arc_challenge", root / "evals" / "arc_challenge.jsonl"),
+                    ("csqa", root / "evals" / "csqa.jsonl"), ("winogrande", root / "evals" / "winogrande.jsonl")):
+        out[name] = ([r["ctx"] + " " + e for r in rows(p) if "ctx" in r for e in r.get("endings", [])]
+                     + [c + " " + e for r in rows(p) if "ctxs" in r for c, e in zip(r["ctxs"], r.get("endings", []))])
     out["lambada"] = [r["ctx"] + r.get("target", "") for r in rows(root / "evals" / "lambada.jsonl")]
     try:                                              # MMLU: we do not score it, but others will; best effort
         from .evals import _rows

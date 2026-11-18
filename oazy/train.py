@@ -1124,6 +1124,9 @@ def main():
         if args.data_sub not in (None, "emerald"):
             raise SystemExit("--emerald-plan reads Emerald: leave out --data-sub or use --data-sub emerald")
         args.data_sub = "emerald"
+    opal3 = args.data_sub == "opal3"           # Opal3 (oazy/opal3.py): Opal + the everyday parts; Field1 off unless a plan is given
+    if opal3:
+        args.data_sub, args.opal_plan = "opal", args.opal_plan or "flat:0"
     if args.opal_plan is not None or args.data_sub == "opal":    # Opal: Field1's share over the run (oazy/mix.py)
         from .mix import emerald_plan, OPAL_PLAN
         if args.emerald_plan is not None or args.emerald is not None:
@@ -1265,7 +1268,7 @@ def main():
         mix_default = args.mix is None
         if args.mix is None:      # SmolLM2-tokenizer Bees read Tagus when it is there (oazy/tagus.py)
             emerald = args.data_sub == "emerald" or args.emerald is not None
-            args.mix = ("opal2" if args.data_sub == "opal2" else
+            args.mix = ("opal2" if args.data_sub == "opal2" else f"opal3:{args.opal_plan}" if opal3 else
                         f"{'opal100' if args.model in SMALL_KINDS else 'opal'}:{args.opal_plan}" if args.opal_plan is not None else
                         f"emerald:{args.emerald_plan}" if args.emerald_plan is not None else
                         f"emerald:{0.10 if args.emerald is None else args.emerald:g}" if emerald else
