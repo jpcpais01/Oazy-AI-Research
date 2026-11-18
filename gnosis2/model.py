@@ -53,6 +53,10 @@ class Gnosis2Config(Bee6Config):
     hint_dim: int = 32         # numbers per row
     hint_heads: int = 4        # hash functions per phrase length (a phrase clashes with another in one, rarely in all)
     hint_orders: str = "2,3"   # phrase lengths, in words
+    book: str = ""             # memory table (oazy/book.py; "" = off): the file of counted phrases. At every word the
+                               # phrases ending there are looked up, and "what usually came next" (the kept next pieces'
+                               # word vectors, weighted by how often) is added to the input through one layer that starts
+                               # at zero. The table is a file beside the weights: frozen, not saved in checkpoints.
 
     def hint_ns(self):
         return [int(s) for s in str(self.hint_orders).split(",") if s.strip()]
@@ -160,19 +164,61 @@ class Gnosis2(Bee6):
             mult = torch.randint(1, 2 ** 31 - 1, (len(ns), cfg.hint_heads, self.hint_n), generator=g) * 2 + 1
             self.register_buffer("hint_mult", mult, persistent=False)
 
+        self.book_orders, self.book_n, self.book_out = [], 0, None
+        if cfg.book:
+            from oazy.book import load
+            b = load(cfg.book)
+            self.book_orders, self.book_k = [int(o) for o in b["orders"]], int(b["k"])
+            self.book_n = max(self.book_orders)
+            for o in self.book_orders:
+                for part in ("keys", "nxt", "prob", "lg"):
+                    self.register_buffer(f"book_{part}_{o}", b[f"{part}_{o}"], persistent=False)
+            self.book_out = nn.Linear(len(self.book_orders) * (cfg.d_model + 2), cfg.d_model, bias=False)
+            nn.init.zeros_(self.book_out.weight)       # starts as nothing: the model starts exactly as without it
+
+    def book_entries(self):
+        return sum(getattr(self, f"book_keys_{o}").numel() for o in self.book_orders)
+
+    def _back(self, idx, tail, n):
+        """(B, T, n): [..., j] = the word j back; -1 where the text had not started."""
+        B, T = idx.shape
+        if n == 1:
+            return idx[..., None]
+        if tail is None:
+            tail = idx.new_full((B, n - 1), -1)
+        elif tail.shape[1] < n - 1:
+            tail = torch.cat([idx.new_full((B, n - 1 - tail.shape[1]), -1), tail], dim=1)
+        else:
+            tail = tail[:, tail.shape[1] - (n - 1):]
+        full = torch.cat([tail, idx], dim=1)                                        # (B, n - 1 + T)
+        return torch.stack([full[:, n - 1 - j:n - 1 - j + T] for j in range(n)], dim=-1)
+
+    def _book(self, idx, tail=None):
+        """(B, T) words -> (B, T, D): for each word, what the table says came next after the phrases ending at it."""
+        from oazy.book import hash_torch
+        back = self._back(idx, tail, self.book_n)
+        E = self.embed.weight.detach()                 # the table only reads the word vectors; it does not train them
+        parts = []
+        for o in self.book_orders:
+            keys = getattr(self, f"book_keys_{o}")
+            q = hash_torch(back, o)
+            i = torch.searchsorted(keys, q.reshape(-1)).clamp_(max=keys.numel() - 1).view(q.shape)
+            hit = (keys[i] == q) & (back[..., :o] >= 0).all(-1)
+            p = getattr(self, f"book_prob_{o}")[i].to(E.dtype) * (1.0 / 255.0) * hit[..., None].to(E.dtype)   # (B, T, K)
+            nx = getattr(self, f"book_nxt_{o}")[i].long() & 0xFFFF
+            v = (E[nx] * p[..., None]).sum(-2)                                      # (B, T, D): the expected next word
+            lg = getattr(self, f"book_lg_{o}")[i].to(E.dtype) * (1.0 / 255.0) * hit.to(E.dtype)
+            parts += [norm(v), p[..., :1], lg[..., None]]
+        return self.book_out(torch.cat(parts, dim=-1))
+
     def hint_params(self):
         return 0 if self.hint is None else self.hint.weight.numel() + self.hint_out.weight.numel()
 
     def _hint(self, idx, tail=None):
         """(B, T) words -> (B, T, D): for each word, the rows its phrases (the 2 and the 3 words ending at it) hash
         to, squeezed to the stream's width. Looks back only. A phrase that would start before the text adds nothing."""
-        cfg, B, T, n = self.cfg, idx.shape[0], idx.shape[1], self.hint_n
-        if tail is None:
-            tail = idx.new_full((B, n - 1), -1)
-        elif tail.shape[1] < n - 1:
-            tail = torch.cat([idx.new_full((B, n - 1 - tail.shape[1]), -1), tail], dim=1)
-        full = torch.cat([tail, idx], dim=1)                                        # (B, n - 1 + T)
-        back = torch.stack([full[:, n - 1 - j:n - 1 - j + T] for j in range(n)], dim=-1)     # [..., j] = the word j back
+        cfg, n = self.cfg, self.hint_n
+        back = self._back(idx, tail, n)                                             # [..., j] = the word j back
         parts = []
         for o, order in enumerate(cfg.hint_ns()):
             known = (back[..., :order] >= 0).all(-1)                                # the whole phrase is in the text
@@ -188,10 +234,13 @@ class Gnosis2(Bee6):
         e, raw_last = super()._embed(idx, prev)
         if self.hint is not None:
             e = e + self._hint(idx, self._tail).to(e.dtype)
+        if self.book_out is not None:
+            e = e + self._book(idx, self._tail).to(e.dtype)
         return e, raw_last
 
     def _read(self, idx, states=None, looks=False):
-        if self.hint is None:
+        n = max(self.hint_n if self.hint is not None else 0, self.book_n)
+        if n == 0:
             return super()._read(idx, states, looks)
         tail = states.get("tail") if states else None
         self._tail = tail
@@ -200,7 +249,7 @@ class Gnosis2(Bee6):
         finally:
             self._tail = None
         full = idx if tail is None else torch.cat([tail, idx], dim=1)
-        st["tail"] = full[:, -(self.hint_n - 1):]
+        st["tail"] = full[:, max(0, full.shape[1] - (n - 1)):] if n > 1 else full[:, :0]
         return logits, st, infos
 
     def layout(self):
@@ -210,6 +259,9 @@ class Gnosis2(Bee6):
             c = self.cfg
             hint = (f", phrase hint ({c.hint_orders} words, {c.hint_heads} x {c.hint_rows:,} rows of {c.hint_dim}: "
                     f"{self.hint_params() / 1e6:.1f}M)")
+        if self.book_out is not None:
+            hint += (f", memory table ({self.book_entries() / 1e6:.1f}M phrases of {','.join(map(str, self.book_orders))} "
+                     f"pieces, a file beside the weights)")
         return super().layout() + f", {n} Canon layers ({self.cfg.canon_k} words wide)" + hint
 
     def canon_params(self):
