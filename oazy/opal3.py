@@ -240,9 +240,23 @@ def opal_dir(base: Path) -> Path:
     return base / "opal"
 
 
+MIX, SHARES, LABEL = OPAL3_TEXT_MIX, OPAL3_PARTS, "opal3"       # `--mix opal4` sizes the same parts for Opal4 (oazy/mix.py)
+
+
+def use_mix(name: str):
+    global MIX, SHARES, LABEL
+    from . import mix as M
+    if name == "opal4":
+        MIX, SHARES, LABEL = M.OPAL4_TEXT_MIX, M.OPAL4_PARTS, "opal4"
+    elif name == "opal3":
+        MIX, SHARES, LABEL = OPAL3_TEXT_MIX, OPAL3_PARTS, "opal3"
+    else:
+        raise SystemExit(f"unknown mix {name!r}: opal3 or opal4")
+
+
 def needs(run_tokens: float, margin: float = 0.05):
     from .tagus import needs as tneeds
-    return {k: v for k, v in tneeds(run_tokens, OPAL3_TEXT_MIX, margin).items() if k in PARTS}
+    return {k: v for k, v in tneeds(run_tokens, MIX, margin).items() if k in PARTS}
 
 
 def state(opal: Path, part: str):
@@ -261,7 +275,7 @@ def build(base: Path, run_tokens: float, parts, workers: int, decontam: bool = T
     from . import sado
     opal = opal_dir(base)
     want = needs(run_tokens)
-    term.header("Opal3", f"six everyday parts for a {term.tokens(run_tokens)}-token run · {opal}")
+    term.header(LABEL.capitalize(), f"six everyday parts for a {term.tokens(run_tokens)}-token run · {opal}")
     todo = [p for p in parts if again or not ready(opal, p, want[p])]
     if not todo:
         term.out(term.c("  every part is there already", "green"))
@@ -309,12 +323,12 @@ def report(opal: Path, run_tokens: float) -> bool:
         there = (opal / p / "train.bin").exists() and nt > 0
         ok &= there
         frm = " · ".join(f"{k} {v:.0%}" if isinstance(v, float) else f"{k}: NOT AVAILABLE" for k, v in (m.get("from") or {}).items())
-        body.append([p, f"{OPAL3_PARTS[p]:.1%}", term.tokens(want[p]), term.tokens(nt) if there else term.c("missing", "red"),
+        body.append([p, f"{SHARES[p]:.2%}" if SHARES[p] < 0.001 else f"{SHARES[p]:.1%}", term.tokens(want[p]), term.tokens(nt) if there else term.c("missing", "red"),
                      f"{want[p] / nt:.1f}x" if there else "", f"{s.get('kept', 0):,}", f"{s.get('test_overlap', 0):,}",
                      f"{s.get('duplicates', 0):,}", frm])
     term.table(["part", "share", "a run reads", "there", "times read", "documents", "left out: test", "repeats", "from"], body,
                right=(1, 2, 3, 4, 5, 6, 7))
-    term.out(term.c("━━ ✓ Opal3's parts are ready: --data-sub opal3", "green", "bold") if ok else
+    term.out(term.c(f"━━ ✓ the parts are ready: --data-sub {LABEL}", "green", "bold") if ok else
              term.c("━━ ✗ a part is missing: a run would SKIP it. Fix it and build again (finished parts are kept).", "red", "bold"))
     return ok
 
@@ -407,9 +421,11 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--workers", type=int, default=0)
     ap.add_argument("--again", action="store_true", help="build a part again even if it is there")
+    ap.add_argument("--mix", default="opal3", help="opal3, or opal4 (the same parts sized for Opal4's shares)")
     ap.add_argument("--no-decontam", action="store_true", help="skip the test-question check (not recommended)")
     a = ap.parse_args()
     term.quiet()
+    use_mix(a.mix)
     if a.cmd == "verdict":
         return verdict(Path(a.runs or default_dir("runs")))
     base = Path(a.data or default_dir("data"))
@@ -418,7 +434,7 @@ def main():
         return show(opal, a.part, a.n, a.seed)
     if a.cmd in ("plan", "check"):
         if a.cmd == "plan":
-            term.header("Opal3", f"a {term.tokens(a.run_tokens)}-token run · {opal}")
+            term.header(LABEL.capitalize(), f"a {term.tokens(a.run_tokens)}-token run · {opal}")
         raise SystemExit(0 if report(opal, a.run_tokens) or a.cmd == "plan" else 1)
     parts = [p for p in a.parts.split(",") if p]
     bad = [p for p in parts if p not in PARTS]

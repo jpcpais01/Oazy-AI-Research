@@ -374,7 +374,7 @@ def _label(cf: dict):
     c = cf.get("config") or {}
     if cf.get("model") == "gnosis2" and c.get("d_model") == 576:
         return (("Phi-135" if c.get("hint_rows") else "Bee-135") + (" + table" if c.get("book") else "")
-                + (" · Opal3" if "howto:" in str(cf.get("mix") or "") else ""))
+                + (" · Opal4" if "web:0.06" in str(cf.get("mix") or "") else " · Opal3" if "howto:" in str(cf.get("mix") or "") else ""))
     return None
 
 
