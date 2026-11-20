@@ -60,61 +60,96 @@ def product_dtype(x):
     return torch.get_autocast_dtype(x.device.type) if hasattr(torch, "get_autocast_dtype") else torch.bfloat16
 
 
-class _Norm(torch.autograd.Function):
-    """y = x * rsqrt(mean(x^2) + eps) over the last dim: worked out in 32-bit, written once in `dt`."""
-
-    @staticmethod
-    def forward(ctx, x, dt):
-        xf = x.float()
-        s = torch.rsqrt(xf.square().mean(-1, keepdim=True) + EPS)
-        ctx.save_for_backward(x, s)
-        return (xf * s).to(dt)
-
-    @staticmethod
-    def backward(ctx, g):
-        x, s = ctx.saved_tensors
-        xf, gf = x.float(), g.float()
-        m = (gf * xf).mean(-1, keepdim=True)                       # one number per word
-        return (s * (gf - xf * (s * s * m))).to(x.dtype), None
+def _rowmean(v, rows):
+    """A word's mean over its numbers. rows > 0: as sums of `rows` numbers, then their sum (the same mean: on a B200
+    the compiler's kernel for one sum over 576 numbers takes twice as long as for 9 sums of 64, bee6/redbench.py)."""
+    D = v.shape[-1]
+    if rows and D > rows and D % rows == 0:
+        return v.unflatten(-1, (D // rows, rows)).sum(-1).sum(-1, keepdim=True) / D
+    return v.mean(-1, keepdim=True)
 
 
-class _NormCanon(torch.autograd.Function):
-    """Canon(norm(x)) in one go: with n = norm(x),  c_t = n_t + sum_j w_j * n_(t-j)   (j = 0 .. k-1, causal).
+def _make(rows, back):
+    """The norm and the norm + Canon (forward and the hand-written way back), for one way of taking a word's mean.
+    rows: the piece size for the forward means and the plain norm's way back. back: the same on Canon's way back too
+    (kept apart: there the compiler's plan stores the mixed gradient to do it, so it is its own switch to time)."""
+    rb = rows if back else 0
+    class _Norm(torch.autograd.Function):
+        """y = x * rsqrt(mean(x^2) + eps) over the last dim: worked out in 32-bit, written once in `dt`."""
 
-    x (B, T, D) the stream; w (k, D) the Canon weights (32-bit). Only x and one norm scale per word are kept for the
-    way back; the normed stream and the mix are never stored in 32-bit."""
+        @staticmethod
+        def forward(ctx, x, dt):
+            xf = x.float()
+            s = torch.rsqrt(_rowmean(xf.square(), rows) + EPS)
+            ctx.save_for_backward(x, s)
+            return (xf * s).to(dt)
 
-    @staticmethod
-    def forward(ctx, x, w, dt):
-        k, T = w.shape[0], x.shape[1]
-        xf = x.float()
-        s = torch.rsqrt(xf.square().mean(-1, keepdim=True) + EPS)
-        n = xf * s
-        c = n * (1.0 + w[0])
-        for j in range(1, min(k, T)):                              # the word j back, where there is one
-            c = c + F.pad(n[:, :T - j] * w[j], (0, 0, j, 0))
-        ctx.save_for_backward(x, s, w)
-        return c.to(dt)
+        @staticmethod
+        def backward(ctx, g):
+            x, s = ctx.saved_tensors
+            xf, gf = x.float(), g.float()
+            m = _rowmean(gf * xf, rows)                                  # one number per word
+            return (s * (gf - xf * (s * s * m))).to(x.dtype), None
 
-    @staticmethod
-    def backward(ctx, g):
-        x, s, w = ctx.saved_tensors
-        k, T = w.shape[0], x.shape[1]
-        xf, gf = x.float(), g.float()
-        n = s * xf           # (written s * xf, not xf * s as on the way in: see "what is kept" at the end of this file)
-        gw = [(gf * n).sum((0, 1))]                                # d/dw_j = sum over words of g_t * n_(t-j)
-        ga = gf * (1.0 + w[0])                                     # d/dn_t = g_t + sum_j w_j * g_(t+j), written twice
-        gb = (1.0 + w[0]) * gf                                     # (ga feeds the mean, gb the result: see the end)
-        for j in range(1, k):
-            if j < T:
-                gw.append((gf * F.pad(n[:, :T - j], (0, 0, j, 0))).sum((0, 1)))
-                ga = ga + F.pad(gf[:, j:] * w[j], (0, 0, 0, j))
-                gb = gb + F.pad(w[j] * gf[:, j:], (0, 0, 0, j))
-            else:
-                gw.append(torch.zeros_like(gw[0]))
-        m = (ga * xf).mean(-1, keepdim=True)                       # the norm's way back, as in _Norm
-        gx = s * (gb - xf * (s * s * m))
-        return gx.to(x.dtype), torch.stack(gw).to(w.dtype), None
+
+    class _NormCanon(torch.autograd.Function):
+        """Canon(norm(x)) in one go: with n = norm(x),  c_t = n_t + sum_j w_j * n_(t-j)   (j = 0 .. k-1, causal).
+
+        x (B, T, D) the stream; w (k, D) the Canon weights (32-bit). Only x and one norm scale per word are kept for the
+        way back; the normed stream and the mix are never stored in 32-bit."""
+
+        @staticmethod
+        def forward(ctx, x, w, dt):
+            k, T = w.shape[0], x.shape[1]
+            xf = x.float()
+            s = torch.rsqrt(_rowmean(xf.square(), rows) + EPS)
+            n = xf * s
+            c = n * (1.0 + w[0])
+            for j in range(1, min(k, T)):                              # the word j back, where there is one
+                c = c + F.pad(n[:, :T - j] * w[j], (0, 0, j, 0))
+            ctx.save_for_backward(x, s, w)
+            return c.to(dt)
+
+        @staticmethod
+        def backward(ctx, g):
+            x, s, w = ctx.saved_tensors
+            k, T = w.shape[0], x.shape[1]
+            xf, gf = x.float(), g.float()
+            n = s * xf           # (written s * xf, not xf * s as on the way in: see "what is kept" at the end of this file)
+            gw = [(gf * n).sum((0, 1))]                                # d/dw_j = sum over words of g_t * n_(t-j)
+            ga = gf * (1.0 + w[0])                                     # d/dn_t = g_t + sum_j w_j * g_(t+j), written twice
+            gb = (1.0 + w[0]) * gf                                     # (ga feeds the mean, gb the result: see the end)
+            for j in range(1, k):
+                if j < T:
+                    gw.append((gf * F.pad(n[:, :T - j], (0, 0, j, 0))).sum((0, 1)))
+                    ga = ga + F.pad(gf[:, j:] * w[j], (0, 0, 0, j))
+                    gb = gb + F.pad(w[j] * gf[:, j:], (0, 0, 0, j))
+                else:
+                    gw.append(torch.zeros_like(gw[0]))
+            m = _rowmean(ga * xf, rb)                                    # the norm's way back, as in _Norm
+            gx = s * (gb - xf * (s * s * m))
+            return gx.to(x.dtype), torch.stack(gw).to(w.dtype), None
+
+    return _Norm, _NormCanon
+
+
+ROWS = (0, 4, 8, 16, 32, 64, 128)                    # the piece sizes on offer (made once, here: none is made mid-compile)
+_FNS = {(r, b): _make(r, b) for r in ROWS for b in (False, True) if r or not b}
+_Norm, _NormCanon = _FNS[0, False]
+
+
+TUNE = ("tune-kernels", "max-autotune-no-cudagraphs", "max-autotune")
+
+
+def compile_kw(mode):
+    """torch.compile's arguments for a compile_mode. "tune-kernels": the compiler times a few layouts of each of its own
+    kernels on this GPU and keeps the fastest (the matrix products and attention are left as they are; the first compile
+    takes longer, the choices are kept on disk for the next run). Anything else is torch's own mode of that name."""
+    if mode in ("", "default", None):
+        return {}
+    if mode == "tune-kernels":
+        return {"options": {"max_autotune_pointwise": True}}
+    return {"mode": mode}
 
 
 def swap(x):
@@ -161,14 +196,15 @@ def qk_rot(z, gain, cos2, sin2):
     return _QKRot.apply(z, gain, cos2, sin2)
 
 
-def norm(x, dt=None):
-    """F.rms_norm(x) over the last dim (32-bit arithmetic, 32-bit eps), written in `dt` (default: x's own format)."""
-    return _Norm.apply(x, dt or x.dtype)
+def norm(x, dt=None, rows=0):
+    """F.rms_norm(x) over the last dim (32-bit arithmetic, 32-bit eps), written in `dt` (default: x's own format).
+    rows: the mean taken in pieces of this many numbers (_rowmean)."""
+    return _FNS[rows, False][0].apply(x, dt or x.dtype)
 
 
-def norm_canon(x, w, dt=None):
-    """Canon(norm(x)) with Canon weights w (k, D), written in `dt` (default: x's own format)."""
-    return _NormCanon.apply(x, w, dt or x.dtype)
+def norm_canon(x, w, dt=None, rows=0, back=False):
+    """Canon(norm(x)) with Canon weights w (k, D), written in `dt` (default: x's own format). rows, back: see _make."""
+    return _FNS[rows, bool(back and rows)][1].apply(x, w, dt or x.dtype)
 
 
 def stream_dtype(cfg, x):

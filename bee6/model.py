@@ -83,6 +83,9 @@ class Bee6Config(Bee5Config):
     lean: int = 0                # bee6/lean.py: the same layers with less memory moved (a norm, or norm + Canon, is one
                                  # kernel that writes straight in the products' 16-bit form; its way back written by
                                  # hand). The same numbers up to 32-bit rounding order
+    lean_rows: int = 0           # with lean: a word's mean taken as sums of this many numbers, then their sum (64: the
+                                 # compiler's kernel for it is twice as fast on a B200). The same mean; 0 = one sum
+    lean_rows_back: int = 0      # with lean_rows: Canon's way back takes its mean in the same pieces (timed apart)
     stream16: int = 0            # with lean: the stream itself in bf16 while training on the GPU (as nanochat and the
                                  # speedrun do), so every add and mix on it moves half the bytes. Changes the rounding:
                                  # checked at start against the 32-bit stream on one batch
@@ -91,6 +94,9 @@ class Bee6Config(Bee5Config):
         super().__post_init__()
         if self.bloom == "on":
             self.bloom = BLOOM
+        if int(self.lean_rows) not in LEAN.ROWS:
+            raise ValueError(f"lean_rows must be one of {LEAN.ROWS}, not {self.lean_rows!r}")
+        self.lean_rows = int(self.lean_rows)
 
     def mod_set(self):
         return {int(s) for s in str(self.mod_layers).split(",") if s.strip() != ""}
@@ -225,7 +231,7 @@ class Block6(nn.Module):
     def _n(self, x):
         """The layer's norm of the stream. Lean: one kernel, written straight in the form the products read."""
         if self.cfg.lean:
-            return LEAN.norm(x, LEAN.product_dtype(x))
+            return LEAN.norm(x, LEAN.product_dtype(x), self.cfg.lean_rows)
         return norm(x)
 
     def delta(self, x, ve, cos, sin):
@@ -379,7 +385,11 @@ class Bee6(Bee5):
                                       f"experts {c.expert_top} of {c.experts} (bf16)" if c.experts else "",
                                       f"bloom {c.bloom}" if c.bloom else "", "CUDA graphs" if c.graphs else "",
                                       ("lean + bf16 stream" if c.stream16 else "lean") if c.lean else "",
-                                      "cuDNN attention" if c.attn_backend == "cudnn" else ""] if s)
+                                      (f"means in pieces of {c.lean_rows}" + (" (Canon's way back too)" if c.lean_rows_back else ""))
+                                      if c.lean and c.lean_rows else "",
+                                      "cuDNN attention" if c.attn_backend == "cudnn" else "",
+                                      "kernels tuned" if c.compile_mode == "tune-kernels" else
+                                      "torch's full tuning" if c.compile_mode in LEAN.TUNE else ""] if s)
 
     # ---------------------------------------------------------------- the body
     def _skip(self, j, x0):
@@ -411,7 +421,7 @@ class Bee6(Bee5):
         e, _ = self._embed(idx)
         if self.cfg.lean:                # (stream16: from here on the stream and the value tables' rows are bf16)
             sdt = LEAN.stream_dtype(self.cfg, e)
-            x0 = LEAN.norm(e, sdt)
+            x0 = LEAN.norm(e, sdt, self.cfg.lean_rows)
             ves = [t(idx).to(sdt) for t in self.ve]
         else:
             x0 = norm(e)
@@ -455,7 +465,7 @@ class Bee6(Bee5):
         return self._trunk_aux(idx)[0]
 
     def _norm(self, x):
-        return LEAN.norm(x) if self.cfg.lean else norm(x)
+        return LEAN.norm(x, None, self.cfg.lean_rows) if self.cfg.lean else norm(x)
 
     def enable_compile(self):
         import torch._dynamo
@@ -464,8 +474,15 @@ class Bee6(Bee5):
         if hasattr(cfg, "accumulated_cache_size_limit"):
             cfg.accumulated_cache_size_limit = max(cfg.accumulated_cache_size_limit, 256)
         mode = "reduce-overhead" if self.cfg.graphs else self.cfg.compile_mode
-        kw = {} if mode in ("", "default") else {"mode": mode}
-        self._compiled = torch.compile(self._trunk_aux, dynamic=False, **kw)
+        kw = LEAN.compile_kw(mode)
+        from bee5 import loss as L5
+        L5.set_compile(kw if mode in LEAN.TUNE else {})            # the loss step's kernels are tuned with the body's
+        try:
+            self._compiled = torch.compile(self._trunk_aux, dynamic=False, **kw)
+        except Exception as e:                                       # a torch without this switch: compile as usual
+            print(f"[bee6] compile_mode={mode} is not known to this torch ({type(e).__name__}: {str(e)[:120]}); compiling as usual", flush=True)
+            L5.set_compile({})
+            self._compiled = torch.compile(self._trunk_aux, dynamic=False)
 
     def losses(self, idx, targets, mentor=None, kd_weight=0.0):
         if self.token_select is not None:

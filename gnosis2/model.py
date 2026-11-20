@@ -123,7 +123,8 @@ class Block7(Block6):
     def _lean(self, x, canon):
         """Lean (bee6/lean.py): norm, then Canon, as one kernel that writes the form the products read."""
         dt = LEAN.product_dtype(x)
-        return LEAN.norm(x, dt) if canon is None else LEAN.norm_canon(x, canon.w, dt)
+        rows = self.cfg.lean_rows
+        return LEAN.norm(x, dt, rows) if canon is None else LEAN.norm_canon(x, canon.w, dt, rows, self.cfg.lean_rows_back)
 
     def dense(self, x, ve, cos, sin):
         if self.cfg.lean:

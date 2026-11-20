@@ -248,6 +248,8 @@ the start of a run and fall back if they disagree. On a B200 (Nov 20): lean 1.07
     python3 -m gnosis2.speed135 --only lean    # on the pod (~5 min): Bee-135 as it is, lean, lean + bf16 stream
     python3 -m gnosis2.speed135 --only kernels # on the pod: time per call for every kernel, and cuDNN's attention
     python3 -m bee6.redbench                   # on the pod (~3 min): the reduction kernels alone, written several ways
+    python3 -m gnosis2.speed135 --only tune    # on the pod: `lean_rows=64` (a word's mean as 9 sums of 64) and
+                                               # `compile_mode=tune-kernels` (the compiler tunes its own kernels)
 
 `docs/speed-tricks.md` ("Lean") has the numbers and what is left.
 

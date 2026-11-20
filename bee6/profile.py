@@ -93,6 +93,11 @@ def main(argv=None):
             fn()
         sync(dev)
         return (time.perf_counter() - t0) / n * 1000
+    sync(dev)
+    t0 = time.perf_counter()
+    one()                                                  # the first pass compiles (and, with a tune mode, tunes)
+    sync(dev)
+    first_s = time.perf_counter() - t0
     ms = {"whole pass": timed(one, a.steps)}
     model.zero_grad(set_to_none=True)
     trunk = getattr(model, "_compiled", None) or (model._trunk_aux if hasattr(model, "_trunk_aux") else model._trunk)
@@ -124,9 +129,10 @@ def main(argv=None):
     mfu = tok_s * flops_per_token(model, Tw) / 1e12 / pk if pk else None
     term.table(["", "ms", "share of a pass"], [[k, f"{v:.1f}", f"{v / ms['whole pass']:.0%}" if "optimizer" not in k else ""]
                                                for k, v in ms.items()], right=(1, 2))
-    term.rows([("speed", term.rate(tok_s) + (f"  ({mfu * 100:.0f}% of the chip's bf16 arithmetic)" if mfu else ""))])
+    term.rows([("speed", term.rate(tok_s) + (f"  ({mfu * 100:.0f}% of the chip's bf16 arithmetic)" if mfu else "")),
+               ("first pass", f"{first_s:,.0f} s (the compile, once a run)")])
 
-    res = {"gpu": gpu, "ms": ms, "tok_s": tok_s, "mfu": mfu, "kernels": [], "tokens": B * Tw,
+    res = {"gpu": gpu, "ms": ms, "tok_s": tok_s, "mfu": mfu, "kernels": [], "tokens": B * Tw, "first_s": first_s,
            "flops_per_token": flops_per_token(model, Tw), "params": sum(p.numel() for p in model.parameters())}
     if cuda and a.kernels > 0:
         from torch.profiler import profile, ProfilerActivity

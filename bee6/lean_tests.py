@@ -84,9 +84,12 @@ def main():
     x = torch.randn(3, 9, D, device=dev, requires_grad=True)
     g = torch.randn(3, 9, D, device=dev)
     ref, out = F.rms_norm(x, (D,)), L.norm(x)
+    rp = L.norm(x, None, 4)
+    gp, = torch.autograd.grad(rp, x, g)
     ga, = torch.autograd.grad(ref, x, g)
     gb, = torch.autograd.grad(out, x, g)
-    check("norm: F.rms_norm's values and its gradient", rel(ref, out) < 1e-6 and rel(ga, gb) < 1e-5, f"{rel(ref, out):.1e} / {rel(ga, gb):.1e}")
+    check("norm: F.rms_norm's values and its gradient (also with the mean taken in pieces)",
+          rel(ref, out) < 1e-6 and rel(ga, gb) < 1e-5 and rel(ref, rp) < 1e-6 and rel(ga, gp) < 1e-5, f"{rel(ref, out):.1e} / {rel(ga, gb):.1e}")
 
     canon = Canon(D, k).to(dev)
     with torch.no_grad():
@@ -175,6 +178,18 @@ def main():
     check(f"Bee-135's layers (small: {n_canon} Canons, value tables, shifted keys, skips, back-out): lean = plain, "
           f"the loss and every one of the {len(g0)} gradients", abs(l0 - l1) < 1e-5 and set(g0) == set(g1) and worst(g0, g1) < 1e-3,
           f"loss {l0:.6f} / {l1:.6f}; worst gradient {worst(g0, g1):.1e} apart")
+    bee.cfg.lean_rows = 16                                   # a word's mean in pieces (64 wide: 4 sums of 16)
+    (l0, g0), (l1, g1) = both(bee, xi, yi)
+    check("a word's mean taken in pieces (lean_rows): the same loss and gradients", abs(l0 - l1) < 1e-5 and worst(g0, g1) < 1e-3,
+          f"loss {l0:.6f} / {l1:.6f}; worst gradient {worst(g0, g1):.1e} apart")
+    bee.cfg.lean_rows_back = 1
+    (l0, g0), (l1, g1) = both(bee, xi, yi)
+    bee.cfg.lean_rows = bee.cfg.lean_rows_back = 0
+    check("and on Canon's way back too (lean_rows_back): the same loss and gradients", abs(l0 - l1) < 1e-5 and worst(g0, g1) < 1e-3,
+          f"loss {l0:.6f} / {l1:.6f}; worst gradient {worst(g0, g1):.1e} apart")
+    check("compile_mode=tune-kernels asks the compiler to tune its own kernels only",
+          L.compile_kw("tune-kernels") == {"options": {"max_autotune_pointwise": True}} and L.compile_kw("default") == {}
+          and L.compile_kw("max-autotune-no-cudagraphs") == {"mode": "max-autotune-no-cudagraphs"})
     routed = wake(Bee6(Bee6Config(**{**TINY, "mod_layers": "2,4"})).to(dev)).train()
     routed.set_progress(1.0)
     (l0, g0), (l1, g1) = both(routed, xi, yi)

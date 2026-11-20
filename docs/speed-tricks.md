@@ -581,6 +581,25 @@ ways. Whether the bf16 stream costs any loss still needs a short A/B run.
 own flash kernel (53 of 229 ms of kernels, the way back alone 36); cuDNN's took the layers from 131 ms to 105. It is
 checked against PyTorch's own choice on one batch at the start of a run, and falls back if they disagree.
 
+**The reductions, timed alone** (`python3 -m bee6.redbench`, B200, µs a call). Only a word's mean gains from being
+written another way: as 9 sums of 64, then their sum.
+
+| reduction | as now | compiler tuning it | 9 sums of 64 |
+|---|---|---|---|
+| a word's mean (the norm) | 47 | 36 | **22** |
+| the whole norm (mean + scaled copy) | 65 | **38** | 47 |
+| a word's mean of two streams (the norm's way back) | 64 | 37 | **28** |
+| a sum per channel (a Canon weight's gradient) | 41 | 38 | slower |
+| Canon's four gradients together | 146 | 127 | slower |
+| a sum per head channel (q/k gains) | 44 | 33 | 33 (pieces of 128 words) |
+
+So two switches, both the same numbers, both off until timed in the whole model: `lean_rows=64` (the norms' means in
+pieces of 64; `lean_rows_back=1` does the same on Canon's way back, where the compiler's plan stores the mixed gradient
+to do it) and `compile_mode=tune-kernels` (the compiler times a few layouts of each of its own kernels on this GPU and
+keeps the fastest; the matrix products and attention are left alone; the first compile takes longer).
+`python3 -m gnosis2.speed135 --only tune` times them on top of lean + bf16 stream + cuDNN attention, with the compile
+time of each. The per-word means are about a tenth of a pass, so this is a few percent at best.
+
 **What is left.** Per layer, ReLU² alone is 20 U (the MLP's hidden layer is 4 words wide and is read and written on
 its own, in and back). That cannot shrink in PyTorch: it needs the ReLU² inside the matrix product's own kernel
 (a hand-written GPU kernel, with a pod in the loop). After that the model is close to "products + attention" only,

@@ -7,6 +7,7 @@ at ~530k tokens a second on a B300, far under what its size suggests).
     python3 -m gnosis2.speed135 --only canon    # round 3: the Canon sum computed three ways (same model, same numbers)
     python3 -m gnosis2.speed135 --only lean     # round 4: lean (bee6/lean.py): the same model with less memory moved
     python3 -m gnosis2.speed135 --only kernels  # round 5: every kernel's calls and time per call, and cuDNN's attention
+    python3 -m gnosis2.speed135 --only tune     # round 6: a word's mean in pieces of 64, and the compiler tuning its kernels
 
 Each row builds the body at full size, compiles it, and times a training pass of 32 x 2,048 words on made-up tokens
 (bee6/profile.py): the whole pass, the layers alone, the word table + loss alone, one optimizer step. The first row
@@ -25,6 +26,7 @@ from .race135 import set_words
 
 WIDE = ("n_layer=12 d_model=832 attn_heads=13 attn_kv_heads=13 attn_head_dim=64 mlp_hidden=3328 mod_layers= "
         "key_offset=3,7,11 fp8=0").split()                 # half the layers, wider (a bigger model: read its "chip in use")
+L16C = ["lean=1", "stream16=1", "attn_backend=cudnn"]
 ROWS = [
     # key, name, switches on top of Bee-135's, extra profile options, what it tells
     ("bee", "Bee-135 (the race's arm B)", [], [], "the reference"),
@@ -53,7 +55,16 @@ ROWS = [
     # round 5 (--only kernels): attention on cuDNN's kernel (the B300 pod picked it by itself, the B200 pod PyTorch's flash)
     ("cudnn", "Bee-135, cuDNN attention", ["attn_backend=cudnn"], [], "same model, attention on cuDNN's kernel"),
     ("lean16c", "Bee-135 lean + bf16 stream, cuDNN attention", ["lean=1", "stream16=1", "attn_backend=cudnn"], [], "the two together"),
+    # round 6 (--only tune): on top of lean16c. bee6/redbench.py on a B200: a word's mean over 576 numbers is twice as fast
+    # as 9 sums of 64, and the compiler's own tuning (it times a few layouts of each kernel) gains 1.1x to 1.7x a kernel
+    ("rows", "lean16c, a word's mean in pieces of 64", L16C + ["lean_rows=64"], [], "same numbers: the norms' means as 9 sums of 64"),
+    ("rowsb", "lean16c, pieces of 64, Canon's way back too", L16C + ["lean_rows=64", "lean_rows_back=1"], [], "the same on Canon's way back"),
+    ("tunek", "lean16c, the compiler tunes its kernels", L16C + ["compile_mode=tune-kernels"], [], "same numbers: each compiled kernel's layout timed on this GPU"),
+    ("rowstunek", "lean16c, pieces of 64 + tuned kernels", L16C + ["lean_rows=64", "compile_mode=tune-kernels"], [], "the two together"),
+    ("tune", "lean16c, torch's full tuning", L16C + ["compile_mode=max-autotune-no-cudagraphs"], [], "the matrix products tuned as well (a long compile)"),
 ]
+TUNE = "bee,lean16c,rows,rowsb,tunek,rowstunek,tune"
+LISTS = {"lean16c": "40", "rows": "25", "tunek": "25"}          # round 6: the rows whose kernels are listed
 CANON = "bee,canon_inplace,canon_conv,nocanon"
 LEAN = "bee,lean,lean16"
 KERNELS = "bee,lean16,cudnn,lean16c"
@@ -78,7 +89,7 @@ def main(argv=None):
     from bee6 import profile
     from oazy import term
     from oazy.data import default_dir
-    a.only = {"glue": GLUE, "canon": CANON, "lean": LEAN, "kernels": KERNELS}.get(a.only, a.only)
+    a.only = {"glue": GLUE, "canon": CANON, "lean": LEAN, "kernels": KERNELS, "tune": TUNE}.get(a.only, a.only)
     pick = set(a.only.split(",")) if a.only else {k for k, *_ in ROWS[:8]}
     base = a.set if a.set is not None else set_words("b")
     phi = (a.set + ["n_ve=0", "hint_rows=73000", "hint_dim=32", "hint_heads=4", "hint_orders=2,3"]) if a.set is not None else set_words("c")
@@ -88,7 +99,7 @@ def main(argv=None):
             continue
         sets = phi if extra is None else (extra if key == "wide" and a.set is None else base + extra)
         term.header(f"{name}", why, color="blue")
-        argv2 = ["--model", "gnosis2", "--preset", a.preset, "--steps", str(a.steps), "--kernels", "40" if not got else ("12" if a.only == LEAN else "40" if a.only == KERNELS and key in ("lean16", "lean16c") else "0"),
+        argv2 = ["--model", "gnosis2", "--preset", a.preset, "--steps", str(a.steps), "--kernels", LISTS.get(key, "0") if a.only == TUNE else "40" if not got else ("12" if a.only == LEAN else "40" if a.only == KERNELS and key in ("lean16", "lean16c") else "0"),
                  *(["--device", a.device] if a.device else []), *(["--runs", a.runs] if a.runs else []), *opts, "--set", *sets]
         try:
             r = profile.main(argv2)
@@ -110,19 +121,19 @@ def main(argv=None):
     body = []
     for key, name, why, r, err in got:
         if not r:
-            body.append([name, "did not run", "", "", "", "", "", "", err or ""])
+            body.append([name, "did not run", "", "", "", "", "", "", err or "", ""])
             continue
         ms = r["ms"]
         body.append([name, f"{r['params'] / 1e6:.1f}M", term.rate(r["tok_s"]), f"{r['tok_s'] / ref['tok_s']:.2f}x",
                      f"{ms['layers (forward + backward)'] / ms['whole pass']:.0%}", f"{ms['word table + loss'] / ms['whole pass']:.0%}",
                      f"{ms['optimizer step (once per 8 passes)']:.0f} ms", term.rate(run_speed(r)),
-                     (f"{r['mfu'] * 100:.0f}%" if r.get("mfu") else "-")])
+                     (f"{r['mfu'] * 100:.0f}%" if r.get("mfu") else "-"), f"{r.get('first_s', 0):,.0f} s"])
     term.header("The 135M bodies' speed", f"{ok[0][3]['gpu']} · one training pass, made-up tokens · a step every {a.passes} passes")
-    term.table(["", "size", "pass speed", "vs Bee-135", "layers", "table + loss", "optimizer step", "run speed", "chip in use"],
-               body, right=(1, 2, 3, 4, 5, 6, 7, 8))
+    term.table(["", "size", "pass speed", "vs Bee-135", "layers", "table + loss", "optimizer step", "run speed", "chip in use", "first pass"],
+               body, right=(1, 2, 3, 4, 5, 6, 7, 8, 9))
     term.out(term.c("  layers / table + loss = their share of a pass, each timed alone (they need not add to 100%). run speed = with "
-                    "the optimizer step, without tests and data loading: a real run sits a little under it.", "dim"))
-    out = Path(a.runs or default_dir("runs")) / ({GLUE: "speed135-glue.json", CANON: "speed135-canon.json", LEAN: "speed135-lean.json", KERNELS: "speed135-kernels.json"}.get(a.only, "speed135-book.json" if a.book else "speed135.json"))
+                    "the optimizer step, without tests and data loading: a real run sits a little under it. first pass = the compile, paid once a run.", "dim"))
+    out = Path(a.runs or default_dir("runs")) / ({GLUE: "speed135-glue.json", CANON: "speed135-canon.json", LEAN: "speed135-lean.json", KERNELS: "speed135-kernels.json", TUNE: "speed135-tune.json"}.get(a.only, "speed135-book.json" if a.book else "speed135.json"))
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps([{"key": k, "name": n, "result": r, "error": e} for k, n, _, r, e in got], indent=1, default=str))
