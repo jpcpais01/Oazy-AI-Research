@@ -212,6 +212,33 @@ def opal3_text_mix(base: str = OPAL_TEXT_MIX) -> str:
 OPAL3_TEXT_MIX = opal3_text_mix()
 
 
+# Opal4 (Nov 20): Opal3 re-balanced for a long run (50B), after Bee-135's 12B run on Opal3 (HellaSwag 38.3, PIQA 67.4,
+# but ARC-Easy flat at 49.8). Three changes, and no new kind of text:
+#   school web back up     FineWeb-Edu 24 -> 34% of the main part; in the cool-down FineWeb-Edu 24% + DCLM-Edu 8%
+#                          (Opal3: 10% + 1%), so school web no longer falls to 11% just when the model learns most
+#   plain web 10 -> 6%     it helped PIQA / HellaSwag; ARC paid for the school text it replaced
+#   small parts sized to what exists   a 50B run would read Opal3's science 12 times and its scenes 25 times; here every
+#                          small part's share is what its sources can give at about 2 readings (the build's table shows it)
+# and the cool-down's chat is 10% (Opal: 27%): the chat sources hold ~1.1B tokens, a 50B run's cool-down is 15B.
+# The religious text keeps its exact shares (2% in all). FineWeb-Edu takes whatever is left, so the shares sum to 1.
+OPAL4_PARTS = {"howto": 0.030, "stories": 0.020, "facts": 0.004, "science": 0.002, "scenes": 0.0002, "web": 0.06}
+_OPAL4_KEEP = {"religion": 0.0195, "faith": 0.0005, "creed": 0.0001}
+_OPAL4_MAIN = {"dclm": 0.16, "cosmo": 0.10, "books": 0.06, "wiki": 0.06, "math": 0.07, "code": 0.06, "chat": 0.01}
+_OPAL4_COOL = {"dclm": 0.08, "cosmo": 0.13, "books": 0.06, "wiki": 0.07, "math": 0.12, "code": 0.06, "chat": 0.10}
+
+
+def opal4_text_mix() -> str:
+    out = []
+    for at, body in ((0, _OPAL4_MAIN), (0.8, _OPAL4_COOL)):       # the trainer moves 0.8 to where the learning rate falls
+        w = {**body, **_OPAL4_KEEP, **OPAL4_PARTS}
+        w = {"fwe": 1 - sum(w.values()), **w}
+        out.append(",".join(f"{k}:{v:.6g}" for k, v in w.items()) + f"@{at:g}")
+    return ";".join(out)
+
+
+OPAL4_TEXT_MIX = opal4_text_mix()
+
+
 def emerald_mix(w=EMERALD_SHARE, base: str = SADO_MIX, name: str = "world") -> str:
     """Emerald (oazy/emerald.py): Sado with the world's practice text. w = the average share (3w for the first 20%,
     then w/2 to the end, cool-down included: 0.10 -> 30% then 5%; 0 = plain Sado; like --world, oazy/worldmix.py),
@@ -231,7 +258,7 @@ def emerald_mix(w=EMERALD_SHARE, base: str = SADO_MIX, name: str = "world") -> s
 
 
 def resolve_mix(text):
-    """A mix by name ("tagus", "v1", "opal", "opal:0.30:0.1,0.15", "emerald", "emerald:0.05", "emerald:flat:0.20") or written out."""
+    """A mix by name ("tagus", "v1", "opal", "opal:0.30:0.1,0.15", "emerald", "emerald:0.05", "emerald:flat:0.20", "opal3", "opal4") or written out."""
     if text == "opal2":
         return OPAL2_MIX
     if text and (text == "opal3" or text.startswith("opal3:")):
@@ -241,6 +268,13 @@ def resolve_mix(text):
         except ValueError:
             pass
         return opal_mix(spec, OPAL3_TEXT_MIX)
+    if text and (text == "opal4" or text.startswith("opal4:")):
+        spec = text.split(":", 1)[1] if ":" in text else "flat:0"
+        try:
+            spec = float(spec)
+        except ValueError:
+            pass
+        return opal_mix(spec, OPAL4_TEXT_MIX)
     if text and (text in ("opal", "opal100") or text.startswith(("opal:", "opal100:"))):
         base = OPAL100_TEXT_MIX if text.startswith("opal100") else OPAL_TEXT_MIX
         spec = text.split(":", 1)[1] if ":" in text else OPAL_PLAN

@@ -421,9 +421,9 @@ def yardstick(base: Path, name: str):
     return None
 
 
-def needs(run_tokens: float, cooldown: float = 0.3, margin: float = 0.05):
+def needs(run_tokens: float, cooldown: float = 0.3, margin: float = 0.05, mix: str = SADO_MIX):
     from .tagus import needs as tneeds
-    return {k: v for k, v in tneeds(run_tokens, with_cooldown(SADO_MIX, 1 - cooldown), margin).items()
+    return {k: v for k, v in tneeds(run_tokens, with_cooldown(mix, 1 - cooldown), margin).items()
             if k not in ("best", "faith", "religion", "creed")}   # made by oazy/faith.py and oazy/religion.py
 
 
@@ -502,6 +502,7 @@ def main():
     ap.add_argument("--fwe-min-score", type=float, default=3.0, help="FineWeb-Edu's teaching-value grade to keep (0-5)")
     ap.add_argument("--no-decontam", action="store_true", help="skip the test-question check (not recommended)")
     ap.add_argument("--workers", type=int, default=0)
+    ap.add_argument("--mix", default=None, help="size the parts for another mix of the same sources (opal4: oazy/mix.py)")
     ap.add_argument("--plan", action="store_true", help="only show what a run reads and what is there")
     ap.add_argument("--ratios", action="store_true", help="only (re)write the token ratios into each part's meta.json")
     a = ap.parse_args()
@@ -511,21 +512,41 @@ def main():
     if a.ratios:
         term.header("Sado", "token ratios (for losses on the GPT-2 scale)")
         return token_ratios(sado)
-    want = needs(a.run_tokens, a.cooldown, a.margin)
-    term.header("Sado", f"a {term.tokens(a.run_tokens)}-token run ({a.cooldown:.0%} cool-down), + {a.margin:.0%} margin · {sado}")
+    from .mix import resolve_mix
+    mix = resolve_mix(a.mix) if a.mix else SADO_MIX
+    want = needs(a.run_tokens, a.cooldown, a.margin, mix)
+    term.header("Opal's own parts" if a.into != "sado" else "Sado", f"a {term.tokens(a.run_tokens)}-token run ({a.cooldown:.0%} cool-down), + {a.margin:.0%} margin · {sado}")
     pick = set(a.sources.split(","))
     todo, body = [], []
     for k in ORDER:
         if k not in want:
             continue
         h = have(sado, k)
-        ok = h >= want[k] * 0.98
+        try:                                           # a source that ran out last time holds all there is: not built again
+            out_of = bool(json.loads((folder(sado, k) / "meta.json").read_text()).get("exhausted")) and h > 0
+        except (OSError, ValueError):
+            out_of = False
+        ok = h >= want[k] * 0.98 or out_of
         body.append([k, term.tokens(want[k]), term.tokens(h), term.bar(h / max(want[k], 1), 12, "green" if ok else "blue"),
+                     term.c(f"all there is (read {want[k] / h:.1f}x)", "yellow") if out_of and h < want[k] * 0.98 else
                      term.c("✓ ready", "green") if ok else term.c("to build" if k in pick else "skipped", "yellow")])
         if not ok and k in pick:
             todo.append(k)
     term.table(["source", "needs", "there", "", ""], body, right=(1, 2))
     term.out(term.c(f"  total {term.tokens(sum(want.values()))} tokens, about {sum(want.values()) * 2 / 1e9:.0f} GB on disk", "dim"))
+    grow = sum(max(0, want[k] - have(sado, k)) for k in todo) * 2        # a part built again replaces its old file
+    try:
+        sado.mkdir(parents=True, exist_ok=True)
+        free = shutil.disk_usage(sado).free
+    except OSError:
+        free = None
+    if todo and free is not None:
+        short_disk = grow > free * 0.97
+        term.out(term.c(f"  disk: the parts to build add about {grow / 1e9:.0f} GB; {free / 1e9:.0f} GB are free"
+                        + ("  ✗ NOT ENOUGH: free space or make the volume bigger first" if short_disk else ""),
+                        "red" if short_disk else "dim"))
+        if short_disk and not a.plan:
+            raise SystemExit(1)
     if a.plan or not todo:
         return
     workers = a.workers or max(1, min(48, cpu_limit() - 1))
@@ -560,9 +581,9 @@ def main():
         build_one(base, sado, k, want[k], int(a.val_tokens), bench, seen, workers, a.fwe_min_score, overall, f"{i + 1}/{len(todo)} · ")
     token_ratios(sado)
     short = [k for k in want if have(sado, k) < want[k] * 0.98]
-    (sado / "sado.json").write_text(json.dumps({"run_tokens": a.run_tokens, "cooldown": a.cooldown, "mix": SADO_MIX,
+    (sado / "sado.json").write_text(json.dumps({"run_tokens": a.run_tokens, "cooldown": a.cooldown, "mix": mix,
                                                 "built": time.strftime("%Y-%m-%d %H:%M")}, indent=1))
-    term.out(term.c(f"━━ ✓ Sado is ready ({term.duration(time.time() - overall.t0)})", "green", "bold") if not short else
+    term.out(term.c(f"━━ ✓ {'Opal' if a.into != 'sado' else 'Sado'}'s own parts are ready ({term.duration(time.time() - overall.t0)})", "green", "bold") if not short else
              term.c(f"━━ still short: {', '.join(short)} (a run repeats a little of those; fine)", "yellow"))
 
 
