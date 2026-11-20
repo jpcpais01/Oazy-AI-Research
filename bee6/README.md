@@ -240,11 +240,14 @@ kernels (norms, Canon mixes, adds, casts) moved two and a half times the bytes o
 (one kernel per norm or norm + Canon, written straight in the products' bf16; queries and keys normed and rotated in one
 kernel; the way back by hand; a loss step that reads the scores 3 times instead of 12). Same numbers, same checkpoint.
 `stream16=1` on top keeps the stream itself in bf16 (it changes the rounding a little). Both are checked on one batch at
-the start of a run and fall back if they disagree. Not timed on a GPU yet.
+the start of a run and fall back if they disagree. On a B200 (Nov 20): lean 1.07x, with the bf16 stream 1.12x, and with
+`attn_backend=cudnn` on top 1.37x (585k tokens a second against 426k).
 
     python3 -m bee6.traffic                    # no GPU: the bytes each setting moves per word, kernel by kernel
     python3 -m bee6.lean_tests                 # lean = plain: the loss and every gradient
     python3 -m gnosis2.speed135 --only lean    # on the pod (~5 min): Bee-135 as it is, lean, lean + bf16 stream
+    python3 -m gnosis2.speed135 --only kernels # on the pod: time per call for every kernel, and cuDNN's attention
+    python3 -m bee6.redbench                   # on the pod (~3 min): the reduction kernels alone, written several ways
 
 `docs/speed-tricks.md` ("Lean") has the numbers and what is left.
 
