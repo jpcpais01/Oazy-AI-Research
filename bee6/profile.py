@@ -27,8 +27,12 @@ from oazy.profile import fake_batch, peak_tflops, sync
 
 KINDS = [("FP8 products", r"scaled_mm|f8|fp8|e4m3|e5m2"), ("attention", r"flash|fmha|attention|sdpa|cudnn"),
          ("matrix products", r"gemm|cutlass|sm\d+_xmma|nvjet|cublas|matmul|splitk"),
-         ("fused elementwise (compiled)", r"triton"), ("copies, casts", r"copy|cast|cat|elementwise|vectorized|reduce"),
+         ("compiled reductions (means, sums)", r"triton_(red|per)"), ("fused elementwise (compiled)", r"triton"),
+         ("copies, casts", r"copy|cast|cat|elementwise|vectorized|reduce"),
          ("optimizer", r"adam|multi_tensor|foreach")]
+
+
+WRAPPERS = re.compile(r"autograd::|Backward\b|^_HeadLoss|Command Buffer|cuLaunch|cudaLaunch|CompiledFunction|Torch-Compiled|ProfilerStep|^aten::")
 
 
 def kind_of(name):
@@ -71,7 +75,7 @@ def main(argv=None):
     from oazy.tok import eot_id
     x, y = fake_batch(B, Tw, cfg.vocab_size, eot_id(cfg.tokenizer), dev)
     opt = T.make_optimizer(model, 1e-4, dev, "muon", 0.03, 0.1)
-    term.header(f"{T.NICE[a.model]} profile", gpu)
+    term.header(f"{T.NICE[a.model]} profile", f"{gpu} · torch {torch.__version__}")
     term.rows([("pass", f"{B} x {Tw} words = {B * Tw:,} tokens"), ("body", model.layout()),
                ("switches", model.speed_text() if hasattr(model, "speed_text") else "-")])
 
@@ -133,26 +137,40 @@ def main(argv=None):
         model.zero_grad(set_to_none=True)
         per = defaultdict(float)
         names = defaultdict(float)
-        total = 0.0
+        calls = defaultdict(float)
+        kcalls = defaultdict(float)
+        total = wrap = 0.0
         for e in prof.key_averages():
             t = getattr(e, "device_time_total", None)
             if t is None:
                 t = getattr(e, "cuda_time_total", 0.0)
-            if not t or e.key.startswith(("aten::", "ProfilerStep", "cudaLaunch", "Torch-Compiled", "CompiledFunction")):
+            if not t:
                 continue
             t = t / 1000 / a.steps          # ms per pass
+            if WRAPPERS.search(e.key):      # not kernels: autograd's and the loss's wrappers (their kernels are counted
+                wrap += t                   # on their own lines) and the waits to launch
+                continue
+            n = float(getattr(e, "count", 0) or 0) / a.steps
             per[kind_of(e.key)] += t
+            kcalls[kind_of(e.key)] += n
             names[e.key] += t
+            calls[e.key] += n
             total += t
-        term.header("GPU time by kind", f"{total:.0f} ms of kernels per pass")
-        term.table(["kind", "ms", "share"], [[k, f"{v:.1f}", f"{v / max(total, 1e-9):.0%}"] for k, v in
-                                             sorted(per.items(), key=lambda kv: -kv[1])], right=(1, 2))
+        term.header("GPU time by kind", f"{total:.0f} ms of kernels per pass, {sum(kcalls.values()):,.0f} kernel calls "
+                                        f"(the trace itself slows them; wrappers and launch waits, {wrap:.0f} ms, left out)")
+        term.table(["kind", "ms", "share", "calls a pass", "µs a call"],
+                   [[k, f"{v:.1f}", f"{v / max(total, 1e-9):.0%}", f"{kcalls[k]:,.0f}", f"{v * 1000 / max(kcalls[k], 1e-9):.0f}"]
+                    for k, v in sorted(per.items(), key=lambda kv: -kv[1])], right=(1, 2, 3, 4))
         top = sorted(names.items(), key=lambda kv: -kv[1])[:a.kernels]
         term.header(f"the {len(top)} slowest kernels")
-        term.table(["kernel", "ms", "share"], [[(k[:90] + "…") if len(k) > 90 else k, f"{v:.1f}", f"{v / max(total, 1e-9):.0%}"]
-                                              for k, v in top], right=(1, 2))
-        res["kernels"] = [{"name": k, "ms": v, "kind": kind_of(k)} for k, v in top]
+        term.table(["kernel", "ms", "share", "calls", "µs a call"],
+                   [[(k[:90] + "…") if len(k) > 90 else k, f"{v:.1f}", f"{v / max(total, 1e-9):.0%}", f"{calls[k]:,.0f}",
+                     f"{v * 1000 / max(calls[k], 1e-9):.0f}"] for k, v in top], right=(1, 2, 3, 4))
+        res["kernels"] = [{"name": k, "ms": v, "kind": kind_of(k), "calls": calls[k]} for k, v in
+                          sorted(names.items(), key=lambda kv: -kv[1])]             # (all of them in the file)
         res["by_kind"] = dict(per)
+        res["calls_by_kind"] = dict(kcalls)
+        res["wrappers_ms"] = wrap
         if a.trace:
             out = Path(a.runs or default_dir("runs")) / f"profile-{a.model}.json.gz"
             prof.export_chrome_trace(str(out))
