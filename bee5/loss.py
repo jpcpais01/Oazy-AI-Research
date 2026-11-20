@@ -140,6 +140,16 @@ _compiled = None
 _compiled_lean = None
 
 
+_compile_kw: dict = {}
+
+
+def set_compile(kw):
+    """torch.compile's extra arguments for the loss step (bee6/lean.py compile_kw): a change drops what was compiled."""
+    global _compiled, _compiled_lean, _compile_kw
+    if dict(kw) != _compile_kw:
+        _compile_kw, _compiled, _compiled_lean = dict(kw), None, None
+
+
 def slice_fn(device, lean=False):
     global _compiled, _compiled_lean
     plain = _slice_lean if lean else _slice
@@ -147,10 +157,10 @@ def slice_fn(device, lean=False):
         return plain
     if lean:
         if _compiled_lean is None:
-            _compiled_lean = torch.compile(_slice_lean, dynamic=False)
+            _compiled_lean = torch.compile(_slice_lean, dynamic=False, **_compile_kw)
         return _compiled_lean
     if _compiled is None:
-        _compiled = torch.compile(_slice, dynamic=False)
+        _compiled = torch.compile(_slice, dynamic=False, **_compile_kw)
     return _compiled
 
 
