@@ -83,9 +83,9 @@ class Bee6Config(Bee5Config):
     lean: int = 0                # bee6/lean.py: the same layers with less memory moved (a norm, or norm + Canon, is one
                                  # kernel that writes straight in the products' 16-bit form; its way back written by
                                  # hand). The same numbers up to 32-bit rounding order
-    lean_rows: int = 0           # with lean: a word's mean taken as sums of this many numbers, then their sum (64: the
+    lean_rows: int = 64          # with lean: a word's mean taken as sums of this many numbers, then their sum (the
                                  # compiler's kernel for it is twice as fast on a B200). The same mean; 0 = one sum
-    lean_rows_back: int = 0      # with lean_rows: Canon's way back takes its mean in the same pieces (timed apart)
+    lean_rows_back: int = 1      # with lean_rows: Canon's way back takes its mean in the same pieces
     stream16: int = 0            # with lean: the stream itself in bf16 while training on the GPU (as nanochat and the
                                  # speedrun do), so every add and mix on it moves half the bytes. Changes the rounding:
                                  # checked at start against the 32-bit stream on one batch
@@ -385,11 +385,8 @@ class Bee6(Bee5):
                                       f"experts {c.expert_top} of {c.experts} (bf16)" if c.experts else "",
                                       f"bloom {c.bloom}" if c.bloom else "", "CUDA graphs" if c.graphs else "",
                                       ("lean + bf16 stream" if c.stream16 else "lean") if c.lean else "",
-                                      (f"means in pieces of {c.lean_rows}" + (" (Canon's way back too)" if c.lean_rows_back else ""))
-                                      if c.lean and c.lean_rows else "",
                                       "cuDNN attention" if c.attn_backend == "cudnn" else "",
-                                      "kernels tuned" if c.compile_mode == "tune-kernels" else
-                                      "torch's full tuning" if c.compile_mode in LEAN.TUNE else ""] if s)
+                                      "kernels tuned by torch" if c.compile_mode in LEAN.TUNE else ""] if s)
 
     # ---------------------------------------------------------------- the body
     def _skip(self, j, x0):

@@ -7,7 +7,7 @@ at ~530k tokens a second on a B300, far under what its size suggests).
     python3 -m gnosis2.speed135 --only canon    # round 3: the Canon sum computed three ways (same model, same numbers)
     python3 -m gnosis2.speed135 --only lean     # round 4: lean (bee6/lean.py): the same model with less memory moved
     python3 -m gnosis2.speed135 --only kernels  # round 5: every kernel's calls and time per call, and cuDNN's attention
-    python3 -m gnosis2.speed135 --only tune     # round 6: a word's mean in pieces of 64, and the compiler tuning its kernels
+    python3 -m gnosis2.speed135 --only tune     # round 6: lean's means in pieces of 64 or not, and torch tuning the kernels
 
 Each row builds the body at full size, compiles it, and times a training pass of 32 x 2,048 words on made-up tokens
 (bee6/profile.py): the whole pass, the layers alone, the word table + loss alone, one optimizer step. The first row
@@ -55,16 +55,13 @@ ROWS = [
     # round 5 (--only kernels): attention on cuDNN's kernel (the B300 pod picked it by itself, the B200 pod PyTorch's flash)
     ("cudnn", "Bee-135, cuDNN attention", ["attn_backend=cudnn"], [], "same model, attention on cuDNN's kernel"),
     ("lean16c", "Bee-135 lean + bf16 stream, cuDNN attention", ["lean=1", "stream16=1", "attn_backend=cudnn"], [], "the two together"),
-    # round 6 (--only tune): on top of lean16c. bee6/redbench.py on a B200: a word's mean over 576 numbers is twice as fast
-    # as 9 sums of 64, and the compiler's own tuning (it times a few layouts of each kernel) gains 1.1x to 1.7x a kernel
-    ("rows", "lean16c, a word's mean in pieces of 64", L16C + ["lean_rows=64"], [], "same numbers: the norms' means as 9 sums of 64"),
-    ("rowsb", "lean16c, pieces of 64, Canon's way back too", L16C + ["lean_rows=64", "lean_rows_back=1"], [], "the same on Canon's way back"),
-    ("tunek", "lean16c, the compiler tunes its kernels", L16C + ["compile_mode=tune-kernels"], [], "same numbers: each compiled kernel's layout timed on this GPU"),
-    ("rowstunek", "lean16c, pieces of 64 + tuned kernels", L16C + ["lean_rows=64", "compile_mode=tune-kernels"], [], "the two together"),
-    ("tune", "lean16c, torch's full tuning", L16C + ["compile_mode=max-autotune-no-cudagraphs"], [], "the matrix products tuned as well (a long compile)"),
+    # round 6 (--only tune): on top of lean16c. Measured on a B200 (Nov 20): pieces of 64 for the norms' means 592k to 596k
+    # against 586k (now lean's default: "norows" is the old way), torch's own tuning 616k, kernel-only tuning nothing
+    ("norows", "lean16c, a word's mean as one sum", L16C + ["lean_rows=0"], [], "lean as it was before the means were cut in pieces of 64"),
+    ("tune", "lean16c, kernels tuned by torch", L16C + ["compile_mode=max-autotune-no-cudagraphs"], [], "torch times several layouts of every kernel on this GPU (a compile of minutes)"),
 ]
-TUNE = "bee,lean16c,rows,rowsb,tunek,rowstunek,tune"
-LISTS = {"lean16c": "40", "rows": "25", "tunek": "25"}          # round 6: the rows whose kernels are listed
+TUNE = "bee,norows,lean16c,tune"
+LISTS = {"tune": "40"}          # round 6: the rows whose kernels are listed
 CANON = "bee,canon_inplace,canon_conv,nocanon"
 LEAN = "bee,lean,lean16"
 KERNELS = "bee,lean16,cudnn,lean16c"

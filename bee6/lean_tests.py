@@ -178,18 +178,16 @@ def main():
     check(f"Bee-135's layers (small: {n_canon} Canons, value tables, shifted keys, skips, back-out): lean = plain, "
           f"the loss and every one of the {len(g0)} gradients", abs(l0 - l1) < 1e-5 and set(g0) == set(g1) and worst(g0, g1) < 1e-3,
           f"loss {l0:.6f} / {l1:.6f}; worst gradient {worst(g0, g1):.1e} apart")
-    bee.cfg.lean_rows = 16                                   # a word's mean in pieces (64 wide: 4 sums of 16)
-    (l0, g0), (l1, g1) = both(bee, xi, yi)
-    check("a word's mean taken in pieces (lean_rows): the same loss and gradients", abs(l0 - l1) < 1e-5 and worst(g0, g1) < 1e-3,
-          f"loss {l0:.6f} / {l1:.6f}; worst gradient {worst(g0, g1):.1e} apart")
-    bee.cfg.lean_rows_back = 1
-    (l0, g0), (l1, g1) = both(bee, xi, yi)
-    bee.cfg.lean_rows = bee.cfg.lean_rows_back = 0
-    check("and on Canon's way back too (lean_rows_back): the same loss and gradients", abs(l0 - l1) < 1e-5 and worst(g0, g1) < 1e-3,
-          f"loss {l0:.6f} / {l1:.6f}; worst gradient {worst(g0, g1):.1e} apart")
-    check("compile_mode=tune-kernels asks the compiler to tune its own kernels only",
-          L.compile_kw("tune-kernels") == {"options": {"max_autotune_pointwise": True}} and L.compile_kw("default") == {}
-          and L.compile_kw("max-autotune-no-cudagraphs") == {"mode": "max-autotune-no-cudagraphs"})
+    keep = (bee.cfg.lean_rows, bee.cfg.lean_rows_back)
+    for rows, back, what in ((16, 0, "a word's mean taken in pieces (lean_rows)"), (16, 1, "and on Canon's way back too (lean_rows_back)"),
+                             (0, 0, "and as one sum (lean_rows=0)")):
+        bee.cfg.lean_rows, bee.cfg.lean_rows_back = rows, back           # 64 wide: 4 sums of 16
+        (l0, g0), (l1, g1) = both(bee, xi, yi)
+        check(f"{what}: the same loss and gradients", abs(l0 - l1) < 1e-5 and worst(g0, g1) < 1e-3,
+              f"loss {l0:.6f} / {l1:.6f}; worst gradient {worst(g0, g1):.1e} apart")
+    bee.cfg.lean_rows, bee.cfg.lean_rows_back = keep
+    check("pieces of 64 are lean's default, and a width they do not divide keeps the one sum",
+          keep == (64, 1) and torch.equal(L.norm(torch.ones(2, 3, 100), None, 64), L.norm(torch.ones(2, 3, 100), None, 0)))
     routed = wake(Bee6(Bee6Config(**{**TINY, "mod_layers": "2,4"})).to(dev)).train()
     routed.set_progress(1.0)
     (l0, g0), (l1, g1) = both(routed, xi, yi)
@@ -241,17 +239,18 @@ def main():
     bee.cfg.lean, bee.cfg.stream16 = 0, 1
     bee.startup_check(dev, said.append)
     check("stream16 without lean is refused, not half-applied", bee.cfg.stream16 == 0 and bee.cfg.lean == 0)
-    keep = L._Norm.forward
+    Nm = L._FNS[bee.cfg.lean_rows, False][0]                 # the norm this body runs
+    keep = Nm.forward
 
     def off(ctx, x_, dt):                                    # a lean norm that is wrong: the check must catch it
         out_ = keep(ctx, x_, dt)
         return out_ + 0.5 * torch.randn_like(out_)
-    L._Norm.forward = staticmethod(off)
+    Nm.forward = staticmethod(off)
     try:
         bee.cfg.lean, bee.cfg.stream16 = 1, 0
         bee.startup_check(dev, said.append)
     finally:
-        L._Norm.forward = staticmethod(keep)
+        Nm.forward = staticmethod(keep)
     check("a lean pass that disagrees is caught at the start: the layers run the plain way", bee.cfg.lean == 0, said[-1])
     bee.cfg.lean = 1
     sd = copy.deepcopy(bee.state_dict())

@@ -487,7 +487,7 @@ These sped up models we have retired (Bee0.2B to Frog), and they still work if t
 | `--set ctx=2048:0` | no short-window warm-up |
 | `--set grow=12:0` | no growing depth |
 | `--set attn_docs=1` | documents kept apart |
-| `--set compile_mode=...` | `max-autotune-no-cudagraphs` or `reduce-overhead` |
+| `--set compile_mode=...` | `max-autotune-no-cudagraphs` (torch tunes the kernels on the GPU: +5% on Bee-135 lean on a B200, a compile of minutes) or `reduce-overhead` |
 | `--set mlp=swiglu` | Bee5 with SwiGLU instead of ReLU² |
 | `--set grokfast=0` | Seed without Grokfast and its extra core decay |
 | `--set hold=1` | Seed stays the 4 x 384 seed all run (no growing) |
@@ -569,6 +569,7 @@ and fall back if they disagree (stream16 to lean, lean to plain).
 | `lean=1 stream16=1` | 475k | 1.12x |
 | `attn_backend=cudnn` | 509k | 1.20x |
 | `lean=1 stream16=1 attn_backend=cudnn` | 585k | 1.37x |
+| the same + `compile_mode=max-autotune-no-cudagraphs` | 616k | 1.44x |
 
 The byte count had said 1.2x and 1.4x to 1.5x for the two lean rows: bytes are not the time. Three things it missed:
 the loss step is arithmetic (4x fewer bytes, 23% faster); a kernel that reads one buffer at four shifts fetches it four
@@ -593,12 +594,21 @@ written another way: as 9 sums of 64, then their sum.
 | Canon's four gradients together | 146 | 127 | slower |
 | a sum per head channel (q/k gains) | 44 | 33 | 33 (pieces of 128 words) |
 
-So two switches, both the same numbers, both off until timed in the whole model: `lean_rows=64` (the norms' means in
-pieces of 64; `lean_rows_back=1` does the same on Canon's way back, where the compiler's plan stores the mixed gradient
-to do it) and `compile_mode=tune-kernels` (the compiler times a few layouts of each of its own kernels on this GPU and
-keeps the fastest; the matrix products and attention are left alone; the first compile takes longer).
-`python3 -m gnosis2.speed135 --only tune` times them on top of lean + bf16 stream + cuDNN attention, with the compile
-time of each. The per-word means are about a tenth of a pass, so this is a few percent at best.
+**Timed in the whole model** (`python3 -m gnosis2.speed135 --only tune`, B200, on top of lean + bf16 stream + cuDNN
+attention at 586k tokens a second):
+
+| on top of 586k | tokens a second | first pass (compile) |
+|---|---|---|
+| the norms' means in pieces of 64 (`lean_rows=64`) | 592k | 60 s |
+| the same on Canon's way back too (`lean_rows_back=1`) | 596k | 36 s |
+| torch tuning the compiler's own kernels only (`max_autotune_pointwise`) | 588k | 55 s |
+| torch's full tuning (`compile_mode=max-autotune-no-cudagraphs`) | **616k (1.44x Bee-135)** | 274 s |
+
+So the pieces of 64 are now part of lean (`lean_rows=64 lean_rows_back=1` are the defaults; `lean_rows=0` is the one
+sum): 1 to 2%, as the per-word means are a small share of a pass. Kernel-only tuning gained nothing and is gone.
+Torch's full tuning is worth 5% for a few minutes of compile once a run: it times several layouts of every kernel and
+of the matrix products on the GPU (for the weight gradients, products over 65,536 words, it picked a split-K form over
+cuBLAS's). Pieces of 64 and the full tuning together are not timed yet.
 
 **What is left.** Per layer, ReLU² alone is 20 U (the MLP's hidden layer is 4 words wide and is read and written on
 its own, in and back). That cannot shrink in PyTorch: it needs the ReLU² inside the matrix product's own kernel
