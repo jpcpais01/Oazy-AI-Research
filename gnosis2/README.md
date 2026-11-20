@@ -87,3 +87,25 @@ Read the new text first: `python3 -m oazy.opal2 show --part work --family lines`
 
 The comparison is gnosis-opal-10b (same body without Canon, plain Opal, no finish). The thing to watch is Real World
 and Pro. A rise there that holds through training would mean the logic transfers and is not just wording.
+
+## Judge first, write second (Nov 20 2026, a test, not a result)
+
+Three bodies of this size trained on next words for 12B to 2,000B tokens all land at HellaSwag 38 to 42 (Bee-135,
+MobileLLM-125M, SmolLM2-135M). The idea under test: the lesson is the ceiling, so teach the same body mainly to
+**judge** ("does what I am reading belong here?") and keep writing as the second lesson.
+
+- **The lesson** (`oazy/judge.py`, made on the CPU as each batch is built): about 15% of the sentences of a row change
+  places with another sentence of the same row, mostly of the same document. Half of the swaps exchange whole
+  sentences, half only their endings, cut where a word starts and, where it can be, after the same word. Every decoy is
+  real text in the wrong place: nothing is machine-written, so there is no style to spot. The row keeps its length.
+- **The head** (`judge=10` on any Bee6-family body): one row of 577 numbers on the final vectors gives a yes/no on
+  every piece (1 real in place, 0 decoy; the sentence right after a decoy is not graded). Loss = next word (not asked
+  to write a decoy) + 10 x judge, the 10 coming in over the first 10% of the run (`judge_ramp=0.1`).
+- **The tests**: a model with a judge head is also scored by its judge, at the same cost as next-word scoring: it
+  picks the ending whose last piece gets the highest yes (`acc_judge`, `<test>_judge` in the run's metrics).
+- **The A/B**: `bash runpod/judgeab.sh` trains Bee-135 plain and with the judge, 2B tokens each, the same seed and
+  text, then prints one table. Rule fixed before the run: kept only if HellaSwag by the judge is 5 points or more
+  above plain, and ARC by the judge is no more than 1 point under. `python3 -m oazy.judge_tests` are its 22 CPU checks.
+
+Known on a CPU toy only: the judge learns (out-of-turn endings 100% against 72% by next-word loss per token), and it
+costs the writer some next-word loss. Not known: anything on real text.

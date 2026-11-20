@@ -90,6 +90,14 @@ class Bee6Config(Bee5Config):
                                  # speedrun do), so every add and mix on it moves half the bytes. Changes the rounding:
                                  # checked at start against the 32-bit stream on one batch
 
+    judge: float = 0.0           # the judge's lesson (oazy/judge.py): > 0 adds a yes/no head on every piece, "does what I
+                                 # am reading belong here?", graded on text whose sentences were swapped; this is its
+                                 # weight in the loss. The choice tests are then also scored by the judge's yes
+    judge_tok: float = 1.0       # with judge: the next-word loss's weight beside it
+    judge_rate: float = 0.15     # with judge: the share of the swappable sentences that are decoys
+    judge_ramp: float = 0.0      # with judge: its weight grows from 0 to `judge` over this share of the run (0 = full
+                                 # from the start)
+
     def __post_init__(self):
         super().__post_init__()
         if self.bloom == "on":
@@ -340,6 +348,14 @@ class Bee6(Bee5):
         self._sp = None              # the sparse MLP's counts since the last optimizer step
         self._ex = None              # the experts' words per expert since the last optimizer step
         self._feed = None
+        self._judge = None           # the judge's marks for the next pass (feed_judge)
+        self._jr = None              # the judge's sums since the log last read them (judge_report)
+        self.judge_head = None
+        if cfg.judge > 0:
+            self.judge_head = nn.Linear(cfg.d_model, 1)
+            with torch.no_grad():
+                nn.init.normal_(self.judge_head.weight, std=0.1 * cfg.d_model ** -0.5)   # starts near "no opinion"
+                nn.init.zeros_(self.judge_head.bias)
         self.kd_rows = None          # --mentor-skip-world: which rows of the next pass the mentor teaches (None = all)
         if cfg.teach > 0 or self.needs_linker:   # the link head: does a piece name a thing, which earlier piece names the same
             D = cfg.d_model
@@ -384,6 +400,7 @@ class Bee6(Bee5):
                                       f"sparse MLP {c.sparse_mlp:.0%} (dense first {c.sparse_from:.0%})" if c.sparse_mlp else "",
                                       f"experts {c.expert_top} of {c.experts} (bf16)" if c.experts else "",
                                       f"bloom {c.bloom}" if c.bloom else "", "CUDA graphs" if c.graphs else "",
+                                      f"judge head (loss {c.judge_tok:g} x next word + {c.judge:g} x judge)" if c.judge > 0 else "",
                                       ("lean + bf16 stream" if c.stream16 else "lean") if c.lean else "",
                                       "cuDNN attention" if c.attn_backend == "cudnn" else "",
                                       "kernels tuned by torch" if c.compile_mode in LEAN.TUNE else ""] if s)
@@ -485,6 +502,7 @@ class Bee6(Bee5):
         if self.token_select is not None:
             raise SystemExit("Bee6 does not take --select yet (it joins the recipe once the A/B on Plain-100M is in)")
         feed, self._feed = self._feed, None
+        marks, self._judge = self._judge, None
         if self._compiled is not None and self.training:
             if self.cfg.graphs:
                 torch.compiler.cudagraph_mark_step_begin()
@@ -539,7 +557,58 @@ class Bee6(Bee5):
                 loss = loss + extra["aux"]
             self._extra = {k: v.detach() for k, v in extra.items() if k != "aux"}
             stats.update(self._extra)
+        if marks is not None and self.judge_head is not None:
+            jl, sums = self.judge_loss(h, marks[:, :idx.shape[1]])
+            wj = self.cfg.judge * (min(1.0, self._progress / self.cfg.judge_ramp) if self.cfg.judge_ramp > 0 else 1.0)
+            loss = self.cfg.judge_tok * loss + wj * jl
+            stats["judge"] = jl.detach()
+            self._jr = sums if self._jr is None else self._jr + sums     # summed until the log reads them (thought_report)
         return loss, stats
+
+    # ---------------------------------------------------------------- the judge: "does what I am reading belong here?"
+    def feed_judge(self, marks):
+        """The trainer hands over the next pass's marks (B, T): 1 real text in its place, 0 a decoy, -1 not graded."""
+        self._judge = marks
+
+    def judge_scores(self, h):
+        """The judge's yes (a logit, 32-bit) on every piece, from the vectors after the final norm."""
+        return self.judge_head(h).squeeze(-1).float()
+
+    def judge_loss(self, h, marks):
+        """(the yes/no loss averaged over the graded pieces; its sums for the log: the loss x graded pieces, graded
+        pieces, the yes summed over real pieces, real pieces, the yes summed over decoy pieces, decoy pieces)."""
+        z = self.judge_scores(h.reshape(marks.shape[0], marks.shape[1], -1))
+        graded = (marks >= 0).to(torch.float32)
+        real = (marks > 0).to(torch.float32)
+        n = graded.sum()
+        with torch.autocast(z.device.type, enabled=False):
+            loss = (F.binary_cross_entropy_with_logits(z, real, reduction="none") * graded).sum() / n.clamp_min(1.0)
+        with torch.no_grad():
+            decoy = graded - real
+            p = torch.sigmoid(z)
+            sums = torch.stack([loss.detach() * n, n, (p * real).sum(), real.sum(), (p * decoy).sum(), decoy.sum()])
+        return loss, sums
+
+    def judge_report(self, reset=True):
+        """The judge's numbers since the last call: its loss, its mean yes on real text (wants 1) and on decoys (wants
+        0), and the decoys' share of the graded pieces. {} when it graded nothing."""
+        if self._jr is None:
+            return {}
+        s = [float(v) for v in self._jr]
+        if reset:
+            self._jr = None
+        out = {"judge": s[0] / max(s[1], 1.0), "judge_decoy_share": s[5] / max(s[1], 1.0)}
+        if s[3] > 0:
+            out["judge_yes_real"] = s[2] / s[3]
+        if s[5] > 0:
+            out["judge_yes_decoy"] = s[4] / s[5]
+        return out
+
+    @torch.no_grad()
+    def judge_logits(self, idx):
+        """(the next-word scores, the judge's yes on every piece) of one reading (the tests' scoring)."""
+        h = self._trunk(idx)
+        return self.scores(h), self.judge_scores(h)
 
     # ---------------------------------------------------------------- the world's "same thing" answer key
     def docs(self, idx):
@@ -585,6 +654,7 @@ class Bee6(Bee5):
             out.update(r)
         for k, v in (getattr(self, "_extra", None) or {}).items():
             out[k] = float(v)
+        out.update(self.judge_report())
         return out
 
     # ---------------------------------------------------------------- the sparse MLP's switch and balance

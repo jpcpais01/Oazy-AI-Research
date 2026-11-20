@@ -243,6 +243,8 @@ def evaluate_all(model, data_root: Path, device, limit=None):
         if p.exists():
             r = hellaswag.evaluate(model, p, device, mc_limit)
             out[name], out[name + "_char"], out[name + "_n"] = r["acc_norm"], r["acc_char"], r["n"]
+            if "acc_judge" in r:                         # a model with a judge head: the same questions by its yes
+                out[name + "_judge"], out[name + "_judge_mean"] = r["acc_judge"], r["acc_judge_mean"]
     p = d / "babi.jsonl"
     if p.exists():                                       # what guessing scores there (the number of choices varies)
         rows = hellaswag.load(p, mc_limit)
