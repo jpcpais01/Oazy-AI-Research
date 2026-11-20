@@ -88,7 +88,7 @@ def main(argv=None):
             continue
         sets = phi if extra is None else (extra if key == "wide" and a.set is None else base + extra)
         term.header(f"{name}", why, color="blue")
-        argv2 = ["--model", "gnosis2", "--preset", a.preset, "--steps", str(a.steps), "--kernels", "40" if not got else ("12" if a.only == LEAN else "40" if a.only == KERNELS and key == "lean16" else "0"),
+        argv2 = ["--model", "gnosis2", "--preset", a.preset, "--steps", str(a.steps), "--kernels", "40" if not got else ("12" if a.only == LEAN else "40" if a.only == KERNELS and key in ("lean16", "lean16c") else "0"),
                  *(["--device", a.device] if a.device else []), *(["--runs", a.runs] if a.runs else []), *opts, "--set", *sets]
         try:
             r = profile.main(argv2)

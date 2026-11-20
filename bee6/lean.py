@@ -180,12 +180,10 @@ def stream_dtype(cfg, x):
     return x.dtype
 
 
-def check(model, device, say=print, T=512, B=4, loss_tol=0.005, grad_tol=0.99):
-    """The startup check: one batch the plain way and the lean way (with the bf16 stream, if it is on), same weights
-    -> (ok, loss gap, gradient cosine). As the FP8 check: run on a copy whose output layers are given small random
-    weights (a fresh model starts with them at zero, and then most gradients are zero too).
-    For scale: on Bee-135's own shape in bf16, lean is 0.9999 alike (bf16 itself against 32-bit is 0.9999), lean with
-    the bf16 stream 0.9997; FP8 was 0.95."""
+def compare(model, device, base, new, T=512, B=4):
+    """One batch with the config's switches set as `base`, then as `new` (dicts), same weights -> (loss gap, gradient
+    cosine, all finite and the same weights reached). As the FP8 check: run on a copy whose output layers are given
+    small random weights (a fresh model starts with them at zero, and then most gradients are zero too)."""
     from .fp8 import cosine
     model = copy.deepcopy(model)
     with torch.no_grad():
@@ -193,14 +191,14 @@ def check(model, device, say=print, T=512, B=4, loss_tol=0.005, grad_tol=0.99):
             b.attn.out.weight.normal_(0, 0.02)
             (b.mlp.w_down if hasattr(b.mlp, "w_down") else b.mlp.down.weight).normal_(0, 0.02)
     cfg = model.cfg
-    want = (int(cfg.lean), int(cfg.stream16))
     g = torch.Generator(device="cpu").manual_seed(0)
     x = torch.randint(1, cfg.vocab_size, (B, T), generator=g).to(device)
     y = torch.roll(x, -1, 1)
     model.train()
     out = []
-    for lean, s16 in ((0, 0), want):
-        cfg.lean, cfg.stream16 = lean, s16
+    for sets in (base, new):
+        for k, v in sets.items():
+            setattr(cfg, k, v)
         model.zero_grad(set_to_none=True)
         with torch.autocast(device.type, dtype=torch.bfloat16, enabled=device.type == "cuda"):
             loss, _ = model.losses(x, y)
@@ -212,8 +210,17 @@ def check(model, device, say=print, T=512, B=4, loss_tol=0.005, grad_tol=0.99):
     big = [n for n in g0 if g0[n].numel() >= 4096 and n in g1 and g0[n].norm() > 0]
     cos = sum(cosine(g0[n], g1[n]) for n in big) / max(1, len(big))
     finite = math.isfinite(l1) and all(math.isfinite(float(t.sum())) for t in g1.values())
-    same = set(g0) == set(g1)
-    return gap < loss_tol and cos > grad_tol and finite and same, gap, cos
+    return gap, cos, finite and set(g0) == set(g1)
+
+
+def check(model, device, say=print, T=512, B=4, loss_tol=0.005, grad_tol=0.99):
+    """The startup check: one batch the plain way and the lean way (with the bf16 stream, if it is on), same weights
+    -> (ok, loss gap, gradient cosine).
+    For scale: on Bee-135's own shape in bf16, lean is 0.9999 alike (bf16 itself against 32-bit is 0.9999), lean with
+    the bf16 stream 0.9998; FP8 was 0.95."""
+    cfg = model.cfg
+    gap, cos, sound = compare(model, device, {"lean": 0, "stream16": 0}, {"lean": int(cfg.lean), "stream16": int(cfg.stream16)}, T, B)
+    return gap < loss_tol and cos > grad_tol and sound, gap, cos
 
 
 # What is kept for the way back, and why some lines above are written twice.

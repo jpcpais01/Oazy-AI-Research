@@ -378,7 +378,8 @@ class Bee6(Bee5):
                                       f"sparse MLP {c.sparse_mlp:.0%} (dense first {c.sparse_from:.0%})" if c.sparse_mlp else "",
                                       f"experts {c.expert_top} of {c.experts} (bf16)" if c.experts else "",
                                       f"bloom {c.bloom}" if c.bloom else "", "CUDA graphs" if c.graphs else "",
-                                      ("lean + bf16 stream" if c.stream16 else "lean") if c.lean else ""] if s)
+                                      ("lean + bf16 stream" if c.stream16 else "lean") if c.lean else "",
+                                      "cuDNN attention" if c.attn_backend == "cudnn" else ""] if s)
 
     # ---------------------------------------------------------------- the body
     def _skip(self, j, x0):
@@ -615,13 +616,33 @@ class Bee6(Bee5):
 
     # ---------------------------------------------------------------- the trainer's hooks
     def startup_check(self, device, say=print):
-        """Lean, then FP8: each is checked against the plain way on one batch first, and switched off if it disagrees."""
+        """FP8, lean, cuDNN's attention: each is checked against the plain way on one batch first, and switched off if it
+        disagrees."""
         cfg = self.cfg
         lean, s16 = cfg.lean, cfg.stream16
         cfg.lean = cfg.stream16 = 0                  # (FP8 is checked on the plain layers, lean with FP8 as it then is)
         self._fp8_check(device, say)
         cfg.lean, cfg.stream16 = lean, s16
         self._lean_check(device, say)
+        self._attn_check(device, say)
+
+    def _attn_check(self, device, say):
+        """attn_backend=cudnn against PyTorch's own choice of attention kernel on one batch (the same attention, another
+        kernel: on a B200 with torch 2.8 PyTorch picked its flash kernel and cuDNN's was 3x faster; cuDNN's has had wrong
+        answers in some torch versions, so it is checked on this machine before a run trusts it)."""
+        cfg = self.cfg
+        if cfg.attn_backend != "cudnn" or device.type != "cuda":
+            return
+        try:
+            gap, cos, sound = LEAN.compare(self, device, {"attn_backend": "auto"}, {"attn_backend": "cudnn"})
+            ok, why = gap < 0.005 and cos > 0.99 and sound, f"loss {gap:.2%} apart, gradients {cos:.4f} alike"
+        except Exception as e:
+            ok, why = False, f"{type(e).__name__}: {str(e).splitlines()[0][:160] if str(e) else ''}"
+        if ok:
+            say(f"[attention] cuDNN's kernel; vs PyTorch's own choice on a test batch: {why}")
+        else:
+            say(f"[attention] cuDNN's kernel failed its check ({why}); attention runs on PyTorch's own choice")
+            cfg.attn_backend = "auto"
 
     def _lean_check(self, device, say):
         """lean (and stream16) against the plain layers on one batch: stream16 falls back to lean, lean to plain."""

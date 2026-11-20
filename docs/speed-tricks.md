@@ -487,7 +487,6 @@ These sped up models we have retired (Bee0.2B to Frog), and they still work if t
 | `--set ctx=2048:0` | no short-window warm-up |
 | `--set grow=12:0` | no growing depth |
 | `--set attn_docs=1` | documents kept apart |
-| `--set attn_backend=cudnn` | cuDNN attention |
 | `--set compile_mode=...` | `max-autotune-no-cudagraphs` or `reduce-overhead` |
 | `--set mlp=swiglu` | Bee5 with SwiGLU instead of ReLU² |
 | `--set grokfast=0` | Seed without Grokfast and its extra core decay |
@@ -504,6 +503,7 @@ These sped up models we have retired (Bee0.2B to Frog), and they still work if t
 | `--set sparse_mlp=0.10` | Bee6: each word runs 10% of each MLP (`sparse_block=64` finer blocks, `sparse_from=0.1` the dense start) |
 | `--set lean=1` | Bee6 and after: the same layers with less memory moved (same numbers, same checkpoint) |
 | `--set lean=1 stream16=1` | lean, with the stream itself in bf16 (rounding changes a little; checked at start) |
+| `--set attn_backend=cudnn` | attention on cuDNN's kernel (checked at start; 1.20x on a B200 with torch 2.8) |
 
 ### MoE-150M (Nov 16): our 8k pieces and the grouped expert product
 
@@ -560,10 +560,26 @@ gradient against the plain code). On Bee-135's own shape in bf16 the gradients a
 32-bit: 0.9999). With the bf16 stream: 0.9997 (FP8 was 0.95). Both are checked on one batch at the start of every run
 and fall back if they disagree (stream16 to lean, lean to plain).
 
-**Gain.** NOT MEASURED on a GPU yet. From the bytes: about 1.2x for lean and 1.4x to 1.5x with the bf16 stream (the
-bf16 stream is the bigger half: it halves every stream-sized read and write). `python3 -m gnosis2.speed135 --only lean`
-times the three rows (about 5 minutes) and prints each row's GPU time by kind of kernel. Whether the bf16 stream costs
-any loss needs a short A/B run; the gradient check says it should not.
+**Gain, measured on a B200 (Nov 20, torch 2.8, a pass of 32 x 2,048 words, made-up tokens):**
+
+| | tokens a second | vs Bee-135 |
+|---|---|---|
+| Bee-135 | 426k | 1.00x |
+| `lean=1` | 455k | 1.07x |
+| `lean=1 stream16=1` | 475k | 1.12x |
+| `attn_backend=cudnn` | 509k | 1.20x |
+| `lean=1 stream16=1 attn_backend=cudnn` | 585k | 1.37x |
+
+The byte count had said 1.2x and 1.4x to 1.5x for the two lean rows: bytes are not the time. Three things it missed:
+the loss step is arithmetic (4x fewer bytes, 23% faster); a kernel that reads one buffer at four shifts fetches it four
+times; and the compiler's reduction kernels (means, sums) are far slower per byte than its elementwise ones (the
+norm's mean: 75 MB in 86 µs; ReLU² on the way back: 0.9 GB in 129 µs). With lean and cuDNN's attention on, those
+reductions are the largest share of a pass. `python3 -m bee6.redbench` times each of them alone, written several
+ways. Whether the bf16 stream costs any loss still needs a short A/B run.
+
+**cuDNN's attention** (`attn_backend=cudnn`). The same attention on another kernel. On that B200 pod PyTorch picked its
+own flash kernel (53 of 229 ms of kernels, the way back alone 36); cuDNN's took the layers from 131 ms to 105. It is
+checked against PyTorch's own choice on one batch at the start of a run, and falls back if they disagree.
 
 **What is left.** Per layer, ReLU² alone is 20 U (the MLP's hidden layer is 4 words wide and is read and written on
 its own, in and back). That cannot shrink in PyTorch: it needs the ReLU² inside the matrix product's own kernel
