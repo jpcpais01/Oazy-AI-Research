@@ -1287,7 +1287,15 @@ def main():
                     lengths=[t for _, t in ctx_plan(cfg)], log=say, marks=getattr(model, "wants_marks", False))
         xval = {n: val_set(source_path(data, n, "val"), Tv, 32) for n in train.src
                 if n != "fwe" and source_path(data, n, "val").exists()}
+        if getattr(model, "judge_head", None) is not None:      # the judge's lesson (oazy/judge.py): sentences of each row
+            from .judge import Decoys                           # change places on the CPU; the model grades "belongs here?"
+            train.judge = Decoys(tk, cfg.judge_rate)
+            say(f"[judge] the judge's lesson is on: {cfg.judge_rate:.0%} of the sentences are decoys (real sentences and "
+                f"endings of the same row in the wrong place); loss = {cfg.judge_tok:g} x next word + {cfg.judge:g} x judge"
+                + (f" (the judge's weight comes in over the first {cfg.judge_ramp:.0%} of the run)" if cfg.judge_ramp > 0 else ""))
     else:
+        if getattr(model, "judge_head", None) is not None:
+            raise SystemExit("judge= needs a text mix (it swaps sentences in the mix's rows): this run reads one file")
         train = Windows(data / "train.bin", T, micro, seed=args.seed)
         xval = {}
     # Emerald's world over the run, in words (shown at the start and kept in config.json)
@@ -1539,7 +1547,8 @@ def main():
             latest["hellaswag" + ("_full" if final else "")] = r["acc_norm"]
             latest["hellaswag_char" + ("_full" if final else "")] = r["acc_char"]
             say(f"[hellaswag] {r['acc_char'] * 100:.2f}% per letter on {r['n']} examples "
-                f"({r['acc_norm'] * 100:.2f}% per token)", flush=True)
+                f"({r['acc_norm'] * 100:.2f}% per token)"
+                + (f" | by the judge {r['acc_judge'] * 100:.2f}%" if "acc_judge" in r else ""), flush=True)
             nxt["hs"] += p["hs_every"]
         if (root / "evals").exists() and (final or tokens >= nxt["evals"]):
             # ARC-Easy, PIQA, the reasoning tests and LAMBADA (oazy/evals.py) every evals_every tokens: the choice tests
@@ -1549,8 +1558,8 @@ def main():
             if r:
                 run.log("metrics.jsonl", {"kind": "evals", **base, **r, "full": final})
                 latest.update({k + ("" if final else "_quick"): v for k, v in r.items() if not k.endswith("_n")})
-                say(f"[evals] {'' if final else 'quick, '}" + ", ".join(f"{k} {v * 100:.1f}%" if k in ("arc_easy", "piqa", "lambada", "arc_challenge", "csqa", "winogrande", "babi") else f"{k} {v:.2f}"
-                                           for k, v in r.items() if not k.endswith(("_n", "_char"))), flush=True)
+                say(f"[evals] {'' if final else 'quick, '}" + ", ".join(f"{k} {v * 100:.1f}%" if k.replace("_judge", "") in ("arc_easy", "piqa", "lambada", "arc_challenge", "csqa", "winogrande", "babi") else f"{k} {v:.2f}"
+                                           for k, v in r.items() if not k.endswith(("_n", "_char", "_judge_mean"))), flush=True)
             nxt["evals"] += p["evals_every"]
         if final or tokens >= nxt.setdefault("logres", 0):
             # LogT (oazy/logres.py): 1,600 reasoning puzzles whose facts are in the question; all of them every time
@@ -1881,6 +1890,13 @@ def main():
             feed = (lambda: model.feed_marks(train.last_marks[:, :-1].to(device), train.last_rows.to(device))) \
                 if getattr(train, "last_marks", None) is not None and hasattr(model, "feed_marks") else (lambda: None)
             feed()                                  # Logos1-200M: the world's marks, its linker's answer key
+            if getattr(train, "last_judge", None) is not None and hasattr(model, "feed_judge"):
+                # the judge's lesson: the marks of what the model reads, and no next-word lesson on writing a decoy
+                jm = train.last_judge.to(device, non_blocking=True)
+                y = y.masked_fill(jm[:, 1:] == 0, -1)
+                feed0 = feed
+                feed = lambda: (feed0(), model.feed_judge(jm[:, :-1]))
+                model.feed_judge(jm[:, :-1])
             if skip_world:                          # --mentor-skip-world: the world's rows learn the real next word only
                 kr = [n not in WORLD_SOURCES for n in train.last_names]
                 model.kd_rows = None if all(kr) or pw <= 0 else torch.tensor(kr, device=device)
@@ -1942,6 +1958,8 @@ def main():
                 rec.update(model.moe_report())
             if hasattr(model, "thought_report"):     # Pegasus: tokens per thought, the meaning loss
                 rec.update({k: v for k, v in model.thought_report().items() if v is not None})
+            if getattr(train, "judge", None) is not None:
+                rec.update(train.judge.report())
             if hasattr(train, "weights"):
                 rec["context"], rec["mix"] = T, {k: round(v, 3) for k, v in train.weights(prog()).items()}
                 rec["batch"] = B * T

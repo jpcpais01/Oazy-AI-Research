@@ -51,8 +51,13 @@ def render(enc, ex):
 
 @torch.no_grad()
 def evaluate(model, path: Path, device, limit: int | None = None, batch_examples: int = 16):
-    """Returns {"acc_norm", "acc", "n"}. limit = only the first N examples (quick check during training)."""
+    """Returns {"acc_norm", "acc", "n"}. limit = only the first N examples (quick check during training).
+
+    A model with a judge head (bee6 `judge=`) is also scored by its judge, at the same cost: the ending whose LAST piece
+    gets the judge's highest yes ("acc_judge"), and the highest yes averaged over the ending's pieces ("acc_judge_mean")."""
     enc = tok.for_model(model)
+    judge = getattr(model, "judge_head", None) is not None and not hasattr(model, "seq_logits")
+    correct_j = correct_jm = 0
     rows = load(path, limit)
     was_training = model.training
     model.eval()
@@ -77,11 +82,20 @@ def evaluate(model, path: Path, device, limit: int | None = None, batch_examples
                 en = torch.tensor([b - 1 for _, b in spans], device=device)
                 logits = model.seq_logits(x, st, en)
                 logits = torch.cat([logits, logits[:, -1:]], 1)
+            elif judge:
+                logits, yes = model.judge_logits(x)
             else:
                 logits = model._body(x)          # uncompiled: these shapes change every batch
         loss = F.cross_entropy(logits[:, :-1].float().reshape(-1, logits.size(-1)), x[:, 1:].reshape(-1),
                                reduction="none").view(len(seqs), L - 1)
         tot_rows, cnt_rows = (loss * mask).sum(1), mask.sum(1)
+        if judge:
+            own = torch.zeros(len(seqs), L, device=device)                # the ending's own pieces
+            for i, (a, b) in enumerate(spans):
+                own[i, a:b] = 1.0
+            last = torch.tensor([b - 1 for _, b in spans], device=device)
+            yes_last = yes[torch.arange(len(seqs), device=device), last]
+            yes_mean = (yes * own).sum(1) / own.sum(1).clamp_min(1.0)
         i = 0                                             # an example may have any number of endings (ARC: 3-5, PIQA: 2)
         for (_, ends, lab), ex in zip(exs, rows[b0:b0 + batch_examples]):
             k = len(ends)
@@ -90,11 +104,17 @@ def evaluate(model, path: Path, device, limit: int | None = None, batch_examples
             correct += int(t.argmin() == lab)
             correct_norm += int((t / cnt_rows[i:i + k]).argmin() == lab)
             correct_char += int((t / chars).argmin() == lab)
+            if judge:
+                correct_j += int(yes_last[i:i + k].argmax() == lab)
+                correct_jm += int(yes_mean[i:i + k].argmax() == lab)
             i += k
     if was_training:
         model.train()
     n = len(rows)
-    return {"acc_norm": correct_norm / max(n, 1), "acc": correct / max(n, 1), "acc_char": correct_char / max(n, 1), "n": n}
+    out = {"acc_norm": correct_norm / max(n, 1), "acc": correct / max(n, 1), "acc_char": correct_char / max(n, 1), "n": n}
+    if judge:
+        out["acc_judge"], out["acc_judge_mean"] = correct_j / max(n, 1), correct_jm / max(n, 1)
+    return out
 
 
 def main():

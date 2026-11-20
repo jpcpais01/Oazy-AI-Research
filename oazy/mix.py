@@ -375,6 +375,8 @@ class Mix:
         self.seen = {n: 0 for n in self.src}
         self.want_marks = marks and any(s.marks is not None for s in self.src.values())
         self.last_marks = self.last_rows = None    # with marks: (B, T + 1) bytes (255 = none) and which rows have them
+        self.judge = None                          # the judge's lesson (oazy/judge.py Decoys): swaps sentences in each row
+        self.last_judge = None                     # with a judge: the last batch's marks (B, T + 1): 1 real, 0 decoy, -1 none
         if marks and not self.want_marks and "world" in self.src:      # (Field1 has no marks: Logos is parked)
             log("[mix] the world has no marks yet: python3 -m oazy.emerald marks  adds them (the linker learns without its answer key)")
 
@@ -416,6 +418,9 @@ class Mix:
         if self.want_marks:
             self.last_marks = torch.from_numpy(np.stack(mks).astype(np.int16))
             self.last_rows = torch.tensor(has, dtype=torch.bool)
+        if self.judge is not None:                      # the same generator: the swaps are the batch number's too
+            rows, labs = self.judge.batch(rows, rng)
+            self.last_judge = torch.from_numpy(labs)
         x = torch.from_numpy(np.stack(rows).astype(np.int64))
         x = x.pin_memory().to(device, non_blocking=True) if device.type == "cuda" else x.to(device)
         return x[:, :-1], x[:, 1:]
