@@ -62,7 +62,8 @@ def product_dtype(x):
 
 def _rowmean(v, rows):
     """A word's mean over its numbers. rows > 0: as sums of `rows` numbers, then their sum (the same mean: on a B200
-    the compiler's kernel for one sum over 576 numbers takes twice as long as for 9 sums of 64, bee6/redbench.py)."""
+    the compiler's kernel for one sum over 576 numbers takes twice as long as for 9 sums of 64, bee6/redbench.py; in
+    the whole of Bee-135 that is 1 to 2% of a pass). A width that `rows` does not divide keeps the one sum."""
     D = v.shape[-1]
     if rows and D > rows and D % rows == 0:
         return v.unflatten(-1, (D // rows, rows)).sum(-1).sum(-1, keepdim=True) / D
@@ -72,7 +73,7 @@ def _rowmean(v, rows):
 def _make(rows, back):
     """The norm and the norm + Canon (forward and the hand-written way back), for one way of taking a word's mean.
     rows: the piece size for the forward means and the plain norm's way back. back: the same on Canon's way back too
-    (kept apart: there the compiler's plan stores the mixed gradient to do it, so it is its own switch to time)."""
+    (its own switch: the CPU's plan stores the mixed gradient to do it, yet on a B200 it was the faster of the two)."""
     rb = rows if back else 0
     class _Norm(torch.autograd.Function):
         """y = x * rsqrt(mean(x^2) + eps) over the last dim: worked out in 32-bit, written once in `dt`."""
@@ -138,18 +139,15 @@ _FNS = {(r, b): _make(r, b) for r in ROWS for b in (False, True) if r or not b}
 _Norm, _NormCanon = _FNS[0, False]
 
 
-TUNE = ("tune-kernels", "max-autotune-no-cudagraphs", "max-autotune")
+TUNE = ("max-autotune-no-cudagraphs", "max-autotune")    # torch's tuning modes: the loss step is compiled with them too
 
 
 def compile_kw(mode):
-    """torch.compile's arguments for a compile_mode. "tune-kernels": the compiler times a few layouts of each of its own
-    kernels on this GPU and keeps the fastest (the matrix products and attention are left as they are; the first compile
-    takes longer, the choices are kept on disk for the next run). Anything else is torch's own mode of that name."""
-    if mode in ("", "default", None):
-        return {}
-    if mode == "tune-kernels":
-        return {"options": {"max_autotune_pointwise": True}}
-    return {"mode": mode}
+    """torch.compile's arguments for a compile_mode (torch's own mode of that name; "default" = none).
+    On a B200, Bee-135 lean + cuDNN: max-autotune-no-cudagraphs 616k tokens a second against 586k (it times several
+    layouts of every kernel and of the matrix products on this GPU; the first pass took 274 s instead of 20).
+    Tuning the compiler's own kernels alone (max_autotune_pointwise) gained nothing."""
+    return {} if mode in ("", "default", None) else {"mode": mode}
 
 
 def swap(x):
