@@ -576,7 +576,7 @@ the loss step is arithmetic (4x fewer bytes, 23% faster); a kernel that reads on
 times; and the compiler's reduction kernels (means, sums) are far slower per byte than its elementwise ones (the
 norm's mean: 75 MB in 86 µs; ReLU² on the way back: 0.9 GB in 129 µs). With lean and cuDNN's attention on, those
 reductions are the largest share of a pass. `python3 -m bee6.redbench` times each of them alone, written several
-ways. Whether the bf16 stream costs any loss still needs a short A/B run.
+ways. Whether the bf16 stream costs any loss needs a short A/B run: `bash runpod/stream16ab.sh` (three runs of 1B tokens: 32-bit, bf16, and 32-bit with another seed for the noise; kept if it ends no more than max(0.01, the seed gap) above).
 
 **cuDNN's attention** (`attn_backend=cudnn`). The same attention on another kernel. On that B200 pod PyTorch picked its
 own flash kernel (53 of 229 ms of kernels, the way back alone 36); cuDNN's took the layers from 131 ms to 105. It is

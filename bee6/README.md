@@ -250,6 +250,8 @@ the start of a run and fall back if they disagree. On a B200 (Nov 20): lean 1.07
     python3 -m bee6.redbench                   # on the pod (~3 min): the reduction kernels alone, written several ways
     python3 -m gnosis2.speed135 --only tune    # on the pod: lean with and without the means in pieces of 64, and
                                                # `compile_mode=max-autotune-no-cudagraphs` (616k on a B200, 1.44x)
+    bash runpod/stream16ab.sh                  # on the pod: does the bf16 stream cost loss? Three short runs and a
+                                               # verdict by a rule fixed in advance (gnosis2/stream16ab.py)
 
 `docs/speed-tricks.md` ("Lean") has the numbers and what is left.
 
