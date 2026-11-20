@@ -64,6 +64,45 @@ def _slice(hc, Wc, tc, wk, thc, tWc, kind: str, softcap: float, kd_w, n_valid, n
     return ce, mce, kd, gb @ Wc, (gb.t() @ hc).float()
 
 
+def _capf(z, kind: str, softcap: float):
+    """Capped scores minus a constant (so exp cannot overflow), and d(capped)/d(raw); fp32. The constant is the cap's top:
+    with "sig" the capped scores live in (0, 23), with "tanh" in (-softcap, softcap), so no pass to find the largest."""
+    if kind == "sig":
+        s = torch.sigmoid((z + 5.0) / 7.5)
+        return 23.0 * s - 23.0, (23.0 / 7.5) * s * (1.0 - s)
+    t = torch.tanh(z / softcap)
+    return softcap * t - softcap, 1.0 - t * t
+
+
+def _slice_lean(hc, Wc, tc, wk, thc, tWc, kind: str, softcap: float, kd_w, n_valid, n_all: float, Vt: int):
+    """_slice without the mentor, moving far fewer bytes (bee6/lean.py): the scores are read twice and written once.
+
+    _slice stores the capped scores, their log-softmax and the gradient in 32-bit, each n x 49,152 (it reads or writes
+    the scores' worth of memory about ten times). Here one kernel reads the 16-bit scores and sums each row's exp, and
+    a second reads them again and writes the gradient straight in 16-bit, the real next words' entries included (a
+    comparison with the column number, not a scatter). The same numbers as _slice up to 32-bit rounding order (tested)."""
+    dt = hc.dtype
+    V = Wc.shape[0]
+    z = hc @ Wc.t()                                                  # (n, V), stays in the products' format
+    c1, _ = _capf(z.float(), kind, softcap)
+    lse = torch.log(torch.exp(c1).sum(1, keepdim=True))              # (n, 1): log sum exp of (capped - top)
+    valid = (tc >= 0).to(torch.float32)                              # (n, K)
+    tgt = tc.clamp_min(0)
+    ct, _ = _capf(z.gather(1, tgt).float(), kind, softcap)           # the real next words' own scores (n, K)
+    tok = lse - ct                                                   # each word's loss
+    ce = (tok[:, 0] * valid[:, 0]).sum()
+    wv = valid * wk[None, :]
+    mce = (tok * wv).sum()
+    c2, dz = _capf(z.to(torch.float32), kind, softcap)               # (written apart from c1 on purpose: two kernels that
+    g = torch.exp(c2 - lse) * wv.sum(1, keepdim=True)                #  each read the scores, and no 32-bit copy between)
+    col = torch.arange(V, device=hc.device)[None, :]
+    for k in range(tc.shape[1]):                                     # minus what each real next word is owed
+        g = g - wv[:, k:k + 1] * (col == tgt[:, k:k + 1])
+    gb = (g * ((1.0 - kd_w) / n_valid) * dz).to(dt)
+    kd = torch.zeros((), dtype=torch.float32, device=hc.device)
+    return ce, mce, kd, gb @ Wc, (gb.t() @ hc).float()
+
+
 def _slice_rows(hc, Wc, tc, wk, thc, tWc, kind: str, softcap: float, kd_w, n_valid, n_all: float, Vt: int):
     """_slice with the mentor's weight token by token (kd_w: (n, 1)), for --mentor-skip-world: a token of weight 0
     learns the real next word only, one of weight w the usual (1 - w) * CE + w * KL. Returns the weighted sums."""
@@ -98,12 +137,18 @@ def _slice_rows(hc, Wc, tc, wk, thc, tWc, kind: str, softcap: float, kd_w, n_val
 
 
 _compiled = None
+_compiled_lean = None
 
 
-def slice_fn(device):
-    global _compiled
+def slice_fn(device, lean=False):
+    global _compiled, _compiled_lean
+    plain = _slice_lean if lean else _slice
     if device.type != "cuda" or os.environ.get("OAZY_LOSS_COMPILE", "1") == "0":
-        return _slice
+        return plain
+    if lean:
+        if _compiled_lean is None:
+            _compiled_lean = torch.compile(_slice_lean, dynamic=False)
+        return _compiled_lean
     if _compiled is None:
         _compiled = torch.compile(_slice, dynamic=False)
     return _compiled
@@ -156,8 +201,8 @@ class _HeadLossRows(torch.autograd.Function):
 
 class _HeadLoss(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, h, W, targets, wk, kind, softcap, th, tW, kd_w, chunk):
-        global _compiled
+    def forward(ctx, h, W, targets, wk, kind, softcap, th, tW, kd_w, chunk, lean=False):
+        global _compiled, _compiled_lean
         N, D = h.shape
         V = W.shape[0]
         dt = _autocast_dtype(h)
@@ -167,7 +212,9 @@ class _HeadLoss(torch.autograd.Function):
             kd = th is not None and kd_w > 0
             tWc, Vt = (tW.to(dt), int(tW.shape[0])) if kd else (None, V)
             kw = torch.tensor(float(kd_w), dtype=torch.float32, device=h.device)
-            f = slice_fn(h.device)
+            lean = bool(lean) and not kd and kind in ("sig", "tanh")     # the lean slice has no mentor and needs a cap
+            base = _slice_lean if lean else _slice
+            f = slice_fn(h.device, lean)
             gh = torch.empty_like(h)
             gW = torch.zeros(V, D, dtype=torch.float32, device=h.device)
             sums = torch.zeros(3, dtype=torch.float32, device=h.device)
@@ -177,10 +224,14 @@ class _HeadLoss(torch.autograd.Function):
                 try:
                     ce, mce, kdv, ghc, gWc = f(*args)
                 except Exception as e:
-                    if f is _slice:
+                    if f is base:
                         raise
                     print(f"[bee5 loss] torch.compile failed ({type(e).__name__}: {str(e)[:160]}); the loss runs uncompiled", flush=True)
-                    f = _compiled = _slice
+                    f = base
+                    if lean:
+                        _compiled_lean = base
+                    else:
+                        _compiled = base
                     ce, mce, kdv, ghc, gWc = f(*args)
                 sums += torch.stack([ce, mce, kdv])
                 gh[i:i + chunk] = ghc.to(h.dtype)
@@ -195,7 +246,7 @@ class _HeadLoss(torch.autograd.Function):
     @staticmethod
     def backward(ctx, g_loss, g_ce, g_kd):
         gh, gW = ctx.saved_tensors
-        return (gh * g_loss.to(gh.dtype), (gW * g_loss).to(ctx.w_dtype)) + (None,) * 8
+        return (gh * g_loss.to(gh.dtype), (gW * g_loss).to(ctx.w_dtype)) + (None,) * 9
 
 
 def _prep(h, targets, weights, teacher_h, teacher_W, kd_weight):
@@ -216,7 +267,7 @@ def head_loss(h, W, targets, weights, cfg, teacher_h=None, teacher_W=None, kd_we
         raise ValueError(f"mentor read {th2.shape[0]} tokens, student {h2.shape[0]}")
     if torch.is_tensor(kw):
         return _HeadLossRows.apply(h2, W, t2, wk, cfg.cap, float(cfg.softcap), th2, tW, kw, int(chunk))
-    return _HeadLoss.apply(h2, W, t2, wk, cfg.cap, float(cfg.softcap), th2, tW, kw, int(chunk))
+    return _HeadLoss.apply(h2, W, t2, wk, cfg.cap, float(cfg.softcap), th2, tW, kw, int(chunk), bool(getattr(cfg, "lean", 0)))
 
 
 def plain_loss(h, W, targets, weights, cfg, teacher_h=None, teacher_W=None, kd_weight=0.0, chunk=None):

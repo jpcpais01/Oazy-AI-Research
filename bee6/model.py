@@ -36,6 +36,7 @@ import torch.nn.functional as F
 
 from bee5.model import (Attention, Bee5, Bee5Config, GATE_IN, MLP, ROPE_TABLE, causal, mtp_weights, norm)
 from . import fp8 as FP8
+from . import lean as LEAN
 from .sparse import SparseMLP
 from .experts import Experts
 
@@ -79,6 +80,12 @@ class Bee6Config(Bee5Config):
     expert_aux: float = 1e-4        # the small balance loss (DeepSeek-V3, as Coral)
     expert_kernel: str = "queues"   # "queues": fixed queues of 1.25x, one batched product (Bee6-MoE); "grouped": dropless,
                                     # one grouped product per grid (torch's grouped_mm; MoE-150M), checked at start
+    lean: int = 0                # bee6/lean.py: the same layers with less memory moved (a norm, or norm + Canon, is one
+                                 # kernel that writes straight in the products' 16-bit form; its way back written by
+                                 # hand). The same numbers up to 32-bit rounding order
+    stream16: int = 0            # with lean: the stream itself in bf16 while training on the GPU (as nanochat and the
+                                 # speedrun do), so every add and mix on it moves half the bytes. Changes the rounding:
+                                 # checked at start against the 32-bit stream on one batch
 
     def __post_init__(self):
         super().__post_init__()
@@ -100,12 +107,16 @@ class Bee6Config(Bee5Config):
 
 
 def rotary(x, cos, sin):
-    """x (B, T, H, hd); cos, sin (T, hd/2) or, for the words a routed layer picked, (B, T, hd/2)."""
+    """x (B, T, H, hd); cos, sin (T, hd/2) or, for the words a routed layer picked, (B, T, hd/2).
+    Lean hands over tables of the head's full width, (cos, cos) and (sin, -sin): the same rotation, written as each
+    number times cos plus its partner (half a head away) times sin, with no joining of two halves."""
     if cos.dim() == 2:
         cos, sin = cos[None, :, None, :], sin[None, :, None, :]
     else:
         cos, sin = cos[:, :, None, :], sin[:, :, None, :]
     cos, sin = cos.to(x.dtype), sin.to(x.dtype)
+    if cos.shape[-1] == x.shape[-1]:
+        return x * cos + LEAN.swap(x) * sin
     x1, x2 = x.chunk(2, dim=-1)
     return torch.cat([x1 * cos + x2 * sin, x2 * cos - x1 * sin], dim=-1)
 
@@ -121,10 +132,15 @@ class Attention6(Attention):
             q, k, v = qkv.split([H * hd, KV * hd, KV * hd], dim=-1)
         else:
             q, k, v = (FP8.linear(x, m.weight, mode) for m in (self.q, self.k, self.v))
-        q = F.rms_norm(q.reshape(B, T, H, hd), (hd,), self.qn)
-        k = F.rms_norm(k.reshape(B, T, KV, hd), (hd,), self.kn)
+        if cos.shape[-1] == hd:          # lean's full-width tables: norm, gain and rotation as one kernel each way
+            c4, s4 = (cos[None, :, None, :], sin[None, :, None, :]) if cos.dim() == 2 else (cos[:, :, None, :], sin[:, :, None, :])
+            q = LEAN.qk_rot(q.reshape(B, T, H, hd), self.qn, c4, s4)
+            k = LEAN.qk_rot(k.reshape(B, T, KV, hd), self.kn, c4, s4)
+        else:
+            q = F.rms_norm(q.reshape(B, T, H, hd), (hd,), self.qn)
+            k = F.rms_norm(k.reshape(B, T, KV, hd), (hd,), self.kn)
+            q, k = rotary(q, cos, sin), rotary(k, cos, sin)
         v = v.reshape(B, T, KV, hd)
-        q, k = rotary(q, cos, sin), rotary(k, cos, sin)
         k_raw = k
         if self.offset:
             first = k[:, :1] if prev_k is None else prev_k
@@ -206,22 +222,28 @@ class Block6(nn.Module):
             return self.mlp(h, with_aux=True)
         return self.mlp(h), None
 
+    def _n(self, x):
+        """The layer's norm of the stream. Lean: one kernel, written straight in the form the products read."""
+        if self.cfg.lean:
+            return LEAN.norm(x, LEAN.product_dtype(x))
+        return norm(x)
+
     def delta(self, x, ve, cos, sin):
         """The layer's change to x (every word of x goes through), and the sparse MLP's extras."""
-        y = x + self.attn(norm(x), ve, cos, sin)
-        f, ex = self.ffn(norm(y))
+        y = x + self.attn(self._n(x), ve, cos, sin)
+        f, ex = self.ffn(self._n(y))
         return y + f - x, ex
 
     def dense(self, x, ve, cos, sin):
-        y = x + self.attn(norm(x), ve, cos, sin)
-        f, ex = self.ffn(norm(y))
+        y = x + self.attn(self._n(x), ve, cos, sin)
+        f, ex = self.ffn(self._n(y))
         return y + f, ex
 
     def k_of(self, T):
         return max(1, min(T, int(round(self.cfg.mod_cap * T))))
 
     def scores(self, x):
-        xn = norm(x)
+        xn = self._n(x)
         return self.router(xn).squeeze(-1).float(), xn
 
     def guess(self, xn):
@@ -269,9 +291,9 @@ class Block6(nn.Module):
         return x + (y * w * pick[..., None].to(y.dtype)).to(x.dtype)
 
     def _masked_delta(self, x, ve, cos, sin, pick, state=None):
-        a, st = self.attn.masked(norm(x), ve, cos, sin, pick, state)
+        a, st = self.attn.masked(self._n(x), ve, cos, sin, pick, state)
         y = x + a
-        return y + self.ffn(norm(y))[0] - x, st
+        return y + self.ffn(self._n(y))[0] - x, st
 
     def step(self, x, ve, cos, sin, state, looks=False):
         """Reading on from a state (chat, samples). Routed layers keep, with their keys and values, which words were picked."""
@@ -305,6 +327,8 @@ class Bee6(Bee5):
             del self.skip_lam
             self.skip_w = nn.Parameter(torch.full((n_skip,), 2 * torch.sigmoid(torch.tensor(-1.5)).item()))
         self.register_buffer("bloom_at", torch.tensor(max(0, cfg.bloom_stage)), persistent=True)
+        self.register_buffer("rope_cos2", torch.cat([self.rope_cos, self.rope_cos], -1), persistent=False)    # lean's
+        self.register_buffer("rope_sin2", torch.cat([self.rope_sin, -self.rope_sin], -1), persistent=False)   # rotation
         if cfg.sparse_mlp:           # once the switch has flipped it stays flipped, in the checkpoint too
             self.register_buffer("sparse_live", torch.tensor(0), persistent=True)
         self._sp = None              # the sparse MLP's counts since the last optimizer step
@@ -353,7 +377,8 @@ class Bee6(Bee5):
                                       f"MoD {len(c.mod_set())} layers at {c.mod_cap:.0%}" if c.mod_set() else "no MoD",
                                       f"sparse MLP {c.sparse_mlp:.0%} (dense first {c.sparse_from:.0%})" if c.sparse_mlp else "",
                                       f"experts {c.expert_top} of {c.experts} (bf16)" if c.experts else "",
-                                      f"bloom {c.bloom}" if c.bloom else "", "CUDA graphs" if c.graphs else ""] if s)
+                                      f"bloom {c.bloom}" if c.bloom else "", "CUDA graphs" if c.graphs else "",
+                                      ("lean + bf16 stream" if c.stream16 else "lean") if c.lean else ""] if s)
 
     # ---------------------------------------------------------------- the body
     def _skip(self, j, x0):
@@ -383,9 +408,17 @@ class Bee6(Bee5):
         idx = self._pad(idx)
         T = idx.shape[1]
         e, _ = self._embed(idx)
-        x0 = norm(e)
-        ves = [t(idx) for t in self.ve]
-        cos, sin = self.rope_cos[:T], self.rope_sin[:T]
+        if self.cfg.lean:                # (stream16: from here on the stream and the value tables' rows are bf16)
+            sdt = LEAN.stream_dtype(self.cfg, e)
+            x0 = LEAN.norm(e, sdt)
+            ves = [t(idx).to(sdt) for t in self.ve]
+        else:
+            x0 = norm(e)
+            ves = [t(idx) for t in self.ve]
+        if self.cfg.lean:                # (the rotation's tables at the head's full width: one kernel, see rotary)
+            cos, sin = self.rope_cos2[:T], self.rope_sin2[:T]
+        else:
+            cos, sin = self.rope_cos[:T], self.rope_sin[:T]
         aux, exs = [], []
         keep = self._begin(idx)
         linked = hasattr(self, "lk_q")
@@ -419,6 +452,9 @@ class Bee6(Bee5):
 
     def _trunk(self, idx):
         return self._trunk_aux(idx)[0]
+
+    def _norm(self, x):
+        return LEAN.norm(x) if self.cfg.lean else norm(x)
 
     def enable_compile(self):
         import torch._dynamo
@@ -579,6 +615,38 @@ class Bee6(Bee5):
 
     # ---------------------------------------------------------------- the trainer's hooks
     def startup_check(self, device, say=print):
+        """Lean, then FP8: each is checked against the plain way on one batch first, and switched off if it disagrees."""
+        cfg = self.cfg
+        lean, s16 = cfg.lean, cfg.stream16
+        cfg.lean = cfg.stream16 = 0                  # (FP8 is checked on the plain layers, lean with FP8 as it then is)
+        self._fp8_check(device, say)
+        cfg.lean, cfg.stream16 = lean, s16
+        self._lean_check(device, say)
+
+    def _lean_check(self, device, say):
+        """lean (and stream16) against the plain layers on one batch: stream16 falls back to lean, lean to plain."""
+        cfg = self.cfg
+        if cfg.stream16 and not cfg.lean:
+            say("[lean] stream16 needs lean=1: the stream stays 32-bit")
+            cfg.stream16 = 0
+        while cfg.lean:
+            what = "lean + bf16 stream" if cfg.stream16 else "lean"
+            try:
+                ok, gap, cos = LEAN.check(self, device, say)
+                why = f"loss {gap:.2%} apart, gradients {cos:.4f} alike"
+            except Exception as e:
+                ok, why = False, f"{type(e).__name__}: {str(e).splitlines()[0][:160] if str(e) else ''}"
+            if ok:
+                say(f"[lean] {what}: the same layers with less memory moved; vs the plain layers on a test batch: {why}")
+                return
+            if cfg.stream16:
+                say(f"[lean] the bf16 stream failed its check ({why}); the stream stays 32-bit")
+                cfg.stream16 = 0
+            else:
+                say(f"[lean] check failed ({why}); the layers run the plain way")
+                cfg.lean = 0
+
+    def _fp8_check(self, device, say):
         """FP8: the same batch in bf16 and in FP8 must agree, or Bee6 trains in bf16 (bee6/fp8.py)."""
         if not self.cfg.fp8:
             return

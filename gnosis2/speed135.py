@@ -5,6 +5,7 @@ at ~530k tokens a second on a B300, far under what its size suggests).
     python3 -m gnosis2.speed135 --only bee,phi  # some rows only
     python3 -m gnosis2.speed135 --only glue     # round 2: the small operations around the matrix products, off one at a time
     python3 -m gnosis2.speed135 --only canon    # round 3: the Canon sum computed three ways (same model, same numbers)
+    python3 -m gnosis2.speed135 --only lean     # round 4: lean (bee6/lean.py): the same model with less memory moved
 
 Each row builds the body at full size, compiles it, and times a training pass of 32 x 2,048 words on made-up tokens
 (bee6/profile.py): the whole pass, the layers alone, the word table + loss alone, one optimizer step. The first row
@@ -45,8 +46,12 @@ ROWS = [
     # round 3 (--only canon): the same Canon sum computed another way (the model and its numbers are unchanged)
     ("canon_inplace", "Bee-135, Canon without the padded copy", ["canon_impl=inplace"], [], "same model, Canon as in-place adds"),
     ("canon_conv", "Bee-135, Canon as a convolution", ["canon_impl=conv"], [], "same model, Canon as one depthwise convolution"),
+    # round 4 (--only lean): bee6/lean.py. The same model and checkpoint; `python3 -m bee6.traffic` gives the bytes each row moves
+    ("lean", "Bee-135 lean", ["lean=1"], [], "same model, same numbers: norms, Canon, q/k and the loss step move fewer bytes"),
+    ("lean16", "Bee-135 lean + bf16 stream", ["lean=1", "stream16=1"], [], "same model, the stream kept in bf16 (rounding changes a little)"),
 ]
 CANON = "bee,canon_inplace,canon_conv,nocanon"
+LEAN = "bee,lean,lean16"
 GLUE = "bee,nocanon,canon_a,nosmear,nounet,nove,nomask,nomtp,bare"
 
 
@@ -68,7 +73,7 @@ def main(argv=None):
     from bee6 import profile
     from oazy import term
     from oazy.data import default_dir
-    a.only = {"glue": GLUE, "canon": CANON}.get(a.only, a.only)
+    a.only = {"glue": GLUE, "canon": CANON, "lean": LEAN}.get(a.only, a.only)
     pick = set(a.only.split(",")) if a.only else {k for k, *_ in ROWS[:8]}
     base = a.set if a.set is not None else set_words("b")
     phi = (a.set + ["n_ve=0", "hint_rows=73000", "hint_dim=32", "hint_heads=4", "hint_orders=2,3"]) if a.set is not None else set_words("c")
@@ -78,7 +83,7 @@ def main(argv=None):
             continue
         sets = phi if extra is None else (extra if key == "wide" and a.set is None else base + extra)
         term.header(f"{name}", why, color="blue")
-        argv2 = ["--model", "gnosis2", "--preset", a.preset, "--steps", str(a.steps), "--kernels", "40" if not got else "0",
+        argv2 = ["--model", "gnosis2", "--preset", a.preset, "--steps", str(a.steps), "--kernels", "40" if not got else ("12" if a.only == LEAN else "0"),
                  *(["--device", a.device] if a.device else []), *(["--runs", a.runs] if a.runs else []), *opts, "--set", *sets]
         try:
             r = profile.main(argv2)
@@ -112,7 +117,7 @@ def main(argv=None):
                body, right=(1, 2, 3, 4, 5, 6, 7, 8))
     term.out(term.c("  layers / table + loss = their share of a pass, each timed alone (they need not add to 100%). run speed = with "
                     "the optimizer step, without tests and data loading: a real run sits a little under it.", "dim"))
-    out = Path(a.runs or default_dir("runs")) / ({GLUE: "speed135-glue.json", CANON: "speed135-canon.json"}.get(a.only, "speed135-book.json" if a.book else "speed135.json"))
+    out = Path(a.runs or default_dir("runs")) / ({GLUE: "speed135-glue.json", CANON: "speed135-canon.json", LEAN: "speed135-lean.json"}.get(a.only, "speed135-book.json" if a.book else "speed135.json"))
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps([{"key": k, "name": n, "result": r, "error": e} for k, n, _, r, e in got], indent=1, default=str))

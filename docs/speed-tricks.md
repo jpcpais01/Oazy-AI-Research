@@ -502,6 +502,8 @@ These sped up models we have retired (Bee0.2B to Frog), and they still work if t
 | `--set mod_layers=` | Bee6: no Mixture of Depths (`mod_cap=0.125` for the paper's share) |
 | `--set bloom=on` | Bee6: grow 4x512 -> 12x1,024 |
 | `--set sparse_mlp=0.10` | Bee6: each word runs 10% of each MLP (`sparse_block=64` finer blocks, `sparse_from=0.1` the dense start) |
+| `--set lean=1` | Bee6 and after: the same layers with less memory moved (same numbers, same checkpoint) |
+| `--set lean=1 stream16=1` | lean, with the stream itself in bf16 (rounding changes a little; checked at start) |
 
 ### MoE-150M (Nov 16): our 8k pieces and the grouped expert product
 
@@ -516,3 +518,57 @@ Mixture of Depths off) and adds two:
   one graph). Checked at start against plain products; Bee6-MoE's queues if the GPU or torch cannot.
 - `python3 -m bee6.moe150_tests --device cuda` times Dense-30M, the queues, the grouped product at micro 64 and 128, and
   with CUDA graphs, and prints the fastest. Not measured yet.
+
+### Lean (Nov 20): the same model with less memory moved
+
+**What we found.** Bee-135 is not short of arithmetic, it is short of memory speed. Three signs: it uses 21% of a
+B300's arithmetic; FP8 made it slower; and an H200 trains it at 0.56x the B300's speed, which is the ratio of the two
+cards' memory speed (4.8 and 8 TB/s), not of their arithmetic. In the kernel list the compiler's small kernels (norms,
+Canon mixes, residual adds, casts) took 124 ms of 182, the matrix products 33, attention 20.
+
+**The meter** (`bee6/traffic.py`). `python3 -m bee6.traffic` compiles the layers on any machine (no GPU) and reads the
+compiler's plan: for every kernel, the bytes it reads and writes per word. The unit is U, one word's vector in bf16
+(1,152 bytes). It is a plan, not a stopwatch, but it costs nothing and shows a change's effect before a pod is rented.
+
+**Where the bytes were.** The stream is 32-bit (the word table is, and 32-bit + bf16 gives 32-bit), so every norm,
+Canon mix and add moved twice the bytes it needed, and every product first made a bf16 copy of its input.
+
+**What lean does** (`--set lean=1`, `bee6/lean.py`; same model, same numbers, same checkpoint):
+
+- a norm, or norm + Canon, is one kernel that works in 32-bit and writes the bf16 form the product reads;
+- queries and keys: norm, gain and rotation as one kernel each way (it was five in, a dozen back);
+- the way back through all of those is written by hand (three kernels instead of a dozen), keeping only the stream;
+- the loss step reads and writes each word's 49,152 scores 3 times instead of 12.
+
+`stream16=1` on top keeps the stream itself in bf16, as nanochat and the NanoGPT speedrun do. That one changes the
+rounding, so it is its own switch.
+
+| Bee-135, per word | small operations, a layer | products + attention, a layer | loss step, small operations | a whole pass |
+|---|---|---|---|---|
+| as it is | 136 U | 53 U | 1,024 U | 453 GB |
+| `lean=1` | 127 U | 55 U | 256 U | 368 GB |
+| `lean=1 stream16=1` | 91 U | 55 U | 256 U | 305 GB |
+
+(24 layers, a pass of 32 x 2,048 words, the CPU's plan: `--device cuda` on a pod gives the GPU's own.) A whole pass
+moves 1.23x fewer bytes lean and 1.49x fewer with the bf16 stream. A check on the meter: 453 GB a pass at a B300's
+8 TB/s is 57 ms, and the measured pass is 116 ms. So half of today's pass is the memory's own floor. A second
+check: the meter puts the 48 Canons at 13% of a pass's bytes (a pass without them would be 1.15x faster); on the B300
+the row without Canon was 1.19x faster.
+
+**Is it the same model?** Lean: yes, to 32-bit rounding order (`python3 -m bee6.lean_tests`: the loss and every
+gradient against the plain code). On Bee-135's own shape in bf16 the gradients are 0.9999 alike (bf16 itself against
+32-bit: 0.9999). With the bf16 stream: 0.9997 (FP8 was 0.95). Both are checked on one batch at the start of every run
+and fall back if they disagree (stream16 to lean, lean to plain).
+
+**Gain.** NOT MEASURED on a GPU yet. From the bytes: about 1.2x for lean and 1.4x to 1.5x with the bf16 stream (the
+bf16 stream is the bigger half: it halves every stream-sized read and write). `python3 -m gnosis2.speed135 --only lean`
+times the three rows (about 5 minutes) and prints each row's GPU time by kind of kernel. Whether the bf16 stream costs
+any loss needs a short A/B run; the gradient check says it should not.
+
+**What is left.** Per layer, ReLU² alone is 20 U (the MLP's hidden layer is 4 words wide and is read and written on
+its own, in and back). That cannot shrink in PyTorch: it needs the ReLU² inside the matrix product's own kernel
+(a hand-written GPU kernel, with a pod in the loop). After that the model is close to "products + attention" only,
+and the next step is the shape: 12 layers of 832 used the chip better than 24 of 576 (speed135's `wide` row).
+
+**Tried, left out.** The two gates' scores taken from the q/k/v product: under 1% of the bytes. Autograd's own way
+back through the one-kernel norm + Canon: 15 U a layer more than the hand-written one, so the hand-written one stays.

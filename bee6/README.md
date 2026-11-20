@@ -233,12 +233,28 @@ The log's `experts_uneven` (busiest expert / average, ~1.0-1.5 is healthy), `exp
 a full queue, want < 5%) and `experts_idle` (experts no word picked in a step, want 0) say whether the experts are used.
 If memory runs out at micro 32, use `--micro 16` (the batch stays the same, more accumulation).
 
+## Lean (`lean=1`, off by default; Nov 20)
+
+The same layers with less memory moved: Bee-135 (24 layers of 576) waits for memory, not for arithmetic, and its small
+kernels (norms, Canon mixes, adds, casts) moved two and a half times the bytes of its products. `lean=1` rewrites those pieces
+(one kernel per norm or norm + Canon, written straight in the products' bf16; queries and keys normed and rotated in one
+kernel; the way back by hand; a loss step that reads the scores 3 times instead of 12). Same numbers, same checkpoint.
+`stream16=1` on top keeps the stream itself in bf16 (it changes the rounding a little). Both are checked on one batch at
+the start of a run and fall back if they disagree. Not timed on a GPU yet.
+
+    python3 -m bee6.traffic                    # no GPU: the bytes each setting moves per word, kernel by kernel
+    python3 -m bee6.lean_tests                 # lean = plain: the loss and every gradient
+    python3 -m gnosis2.speed135 --only lean    # on the pod (~5 min): Bee-135 as it is, lean, lean + bf16 stream
+
+`docs/speed-tricks.md` ("Lean") has the numbers and what is left.
+
 ## Files
 
 - `bee6/model.py`: `Bee6Config`, `Bee6` (Bee5's body with the fused, FP8 and routed layers).
 - `bee6/fp8.py`: the FP8 product and the startup check.
 - `bee6/bloom.py`: the bloom plan and the function-preserving growth.
 - `bee6/speedcheck.py`: one row per idea, the whole-run speed. `bee6/profile.py`: the kernel list.
+- `bee6/lean.py`: the lean pieces and their startup check. `bee6/traffic.py`: the byte meter. `bee6/lean_tests.py`.
 - `bee6/race.py`: the race table. `runpod/bee6_race.sh`: the race in one line.
 - `bee6/sparse.py`: the sparse MLP. `bee6/sparse_race.py` + `runpod/bee6_sparse.sh`: its race.
   `bee6/sparsebench.py`: CPU writing speed, dense against sparse.

@@ -385,7 +385,11 @@ class Bee5(nn.Module):
             if i == self.backout_at:
                 xb = x
         if cfg.backout:
-            x = x - self.backout_lam * xb
+            x = x - self.backout_lam.to(x.dtype) * xb     # (the stream's own format: 32-bit, or bf16 with Bee6's stream16)
+        return self._norm(x)
+
+    def _norm(self, x):
+        """The norm on the stream (Bee6's lean switch brings its own)."""
         return norm(x)
 
     def _trunk(self, idx):
