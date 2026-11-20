@@ -32,6 +32,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from bee5.model import norm
+from bee6 import lean as LEAN
 from bee6.model import Bee6, Bee6Config, Block6
 
 GNOSIS = dict(n_layer=22, mod_layers="2,4,6,8,10,12,14,16,18,20", key_offset="3,7,11,15,19")
@@ -119,7 +120,16 @@ class Block7(Block6):
     def _c(self, h):
         return self.canon_c(h) if self.canon_c is not None else h
 
+    def _lean(self, x, canon):
+        """Lean (bee6/lean.py): norm, then Canon, as one kernel that writes the form the products read."""
+        dt = LEAN.product_dtype(x)
+        return LEAN.norm(x, dt) if canon is None else LEAN.norm_canon(x, canon.w, dt)
+
     def dense(self, x, ve, cos, sin):
+        if self.cfg.lean:
+            y = x + self.attn(self._lean(x, self.canon_a), ve, cos, sin)
+            f, ex = self.ffn(self._lean(y, self.canon_c))
+            return y + f, ex
         y = x + self.attn(self._a(norm(x)), ve, cos, sin)
         f, ex = self.ffn(self._c(norm(y)))
         return y + f, ex
