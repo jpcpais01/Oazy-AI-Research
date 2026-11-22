@@ -274,6 +274,17 @@ class Gnosis2(Bee6):
             return LOOP.run(self, x0, ves, layer_fn)
         return super()._run(x0, ves, layer_fn)
 
+    def startup_check(self, device, say=print):
+        """Bee6's checks (lean, cuDNN) run the model twice and compare: with the loop, both runs must take the same
+        number of rounds (in training mode the number is drawn at random each pass)."""
+        if not self.cfg.loop_layers:
+            return super().startup_check(device, say)
+        was, self._k_force = self._k_force, self.cfg.loop_steps
+        try:
+            return super().startup_check(device, say)
+        finally:
+            self._k_force = was
+
     def enable_compile(self):
         if self.cfg.loop_layers:
             from . import loop as LOOP
