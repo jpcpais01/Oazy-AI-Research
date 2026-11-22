@@ -55,7 +55,14 @@ import torch.nn.functional as F
 
 from bee5.model import norm
 from bee6.model import Bee6
+<<<<<<< HEAD
+from bee5.loss import set_compile as _loss_compile
+from bee6 import lean as LEAN
+from bee6.model import Attention6, Block6
+from lucid.model import Lucid, LucidConfig, LocalAttention, MindRead, heads, unheads
+=======
 from lucid.model import Lucid, LucidConfig, LocalBlock, MindRead, heads, unheads
+>>>>>>> origin/main
 
 
 @dataclass
@@ -68,7 +75,12 @@ class CanvasConfig(LucidConfig):
     mlp_hidden: int = 2304
     n_layer: int = 12            # word layers: the ear's, then the mouth's
     ear_layers: int = 4
+<<<<<<< HEAD
+    window: int = 64             # every word layer sees at most this many pieces (itself included); 0 = the whole text
+                                 # (Canvas-2: the mouth remembers like Bee, the canvas adds the thought on top)
+=======
     window: int = 64             # every word layer sees at most this many pieces (itself included)
+>>>>>>> origin/main
     beat: int = 16               # pieces per chunk: one meaning, one canvas boundary
     read_at: str = "4,6,8,10"    # the mouth reads the canvas before these word layers (from 0)
     key_offset: str = "3,7,11"
@@ -103,6 +115,13 @@ class CanvasConfig(LucidConfig):
         if self.slots < 1 or self.steps < 1:
             raise ValueError("slots and steps must be at least 1")
 
+<<<<<<< HEAD
+    def unit(self) -> int:
+        """Lengths are padded to a multiple of this (whole chunks, and whole windows when the sight is short)."""
+        return super().unit() if self.window else self.beat
+
+=======
+>>>>>>> origin/main
     def n_steps(self, training: bool) -> int:
         return self.steps if training or not self.steps_eval else self.steps_eval
 
@@ -213,10 +232,33 @@ class Canvas(nn.Module):
         return y, e, h.view(B, n, K, -1)
 
 
+<<<<<<< HEAD
+class SightAttention(LocalAttention):
+    """Gnosis's attention, short-sighted (window > 0, Canvas-1) or seeing the whole text (window = 0, Canvas-2: Bee's
+    own causal attention, so cuDNN's kernel works for it)."""
+
+    def forward(self, x, ve, cos, sin):
+        if self.cfg.window:
+            return LocalAttention.forward(self, x, ve, cos, sin)
+        return Attention6.forward(self, x, ve, cos, sin)
+
+
+class SightBlock(Block6):
+    def __init__(self, cfg, layer: int):
+        super().__init__(cfg, layer)
+        self.attn = SightAttention(cfg, layer)
+
+
+class CanvasModel(Lucid):
+    """Ear (short-sighted word layers) -> meanings -> mind -> canvas (the near future's meanings, refined together)
+    -> mouth (short-sighted word layers that read the canvas) -> the next word. See the top of this file."""
+    Block = SightBlock
+=======
 class CanvasModel(Lucid):
     """Ear (short-sighted word layers) -> meanings -> mind -> canvas (the near future's meanings, refined together)
     -> mouth (short-sighted word layers that read the canvas) -> the next word. See the top of this file."""
     Block = LocalBlock
+>>>>>>> origin/main
 
     def __init__(self, cfg: CanvasConfig):
         Bee6.__init__(self, cfg)
@@ -242,8 +284,14 @@ class CanvasModel(Lucid):
     # ---------------------------------------------------------------- names
     def layout(self):
         c = self.cfg
+<<<<<<< HEAD
+        sight = f"each seeing {c.window} pieces back" if c.window else "seeing the whole text"
+        return (f"ear {c.ear_layers} + mouth {c.n_layer - c.ear_layers} word layers of {c.d_model}, {sight}"
+                f"; meanings of {c.z_dim} per {c.beat}-piece chunk; mind {c.mind_layers} x {c.mind_dim}; canvas "
+=======
         return (f"ear {c.ear_layers} + mouth {c.n_layer - c.ear_layers} word layers of {c.d_model}, each seeing {c.window} "
                 f"pieces back; meanings of {c.z_dim} per {c.beat}-piece chunk; mind {c.mind_layers} x {c.mind_dim}; canvas "
+>>>>>>> origin/main
                 f"of {c.slots} future chunks refined together in {c.steps} steps ({c.canvas_layers} layers), read before "
                 f"word layers {','.join(str(i + 1) for i in c.read_set())}")
 
@@ -252,7 +300,13 @@ class CanvasModel(Lucid):
 
     def speed_text(self):
         c = self.cfg
+<<<<<<< HEAD
+        return " · ".join(s for s in ["q/k/v fused" if c.fuse_qkv else "", "bf16",
+                                      "lean" if c.lean else "", "cuDNN attention" if c.attn_backend == "cudnn" else "",
+                                      f"window {c.window}" if c.window else "full sight",
+=======
         return " · ".join(s for s in ["q/k/v fused" if c.fuse_qkv else "", "bf16", f"window {c.window}",
+>>>>>>> origin/main
                                       f"{c.steps} canvas steps per {c.beat}-piece chunk"] if s)
 
     def mind_params(self):
@@ -379,9 +433,21 @@ class CanvasModel(Lucid):
         idx = self._pad(idx)
         T = idx.shape[1]
         e, _ = self._embed(idx)
+<<<<<<< HEAD
+        if self.cfg.lean:                # Bee's lean way (bee6/lean.py): fused norms, full-width rotation tables
+            sdt = LEAN.stream_dtype(self.cfg, e)
+            x0 = LEAN.norm(e, sdt, self.cfg.lean_rows)
+            ves = [t(idx).to(sdt) for t in self.ve]
+            cos, sin = self.rope_cos2[:T], self.rope_sin2[:T]
+        else:
+            x0 = norm(e)
+            ves = [t(idx) for t in self.ve]
+            cos, sin = self.rope_cos[:T], self.rope_sin[:T]
+=======
         x0 = norm(e)
         ves = [t(idx) for t in self.ve]
         cos, sin = self.rope_cos[:T], self.rope_sin[:T]
+>>>>>>> origin/main
         keep = {}
 
         def layer(i, x, ve):
@@ -400,11 +466,25 @@ class CanvasModel(Lucid):
         times a pass)."""
         import torch._dynamo
         dc = torch._dynamo.config
+<<<<<<< HEAD
+        # many shapes: 3 window lengths x training / reading x the checks' batch sizes (64 was hit on the first run)
+        dc.cache_size_limit = max(getattr(dc, "cache_size_limit", 8), 256)
+        if hasattr(dc, "recompile_limit"):
+            dc.recompile_limit = max(dc.recompile_limit, 256)
+        if hasattr(dc, "accumulated_cache_size_limit"):
+            dc.accumulated_cache_size_limit = max(dc.accumulated_cache_size_limit, 2048)
+        if hasattr(dc, "accumulated_recompile_limit"):
+            dc.accumulated_recompile_limit = max(dc.accumulated_recompile_limit, 2048)
+        mode = self.cfg.compile_mode
+        kw = LEAN.compile_kw(mode)
+        _loss_compile(kw if mode in LEAN.TUNE else {})               # the loss step's kernels tuned with the body's
+=======
         dc.cache_size_limit = max(getattr(dc, "cache_size_limit", 8), 64)
         if hasattr(dc, "accumulated_cache_size_limit"):
             dc.accumulated_cache_size_limit = max(dc.accumulated_cache_size_limit, 512)
         mode = self.cfg.compile_mode
         kw = {} if mode in ("", "default") else {"mode": mode}
+>>>>>>> origin/main
         for b in self.blocks:
             b.compile(dynamic=False, **kw)
         for r in self.reads.values():
