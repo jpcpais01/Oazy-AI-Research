@@ -59,12 +59,14 @@ SOURCES = {"fwe": "", "dclm": "dclm", "chat": "chat",          # name -> sub-fol
            "cosmo": "cosmo", "wiki": "wiki", "math": "math", "code": "code", "books": "books", "best": "best",
            "faith": "faith", "religion": "religion", "creed": "creed", "world": "world", "field1": "field1",
            "proc": "proc", "work": "field1work", "think": "think",      # Opal2's new parts (oazy/opal2.py)
-           "howto": "howto", "stories": "stories", "facts": "facts", "science": "science", "scenes": "scenes", "web": "web"}   # Opal3's (oazy/opal3.py)
+           "howto": "howto", "stories": "stories", "facts": "facts", "science": "science", "scenes": "scenes", "web": "web",
+           "wordings": "wordings"}      # the same rule in many wordings (oazy/wordings.py, Loop-135's A/B)   # Opal3's (oazy/opal3.py)
 WORLD_SOURCES = ("world", "field1", "work")       # the world's text: Emerald's old practice text, or Opal's Field1 (oazy/field1/)
 PREPARE = {"faith": "python3 -m oazy.faith build", "religion": "python3 -m oazy.religion fetch, then build",
            "creed": "python3 -m oazy.religion creed", "world": "python3 -m oazy.emerald build",
            "field1": "python3 -m oazy.opal build", "proc": "python3 -m oazy.opal2 build --part proc",
            "work": "python3 -m oazy.opal2 build --part work", "think": "python3 -m oazy.think --tokens 400e6 (a GPU)",
+           "wordings": "python3 -m oazy.wordings build",
            **{k: "python3 -m oazy.opal3 build" for k in ("howto", "stories", "facts", "science", "scenes", "web")}}     # how a source that is not made by this file is made
 
 

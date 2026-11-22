@@ -1104,6 +1104,9 @@ def main():
                     help="learning-rate shape: cos (cosine) or wsd (flat, then a straight fall over the last 20%%); default wsd for bee")
     ap.add_argument("--mix", default=None, help="Bee's text mix over training (default in oazy/mix.py), "
                     "e.g. 'fwe:0.65,dclm:0.35@0;fwe:0.45,dclm:0.25,chat:0.3@0.8'")
+    ap.add_argument("--wordings", type=float, default=None,
+                    help="share of the words from the wordings text (oazy/wordings.py: the same rule said many ways), "
+                         "e.g. 0.05; it must be built first: python3 -m oazy.wordings build")
     ap.add_argument("--religion", type=float, default=None,
                     help="share of the words from Gutenberg's religious books (oazy/religion.py); default the mix's (Sado: 0.0195), 0 = off")
     ap.add_argument("--creed", type=float, default=None,
@@ -1308,6 +1311,11 @@ def main():
             if getattr(args, src) is not None:
                 from .mix import with_share
                 args.mix = with_share(args.mix, src, getattr(args, src))
+        if args.wordings:                         # the wordings text (oazy/wordings.py), at its share of every phase
+            from .mix import with_share
+            if not source_path(data, "wordings").exists():
+                raise SystemExit(f"no {source_path(data, 'wordings')}: run  python3 -m oazy.wordings build  first")
+            args.mix = with_share(args.mix, "wordings", args.wordings)
         train = Mix(data, args.mix, T, micro, seed=args.seed,
                     lengths=[t for _, t in ctx_plan(cfg)], log=say, marks=getattr(model, "wants_marks", False))
         xval = {n: val_set(source_path(data, n, "val"), Tv, 32) for n in train.src

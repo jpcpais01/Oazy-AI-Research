@@ -48,6 +48,7 @@ SETS = {
 BABI_URLS = ("https://s3.amazonaws.com/text-datasets/babi_tasks_1-20_v1-2.tar.gz",      # the Keras mirror (alive Nov 10)
              "http://www.thespermwhale.com/jaseweston/babi/tasks_1-20_v1-2.tar.gz")
 REASONING = ("arc_challenge", "csqa", "winogrande", "babi")
+RULES = ("rules_seen", "rules_new_wording", "rules_deeper")     # oazy/wordings.py: python3 -m oazy.wordings test
 CHANCE = {"arc_easy": 0.25, "arc_challenge": 0.25, "piqa": 0.5, "csqa": 0.2, "winogrande": 0.5}
 
 
@@ -245,6 +246,11 @@ def evaluate_all(model, data_root: Path, device, limit=None):
             out[name], out[name + "_char"], out[name + "_n"] = r["acc_norm"], r["acc_char"], r["n"]
             if "acc_judge" in r:                         # a model with a judge head: the same questions by its yes
                 out[name + "_judge"], out[name + "_judge_mean"] = r["acc_judge"], r["acc_judge_mean"]
+    for name in RULES:                                   # the held-out rule test (oazy/wordings.py), when it is there
+        p = d / f"{name}.jsonl"
+        if p.exists():
+            r = hellaswag.evaluate(model, p, device, mc_limit)
+            out[name], out[name + "_char"], out[name + "_n"] = r["acc_norm"], r["acc_char"], r["n"]
     p = d / "babi.jsonl"
     if p.exists():                                       # what guessing scores there (the number of choices varies)
         rows = hellaswag.load(p, mc_limit)
