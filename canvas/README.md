@@ -34,7 +34,11 @@ Hand-set, on purpose for a first test: the 16-piece rhythm, 4 slots, 4 steps. Le
 when settled" are the next step if this works (Pegasus collapsed when it learned boundaries from the start).
 
 ```
+<<<<<<< HEAD
 python3 -m canvas.tests                  # CPU, ~2 min, 17 checks
+=======
+python3 -m canvas.tests                  # CPU, ~2 min, 14 checks
+>>>>>>> origin/main
 python3 -m canvas.tests --device cuda    # + a race-size compiled step and its speed against Bee-135
 bash runpod/canvasab.sh                  # the A/B: Bee-135 (shared with the judge A/B) and Canvas-135, 2B tokens each
 python3 -m canvas.ab                     # the table and the verdict
@@ -44,6 +48,7 @@ Rule fixed before the run: kept only if reasoning (mean of ARC-E, ARC-C, CSQA, W
 Bee-135, HellaSwag no more than 3 points under, and the held-out loss rises 0.05 or more with the canvas switched off.
 The log's `[core]` line is the canvas-off check; `[loop]` gives the held-out loss with 1, 2, 4 and 8 refining steps
 (lower with more steps = thinking longer helps).
+<<<<<<< HEAD
 
 ## Canvas-2 (Nov 22 2026): the mouth sees the whole text
 
@@ -59,3 +64,5 @@ bash runpod/canvas10b.sh                 # Canvas-2, 10B tokens (first Opal; SUB
 ```
 
 Risk: a writer that can see everything may ignore the plan (Pegasus). The `[core]` line (canvas off) says whether it does.
+=======
+>>>>>>> origin/main
