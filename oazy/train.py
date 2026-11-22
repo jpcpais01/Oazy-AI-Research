@@ -172,6 +172,11 @@ def say(*a, **k):
 def summary(info, run_dir, resumed=None):
     """The start of a run, short and aligned (everything else is in config.json)."""
     nice = NICE.get(info["model"], info["model"])
+    try:                                    # a body with a name of its own (Bee-135, Phi-135, Loop-135: oazy/dashboard.py)
+        from .dashboard import _label
+        nice = _label(info) or nice
+    except Exception:
+        pass
     p, pa = info.get("params") or 0, info.get("params_active")
     size = f"{p / 1e6:,.0f}M parameters" + (f", {pa / 1e6:,.0f}M at work per word" if pa else "")
     term.header(nice, f"next-word model · {size}" if info["model"] in BEES or info["model"] in ("gpt", "memtrix") else size)
