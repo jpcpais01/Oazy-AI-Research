@@ -98,6 +98,16 @@ def train_tests(dev):
     g_loop = m.blocks[8].mlp.down.weight.grad
     check("with 4 rounds (the cut before round 3) the reader and the loop both still learn",
           g_read is not None and g_read.abs().sum() > 0 and g_loop is not None and g_loop.abs().sum() > 0)
+    import bee6.model as B6
+    seen_k, calls = [], []
+    orig = B6.Bee6.startup_check
+    B6.Bee6.startup_check = lambda self, device, say=print: [seen_k.append(LOOP_.steps(self)) for _ in range(5)]
+    try:
+        m.startup_check(dev, lambda *a, **k: None)
+    finally:
+        B6.Bee6.startup_check = orig
+    check("the start-up checks (lean, cuDNN: two runs compared) see one fixed number of rounds, not a random one",
+          seen_k == [LOOP["loop_steps"]] * 5 and m._k_force is None, str(seen_k))
     seen = set()
     for _ in range(40):
         seen.add(LOOP_.steps(m))
