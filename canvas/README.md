@@ -34,7 +34,7 @@ Hand-set, on purpose for a first test: the 16-piece rhythm, 4 slots, 4 steps. Le
 when settled" are the next step if this works (Pegasus collapsed when it learned boundaries from the start).
 
 ```
-python3 -m canvas.tests                  # CPU, ~2 min, 14 checks
+python3 -m canvas.tests                  # CPU, ~2 min, 17 checks
 python3 -m canvas.tests --device cuda    # + a race-size compiled step and its speed against Bee-135
 bash runpod/canvasab.sh                  # the A/B: Bee-135 (shared with the judge A/B) and Canvas-135, 2B tokens each
 python3 -m canvas.ab                     # the table and the verdict
@@ -44,3 +44,18 @@ Rule fixed before the run: kept only if reasoning (mean of ARC-E, ARC-C, CSQA, W
 Bee-135, HellaSwag no more than 3 points under, and the held-out loss rises 0.05 or more with the canvas switched off.
 The log's `[core]` line is the canvas-off check; `[loop]` gives the held-out loss with 1, 2, 4 and 8 refining steps
 (lower with more steps = thinking longer helps).
+
+## Canvas-2 (Nov 22 2026): the mouth sees the whole text
+
+The first A/B at 800M tokens: Canvas-135 3.439 held-out vs Bee-135 3.188, reasoning 37.0 vs 37.75, but the canvas was
+used (canvas off +0.287) and a second refining step helped (3.62 -> 3.46). Its weak spot was memory: with 64 pieces
+of sight it repeated an earlier passage 35% right vs Bee's 93%. So in Canvas-2 every word layer sees the whole text
+(`window=0`, Bee's own causal attention), and the canvas adds the thought on top instead of being the only way back.
+Same weights (131.8M). Bee-135's speed switches carried over: `lean=1 attn_backend=cudnn` and torch's kernel tuning.
+
+```
+python3 -m canvas.tests --device cuda    # + Canvas-2's speed against Bee-135 (lean + cuDNN)
+bash runpod/canvas10b.sh                 # Canvas-2, 10B tokens (first Opal; SUB=opal3 if it is on the volume)
+```
+
+Risk: a writer that can see everything may ignore the plan (Pegasus). The `[core]` line (canvas off) says whether it does.

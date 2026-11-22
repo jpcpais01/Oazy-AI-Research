@@ -53,7 +53,8 @@ def gpu_checks(device):
     x = torch.randint(0, 49152, (B, T + 1), device=device)
     res = {}
     for name, m in (("Canvas-135", CanvasModel(CanvasConfig())),
-                    ("Bee-135", Gnosis2(Gnosis2Config(**{**GNOSIS, **B135})))):
+                    ("Canvas-2", CanvasModel(CanvasConfig(window=0, lean=1, attn_backend="cudnn"))),
+                    ("Bee-135", Gnosis2(Gnosis2Config(**{**GNOSIS, **B135, "lean": 1, "attn_backend": "cudnn"})))):
         m.to(device).train()
         m.enable_compile()
         opt = m.make_optimizer(1e-3, device)
@@ -72,7 +73,8 @@ def gpu_checks(device):
         check(f"{name}: a race-size step runs compiled on the GPU", bool(torch.isfinite(loss)), f"{res[name] / 1e3:,.0f}k tok/s, loss {float(loss):.2f}")
         del m, opt
         torch.cuda.empty_cache()
-    term.info(f"Canvas-135 runs at {res['Canvas-135'] / res['Bee-135']:.2f}x Bee-135's speed (8 x 2,048, before tuning)")
+    term.info(f"Canvas-135 runs at {res['Canvas-135'] / res['Bee-135']:.2f}x, Canvas-2 (full sight, lean, cuDNN) at "
+              f"{res['Canvas-2'] / res['Bee-135']:.2f}x Bee-135 lean + cuDNN's speed (8 x 2,048, before tuning)")
 
 
 def main():
@@ -127,6 +129,38 @@ def main():
           f"largest change before it {worst:.1e}")
     a1 = m.scores(m._trunk(x[:, :53]))
     check("any length reads the same as the start of a longer text", float((a1 - base[:, :53]).abs().max().detach()) < 1e-4)
+
+    # ---- Canvas-2: the word layers see the whole text (window=0); still honest, and lean gives the same numbers
+    torch.manual_seed(0)
+    m = small(window=0)
+    wake(m)
+    m.eval()
+    base = m.scores(m._trunk(x))
+    worst = 0.0
+    for p in (0, 7, 8, 9, 37, 64, 99):
+        x2 = x.clone()
+        x2[:, p] = (x2[:, p] + 1) % 300
+        d = (m.scores(m._trunk(x2)) - base)[:, :p].abs().max() if p else torch.tensor(0.0)
+        worst = max(worst, float(d.detach()))
+    a1 = m.scores(m._trunk(x[:, :53]))
+    check("Canvas-2 (full sight): honest, and any length reads the same", worst == 0.0
+          and float((a1 - base[:, :53]).abs().max().detach()) < 1e-4, f"largest change before it {worst:.1e}")
+    far = x.clone()
+    far[:, 3] = (far[:, 3] + 1) % 300
+    m.mind_on = False                                 # with the canvas off, only the word layers can carry piece 3
+    off0, off1 = m.scores(m._trunk(x)), m.scores(m._trunk(far))
+    m.mind_on = True
+    check("Canvas-2's word layers themselves see far back (piece 3 changes the guess at piece 99, canvas off)",
+          float((off1 - off0)[:, 99].abs().max().detach()) > 0)
+    m.cfg.lean = 1
+    try:
+        lean = m.scores(m._trunk(x))
+        gap = float((lean - base).abs().max().detach())
+        check("Canvas-2 lean: the same numbers as the plain layers", gap < 2e-3 * float(base.abs().max().detach()) + 1e-3,
+              f"largest gap {gap:.1e}")
+    except Exception as e:                            # lean's kernels may need a GPU: the run checks them at its start
+        term.info(f"lean not checkable here ({type(e).__name__}); a GPU run checks it against the plain layers at its start")
+    m.cfg.lean = 0
 
     # ---- the canvas is the only way past the window (one ear layer and one mouth layer: 16 pieces of sight in all)
     m = small(n_layer=2, ear_layers=1, read_at="1", key_offset="")
