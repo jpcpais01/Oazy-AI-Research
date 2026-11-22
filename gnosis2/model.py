@@ -58,6 +58,15 @@ class Gnosis2Config(Bee6Config):
                                # phrases ending there are looked up, and "what usually came next" (the kept next pieces'
                                # word vectors, weighted by how often) is added to the input through one layer that starts
                                # at zero. The table is a file beside the weights: frozen, not saved in checkpoints.
+    # Loop-135 (gnosis2/loop.py, Nov 22): the layers before the last loop_mouth + loop_layers read once, the next
+    # loop_layers think in rounds (the same weights every round), the last loop_mouth speak. 0 = off (plain Bee-135).
+    loop_layers: int = 0       # layers in the loop
+    loop_mouth: int = 4        # layers after it (the mouth)
+    loop_steps: int = 4        # rounds when reading (and in training when loop_min = 0)
+    loop_min: int = 2          # rounds in training: a random number from loop_min to loop_max each step (0 = loop_steps)
+    loop_max: int = 6
+    loop_grad: int = 4         # only the last this-many rounds carry gradient (0 = all)
+    loop_eval: int = 0         # rounds when reading, if not loop_steps
 
     def hint_ns(self):
         return [int(s) for s in str(self.hint_orders).split(",") if s.strip()]
@@ -175,6 +184,15 @@ class Gnosis2(Bee6):
             mult = torch.randint(1, 2 ** 31 - 1, (len(ns), cfg.hint_heads, self.hint_n), generator=g) * 2 + 1
             self.register_buffer("hint_mult", mult, persistent=False)
 
+        self._pass, self._k_force, self._k_last = 0, None, 0
+        if cfg.loop_layers:
+            from . import loop as LOOP
+            LOOP.check(cfg, len(self.skip_gate), self.backout_at)
+            if cfg.hint_rows or cfg.book:
+                raise ValueError("loop: no phrase hint or memory table (the reading-on cache is the loop's own)")
+            self.loop_in = nn.Parameter(torch.zeros(cfg.d_model))    # how much of the reader's vector each round re-reads
+            self.loop_report = lambda windows, device, batch=16: LOOP.report(self, windows, device, batch)   # the trainer's [loop] line
+
         self.book_orders, self.book_n, self.book_out = [], 0, None
         if cfg.book:
             from oazy.book import load
@@ -249,7 +267,23 @@ class Gnosis2(Bee6):
             e = e + self._book(idx, self._tail).to(e.dtype)
         return e, raw_last
 
+    # ---------------------------------------------------------------- Loop-135 (gnosis2/loop.py)
+    def _run(self, x0, ves, layer_fn):
+        if self.cfg.loop_layers:
+            from . import loop as LOOP
+            return LOOP.run(self, x0, ves, layer_fn)
+        return super()._run(x0, ves, layer_fn)
+
+    def enable_compile(self):
+        if self.cfg.loop_layers:
+            from . import loop as LOOP
+            return LOOP.compile_blocks(self)
+        return super().enable_compile()
+
     def _read(self, idx, states=None, looks=False):
+        if self.cfg.loop_layers:
+            from . import loop as LOOP
+            return LOOP.read(self, idx, states, looks)
         n = max(self.hint_n if self.hint is not None else 0, self.book_n)
         if n == 0:
             return super()._read(idx, states, looks)
@@ -273,6 +307,12 @@ class Gnosis2(Bee6):
         if self.book_out is not None:
             hint += (f", memory table ({self.book_entries() / 1e6:.1f}M phrases of {','.join(map(str, self.book_orders))} "
                      f"pieces, a file beside the weights)")
+        if self.cfg.loop_layers:
+            c = self.cfg
+            a = c.n_layer - c.loop_layers - c.loop_mouth
+            hint += (f", LOOP: reader {a} layers once, {c.loop_layers} layers in rounds ("
+                     f"{f'{c.loop_min}-{c.loop_max} in training, ' if c.loop_min else ''}{c.loop_eval or c.loop_steps} reading), "
+                     f"mouth {c.loop_mouth}")
         return super().layout() + f", {n} Canon layers ({self.cfg.canon_k} words wide)" + hint
 
     def canon_params(self):
