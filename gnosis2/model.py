@@ -67,6 +67,18 @@ class Gnosis2Config(Bee6Config):
     loop_max: int = 6
     loop_grad: int = 4         # only the last this-many rounds carry gradient (0 = all)
     loop_eval: int = 0         # rounds when reading, if not loop_steps
+    # Think-135 (gnosis2/think.py, Nov 23): each sentence has a thought (a small noisy vector read at its last piece
+    # after `thought_at` layers) that all its pieces read; a diffusion mind learns to make the next one. 0 = off.
+    thought: int = 0
+    thought_at: int = 4        # the thought is read (and given back) before this layer
+    thought_dim: int = 32      # numbers in a thought
+    thought_noise: float = 1.0  # noise added to a thought of size 1 before the words read it (what keeps it a gist)
+    thought_drop: float = 0.15  # share of sentences written with no thought
+    thought_cap: int = 64      # pieces in a sentence at most
+    thought_w: float = 1.0     # the mind's lesson, its weight
+    thought_width: int = 512   # the denoiser's width
+    thought_blocks: int = 3    # and its depth
+    thought_every: int = 16    # sentence ends the mind learns from: one per this many pieces a row
 
     def hint_ns(self):
         return [int(s) for s in str(self.hint_orders).split(",") if s.strip()]
@@ -193,6 +205,13 @@ class Gnosis2(Bee6):
             self.loop_in = nn.Parameter(torch.zeros(cfg.d_model))    # how much of the reader's vector each round re-reads
             self.loop_report = lambda windows, device, batch=16: LOOP.report(self, windows, device, batch)   # the trainer's [loop] line
 
+        self._tmode, self._tgiven, self._tbounds, self._cap = "null", None, None, None
+        if cfg.thought:
+            from . import think as THINK
+            THINK.check(cfg)
+            self.mind = THINK.Mind(cfg)
+            self.loop_report = lambda windows, device, batch=16: THINK.report(self, windows, device, batch)
+
         self.book_orders, self.book_n, self.book_out = [], 0, None
         if cfg.book:
             from oazy.book import load
@@ -267,6 +286,30 @@ class Gnosis2(Bee6):
             e = e + self._book(idx, self._tail).to(e.dtype)
         return e, raw_last
 
+    # ---------------------------------------------------------------- Think-135 (gnosis2/think.py)
+    def _begin(self, idx):
+        if self.cfg.thought:
+            from . import think as THINK
+            return THINK.begin(self, idx)
+        return super()._begin(idx)
+
+    def _before(self, i, x, keep):
+        if self.cfg.thought:
+            from . import think as THINK
+            return THINK.before(self, i, x, keep)
+        return super()._before(i, x, keep)
+
+    def _trunk_aux(self, idx):
+        out = super()._trunk_aux(idx)
+        if not self.cfg.thought:
+            return out
+        from . import think as THINK
+        h, ex = out[0], out[5]
+        if self.training:
+            return out[:5] + (THINK.lesson(self, h, ex),)
+        self._cap = (h, ex)                      # reading: kept for whoever asks (thinkab, the held-out check)
+        return out[:5]
+
     # ---------------------------------------------------------------- Loop-135 (gnosis2/loop.py)
     def _run(self, x0, ves, layer_fn):
         if self.cfg.loop_layers:
@@ -277,6 +320,12 @@ class Gnosis2(Bee6):
     def startup_check(self, device, say=print):
         """Bee6's checks (lean, cuDNN) run the model twice and compare: with the loop, both runs must take the same
         number of rounds (in training mode the number is drawn at random each pass)."""
+        if self.cfg.thought:                 # the thought's noise differs from pass to pass: the checks compare the body
+            self.cfg.thought = 0
+            try:
+                return super().startup_check(device, say)
+            finally:
+                self.cfg.thought = 1
         if not self.cfg.loop_layers:
             return super().startup_check(device, say)
         was, self._k_force = self._k_force, self.cfg.loop_steps
@@ -324,6 +373,11 @@ class Gnosis2(Bee6):
             hint += (f", LOOP: reader {a} layers once, {c.loop_layers} layers in rounds ("
                      f"{f'{c.loop_min}-{c.loop_max} in training, ' if c.loop_min else ''}{c.loop_eval or c.loop_steps} reading), "
                      f"mouth {c.loop_mouth}")
+        if self.cfg.thought:
+            c = self.cfg
+            hint += (f", THOUGHT: one of {c.thought_dim} numbers per sentence (read after {c.thought_at} layers, noise "
+                     f"{c.thought_noise:g}), a diffusion mind makes the next one "
+                     f"({sum(p.numel() for p in self.mind.parameters()) / 1e6:.1f}M)")
         return super().layout() + f", {n} Canon layers ({self.cfg.canon_k} words wide)" + hint
 
     def canon_params(self):
