@@ -23,6 +23,9 @@ reading then make it worse, not better. Trained at 2..6 it learns a thought that
 12 rounds can help (Geiping et al. 2025, "Scaling up test-time compute with latent reasoning"). The held-out loss by
 rounds (1, 2, 4, 6, 8, 12) is logged at every check (the `[loop]` line).
 
+Stable: every round after the first starts with the stream scaled back to its size after the reader (the same
+four layers applied again and again otherwise grow it round by round; the first 2B run blew up at 870 steps).
+
 Memory: only the last `loop_grad` rounds carry gradient (the stream is cut before them; the reader still learns
 through the re-read vector in every round). So 5 or 6 rounds cost the memory of 4.
 
@@ -111,12 +114,13 @@ def _run(model, x0, ves, layer_fn):
     for i in range(a):                               # the reader
         x = bee(i, x)
     r = norm(x)                                      # each word's vector after the reader: re-read every round
+    g = x.float().pow(2).mean(-1, keepdim=True).add(1e-6).sqrt()   # its size: every later round starts at this size
     cut = K - cfg.loop_grad if model.training and cfg.loop_grad else 0
     for s in range(K):                               # the loop
         if s:
             if s == cut:
                 x = x.detach()                       # earlier rounds: forward only (the memory of loop_grad rounds)
-            x = x + model.loop_in.to(x.dtype) * r.to(x.dtype)
+            x = (norm(x) * g).to(x.dtype) + model.loop_in.to(x.dtype) * r.to(x.dtype)   # no growth round to round
         for j in range(L):
             i = a + j
             if s == 0:
@@ -125,6 +129,8 @@ def _run(model, x0, ves, layer_fn):
                 model._pass = p
                 p += 1
                 x = layer_fn(i, x, ves[vi[i]] if vi[i] is not None else None)
+        if getattr(model, "_probe", None) is not None:   # (tests) the stream's size after each round
+            model._probe.append(float(x.float().pow(2).mean().sqrt()))
     for i in range(a + L, n):                        # the mouth
         x = bee(i, x)
     if cfg.backout:

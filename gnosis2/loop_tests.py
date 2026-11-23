@@ -57,6 +57,13 @@ def model_tests(dev):
     check("more rounds change what it says (the loop is in the path)",
           all((s[k] - s[1]).abs().max() > 1e-3 for k in (2, 3, 6)),
           " ".join(f"{k}: {(s[k] - s[1]).abs().max().item():.3f}" for k in (2, 3, 6)))
+    with torch.no_grad():
+        big = jiggle(Gnosis2(Gnosis2Config(**SMALL, **LOOP)), 0.3).to(dev).eval()
+        big._probe, big._k_force = [], 24
+        big(x)
+        sz, big._probe, big._k_force = big._probe, None, None
+    check("the stream does not grow round after round (24 rounds, strong random weights)",
+          max(sz[1:]) < 3 * sz[1], " ".join(f"{v:.1f}" for v in sz[::4]))
     y = x.clone()
     y[:, 60] = (y[:, 60] + 7) % 511 + 1
     with torch.no_grad():
