@@ -61,9 +61,29 @@ def steps(model) -> int:
     return cfg.loop_eval or cfg.loop_steps
 
 
+def eager():
+    """Outside training the layers run uncompiled, as Bee's do: the tests' many lengths would otherwise fill each
+    layer's compile cache (64 entries), and from then on torch runs new training shapes uncompiled, ~3x slower."""
+    import contextlib
+    sc = getattr(torch.compiler, "set_stance", None)
+    return sc("force_eager") if sc is not None else contextlib.nullcontext()
+
+
 def run(model, x0, ves, layer_fn):
-    """Bee5._run with the loop: reader once, loop K rounds, mouth once. layer_fn(i, x, ve) -> x; model._pass is set
-    to a number unique to each pass before each call (the reading-on cache keys its layers by it)."""
+    """Bee5._run with the loop: reader once, loop K rounds, mouth once (uncompiled when not training)."""
+    if model.training or getattr(model, "_eager", False):
+        return _run(model, x0, ves, layer_fn)
+    model._eager = True
+    try:
+        with eager():
+            return _run(model, x0, ves, layer_fn)
+    finally:
+        model._eager = False
+
+
+def _run(model, x0, ves, layer_fn):
+    """layer_fn(i, x, ve) -> x; model._pass is set to a number unique to each pass before each call (the reading-on
+    cache keys its layers by it)."""
     cfg = model.cfg
     n, L = cfg.n_layer, cfg.loop_layers
     n_skip = len(model.skip_gate)
