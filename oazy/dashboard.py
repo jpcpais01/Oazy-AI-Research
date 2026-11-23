@@ -375,6 +375,8 @@ def _label(cf: dict):
     if cf.get("model") == "gnosis2" and c.get("d_model") == 576:
         return (("Loop-135" if c.get("loop_layers") else "Phi-135" if c.get("hint_rows") else "Bee-135") + (" + table" if c.get("book") else "")
                 + (" · Opal4" if "web:0.06" in str(cf.get("mix") or "") else " · Opal3" if "howto:" in str(cf.get("mix") or "") else ""))
+    if cf.get("model") == "canvas":
+        return "Canvas-3" if c.get("chunks") == "sentence" else "Canvas-2" if c.get("window") == 0 else "Canvas-135"
     return None
 
 

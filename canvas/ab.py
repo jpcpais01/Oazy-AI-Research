@@ -20,6 +20,13 @@ bit worse, but as long as it is more intelligent, it's okay". So the canvas is K
     3. the thought is used: the held-out loss with the canvas switched off is 0.05 or more above it with the canvas on
 Each arm gets the better of its two usual scorings (per token, per letter) on each test.
 
+Canvas-3 (canvas3ab-135, 23 Nov 2026, João's "the whole answer diffused as meanings, any part surer than another,
+nothing locked"): chunks are SENTENCES (cut at a sentence end, 16 to 64 pieces), the canvas holds the next 6 of them
+(about the next 150 words, refined together), each slot's noise follows its own sureness and a slot that finds itself
+wrong is fogged again (adapt=2); the word layers see the whole text (Canvas-2's fix). Same rule as above, fixed before
+its run, against the same plain arm (judgeab-plain-135, first Opal, 2B tokens, seed 0): `ARMS=canvas3 SUB=opal bash
+runpod/canvasab.sh`.
+
 Also shown, not part of the rule: the held-out loss by refining steps (1, 2, 4, 8): if more steps give a lower loss,
 thinking longer helps, which a plain transformer cannot do at all.
 """
@@ -31,10 +38,12 @@ from pathlib import Path
 
 from gnosis2.judgeab import ARMS as JARMS, RUNS as JRUNS, TESTS, read as jread
 
-ARMS = {"plain": JARMS["plain"], "canvas": {}}
-MODEL = {"plain": "gnosis2", "canvas": "canvas"}
-SEED = {"plain": 0, "canvas": 0}
-RUNS = {"plain": JRUNS["plain"], "canvas": "canvasab-canvas-135"}
+CANVAS3 = dict(window=0, chunks="sentence", max_units=4, slots=6, adapt=2, lean=1, attn_backend="cudnn")
+ARMS = {"plain": JARMS["plain"], "canvas": {}, "canvas3": CANVAS3}
+MODEL = {"plain": "gnosis2", "canvas": "canvas", "canvas3": "canvas"}
+SEED = {"plain": 0, "canvas": 0, "canvas3": 0}
+RUNS = {"plain": JRUNS["plain"], "canvas": "canvasab-canvas-135", "canvas3": "canvas3ab-135"}
+LABEL = {"plain": "Bee-135 (plain)", "canvas": "Canvas-135", "canvas3": "Canvas-3"}
 REASON = ("arc_easy", "arc_challenge", "csqa", "winogrande")
 NEED_REASON, HS_SLACK, NEED_GAP = 0.015, 0.03, 0.05
 TUNE = "compile_mode=max-autotune-no-cudagraphs"
@@ -67,8 +76,8 @@ def extras(d):
     return core, loop
 
 
-def verdict(got, gap):
-    P, C = got.get("plain"), got.get("canvas")
+def verdict(got, gap, arm="canvas"):
+    P, C = got.get("plain"), got.get(arm)
     if not (P and C):
         return [("verdict", "none yet: both arms must have run")]
     if not (P["done"] and C["done"] and P["full"] and C["full"]) or abs(P["tok"] - C["tok"]) > 0.01 * P["tok"]:
@@ -112,9 +121,10 @@ def main(argv=None):
     from oazy.report import pct
     runs = Path(a.runs or default_dir("runs"))
     got = {arm: jread(run_dir(runs, rn)) for arm, rn in RUNS.items()}
-    gap, loop = extras(run_dir(runs, RUNS["canvas"]))
+    which = "canvas3" if got.get("canvas3") is not None else "canvas"
+    gap, loop = extras(run_dir(runs, RUNS[which]))
     body = []
-    for arm, label in (("plain", "Bee-135 (plain)"), ("canvas", "Canvas-135")):
+    for arm, label in LABEL.items():
         g = got[arm]
         if g is None:
             body.append([label, "not run yet"] + [""] * (3 + len(TESTS)))
@@ -131,8 +141,10 @@ def main(argv=None):
     if loop:
         print("  thinking longer (held-out loss by refining steps): "
               + "  ".join(f"{k}: {float(v):.3f}" for k, v in sorted(loop.items(), key=lambda kv: int(kv[0]))))
-    term.header("verdict by the rule fixed before the run", color="green")
-    term.rows(verdict(got, gap))
+    if gap is not None:
+        print(f"  {LABEL[which]}: held-out loss {gap:+.3f} higher with the canvas off")
+    term.header(f"{LABEL[which]}: verdict by the rule fixed before the run", color="green")
+    term.rows(verdict(got, gap, which))
     return got
 
 

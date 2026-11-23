@@ -4,6 +4,10 @@
 #   plain    judgeab-plain-135     Bee-135, the next-word lesson alone (the judge A/B's plain arm: if it has finished
 #                                  already, it is kept and not trained again)
 #   canvas   canvasab-canvas-135   Canvas-135: thinks in meanings of 16-piece chunks, the next 4 refined together, words last
+#   canvas3  canvas3ab-135         Canvas-3: meanings of SENTENCES, the next 6 refined together, sureness by content,
+#                                  slots that find themselves wrong open again, a mouth that sees the whole text
+#
+#   ARMS=canvas3 SUB=opal bash runpod/canvasab.sh     # Canvas-3 against the Bee-135 run already on the volume
 #
 #   tmux new-window -t oazy -n canvas "bash runpod/canvasab.sh; bash"
 #   TOKENS=1e9 bash runpod/canvasab.sh       # half the price (default 2e9 each)
