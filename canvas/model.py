@@ -24,6 +24,17 @@ The parts (race size, 132M weights like Bee-135):
           the words really lean on the thought (Pegasus 1 and 2 failed because their writer could see everything and
           ignored the plan).
 
+Canvas-3 (23 Nov 2026, João: "a whole diffusion of the entire answer in meanings; some parts far away can already be
+more certain than others, but can still be completely changed"), switched on with chunks=sentence slots=6 adapt=2
+window=0:
+  sentences  a chunk is a SENTENCE: it ends at the first 16-piece beat that holds a sentence end (. ! ? or a new line),
+             or after 4 beats without one (16 to 64 pieces); its meaning is the ear's vector at its last piece
+  the answer the canvas holds the next 6 sentences (about 150 words), refined together
+  sureness   each slot's noise follows its own error estimate, whatever its distance (training noises every slot to
+             its own random level, so any order of certainty is learned); a slot whose error estimate rises above
+             twice its noise is fogged again: nothing is locked
+  the mouth  sees the whole text (Canvas-2) and each word reads the canvas of its own sentence
+
 Its lessons:
   next word   the mouth's next-word loss, through the canvas exactly as it is built at reading time (from fog, from
               the past only), so the held-out loss and every test are honest next-word scores. Only the last refining
@@ -90,7 +101,13 @@ class CanvasConfig(LucidConfig):
     steps_eval: int = 0          # refining steps when reading (held-out loss, tests, chat); 0 = steps
     grad_steps: int = 1          # the last this-many steps carry gradient (the others are recycling, no gradient)
     sigma_min: float = 0.15      # the noise level of the last step
-    adapt: int = 1               # a slot it is sure of drops its noise faster (to its own error estimate)
+    adapt: int = 1               # 1: a slot it is sure of drops its noise faster (to its own error estimate)
+                                 # 2 (Canvas-3): the same, and a slot whose own error estimate rises above twice its
+                                 #    noise is opened again (fogged back up to that error): nothing is ever locked
+    # Canvas-3 (Nov 23): chunks are sentences, not fixed lengths
+    chunks: str = "fixed"        # "fixed": every `beat` pieces; "sentence": a chunk ends at the first beat that holds a
+                                 # sentence end (. ! ? or a new line), or after max_units beats without one
+    max_units: int = 4           # the longest chunk in sentence mode, in beats (4 x 16 = 64 pieces)
     # the lessons' weights
     diffuse: float = 1.0         # remove the noise from the true future meanings
     honest: float = 0.5          # the settled canvas against the true future meanings
@@ -106,6 +123,8 @@ class CanvasConfig(LucidConfig):
             raise ValueError("mind_dim must be a multiple of mind_heads")
         if self.slots < 1 or self.steps < 1:
             raise ValueError("slots and steps must be at least 1")
+        if self.chunks not in ("fixed", "sentence") or self.max_units < 1:
+            raise ValueError("chunks must be 'fixed' or 'sentence', max_units at least 1")
 
     def unit(self) -> int:
         """Lengths are padded to a multiple of this (whole chunks, and whole windows when the sight is short)."""
@@ -221,6 +240,46 @@ class Canvas(nn.Module):
         return y, e, h.view(B, n, K, -1)
 
 
+STOPS = (b".", b"!", b"?")
+
+
+def sentence_ends(vocab: int):
+    """A table over the vocabulary: True where a piece closes a sentence (it ends in . ! or ? before any spaces, or
+    holds a new line), and the end-of-text piece. SmolLM2's pieces when the vocabulary is its size; otherwise (the tests'
+    tiny vocabularies) every 7th piece."""
+    tab = torch.zeros(vocab, dtype=torch.bool)
+    try:
+        from oazy import tok
+        enc = tok.get("smollm2")
+        if enc.n_vocab > vocab or vocab - enc.n_vocab > 512:
+            raise ValueError("not SmolLM2's vocabulary")
+        eot = tok.eot_id("smollm2")
+        for t in range(enc.n_vocab):
+            try:
+                b = enc.decode_single_token_bytes(t)
+            except Exception:
+                continue
+            core = b.rstrip(b" \t\r\n\"')]")
+            tab[t] = t == eot or b"\n" in b or core.endswith(STOPS)
+    except Exception:
+        tab[::7] = True
+    return tab
+
+
+class SentenceRead(MindRead):
+    """Canvas-3: each piece reads the canvas of its own sentence (built before that sentence began). Sentences have
+    different lengths, so the pairing is a grid: piece t may look at slot j only if j belongs to t's sentence."""
+
+    def forward(self, x, P, mask):
+        """x (B, T, D); P (B, n, K, D) the canvas before each sentence; mask (B, 1, T, n K) bool."""
+        B, T, D = x.shape
+        n, K = P.shape[1], P.shape[2]
+        q = norm(heads(self.q(norm(x)), self.h))
+        k, v = (heads(t, self.h) for t in self.kv(norm(P.reshape(B, n * K, D))).chunk(2, -1))
+        y = F.scaled_dot_product_attention(q, norm(k), v, attn_mask=mask)
+        return self.out(unheads(y))
+
+
 class SightAttention(LocalAttention):
     """Gnosis's attention, short-sighted (window > 0, Canvas-1) or seeing the whole text (window = 0, Canvas-2: Bee's
     own causal attention, so cuDNN's kernel works for it)."""
@@ -251,7 +310,10 @@ class CanvasModel(Lucid):
         self.mind = nn.ModuleList(Layer(M, cfg.mind_heads, cfg.mind_hidden) for _ in range(cfg.mind_layers))
         self.canvas = Canvas(cfg)
         self.to_word = nn.Linear(M, D, bias=False)               # the slots' states, at the words' width
-        self.reads = nn.ModuleDict({str(i): MindRead(D, D // cfg.attn_head_dim) for i in cfg.read_set()})
+        Read = SentenceRead if cfg.chunks == "sentence" else MindRead
+        self.reads = nn.ModuleDict({str(i): Read(D, D // cfg.attn_head_dim) for i in cfg.read_set()})
+        if cfg.chunks == "sentence":
+            self.register_buffer("ends_tab", sentence_ends(cfg.vocab_size))      # kept in the checkpoint
         with torch.no_grad():
             for lin in (self.to_z, self.mind_in, self.to_word):
                 nn.init.normal_(lin.weight, std=lin.weight.shape[1] ** -0.5)
@@ -267,8 +329,9 @@ class CanvasModel(Lucid):
     def layout(self):
         c = self.cfg
         sight = f"each seeing {c.window} pieces back" if c.window else "seeing the whole text"
+        unit = (f"sentence ({c.beat}-{c.beat * c.max_units} pieces)" if c.chunks == "sentence" else f"{c.beat}-piece chunk")
         return (f"ear {c.ear_layers} + mouth {c.n_layer - c.ear_layers} word layers of {c.d_model}, {sight}"
-                f"; meanings of {c.z_dim} per {c.beat}-piece chunk; mind {c.mind_layers} x {c.mind_dim}; canvas "
+                f"; meanings of {c.z_dim} per {unit}; mind {c.mind_layers} x {c.mind_dim}; canvas "
                 f"of {c.slots} future chunks refined together in {c.steps} steps ({c.canvas_layers} layers), read before "
                 f"word layers {','.join(str(i + 1) for i in c.read_set())}")
 
@@ -316,6 +379,28 @@ class CanvasModel(Lucid):
         C = self.cfg.beat
         return self.to_z(norm(x[:, C - 1::C]))
 
+    def chunking(self, idx):
+        """Canvas-3: cut each row into sentences on a grid of `beat` pieces. A chunk ends at the first beat holding a
+        sentence end, or after max_units beats without one; the row's last beat always closes a chunk.
+        idx (B, T) -> (the last piece of each chunk (B, n), how many chunks (B,), each piece's chunk (B, T)), with
+        n = T / beat (the most there can be; the rest are padding that nothing reads). Honest: a piece's chunk is
+        counted from the beats before its own, so it never depends on itself or on anything after it."""
+        U, L = self.cfg.beat, self.cfg.max_units
+        B, T = idx.shape
+        G = T // U
+        has = self.ends_tab[idx].view(B, G, U).any(-1)                                  # (B, G)
+        g = torch.arange(G, device=idx.device)
+        last = torch.where(has, g, torch.full_like(g, -1)).cummax(1).values            # the last sentence end so far
+        prev = torch.cat([last.new_full((B, 1), -1), last[:, :-1]], 1)                  # ... before this beat
+        b = has | ((g - prev) % L == 0)
+        b[:, -1] = True
+        count = b.sum(1)
+        key = torch.where(b, g, g + G)
+        ends = key.sort(1).values
+        ends = torch.where(ends >= G, torch.full_like(ends, G - 1), ends)
+        chunk = (b.long().cumsum(1) - b.long())                                         # chunks closed before beat g
+        return ends * U + (U - 1), count, chunk.repeat_interleave(U, 1)
+
     def think_mind(self, z):
         """Meanings (B, n, z) -> the mind before each chunk (B, n, M): position c knows chunks 0 .. c-1."""
         B = z.shape[0]
@@ -346,7 +431,10 @@ class CanvasModel(Lucid):
                 break
             nxt = torch.full_like(s, sched[r + 1])
             if self.cfg.adapt:                                   # sure slots drop their noise faster
-                nxt = torch.minimum(nxt, e.detach().exp())
+                err = e.detach().exp()
+                nxt = torch.minimum(nxt, err)
+                if self.cfg.adapt == 2:                          # ... and a slot that finds itself wrong opens again
+                    nxt = torch.where(err > 2 * s, err.clamp(max=1.0), nxt)
             a, a2 = (1 - s * s).clamp_min(0).sqrt(), (1 - nxt * nxt).clamp_min(0).sqrt()
             yd = y.detach().float()
             eps = (x.float() - a[..., None] * yd) / s[..., None].clamp_min(1e-3)     # deterministic DDIM
@@ -354,30 +442,41 @@ class CanvasModel(Lucid):
             s = nxt
         return y, e, H, move
 
-    def think(self, x, passes=None):
+    def think(self, x, passes=None, idx=None):
         """The stream after the ear (B, T, D) -> (the canvas each chunk's words read (B, n, K, D), the lessons and
-        numbers (a dict))."""
+        numbers (a dict); in sentence mode the dict also holds "route", the reads' grid)."""
         B, T, D = x.shape
         cfg = self.cfg
         n, K = T // cfg.beat, cfg.slots
-        z = self.meanings(x)                                                              # (B, n, Z)
+        route, count = None, None
+        if cfg.chunks == "sentence":
+            ends, count, chunk = self.chunking(idx)
+            z = self.to_z(norm(torch.gather(x, 1, ends[..., None].expand(-1, -1, D))))   # (B, n, Z)
+            slot_chunk = torch.arange(n, device=x.device).repeat_interleave(K)
+            route = (chunk[:, :, None] == slot_chunk[None, None, :])[:, None]           # (B, 1, T, n K)
+        else:
+            z = self.meanings(x)                                                          # (B, n, Z)
         m = self.think_mind(z)
         R = passes or cfg.n_steps(self.training)
         y, e, H, move = self.refine(m, R, cfg.grad_steps if self.training else R)
         P = self.to_word(norm(H))
         if not self.mind_on:
             P = torch.zeros_like(P)
-        info = {"mind_move": move}
+        info = {"mind_move": move, "route": route}
         # the true future meanings, held still: slot k of boundary c is chunk c + k
         zt = z.detach().float()
         idx = torch.arange(n, device=x.device)[:, None] + torch.arange(K, device=x.device)[None, :]     # (n, K)
         valid = (idx < n).float()
         Y = F.pad(zt, (0, 0, 0, K))[:, idx]                                               # (B, n, K, Z)
-        nv = valid.sum().clamp_min(1.0) * B
+        if count is not None:                                                             # only the row's real sentences
+            valid = valid * (idx[None] < count[:, None, None]).float()                    # (B, n, K)
+        nv = valid.sum().clamp_min(1.0) * (1 if count is not None else B)
         honest = (((y.float() - Y) ** 2).mean(-1) * valid).sum() / nv
         info["canvas_honest"] = honest.detach()
         info["canvas_honest_next"] = ((((y[:, :, 0].float() - Y[:, :, 0]) ** 2).mean(-1)).mean()).detach()
         info["canvas_sure"] = (e.detach().exp() * valid).sum() / nv
+        if count is not None:
+            info["canvas_sentences"] = count.float().mean().detach()                      # chunks per row
         if self.training and torch.is_grad_enabled():
             # the diffusion lesson: every slot noised to its own level, some given clean, some pure fog
             u = torch.rand(B, n, K, device=x.device)
@@ -395,7 +494,8 @@ class CanvasModel(Lucid):
             def nll(err_, e_):
                 return 0.5 * err_.detach() * torch.exp(-2 * e_) + e_
             sure = ((nll(err, ed) * graded).sum() / ng + (nll(((y.float() - Y) ** 2).mean(-1), e) * valid).sum() / nv) / 2
-            sg = sigreg(z.reshape(-1, z.shape[-1]), cfg.sig_dirs)
+            zs = z if count is None else z[torch.arange(n, device=x.device)[None] < count[:, None]]
+            sg = sigreg(zs.reshape(-1, z.shape[-1]), cfg.sig_dirs)
             info["aux"] = cfg.diffuse * diff + cfg.honest * honest + cfg.sure * sure + cfg.sig * sg
             info.update(canvas_diffuse=diff.detach(), canvas_conf=sure.detach(), canvas_sig=sg.detach())
         return P, info
@@ -419,12 +519,19 @@ class CanvasModel(Lucid):
 
         def layer(i, x, ve):
             if str(i) in self.reads:
-                x = x + self.reads[str(i)](x, keep["P"])
+                r = keep["info"]["route"]
+                x = x + (self.reads[str(i)](x, keep["P"]) if r is None else self.reads[str(i)](x, keep["P"], r))
             x, _, _ = self.blocks[i](x, ve, cos, sin)
             if i == self.cfg.ear_layers - 1:
-                keep["P"], keep["info"] = self.think(x, passes)
+                keep["P"], keep["info"] = self.think(x, passes, idx)
             return x
-        h = self._run(x0, ves, layer)[:, :T0]
+        if self.training:
+            h = self._run(x0, ves, layer)[:, :T0]
+        else:                            # tests and reading: uncompiled, or their many lengths fill the compile caches
+            from gnosis2.loop import eager                   # and training's own shapes then run uncompiled (Nov 22)
+            with eager():
+                h = self._run(x0, ves, layer)[:, :T0]
+        keep["info"].pop("route", None)
         z = h.new_zeros((), dtype=torch.float32)
         return h, z, z, None, None, keep["info"]
 

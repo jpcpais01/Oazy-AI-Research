@@ -46,6 +46,7 @@ def wake(m, std=0.05):
 
 def gpu_checks(device):
     from canvas.model import CanvasModel, CanvasConfig
+    from canvas.ab import CANVAS3
     from gnosis2.model import Gnosis2, Gnosis2Config
     from gnosis2.race135 import B135
     from oazy.train import GNOSIS
@@ -54,6 +55,7 @@ def gpu_checks(device):
     res = {}
     for name, m in (("Canvas-135", CanvasModel(CanvasConfig())),
                     ("Canvas-2", CanvasModel(CanvasConfig(window=0, lean=1, attn_backend="cudnn"))),
+                    ("Canvas-3", CanvasModel(CanvasConfig(**CANVAS3))),
                     ("Bee-135", Gnosis2(Gnosis2Config(**{**GNOSIS, **B135, "lean": 1, "attn_backend": "cudnn"})))):
         m.to(device).train()
         m.enable_compile()
@@ -74,7 +76,33 @@ def gpu_checks(device):
         del m, opt
         torch.cuda.empty_cache()
     term.info(f"Canvas-135 runs at {res['Canvas-135'] / res['Bee-135']:.2f}x, Canvas-2 (full sight, lean, cuDNN) at "
-              f"{res['Canvas-2'] / res['Bee-135']:.2f}x Bee-135 lean + cuDNN's speed (8 x 2,048, before tuning)")
+              f"{res['Canvas-2'] / res['Bee-135']:.2f}x, Canvas-3 (sentences, 6 ahead) at "
+              f"{res['Canvas-3'] / res['Bee-135']:.2f}x Bee-135 lean + cuDNN's speed (8 x 2,048, before tuning)")
+    # the reading-time check runs uncompiled; a step after it must still run compiled at full speed (the Nov 22 lesson)
+    m = CanvasModel(CanvasConfig(**CANVAS3)).to(device)
+    m.enable_compile()
+    opt = m.make_optimizer(1e-3, device)
+    def step():
+        t0 = time.time()
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            loss, _ = m.losses(x[:, :-1], x[:, 1:])
+        loss.backward()
+        opt.step()
+        opt.zero_grad(set_to_none=True)
+        torch.cuda.synchronize()
+        return time.time() - t0
+    m.train()
+    for _ in range(4):
+        step()
+    before = float(np.median([step() for _ in range(3)]))
+    m.eval()
+    with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):
+        for L in range(40, 1200, 37):                     # many lengths, as the tests at a check
+            m.scores(m._trunk(x[:2, :L]))
+    m.train()
+    after = float(np.median([step() for _ in range(3)]))
+    check("Canvas-3: after the tests' many lengths, training is still as fast (they ran uncompiled)", after < 1.25 * before,
+          f"{B * T / before / 1e3:,.0f}k tok/s before, {B * T / after / 1e3:,.0f}k after")
 
 
 def main():
@@ -162,6 +190,59 @@ def main():
         term.info(f"lean not checkable here ({type(e).__name__}); a GPU run checks it against the plain layers at its start")
     m.cfg.lean = 0
 
+    # ---- Canvas-3: sentences as chunks, a longer canvas, slots that can open again
+    torch.manual_seed(0)
+    m = small(window=0, chunks="sentence", max_units=3, slots=4, adapt=2)
+    wake(m)
+    m.eval()
+    xp = m._pad(x)
+    ends, count, chunk = m.chunking(xp)
+    U, L = m.cfg.beat, m.cfg.max_units
+    tab = m.ends_tab[xp].view(x.shape[0], -1, U).any(-1)
+    ok = True
+    for b_ in range(x.shape[0]):
+        cut = [int(e) // U for e in ends[b_, :int(count[b_])]]
+        sizes = [cut[0] + 1] + [cut[i] - cut[i - 1] for i in range(1, len(cut))]
+        ok &= all(1 <= z_ <= L for z_ in sizes) and cut[-1] == xp.shape[1] // U - 1
+        ok &= all(bool(tab[b_, c_]) or sz == L or c_ == cut[-1] for c_, sz in zip(cut, sizes))   # a sentence end, or full
+        ok &= all(int(chunk[b_, t_]) == sum(1 for c_ in cut if c_ < t_ // U) for t_ in range(0, xp.shape[1], 7))
+    check("Canvas-3: chunks are sentences (cut at a sentence end, or after the longest allowed), each piece knows its own",
+          ok, f"{float(count.float().mean()):.1f} sentences a row of {x.shape[1]} pieces")
+    base = m.scores(m._trunk(x))
+    worst = 0.0
+    for p in (0, 7, 8, 9, 16, 37, 64, 99):
+        x2 = x.clone()
+        x2[:, p] = (x2[:, p] + 1) % 300
+        d = (m.scores(m._trunk(x2)) - base)[:, :p].abs().max() if p else torch.tensor(0.0)
+        worst = max(worst, float(d.detach()))
+    a1 = m.scores(m._trunk(x[:, :53]))
+    check("Canvas-3: honest (sentence ends found only before a piece), and any length reads the same", worst == 0.0
+          and float((a1 - base[:, :53]).abs().max().detach()) < 1e-4, f"largest change before it {worst:.1e}")
+    m.mind_on = False
+    off = m.scores(m._trunk(x))
+    m.mind_on = True
+    check("Canvas-3: the words read the canvas", float((off - base).abs().max().detach()) > 1e-4)
+    with torch.no_grad():
+        m.canvas.err.bias.fill_(2.0)                      # every slot sure it is badly wrong: all of them open again
+        seen = []
+        real = m.canvas.forward
+
+        def spy(xx, ss, mm, mk):
+            seen.append(float(ss.mean()))
+            return real(xx, ss, mm, mk)
+        m.canvas.forward = spy
+        m._trunk(x)
+        m.canvas.forward = real
+        m.canvas.err.bias.zero_()
+    check("Canvas-3: a slot that finds itself wrong is fogged again (nothing is locked)", min(seen[1:]) > 0.99,
+          "noise by step " + " ".join(f"{v:.2f}" for v in seen))
+    m.train()
+    loss, st = m.losses(x[:, :-1], x[:, 1:])
+    loss.backward()
+    check("Canvas-3: a training step runs and every lesson is there",
+          all(k in st for k in ("ce", "canvas_diffuse", "canvas_honest", "canvas_sig", "canvas_sentences"))
+          and bool(torch.isfinite(loss)), f"{float(st['canvas_sentences']):.1f} sentences a row")
+
     # ---- the canvas is the only way past the window (one ear layer and one mouth layer: 16 pieces of sight in all)
     m = small(n_layer=2, ear_layers=1, read_at="1", key_offset="")
     wake(m)
@@ -235,21 +316,27 @@ def main():
         for _ in range(24)))
     from oazy import train
     runs = tmp / "runs"
-    sys.argv = ["train", "--model", "canvas", "--preset", "smoke", "--data", str(data), "--runs", str(runs), "--mentor", "none",
-                "--device", "cpu", "--compile", "0", "--tokens", "40000", "--batch-ramp", "512:0.5", "--micro", "2",
-                "--set", "ctx=64:0,128:0.3", "attn_head_dim=16", "attn_heads=4", "attn_kv_heads=2", "fp8=0",
-                "--name", "cv", "--data-sub", "sado"]
-    train.main()
-    rd = runs / "cv"
-    stw = json.loads((rd / "status.json").read_text())
-    recs = [json.loads(l_) for l_ in (rd / "metrics.jsonl").read_text().splitlines()]
-    core = [r for r in recs if r["kind"] == "core"]
-    loop = [r for r in recs if r["kind"] == "loop"]
-    cv = [r for r in recs if r["kind"] == "train" and r.get("canvas_diffuse") is not None]
-    check("a tiny Canvas run finishes; the canvas-off check, the steps check and the canvas's numbers are logged",
-          stw["state"] == "done" and core and loop and cv, f"canvas gap {core[-1]['core_gap']:+.4f}" if core else "")
-    model, _ = train.load_model(rd / "ckpt.pt", torch.device("cpu"))
-    check("its checkpoint loads again as Canvas", type(model).__name__ == "CanvasModel")
+    for name, extra in (("cv", []), ("cv3", ["window=0", "chunks=sentence", "max_units=4", "slots=4", "adapt=2"])):
+        sys.argv = ["train", "--model", "canvas", "--preset", "smoke", "--data", str(data), "--runs", str(runs), "--mentor",
+                    "none", "--device", "cpu", "--compile", "0", "--tokens", "40000", "--batch-ramp", "512:0.5", "--micro", "2",
+                    "--set", "ctx=64:0,128:0.3", "attn_head_dim=16", "attn_heads=4", "attn_kv_heads=2", "fp8=0", *extra,
+                    "--name", name, "--data-sub", "sado"]
+        train.main()
+        rd = runs / name
+        stw = json.loads((rd / "status.json").read_text())
+        recs = [json.loads(l_) for l_ in (rd / "metrics.jsonl").read_text().splitlines()]
+        core = [r for r in recs if r["kind"] == "core"]
+        loop = [r for r in recs if r["kind"] == "loop"]
+        cv = [r for r in recs if r["kind"] == "train" and r.get("canvas_diffuse") is not None]
+        label = "Canvas-3" if extra else "Canvas"
+        check(f"a tiny {label} run finishes; the canvas-off check, the steps check and the canvas's numbers are logged",
+              stw["state"] == "done" and core and loop and cv
+              and (not extra or cv[-1].get("canvas_sentences") is not None),
+              (f"canvas gap {core[-1]['core_gap']:+.4f}" if core else "")
+              + (f", {cv[-1]['canvas_sentences']:.1f} sentences a row" if extra and cv else ""))
+        model, _ = train.load_model(rd / "ckpt.pt", torch.device("cpu"))
+        check(f"its checkpoint loads again as {label}", type(model).__name__ == "CanvasModel"
+              and (not extra or (model.cfg.chunks == "sentence" and bool(model.ends_tab.any()))))
     tmp_ctx.cleanup()
     term.tests_passed("Canvas-135")
 
