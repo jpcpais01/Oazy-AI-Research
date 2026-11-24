@@ -73,39 +73,53 @@ def train_step(a, net, opt, boxes, mask, budget, dev):
         go = rnd(n) < 0.7
         p = torch.where(go[:, None], pn, p); v = torch.where(go[:, None], vn, v)
 
+    # The simulator is the slow part (many small operations), so one simulator step feeds several
+    # training steps: the arena is cut in `chunks` parts and the model takes one step on each.
+    chunks = max(1, a.chunks); bs = n // chunks
     it = 0; t0 = time.time(); run = None
-    while (it < a.iters) if a.iters else (time.time() - t0 < budget):
+    going = lambda: (it < a.iters) if a.iters else (time.time() - t0 < budget)
+    while going():
         frac = it / a.iters if a.iters else (time.time() - t0) / budget
+        lr = a.lr * (0.5 + 0.5 * np.cos(np.pi * min(1.0, frac))) + 1e-5
         for gr in opt.param_groups:
-            gr["lr"] = a.lr * (0.5 + 0.5 * np.cos(np.pi * frac)) + 1e-5
+            gr["lr"] = lr
         share = 0.5 * min(1.0, max(0.0, (frac - 0.15) / 0.25))   # balls that follow the model: 0 early, half later
-        pn, vn = sim.step_t(p, v, tb[r], sim.SUB)
-        still = (pn - p).abs().amax(1) < 1e-9
-        vn = torch.where(still[:, None], torch.zeros_like(vn), vn)
-        near = gap_to(p, r) < sim.R + 0.05
-        y = net(p.float(), v.float(), tb32[r], tm[r])
-        w = 1.0 + 3.0 * near                                    # contact states weigh more
-        lp = (F.smooth_l1_loss(y[:, :2], ((pn - p) / DP_SCALE).float(), reduction="none", beta=0.05).sum(1) * w).mean()
-        lv = (F.smooth_l1_loss(y[:, 2:4], ((vn - v) / DV_SCALE).float(), reduction="none", beta=0.05).sum(1) * w).mean()
-        ls = F.binary_cross_entropy_with_logits(y[:, 4], still.float())
-        loss = lp + lv + 0.3 * ls
-        opt.zero_grad(set_to_none=True); loss.backward()
-        torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0); opt.step()
-        it += 1
+        with torch.no_grad():
+            br = tb[r]
+            pn, vn = sim.step_t(p, v, br, sim.SUB, a.passes)
+            still = (pn - p).abs().amax(1) < 1e-9
+            vn = torch.where(still[:, None], torch.zeros_like(vn), vn)
+            w = 1.0 + 3.0 * (gap_to(p, r) < sim.R + 0.05)       # contact states weigh more
+            x_p = p.float(); x_v = v.float(); x_b = tb32[r]; x_m = tm[r]
+            t_p = ((pn - p) / DP_SCALE).float(); t_v = ((vn - v) / DV_SCALE).float(); t_s = still.float()
+        ys = []
+        for c in range(chunks):
+            sl = slice(c * bs, (c + 1) * bs)
+            y = net(x_p[sl], x_v[sl], x_b[sl], x_m[sl])
+            lp = (F.smooth_l1_loss(y[:, :2], t_p[sl], reduction="none", beta=0.05).sum(1) * w[sl]).mean()
+            lv = (F.smooth_l1_loss(y[:, 2:4], t_v[sl], reduction="none", beta=0.05).sum(1) * w[sl]).mean()
+            ls = F.binary_cross_entropy_with_logits(y[:, 4], t_s[sl])
+            loss = lp + lv + 0.3 * ls
+            opt.zero_grad(set_to_none=True); loss.backward()
+            torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0); opt.step()
+            ys.append(y.detach()); it += 1
+            if it % 500 == 0:
+                li = loss.item(); run = li if run is None else 0.7 * run + 0.3 * li
+                el = time.time() - t0
+                print(f"it {it} loss {run:.4f} pos {lp.item():.4f} vel {lv.item():.4f} rest {ls.item():.4f} "
+                      f"model-led {by_model.float().mean().item() * 100:.0f}% {el:.0f}s "
+                      f"({it / el:.0f} steps/s, {it * bs / el / 1e6:.2f}M examples/s)", flush=True)
         # move every ball on
         with torch.no_grad():
-            yd = y.detach().to(f64)
+            yd = torch.cat(ys).to(f64)
+            if len(yd) < n:                                     # arena not a multiple of the chunk size
+                yd = torch.cat([yd, torch.zeros(n - len(yd), 5, dtype=f64, device=dev)])
             follow = by_model & ~still & (yd[:, 4] <= 0)
             pm = (p + yd[:, :2] * DP_SCALE).clamp(0.0, 1.0); vm = v + yd[:, 2:4] * DV_SCALE
             p = torch.where(follow[:, None], pm, pn); v = torch.where(follow[:, None], vm, vn)
             age += 1; rested += still
             lost = follow & ((gap_to(p, r) < sim.R - 0.006) | (v.abs().amax(1) > 3.5))
             fresh((rested >= 3) | (age > 400) | lost, share)
-        if it % 250 == 0:
-            li = loss.item(); run = li if run is None else 0.7 * run + 0.3 * li
-            print(f"it {it} loss {run:.4f} pos {lp.item():.4f} vel {lv.item():.4f} rest {ls.item():.4f} "
-                  f"model-led {by_model.float().mean().item() * 100:.0f}% {time.time() - t0:.0f}s "
-                  f"({it * n / (time.time() - t0) / 1e6:.2f}M examples/s)", flush=True)
     return it
 
 
@@ -121,14 +135,17 @@ def main():
     ap.add_argument("--layers", type=int, default=3)
     ap.add_argument("--feat", type=int, default=0, help="0 raw coordinates, 1 + distance past each face, 2 + nearest point and gap, 3 + facing, magnified gap, approach speed")
     ap.add_argument("--iters", type=int, default=0, help="stop after this many steps instead of by the clock")
-    ap.add_argument("--arena", type=int, default=0, help="balls rolling at once = examples per step (step model)")
+    ap.add_argument("--arena", type=int, default=0, help="balls rolling at once in the simulator (step model)")
+    ap.add_argument("--chunks", type=int, default=0, help="training steps taken on each simulator step (step model)")
+    ap.add_argument("--passes", type=int, default=2, help="boxes one ball may touch in one simulator step (see sim.step_t)")
     ap.add_argument("--out", default="ballroom/runs")
     ap.add_argument("--init", default="")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     a = ap.parse_args()
     dev = a.device
-    a.arena = a.arena or (16384 if dev.startswith("cuda") else 2048)
+    a.arena = a.arena or (65536 if dev.startswith("cuda") else 2048)
+    a.chunks = a.chunks or (8 if dev.startswith("cuda") else 2)
     torch.manual_seed(a.seed); rng = np.random.default_rng(a.seed)
     lo, hi = map(int, a.plat.split(","))
     os.makedirs(a.out, exist_ok=True)
