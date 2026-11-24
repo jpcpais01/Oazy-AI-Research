@@ -103,7 +103,13 @@ class H(http.server.BaseHTTPRequestHandler):
         elif path == "/models":
             ms = []
             for name, f in pixel_models().items():
-                ms.append({"name": name, "age": int(os.path.getmtime(f))})
+                m = {"name": name, "age": int(os.path.getmtime(f))}
+                j = f[:-3] + ".json"                              # its scores from the end of training, if saved next to it
+                try:
+                    m["test"] = {g: v["rows"] for g, v in json.load(open(j)).items() if isinstance(v, dict) and "rows" in v}
+                except Exception:
+                    pass
+                ms.append(m)
             self.send(200, json.dumps(ms).encode(), "application/json", [("Cache-Control", "no-store")])
         else:
             self.send(404, b"not found", "text/plain")

@@ -25,110 +25,119 @@ body {
   padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
 .wrap { max-width: 1060px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
-header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
 h1 { font-size: 26px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
-header p { margin: 0; color: var(--dim); max-width: 62ch; }
-.bench { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
-.room { flex: 1 1 420px; min-width: 0; max-width: 620px; }
+header p { margin: 0; color: var(--dim); }
+.bench { display: flex; flex-wrap: wrap; gap: 22px; align-items: flex-start; }
+.room { flex: 1 1 420px; min-width: 0; max-width: 620px; display: flex; flex-direction: column; gap: 10px; }
 .room canvas {
   display: block; width: 100%; aspect-ratio: 1; max-width: 100%;
-  background: var(--panel); border: 1px solid var(--line); border-radius: 6px; touch-action: none; cursor: crosshair;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px; touch-action: none; cursor: crosshair;
 }
-.hint { color: var(--dim); font-size: 13px; margin: 8px 0 0; }
-.side { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.key { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--dim); }
+.key span { display: inline-flex; align-items: center; gap: 7px; }
+.hint { color: var(--dim); font-size: 13px; margin: 0; }
+.side { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; }
-button {
-  font: 500 14px var(--display); color: var(--fg); background: var(--panel);
+button, select {
+  font: 500 14px var(--display); color: var(--fg); background: var(--bg);
   border: 1px solid var(--line); border-radius: 6px; padding: 9px 14px; cursor: pointer;
 }
-button:hover { border-color: var(--dim); }
-button:focus-visible { outline: 2px solid var(--truth); outline-offset: 2px; }
+select { width: 100%; padding: 9px 10px; }
+button:hover, select:hover { border-color: var(--dim); }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--truth); outline-offset: 2px; }
 button:disabled { opacity: 0.45; cursor: default; }
-#run { background: var(--truth); color: #10140a; border-color: var(--truth); font-weight: 600; padding-inline: 26px; }
-.legend { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
-.legend span { display: flex; align-items: center; gap: 9px; }
-.dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
-.dot.small { width: 6px; height: 6px; margin-right: -4px; }
-.dot.small + .dot.small { margin-right: 0; }
-.ring { width: 11px; height: 11px; border-radius: 50%; flex: none; border: 2px solid var(--shot); box-sizing: border-box; }
-table { border-collapse: collapse; width: 100%; font-size: 14px; }
-th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+#run { background: var(--truth); color: #10140a; border-color: var(--truth); font-weight: 600; flex: 1 1 120px; }
+.icon { padding-inline: 12px; min-width: 42px; }
+label.lab { font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; }
+#status { font-size: 14px; color: var(--dim); min-height: 1.4em; }
+h2 { font-size: 12px; font-weight: 500; color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; margin: 0; }
+.dot { width: 11px; height: 11px; border-radius: 50%; flex: none; display: inline-block; }
+.dot.small { width: 7px; height: 7px; }
+.ring { width: 12px; height: 12px; border-radius: 50%; flex: none; border: 2px solid var(--shot); box-sizing: border-box; display: inline-block; }
+/* the result: one line per answer, how far off, hit or miss */
+.res { display: grid; grid-template-columns: 16px 1fr auto auto; align-items: center; gap: 10px 10px; }
+.res .name { font-size: 15px; }
+.res .val { font-family: var(--mono); font-size: 15px; font-variant-numeric: tabular-nums; text-align: right; }
+.pill { font-size: 12px; font-weight: 600; border-radius: 99px; padding: 2px 9px; min-width: 38px; text-align: center; color: var(--dim); border: 1px solid var(--line); }
+.pill.hit { background: var(--truth); color: #10140a; border-color: var(--truth); }
+.pill.miss { color: var(--law); border-color: color-mix(in srgb, var(--law) 50%, transparent); }
+/* the cloud: two bars out of 24 */
+.bars { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px 10px; font-size: 14px; }
+.bar { height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; border-radius: 99px; transition: width .3s; }
+.bars .val { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+.small { font-size: 13px; color: var(--dim); margin: 0; }
+details { border-top: 1px solid var(--line); padding-top: 10px; }
+summary { cursor: pointer; font-size: 14px; color: var(--dim); }
+summary:hover { color: var(--fg); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; margin-top: 10px; }
+th, td { text-align: right; padding: 6px 6px; border-bottom: 1px solid var(--line); }
 th:first-child, td:first-child { text-align: left; padding-left: 0; }
-#tbl th:nth-child(2), #tbl td:nth-child(2) { text-align: left; }
-th { color: var(--dim); font-weight: 400; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
-td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-h2 { font-size: 13px; font-weight: 500; color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 6px; }
-.note { color: var(--dim); font-size: 13px; margin: 6px 0 0; }
-.pick { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--dim); }
-.pick[hidden] { display: none; }
-.pick select { font: inherit; color: var(--ink, inherit); background: transparent; border: 1px solid var(--line, #8886); border-radius: 6px; padding: 4px 6px; max-width: 100%; }
-#status { font-family: var(--mono); font-size: 13px; color: var(--dim); min-height: 1.4em; }
+th { color: var(--dim); font-weight: 400; font-size: 12px; }
+td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+td .bar { width: 46px; display: inline-block; vertical-align: middle; margin-right: 8px; height: 6px; }
+tr.best td { color: var(--dim); }
 .scroll { overflow-x: auto; }
 </style>
 
 <div class="wrap">
   <header>
     <h1>Ballroom</h1>
-    <p>Set up a room, press Run. The exact simulator and the learned model start from the same ball and you watch where each one ends, then where 24 barely nudged copies end.</p>
+    <p>Set up a room, press Run, and see if the model knows where the ball will stop.</p>
   </header>
 
   <div class="bench">
     <div class="room">
       <canvas id="cv" width="1000" height="1000" aria-label="The room. Drag the ball, its arrow, or a platform."></canvas>
-      <p class="hint">Drag the ball, the tip of its arrow (its starting push), a platform, or a platform's right end to resize it.</p>
+      <div class="key">
+        <span><i class="dot" style="background:var(--truth)"></i>True path</span>
+        <span><i class="dot" style="background:var(--law)"></i>Model, step by step</span>
+        <span><i class="ring"></i>Model's guess at once</span>
+        <span><i class="ring" style="border-color:var(--law)"></i>Cloud vote</span>
+      </div>
+      <p class="hint">Drag the ball, the tip of its arrow, a platform, or a platform's right end.</p>
     </div>
 
     <div class="side">
-      <div class="row">
-        <button id="run">Run</button>
-        <button id="new">New room</button>
-        <button id="add">Add platform</button>
-        <button id="del">Remove platform</button>
-      </div>
-      <label class="pick" hidden>Model <select id="pick"><option value="">Objects model (runs in this page)</option></select></label>
-      <div id="status">Loading the model…</div>
-
-      <div class="legend">
-        <span><i class="dot" style="background:var(--truth)"></i>Exact simulator (the true answer)</span>
-        <span><i class="dot" style="background:var(--law)"></i>Step model: learned one moment of motion, rolled forward</span>
-        <span><i class="ring"></i>One-shot model: guesses the end without moving</span>
-        <span><i class="dot small" style="background:var(--truth)"></i><i class="dot small" style="background:var(--law)"></i>Clouds: where 24 barely nudged copies end, true and model</span>
-        <span><i class="ring" style="border-color:var(--law)"></i>Cloud vote: the middle of the model cloud's biggest clump</span>
-      </div>
-
-      <div>
-        <h2>This run</h2>
-        <div class="scroll">
-        <table>
-          <thead><tr><th>Model</th><th>Miss</th><th>In ball widths</th></tr></thead>
-          <tbody>
-            <tr><td>Step model</td><td class="num" id="m1">–</td><td class="num" id="b1">–</td></tr>
-            <tr><td>One-shot model</td><td class="num" id="m2">–</td><td class="num" id="b2">–</td></tr>
-            <tr><td>Cloud vote</td><td class="num" id="m3">–</td><td class="num" id="b3">–</td></tr>
-          </tbody>
-        </table>
+      <div class="card">
+        <label class="lab" for="pick">Model</label>
+        <select id="pick"><option value="">Objects model (runs in this page)</option></select>
+        <div class="row">
+          <button id="run">Run</button>
+          <button id="new">New room</button>
+          <button id="add" class="icon" title="Add a platform" aria-label="Add a platform">+</button>
+          <button id="del" class="icon" title="Remove a platform" aria-label="Remove a platform">−</button>
         </div>
-        <p class="note">The room is 1 wide. The ball is 0.06 wide. A miss under one ball width counts as a hit.</p>
+        <div id="status">Loading the model…</div>
       </div>
 
-      <div>
-        <h2>Cloud of 24 nudged balls</h2>
-        <div class="scroll">
-        <table>
-          <thead><tr><th>Rolled by</th><th>End within a ball of the true rest</th></tr></thead>
-          <tbody>
-            <tr><td>Exact simulator</td><td class="num" id="c1">–</td></tr>
-            <tr><td>Step model</td><td class="num" id="c2">–</td></tr>
-          </tbody>
-        </table>
+      <div class="card">
+        <h2>Where does it stop?</h2>
+        <div class="res">
+          <i class="dot" style="background:var(--law)"></i><span class="name">Step by step</span><span class="val" id="m1">–</span><span class="pill" id="h1">–</span>
+          <i class="ring"></i><span class="name">Guess at once</span><span class="val" id="m2">–</span><span class="pill" id="h2">–</span>
+          <i class="ring" style="border-color:var(--law)"></i><span class="name">Cloud vote</span><span class="val" id="m3">–</span><span class="pill" id="h3">–</span>
         </div>
-        <p class="note">Each copy starts a hair away: 0.002 in position, 0.02 in speed. If the true cloud splits, the room is on a knife-edge and no single answer is right. The vote takes the model's 24 answers and keeps the place where most of them agree.</p>
+        <p class="small">Miss in ball widths. Under 1 is a hit.</p>
       </div>
 
-      <div id="bench" hidden>
-        <h2>Measured on fresh rooms</h2>
-        <div class="scroll"><table id="tbl"></table></div>
-        <p class="note" id="trained"></p>
+      <div class="card">
+        <h2>24 nudged copies landing on the true spot</h2>
+        <div class="bars">
+          <span>Real physics</span><span class="bar"><i id="cb1" style="background:var(--truth)"></i></span><span class="val" id="c1">–</span>
+          <span>Model</span><span class="bar"><i id="cb2" style="background:var(--law)"></i></span><span class="val" id="c2">–</span>
+        </div>
+        <p class="small">Each copy starts a hair away. If even real physics splits, the room is a knife-edge.</p>
+      </div>
+
+      <div class="card" id="bench" hidden>
+        <details>
+          <summary id="benchTitle">Scores on fresh rooms</summary>
+          <div class="scroll"><table id="tbl"></table></div>
+          <p class="small" id="trained"></p>
+        </details>
       </div>
     </div>
   </div>
@@ -368,14 +377,19 @@ function draw() {
   }
 }
 
-function setReadout(id1, id2, d) {
-  $(id1).textContent = d == null ? "–" : d.toFixed(3);
-  $(id2).textContent = d == null ? "–" : (d / (2 * R)).toFixed(1);
+function setReadout(k, d) {               // one answer: miss in ball widths, and hit or miss
+  const b = d == null ? null : d / (2 * R), pill = $("h" + k);
+  $("m" + k).textContent = b == null ? "–" : b.toFixed(1);
+  pill.textContent = b == null ? "–" : b < 1 ? "Hit" : "Miss"; pill.className = "pill" + (b == null ? "" : b < 1 ? " hit" : " miss");
+}
+function setCloud(k, n, of) {             // a bar: how many of the 24 copies end on the true spot
+  $("c" + k).textContent = n == null ? "–" : of < CLOUD ? "…" : n + "/" + CLOUD;
+  $("cb" + k).style.width = n == null || of < CLOUD ? "0" : (100 * n / CLOUD) + "%";
 }
 function clearRun() {
   cancelAnimationFrame(raf);
   if (run) { ++jobId; for (const w of brains) w.postMessage({ id: jobId, cancel: true }); }
-  run = null; setReadout("m1", "b1", null); setReadout("m2", "b2", null); setReadout("m3", "b3", null); $("c1").textContent = "–"; $("c2").textContent = "–";
+  run = null; setReadout(1, null); setReadout(2, null); setReadout(3, null); setCloud(1, null); setCloud(2, null);
   $("run").textContent = "Run"; if (model) $("status").textContent = modelLine; draw();
 }
 const CLOUD = 24;
@@ -409,16 +423,15 @@ function start() {
     const team = brains.filter(w => w.ready);
     team.forEach((w, i) => w.postMessage({ id: run.id, main: w === brainWork, ball: b, boxes, starts: step ? starts.filter((_, k) => k % team.length === i) : [] }));
   }
-  $("run").textContent = "Reset"; $("status").textContent = "Running…";
+  $("run").textContent = "Reset"; $("status").textContent = pixel ? "Running on the pod…" : "Running…";
   raf = requestAnimationFrame(tick);
 }
 const near = (me, pts) => pts.filter(q => me.dist(q) < 2 * R).length;
 function finish(me) {
   me.mainDone = true;
-  if (me.step) setReadout("m1", "b1", me.dist(me.law[me.law.length - 1]));
-  $("c1").textContent = near(me, me.cloud.trueEnds) + " of " + CLOUD;
-  $("status").textContent = "True rest after " + ((me.truth.length - 1) / 120).toFixed(1) + " s." +
-    (me.step ? " Step model stopped after " + ((me.law.length - 1) / 30).toFixed(1) + " s." : " " + modelLine);
+  if (me.step) setReadout(1, me.dist(me.law[me.law.length - 1]));
+  setCloud(1, near(me, me.cloud.trueEnds), CLOUD);
+  $("status").textContent = me.step ? "The ball stopped after " + ((me.truth.length - 1) / 120).toFixed(1) + " s." : modelLine;
 }
 function vote(pts) {                     // the middle of the biggest clump: the copies within a ball of the best-connected copy
   let best = null;
@@ -428,10 +441,10 @@ function vote(pts) {                     // the middle of the biggest clump: the
 function cloudReadout(me) {
   if (!me.step) return;
   const n = me.cloud.modelEnds.length;
-  $("c2").textContent = n >= CLOUD ? near(me, me.cloud.modelEnds) + " of " + CLOUD : "rolling " + n + " of " + CLOUD + "…";
+  setCloud(2, near(me, me.cloud.modelEnds), n);
   if (n >= CLOUD && !me.vote) {
-    me.vote = vote(me.cloud.modelEnds); setReadout("m3", "b3", me.dist(me.vote.at));
-    $("status").textContent += " Cloud vote: " + Math.round(100 * me.vote.share) + "% of the copies agree.";
+    me.vote = vote(me.cloud.modelEnds); setReadout(3, me.dist(me.vote.at));
+    $("status").textContent += " " + Math.round(100 * me.vote.share) + "% of the model's copies agree.";
   }
 }
 function tick(now) {
@@ -458,19 +471,19 @@ const hear = e => {
     if (m.ready && m.step) for (let i = Math.min(3, (navigator.hardwareConcurrency || 2) - 2); i > 0; i--) {   // helpers for the cloud
       const w = new Worker(brainUrl); w.onmessage = hear; brains.push(w); w.postMessage({ load: weightsUrl, only: "step" });
     }
-    modelLine = m.failed ? "No model here: Run shows the exact simulator only. Train one with bash runpod/ballroom.sh"
-      : !m.step ? "No step model in the model file: Run shows the exact simulator" + (m.shot ? " and the one-shot guess." : " only.")
-      : "Model ready. Press Run.";
+    modelLine = m.failed ? "No objects model here: Run shows real physics only. Pick a pixel model above, if there is one."
+      : !m.step ? "This model file has no step model: Run shows real physics" + (m.shot ? " and the guess." : " only.")
+      : "Ready. Press Run.";
     $("run").disabled = false; $("run").textContent = run ? "Reset" : "Run";
-    if (!run || run.mainDone) $("status").textContent = modelLine;
-    if (m.test) showBench(m.test, m);
+    if ((!run || run.mainDone) && !$("pick").value) $("status").textContent = modelLine;
+    if (m.test) { objTest = { test: m.test, plat: m.plat }; if (!$("pick").value) showBench(objTest, "the objects model"); }
     return;
   }
   feed(m);
 };
 function feed(m) {                       // a piece of the model's answer, from a worker or from the pixel model
   const me = run; if (!me || m.id !== me.id) return;
-  if (m.shot) { me.shot = m.shot; setReadout("m2", "b2", me.dist(m.shot)); }
+  if (m.shot) { me.shot = m.shot; setReadout(2, me.dist(m.shot)); }
   if (m.law) { for (let i = 0; i < m.law.length; i += 2) me.law.push([m.law[i], m.law[i + 1]]); if (m.done) me.lawDone = true; }
   if (m.end) me.cloud.modelEnds.push(m.end);
   if (me.mainDone) { cloudReadout(me); draw(); }
@@ -521,14 +534,33 @@ $("add").addEventListener("click", () => {
 });
 $("del").addEventListener("click", () => { if (room.plats.length) { clearRun(); room.plats.pop(); draw(); } });
 
-// results table from the last test
-function showBench(test, pack) {
-  const groups = Object.keys(test); if (!groups.length) return;
-  let h = "<thead><tr><th>Rooms</th><th>Model</th><th>Mean miss</th><th>Hit</th></tr></thead><tbody>";
-  for (const g of groups) for (const r of test[g])
-    h += "<tr><td>" + g.replace(/ \(.*/, "") + "</td><td>" + r.model.replace(/ \(.*/, "") + "</td><td class='num'>" + r.mean.toFixed(3) + "</td><td class='num'>" + r.within_ball.toFixed(0) + "%</td></tr>";
+// scores on fresh rooms, for the chosen model: hit rate on rooms like training and on harder, never-seen rooms
+let objTest = null, pixTests = {};
+function nice(name) {
+  name = name.replace(/ \(.*/, "");
+  if (/exact simulator/.test(name)) return ["Best possible (real physics' own vote)", true];
+  if (/falls straight down/.test(name)) return ["Ball just falls straight down", true];
+  const arm = (name.match(/\[(.*)\]/) || [])[1], how = name.replace(/^pixels, /, "").replace(/ \[.*\]/, "");
+  const base = /one shot/.test(how) ? "Guess at once" : /steps/.test(how) || /step by step/.test(how) ? "Step by step"
+    : /cloud vote/.test(how) ? "Cloud vote" + (how.includes(",") ? " (" + how.split(", ")[1] + ")" : "") : how;
+  return [base + (arm ? " · " + arm : ""), false];
+}
+function showBench(pack, name) {
+  const test = pack && pack.test, groups = test ? Object.keys(test) : [];
+  if (!groups.length) { $("bench").hidden = true; return; }
+  const rows = {};
+  groups.forEach((g, gi) => { for (const r of test[g]) {
+    if (/\[dist\]|nudged inner state/.test(r.model)) continue;                                  // side experiments
+    if (/^(step by step|cloud vote)$/.test(r.model.replace(/ \(.*/, "")) && test[g].some(q => /\[/.test(q.model))) continue;   // an old arm the page doesn't run
+    const [label, ref] = nice(r.model); (rows[label] = rows[label] || { label, ref, hit: [] }).hit[gi] = r.within_ball;
+  } });
+  const list = Object.values(rows).sort((a, b) => (a.ref - b.ref) || (b.hit[0] || 0) - (a.hit[0] || 0));
+  const cell = v => v == null ? "<td class='num'>–</td>" : "<td class='num'><span class='bar'><i style='width:" + v + "%;background:var(--law)'></i></span>" + v.toFixed(0) + "%</td>";
+  let h = "<thead><tr><th>Hit rate</th><th>Like training</th><th>New, harder</th></tr></thead><tbody>";
+  for (const r of list) h += "<tr" + (r.ref ? " class='best'" : "") + "><td>" + r.label + "</td>" + cell(r.hit[0]) + cell(r.hit[1]) + "</tr>";
   $("tbl").innerHTML = h + "</tbody>";
-  if (pack && pack.plat) $("trained").textContent = "Trained only on rooms with " + pack.plat[0] + " to " + pack.plat[1] + " platforms. Hit means the miss is under one ball width.";
+  $("benchTitle").textContent = "How " + (name || "this model") + " scores on fresh rooms";
+  $("trained").textContent = (pack.plat ? "Trained on rooms with " + pack.plat[0] + " to " + pack.plat[1] + " platforms; new rooms have more. " : "") + "A hit lands within one ball width of the true spot.";
   $("bench").hidden = false;
 }
 
@@ -546,10 +578,14 @@ async function listPixel() {
       sel.append(o);
     }
     if ([...sel.options].some(o => o.value === was)) sel.value = was;
-    sel.parentElement.hidden = !ms.length;
+    for (const m of ms) if (m.test) pixTests[m.name] = { test: m.test, plat: m.plat };
   } catch (e) {}
 }
 listPixel();
 $("pick").addEventListener("focus", listPixel);
-$("pick").addEventListener("change", () => { clearRun(); if ($("pick").value) { $("run").disabled = false; $("run").textContent = "Run"; $("status").textContent = "Pixel model " + $("pick").value + " runs on this machine. Press Run."; } });
+$("pick").addEventListener("change", () => {
+  const v = $("pick").value; clearRun();
+  if (v) { $("run").disabled = false; $("run").textContent = "Run"; $("status").textContent = "Pixel model " + v + ": it sees only the picture. Press Run."; }
+  showBench(v ? pixTests[v] : objTest, v ? "pixel model " + v : "the objects model");
+});
 </script>
