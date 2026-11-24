@@ -104,7 +104,7 @@ def by_meaning(model, path: Path, device, limit=None, batch_examples=8, n_words=
             i += k
         d = (made - zc[:, None]).pow(2).mean(-1)              # (S, N): each thought's distance to each answer
         for j in range(n_words):                              # each answer written under made thought j
-            z = made[:, j][:, None].expand(S, L, made.shape[-1])
+            z = THINK.noised(model, made[:, j])[:, None].expand(S, L, made.shape[-1])
             wt.append(-nll("oracle", (z, mask_b)))
         w_think = -(torch.logsumexp(torch.stack(wt, 0), 0) - torch.log(torch.tensor(float(n_words)))) / cnt
         i = 0

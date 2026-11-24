@@ -25,7 +25,8 @@ All 24 layers stay in the word path (the canvas took half away). One sentence = 
 
 Reading has three ways (model._tmode): "null" (the default: no thoughts, an honest plain next-word model, what the
 trainer's tests see), "oracle" (each sentence's true thought: not honest for a sentence not yet said) and given
-thoughts (model._tgiven = (z (B, T, dim), mask (B, T)): where mask, the piece reads z; elsewhere the true thought).
+thoughts (model._tgiven = (z (B, T, dim), mask (B, T)): where mask, the piece reads z, which comes with its noise
+already on (`noised`: one draw per thought); elsewhere the true thought). gnosis2/think_say.py writes text this way.
 The real test is gnosis2/thinkab.py: answer by meaning, with 1, 4, 16, 64 thoughts.
 """
 from __future__ import annotations
@@ -154,7 +155,7 @@ def before(model, i, x, keep):
     zn = ((z + cfg.thought_noise * torch.randn_like(z)) * k).gather(1, ei)       # one noise for a whole sentence
     if given is not None:
         gz, gm = given
-        zn = torch.where(gm[..., None], ((gz.float() + cfg.thought_noise * torch.randn_like(gz.float())) * k), zn)
+        zn = torch.where(gm[..., None], gz.float(), zn)          # given thoughts come with their noise on (`noised`)
         if mode == "null":
             zn = zn * gm[..., None].to(zn.dtype)
     add = m.z_in(zn)
@@ -162,6 +163,12 @@ def before(model, i, x, keep):
         drop = (torch.rand(B, T, device=x.device) < cfg.thought_drop).gather(1, rend)
         add = add * (~drop)[..., None].to(add.dtype)
     return x + add.to(x.dtype)
+
+
+def noised(model, z):
+    """A made thought as the words were taught to read one: with noise, ONE draw for the whole sentence."""
+    n = model.cfg.thought_noise
+    return (z.float() + n * torch.randn_like(z.float())) * (1.0 + n * n) ** -0.5
 
 
 def lesson(model, h, ex):
@@ -222,7 +229,7 @@ def held_out(model, windows, device, batch, mode):
                 h, ex = model._cap
                 B, T, D = h.shape
                 zs, _ = model.mind.think(context(model, h, ex).reshape(B * T, -1), 1)   # a thought from every place
-                zs = zs.view(B, T, -1)
+                zs = noised(model, zs).view(B, T, -1)
                 g = torch.arange(T, device=device).expand(B, T)
                 src = torch.where(ex["b"], g, torch.full_like(g, -1)).cummax(1).values   # the last sentence end so far
                 has = src > 0                                                    # the first sentence has no thought

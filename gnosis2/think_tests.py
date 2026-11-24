@@ -210,6 +210,13 @@ def main():
     check("its checkpoint loads and is scored by meaning (1, 4, 16, 64 thoughts; the surest; words under thoughts)",
           set(out) == {"hs", "winogrande"} and all(len(r["meaning"]) == 4 and len(r["sure"]) == 4 for r in out.values()),
           f"HellaSwag stand-in: meaning 64 {out['hs']['meaning']['64'] * 100:.0f}%, words {out['hs']['words'] * 100:.0f}%")
+    from gnosis2 import think_say
+    from oazy.logres import _load
+    mm = _load(rd, torch.device("cpu")).eval()
+    txt, lg_ = think_say.write(mm, tok.for_model(mm), " ".join(fake_docs(1, rng)), words=24, thoughts=4, ghosts=2, say=None)
+    txt2, _ = think_say.write(mm, tok.for_model(mm), " ".join(fake_docs(1, rng)), words=8, plain=True, say=None)
+    check("it writes under made thoughts, sentence by sentence (and plainly, to compare)",
+          len(txt) > 0 and len(txt2) > 0 and len(lg_) >= 1 and len(lg_[0]["ghosts"]) == 2, f"{len(lg_)} thoughts for 24 pieces")
     thinkab.main(["--runs", str(runs), "--data", str(data)])
     tmp_ctx.cleanup()
     if FAILS:
