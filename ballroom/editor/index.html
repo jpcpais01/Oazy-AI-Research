@@ -59,6 +59,9 @@ th { color: var(--dim); font-weight: 400; font-size: 12px; text-transform: upper
 td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 h2 { font-size: 13px; font-weight: 500; color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 6px; }
 .note { color: var(--dim); font-size: 13px; margin: 6px 0 0; }
+.pick { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--dim); }
+.pick[hidden] { display: none; }
+.pick select { font: inherit; color: var(--ink, inherit); background: transparent; border: 1px solid var(--line, #8886); border-radius: 6px; padding: 4px 6px; max-width: 100%; }
 #status { font-family: var(--mono); font-size: 13px; color: var(--dim); min-height: 1.4em; }
 .scroll { overflow-x: auto; }
 </style>
@@ -82,6 +85,7 @@ h2 { font-size: 13px; font-weight: 500; color: var(--dim); text-transform: upper
         <button id="add">Add platform</button>
         <button id="del">Remove platform</button>
       </div>
+      <label class="pick" hidden>Model <select id="pick"><option value="">Objects model (runs in this page)</option></select></label>
       <div id="status">Loading the model…</div>
 
       <div class="legend">
@@ -379,7 +383,7 @@ function gauss() { return Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos
 
 function start() {
   if (run) { clearRun(); return; }
-  const boxes = WALLS.concat(room.plats), b = { ...room.ball }, step = !!(model && model.step);
+  const pixel = $("pick").value, boxes = WALLS.concat(room.plats), b = { ...room.ball }, step = !!pixel || !!(model && model.step);
   const truth = truePath(b, room.plats);
   const end = truth[truth.length - 1], dist = q => Math.hypot(q[0] - end[0], q[1] - end[1]);
   // the cloud: the same ball started a hair away, many times
@@ -390,7 +394,18 @@ function start() {
   // the worker rolls the step model and sends its path as it goes; playback shows what has arrived
   run = { id: ++jobId, truth, law: [[b.x, b.y]], lawDone: !step, shot: null, cloud, t: 0, t0: performance.now(), dist, step,
           still: matchMedia("(prefers-reduced-motion: reduce)").matches };
-  if (model) {                             // the first worker rolls the main ball; all that are ready share the cloud
+  if (pixel) {                             // a pixel model runs on the machine that serves this page (its GPU if it has one)
+    const id = run.id;
+    fetch("eye", { method: "POST", headers: { "Content-Type": "application/json" },
+                   body: JSON.stringify({ model: pixel, ball: b, plats: room.plats, starts }) })
+      .then(r => r.json()).then(m => {
+        if (!run || run.id !== id) return;
+        if (m.error) { run.lawDone = true; run.step = false; $("status").textContent = "The pixel model failed: " + m.error; return; }
+        feed({ id, shot: m.shot }); feed({ id, law: m.law, done: true });
+        for (const e of m.ends) feed({ id, end: e });
+      })
+      .catch(err => { if (run && run.id === id) { run.lawDone = true; run.step = false; $("status").textContent = "Could not reach the pixel model: " + err; } });
+  } else if (model) {                      // the first worker rolls the main ball; all that are ready share the cloud
     const team = brains.filter(w => w.ready);
     team.forEach((w, i) => w.postMessage({ id: run.id, main: w === brainWork, ball: b, boxes, starts: step ? starts.filter((_, k) => k % team.length === i) : [] }));
   }
@@ -451,13 +466,16 @@ const hear = e => {
     if (m.test) showBench(m.test, m);
     return;
   }
+  feed(m);
+};
+function feed(m) {                       // a piece of the model's answer, from a worker or from the pixel model
   const me = run; if (!me || m.id !== me.id) return;
   if (m.shot) { me.shot = m.shot; setReadout("m2", "b2", me.dist(m.shot)); }
   if (m.law) { for (let i = 0; i < m.law.length; i += 2) me.law.push([m.law[i], m.law[i + 1]]); if (m.done) me.lawDone = true; }
   if (m.end) me.cloud.modelEnds.push(m.end);
   if (me.mainDone) { cloudReadout(me); draw(); }
   else if (me.still && me.lawDone) { cancelAnimationFrame(raf); raf = requestAnimationFrame(tick); }
-};
+}
 brainWork.onmessage = hear;
 brainWork.onerror = () => { modelLine = "The model could not start in this browser: Run shows the exact simulator only."; $("run").disabled = false; $("run").textContent = "Run"; $("status").textContent = modelLine; };
 
@@ -517,4 +535,21 @@ function showBench(test, pack) {
 draw();
 $("run").disabled = true; $("run").textContent = "Loading…";
 brainWork.postMessage({ load: weightsUrl });
+// pixel models on this machine: listed when the page opens and again whenever the picker is opened
+async function listPixel() {
+  try {
+    const ms = await (await fetch("models", { cache: "no-store" })).json(), sel = $("pick"), was = sel.value;
+    sel.querySelectorAll("option[data-px]").forEach(o => o.remove());
+    for (const m of ms) {
+      const o = document.createElement("option"); o.value = m.name; o.dataset.px = 1;
+      o.textContent = "Pixel model: " + m.name + " (saved " + new Date(m.age * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + ")";
+      sel.append(o);
+    }
+    if ([...sel.options].some(o => o.value === was)) sel.value = was;
+    sel.parentElement.hidden = !ms.length;
+  } catch (e) {}
+}
+listPixel();
+$("pick").addEventListener("focus", listPixel);
+$("pick").addEventListener("change", () => { clearRun(); if ($("pick").value) { $("run").disabled = false; $("run").textContent = "Run"; $("status").textContent = "Pixel model " + $("pick").value + " runs on this machine. Press Run."; } });
 </script>
