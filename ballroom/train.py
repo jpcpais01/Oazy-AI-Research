@@ -124,7 +124,7 @@ def main():
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     a = ap.parse_args()
     dev = a.device
-    a.arena = a.arena or (65536 if dev.startswith("cuda") else 2048)
+    a.arena = a.arena or (16384 if dev.startswith("cuda") else 2048)
     torch.manual_seed(a.seed); rng = np.random.default_rng(a.seed)
     lo, hi = map(int, a.plat.split(","))
     os.makedirs(a.out, exist_ok=True)
