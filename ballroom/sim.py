@@ -143,3 +143,43 @@ if __name__ == "__main__":
     floor = fin[:, 1] < R + 1e-6
     print(f"ends on the floor {floor.mean() * 100:.1f}%  on a platform {(~floor).mean() * 100:.1f}%")
     print(f"x spread {fin[:, 0].std():.3f}  bounds {P.min():.3f} {P.max():.3f}")
+
+
+def step_t(p, v, boxes, n=1):
+    """The same step as step(), on torch tensors (float64), so the simulator can run on the GPU."""
+    import torch
+    p = p.clone(); v = v.clone()
+    B = boxes.shape[1]
+    zero = torch.zeros((), dtype=p.dtype, device=p.device)
+    for _ in range(n):
+        v[:, 1] -= G * DT
+        p += v * DT
+        for b in (ORDER[:B] if B == MAX_BOX else range(B)):
+            c = boxes[:, b, :2]; h = boxes[:, b, 2:]
+            d = p - c
+            o = d - torch.maximum(torch.minimum(d, h), -h)
+            dist = torch.sqrt(o[:, 0] ** 2 + o[:, 1] ** 2)
+            hit = dist < R
+            out = hit & (dist > 0)
+            safe = torch.where(out, dist, torch.ones_like(dist))
+            nx = torch.where(out, o[:, 0] / safe, zero); ny = torch.where(out, o[:, 1] / safe, zero)
+            push = torch.where(out, R - dist, zero)
+            ins = hit & ~out
+            px = h[:, 0] - d[:, 0].abs(); py = h[:, 1] - d[:, 1].abs()
+            sx = torch.where(d[:, 0] >= 0, 1.0, -1.0).to(p.dtype); sy = torch.where(d[:, 1] >= 0, 1.0, -1.0).to(p.dtype)
+            ux = px < py
+            nx = torch.where(ins, torch.where(ux, sx, zero), nx); ny = torch.where(ins, torch.where(ux, zero, sy), ny)
+            push = torch.where(ins, torch.where(ux, px, py) + R, push)
+            p = torch.stack([p[:, 0] + nx * push, p[:, 1] + ny * push], 1)
+            vn = v[:, 0] * nx + v[:, 1] * ny
+            into = hit & (vn < 0)
+            tx = v[:, 0] - vn * nx; ty = v[:, 1] - vn * ny
+            bounce = into & (vn < -VTH)
+            rest = into & ~bounce
+            ts = torch.sqrt(tx ** 2 + ty ** 2)
+            cut = torch.where(rest & (ny > 0.5), torch.clamp(ts, max=ROLL * DT), zero)
+            k = torch.where(ts > 0, (ts - cut) / torch.where(ts > 0, ts, torch.ones_like(ts)), zero)
+            vx = torch.where(bounce, tx * KEEP_T - E * vn * nx, torch.where(rest, tx * k, v[:, 0]))
+            vy = torch.where(bounce, ty * KEEP_T - E * vn * ny, torch.where(rest, ty * k, v[:, 1]))
+            v = torch.stack([vx, vy], 1)
+    return p, v

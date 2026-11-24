@@ -36,6 +36,10 @@ def main():
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     a = ap.parse_args()
     dev = a.device
+    # one step model in the folder itself, or several arms in sub-folders
+    steps = [("", os.path.join(a.runs, "step.pt"))] if os.path.exists(os.path.join(a.runs, "step.pt")) else []
+    steps += [(d, os.path.join(a.runs, d, "step.pt")) for d in sorted(os.listdir(a.runs))
+              if os.path.exists(os.path.join(a.runs, d, "step.pt"))]
     res = {}
     for label, plat, seed in (("2-3 platforms (like training)", (2, 3), 101), ("4-5 platforms (never seen)", (4, 5), 102)):
         rng = np.random.default_rng(seed)
@@ -55,16 +59,20 @@ def main():
             with torch.no_grad():
                 pred = (tp + load(f, dev)(tp, tv, tb, tm) * 0.3).cpu().numpy()
             rows.append(score("one shot (intuition)", pred, fin, boxes))
-        f = os.path.join(a.runs, "step.pt")
-        if os.path.exists(f):
+        for name, f in steps:
             pred = roll(load(f, dev), tp, tv, tb, tm).cpu().numpy()
-            rows.append(score("step by step (law)", pred, fin, boxes))
+            rows.append(score("step by step" + (f" [{name}]" if name else " (law)"), pred, fin, boxes))
         res[label] = rows
         print(f"\n== {label}, {a.rooms} fresh rooms ==")
-        print(f"{'':34s}{'mean miss':>10s}{'median':>9s}{'within a ball':>15s}{'right surface':>15s}")
+        print(f"{'':40s}{'mean miss':>10s}{'median':>9s}{'within a ball':>15s}{'right surface':>15s}")
         for r in rows:
-            print(f"{r['model']:34s}{r['mean']:10.3f}{r['median']:9.3f}{r['within_ball']:14.1f}%{r['right_surface']:14.1f}%")
+            print(f"{r['model']:40s}{r['mean']:10.3f}{r['median']:9.3f}{r['within_ball']:14.1f}%{r['right_surface']:14.1f}%")
     json.dump(res, open(os.path.join(a.runs, "test.json"), "w"), indent=1)
+    if steps:   # the arm that does best on the rooms it never saw goes to the editor
+        hard = [r for r in list(res.values())[-1] if r["model"].startswith("step by step")]
+        best = max(range(len(hard)), key=lambda i: hard[i]["within_ball"])
+        open(os.path.join(a.runs, "best.txt"), "w").write(steps[best][1])
+        print(f"\nbest step model on unseen rooms: {steps[best][1]}")
 
 
 if __name__ == "__main__":

@@ -188,11 +188,12 @@ function makeNet(pack) {
   for (const [name, shape, off] of pack.tensors) P[name] = all.subarray(off, off + shape.reduce((a, b) => a * b, 1));
   const { d, layers, heads, out } = pack.cfg, hd = d / heads, feat = pack.cfg.feat || 0;
   return function forward(x, y, vx, vy, boxes) {   // boxes: [cx,cy,hw,hh] each
-    const nf = [6, 8, 11][feat], nb = boxes.length, T = nb + 1, f = new Float32Array(nb * nf);
+    const nf = [6, 8, 11, 15][feat], nb = boxes.length, T = nb + 1, f = new Float32Array(nb * nf);
     boxes.forEach((b, i) => {
       const dx = x - b[0], dy = y - b[1], row = [dx, dy, b[2], b[3], vx, vy];
       if (feat >= 1) row.push(Math.abs(dx) - b[2], Math.abs(dy) - b[3]);
-      if (feat >= 2) { const ox = dx - Math.max(-b[2], Math.min(b[2], dx)), oy = dy - Math.max(-b[3], Math.min(b[3], dy)); row.push(ox, oy, Math.hypot(ox, oy) - R); }
+      if (feat >= 2) { const ox = dx - Math.max(-b[2], Math.min(b[2], dx)), oy = dy - Math.max(-b[3], Math.min(b[3], dy)); const ds = Math.hypot(ox, oy); row.push(ox, oy, ds - R);
+        if (feat >= 3) { const nx = ox / (ds + 1e-6), ny = oy / (ds + 1e-6); row.push(nx, ny, Math.max(-1, Math.min(4, (ds - R) * 25)), vx * nx + vy * ny); } }
       f.set(row, i * nf);
     });
     const bx = linear(linear(f, nb, P["box1.weight"], P["box1.bias"], nf, d, true), nb, P["box2.weight"], P["box2.bias"], d, d, false);
