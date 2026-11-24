@@ -70,7 +70,8 @@ def main():
     json.dump(res, open(os.path.join(a.runs, "test.json"), "w"), indent=1)
     if steps:   # the arm that does best on the rooms it never saw goes to the editor
         hard = [r for r in list(res.values())[-1] if r["model"].startswith("step by step")]
-        best = max(range(len(hard)), key=lambda i: hard[i]["within_ball"])
+        top = max(r["within_ball"] for r in hard)   # among arms within a point of the best, the smallest: the editor runs it live
+        best = min((i for i in range(len(hard)) if hard[i]["within_ball"] >= top - 1.0), key=lambda i: os.path.getsize(steps[i][1]))
         open(os.path.join(a.runs, "best.txt"), "w").write(steps[best][1])
         print(f"\nbest step model on unseen rooms: {steps[best][1]}")
 

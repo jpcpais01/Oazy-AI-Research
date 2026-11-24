@@ -48,6 +48,8 @@ button:disabled { opacity: 0.45; cursor: default; }
 .legend { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
 .legend span { display: flex; align-items: center; gap: 9px; }
 .dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
+.dot.small { width: 6px; height: 6px; margin-right: -4px; }
+.dot.small + .dot.small { margin-right: 0; }
 .ring { width: 11px; height: 11px; border-radius: 50%; flex: none; border: 2px solid var(--shot); box-sizing: border-box; }
 table { border-collapse: collapse; width: 100%; font-size: 14px; }
 th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--line); }
@@ -64,7 +66,7 @@ h2 { font-size: 13px; font-weight: 500; color: var(--dim); text-transform: upper
 <div class="wrap">
   <header>
     <h1>Ballroom</h1>
-    <p>Set up a room, press Run. The exact simulator and the learned model start from the same ball and you watch where each one ends.</p>
+    <p>Set up a room, press Run. The exact simulator and the learned model start from the same ball and you watch where each one ends, then where 24 barely nudged copies end.</p>
   </header>
 
   <div class="bench">
@@ -86,6 +88,7 @@ h2 { font-size: 13px; font-weight: 500; color: var(--dim); text-transform: upper
         <span><i class="dot" style="background:var(--truth)"></i>Exact simulator (the true answer)</span>
         <span><i class="dot" style="background:var(--law)"></i>Step model: learned one moment of motion, rolled forward</span>
         <span><i class="ring"></i>One-shot model: guesses the end without moving</span>
+        <span><i class="dot small" style="background:var(--truth)"></i><i class="dot small" style="background:var(--law)"></i>Clouds: where 24 barely nudged copies end, true and model</span>
       </div>
 
       <div>
@@ -100,6 +103,20 @@ h2 { font-size: 13px; font-weight: 500; color: var(--dim); text-transform: upper
         </table>
         </div>
         <p class="note">The room is 1 wide. The ball is 0.06 wide. A miss under one ball width counts as a hit.</p>
+      </div>
+
+      <div>
+        <h2>Cloud of 24 nudged balls</h2>
+        <div class="scroll">
+        <table>
+          <thead><tr><th>Rolled by</th><th>End within a ball of the true rest</th></tr></thead>
+          <tbody>
+            <tr><td>Exact simulator</td><td class="num" id="c1">–</td></tr>
+            <tr><td>Step model</td><td class="num" id="c2">–</td></tr>
+          </tbody>
+        </table>
+        </div>
+        <p class="note">Each copy starts a hair away: 0.002 in position, 0.02 in speed. If the true cloud splits, the room is on a knife-edge and no single answer is right.</p>
       </div>
 
       <div id="bench" hidden>
@@ -290,6 +307,11 @@ function draw() {
     const a = run.law[mi], c = run.law[Math.min(run.law.length - 1, mi + 1)];
     ball(a[0] + (c[0] - a[0]) * fr, a[1] + (c[1] - a[1]) * fr, css("--law"), 0.9);
     const tp = run.truth[tn - 1]; ball(tp[0], tp[1], css("--truth"), 0.9);
+    if (run.mainDone && run.cloud) {      // the clouds: small dots where the nudged copies end
+      const dots = (pts, col) => { cx.fillStyle = col; cx.strokeStyle = css("--bg"); cx.lineWidth = 2;
+        for (const q of pts) { cx.beginPath(); cx.arc(X(q[0]), Y(q[1]), 8, 0, 7); cx.fill(); cx.stroke(); } };
+      dots(run.cloud.trueEnds, css("--truth")); dots(run.cloud.modelEnds, css("--law"));
+    }
   } else {
     ball(b.x, b.y, css("--fg"), 1);
     const tx = b.x + b.vx * ARROW, ty = b.y + b.vy * ARROW;
@@ -302,7 +324,9 @@ function setReadout(id1, id2, d) {
   $(id1).textContent = d == null ? "–" : d.toFixed(3);
   $(id2).textContent = d == null ? "–" : (d / (2 * R)).toFixed(1);
 }
-function clearRun() { cancelAnimationFrame(raf); run = null; setReadout("m1", "b1", null); setReadout("m2", "b2", null); $("run").textContent = "Run"; draw(); }
+function clearRun() { cancelAnimationFrame(raf); run = null; setReadout("m1", "b1", null); setReadout("m2", "b2", null); $("c1").textContent = "–"; $("c2").textContent = "–"; $("run").textContent = "Run"; draw(); }
+const CLOUD = 24;
+function gauss() { return Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random()); }
 
 function start() {
   if (run) { clearRun(); return; }
@@ -320,18 +344,37 @@ function start() {
     }
   };
   const end = truth[truth.length - 1], dist = q => Math.hypot(q[0] - end[0], q[1] - end[1]);
+  // the cloud: the same ball started a hair away, many times. True endings at once, the model's as time allows.
+  const starts = Array.from({ length: CLOUD }, () => ({
+    x: Math.max(R, Math.min(1 - R, b.x + 0.002 * gauss())), y: Math.max(R, Math.min(1 - R, b.y + 0.002 * gauss())),
+    vx: b.vx + 0.02 * gauss(), vy: b.vy + 0.02 * gauss() }));
+  const cloud = me.cloud = { trueEnds: starts.map(q => { const t = truePath(q, room.plats); return t[t.length - 1]; }), modelEnds: [], cur: null, n: 0 };
+  const near = pts => pts.filter(q => dist(q) < 2 * R).length;
+  const cloudDone = () => !step || cloud.modelEnds.length >= CLOUD;
+  const cloudWork = ms => {              // roll the model's copies a few milliseconds at a time
+    const stop = performance.now() + ms;
+    while (!cloudDone() && performance.now() < stop) {
+      if (!cloud.cur) { cloud.cur = { ...starts[cloud.modelEnds.length] }; cloud.n = 0; }
+      if (++cloud.n > MAX_STEPS || !modelStep(step, cloud.cur, boxes)) { cloud.modelEnds.push([cloud.cur.x, cloud.cur.y]); cloud.cur = null; }
+    }
+  };
   const finish = () => {
+    me.mainDone = true;
     if (step) setReadout("m1", "b1", dist(me.law[me.law.length - 1]));
     if (shot) setReadout("m2", "b2", dist(shot));
+    $("c1").textContent = near(cloud.trueEnds) + " of " + CLOUD;
     $("status").textContent = "True rest after " + ((truth.length - 1) / 120).toFixed(1) + " s." + (step ? " Step model stopped after " + ((me.law.length - 1) / 30).toFixed(1) + " s." : "");
   };
-  if (matchMedia("(prefers-reduced-motion: reduce)").matches) { advance(Infinity); me.t = 1e9; draw(); finish(); return; }
+  const cloudReadout = () => { if (step) $("c2").textContent = cloudDone() ? near(cloud.modelEnds) + " of " + CLOUD : "rolling " + cloud.modelEnds.length + " of " + CLOUD + "…"; };
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) { advance(Infinity); cloudWork(Infinity); me.t = 1e9; finish(); cloudReadout(); draw(); return; }
   const tick = now => {
     if (run !== me) return;
     me.t = Math.max(0, (now - me.t0) / 1000);
     advance(me.t * 30);
+    if (!me.mainDone && !(me.t * 120 < truth.length || !me.lawDone || me.t * 30 < me.law.length - 1)) finish();
+    if (me.mainDone) { cloudWork(12); cloudReadout(); }
     draw();
-    if (me.t * 120 < truth.length || !me.lawDone || me.t * 30 < me.law.length - 1) raf = requestAnimationFrame(tick); else finish();
+    if (!me.mainDone || !cloudDone()) raf = requestAnimationFrame(tick);
   };
   raf = requestAnimationFrame(tick);
 }
