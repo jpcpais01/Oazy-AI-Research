@@ -14,11 +14,12 @@ pids=()
 for arm in $ARMS; do
     IFS=: read -r name feat d layers <<< "$arm"
     mkdir -p "$RUNS/$name"; rm -f "$RUNS/$name/step.pt"
+    arena="${ARENA:-16384}"; [ "$d" -ge 256 ] && arena=$((arena / 2))   # wide arms take half the balls: memory
     python3 -m ballroom.train --what step --minutes "${MIN:-10}" --rooms "${ROOMS:-100000}" --plat "$PLAT" \
-        --arena "${ARENA:-16384}" --feat "$feat" --d "$d" --layers "$layers" --out "$RUNS/$name" > "$RUNS/$name/step.log" 2>&1 &
+        --arena "$arena" --feat "$feat" --d "$d" --layers "$layers" --out "$RUNS/$name" > "$RUNS/$name/step.log" 2>&1 &
     pids+=($!)
 done
-python3 -m ballroom.train --what shot --minutes "${MIN:-10}" --rooms "${SHOT_ROOMS:-300000}" --plat "$PLAT" --batch 8192 \
+python3 -m ballroom.train --what shot --minutes "${MIN:-10}" --rooms "${SHOT_ROOMS:-300000}" --plat "$PLAT" --batch 4096 \
     --feat 3 --d 256 --layers 4 --out "$RUNS" > "$RUNS/shot.log" 2>&1 &
 pids+=($!)
 echo "training $ARMS and the one-shot model at once for ${MIN:-10} minutes; one line per arm every 30 s"
