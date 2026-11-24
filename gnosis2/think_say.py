@@ -3,6 +3,7 @@ under it. Works on a run that is still training (it reads the last saved checkpo
 
     python3 -m gnosis2.think_say "The best way to learn a language is"
     python3 -m gnosis2.think_say "Question: Why is the sky blue?\\nAnswer:" --thoughts 64 --ghosts 3
+    --pick      which thought is kept: dense (the centre of the biggest group; default), agree, sure
     --plain     also write the same prompt with no thoughts (the plain next-word model), to compare
     --ghosts K  before each sentence, show what K of the candidate thoughts would have said (their first words)
     --words N   pieces to write (default 80)   --temp T (default 0.7; 0 = always the likeliest word)
@@ -34,7 +35,21 @@ def step(model, ids, Z, M, bounds, mode="oracle"):
 
 
 @torch.no_grad()
-def write(model, enc, prompt, words=80, thoughts=16, ghosts=0, temp=0.7, top_k=40, plain=False, seed=0, say=print):
+def choose(made, sure, pick):
+    """Which thought is kept. "sure": the one that expects the smallest error (it favours empty, easy sentences).
+    "agree": the one nearest all the others, the centre of the cloud. "dense": the one with the most close neighbours
+    (the centre of the biggest group, when the thoughts split into groups)."""
+    if pick == "sure" or len(made) < 3:
+        return int(sure.argmin())
+    d = (made[:, None] - made[None]).pow(2).mean(-1)
+    if pick == "dense":
+        k = max(2, len(made) // 4)
+        return int(d.topk(k, dim=1, largest=False).values.mean(1).argmin())
+    return int(d.mean(1).argmin())
+
+
+def write(model, enc, prompt, words=80, thoughts=16, ghosts=0, temp=0.7, top_k=40, plain=False, seed=0, say=print,
+          pick="dense"):
     dev = model.embed.weight.device
     mind, cfg = model.mind, model.cfg
     torch.manual_seed(seed)
@@ -74,14 +89,14 @@ def write(model, enc, prompt, words=80, thoughts=16, ghosts=0, temp=0.7, top_k=4
             _, h, ex = step(model, ids, Z, M, B)
             made, sure = mind.think(THINK.context(model, h, ex)[:, t], thoughts)
             made, sure = made[0], sure[0]
-            best = int(sure.argmin())
+            best = choose(made, sure, pick)
             spread = float((made[:, None] - made[None]).pow(2).mean(-1).mean())   # how far apart the candidates are
             rec = {"at": len(ids) - P, "spread": spread, "sure": float(sure[best].exp()),
                    "sure_all": (float(sure.exp().min()), float(sure.exp().median()), float(sure.exp().max()))}
             if ghosts:
                 order = sure.argsort()
-                picks = [int(order[int(i * (len(order) - 1) / max(1, ghosts - 1))]) for i in range(ghosts)] if ghosts > 1 else [best]
-                rec["ghosts"] = [(float(sure[i].exp()), under(THINK.noised(model, made[i]), 12)) for i in picks]
+                picks = [best] + [int(order[int(i * (len(order) - 1) / max(1, ghosts - 1))]) for i in range(ghosts)][:ghosts - 1]
+                rec["ghosts"] = [(i == best, float(sure[i].exp()), under(THINK.noised(model, made[i]), 12)) for i in picks]
             log.append(rec)
             z_now = THINK.noised(model, made[best])
             last_end = t
@@ -89,8 +104,8 @@ def write(model, enc, prompt, words=80, thoughts=16, ghosts=0, temp=0.7, top_k=4
                 say(f"  [thought at piece {rec['at']}: {thoughts} made, they sit {spread:.2f} apart (2.0 = unrelated); "
                     f"the surest expects an error of {rec['sure']:.2f} (the others {rec['sure_all'][1]:.2f} in the middle, "
                     f"{rec['sure_all'][2]:.2f} at worst)]")
-                for s_, txt in rec.get("ghosts", []):
-                    say(f"      a thought (error {s_:.2f}) would say: {txt!r}")
+                for kept, s_, txt in rec.get("ghosts", []):
+                    say(f"      {'KEPT   ' if kept else 'another'} (error {s_:.2f}) would say: {txt!r}")
         Z[0, t], M[0, t] = z_now, True
         lg, _, _ = step(model, ids, Z, M, B)
         nxt = sample_logits(lg[:V], temp, top_k, vocab=V, recent=ids[-64:], rep=1.1)
@@ -112,6 +127,8 @@ def main(argv=None):
     ap.add_argument("--temp", type=float, default=0.7)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--plain", action="store_true")
+    ap.add_argument("--pick", choices=("dense", "agree", "sure"), default="dense",
+                    help="which thought is kept: the centre of the biggest group (default), the centre of all, or the surest")
     ap.add_argument("--device", default=None)
     a = ap.parse_args(argv)
     from oazy import tok
@@ -122,8 +139,8 @@ def main(argv=None):
     enc = tok.for_model(model)
     prompt = a.prompt.replace("\\n", "\n")
     print(f"\n{prompt}")
-    text, _ = write(model, enc, prompt, a.words, a.thoughts, a.ghosts, a.temp, seed=a.seed)
-    print(f"\nTHINKING ({a.thoughts} thoughts a sentence, the surest kept):\n{text}")
+    text, _ = write(model, enc, prompt, a.words, a.thoughts, a.ghosts, a.temp, seed=a.seed, pick=a.pick)
+    print(f"\nTHINKING ({a.thoughts} thoughts a sentence, kept by: {a.pick}):\n{text}")
     if a.plain:
         text, _ = write(model, enc, prompt, a.words, temp=a.temp, plain=True, seed=a.seed)
         print(f"\nNO THOUGHTS (plain next-word):\n{text}")
