@@ -215,8 +215,10 @@ def main():
         br = tb[r]
         z = net.see(render(P[t, r], P[t + 1, r], br, a.res))
         l_shot = F.smooth_l1_loss(net.shot(z) / 0.3, P[stop[r], r] / 0.3, beta=0.1)
-        l_pos = 0.0; l_rest = 0.0; l_lat = 0.0
-        for w in range(W):                                                 # a long roll, learned one window at a time
+        opt.zero_grad(set_to_none=True)
+        tot = dict(pos=0.0, rest=0.0, lat=0.0, loss=0.0)
+        for w in range(W):                                                 # each window frees its memory before the next
+            l_pos = 0.0; l_rest = 0.0                                                 # a long roll, learned one window at a time
             t1 = t + 1 + w * K
             tgt = P[t1[None, :] + ks[:, None], r[None, :]]                 # [K+1,B,2] true positions
             at_rest = (t1[None, :] + ks[:, None] >= stop[r][None, :]).float()
@@ -228,17 +230,18 @@ def main():
                     z = net.step(z)
             with torch.no_grad():                                          # what the eye sees at that later moment
                 z_eye = net.see(render(P[t1 + K - 1, r], P[t1 + K, r], br, a.res))
-            l_lat = l_lat + F.mse_loss(z, z_eye)
+            l_lat = F.mse_loss(z, z_eye)
+            part = (l_pos / (K + 1) + 0.3 * l_rest / (K + 1) + a.latent * l_lat) / W + (l_shot if w == 0 else 0.0)
+            part.backward()
             z = z.detach()                                                 # the next window starts from the rolled state, never from the eye
-        l_pos = l_pos / (W * (K + 1)); l_rest = l_rest / (W * (K + 1)); l_lat = l_lat / W
-        loss = l_pos + 0.3 * l_rest + l_shot + a.latent * l_lat
-        opt.zero_grad(set_to_none=True); loss.backward()
+            for k_, v_ in (("pos", l_pos / (K + 1)), ("rest", l_rest / (K + 1)), ("lat", l_lat), ("loss", part)):
+                tot[k_] += v_.item() / (W if k_ != "loss" else 1)
         torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0); opt.step()
         it += 1
         if it % 100 == 0:
             el = time.time() - t0
-            print(f"it {it} loss {loss.item():.4f} pos {l_pos.item():.4f} rest {l_rest.item():.4f} shot {l_shot.item():.4f} "
-                  f"agree {l_lat.item():.4f} {el:.0f}s ({it / el:.1f} steps/s)", flush=True)
+            print(f"it {it} loss {tot['loss']:.4f} pos {tot['pos']:.4f} rest {tot['rest']:.4f} shot {l_shot.item():.4f} "
+                  f"agree {tot['lat']:.4f} {el:.0f}s ({it / el:.1f} steps/s)", flush=True)
     torch.save({"model": net.state_dict(), "cfg": net.cfg, "plat": [lo, hi], "steps": it}, os.path.join(a.out, "eye.pt"))
     print(f"saved {a.out}/eye.pt after {it} steps", flush=True)
     res = evaluate(net, dev, a, a.test_rooms)
