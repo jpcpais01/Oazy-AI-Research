@@ -171,8 +171,10 @@ function truePath(start, plats) {      // one point per simulator step, until it
   return pts;
 }
 
-// ---------- the model (mirrors ballroom/model.py) ----------
-const DP_SCALE = 0.04, DV_SCALE = 0.25;
+// ---------- the model (mirrors ballroom/model.py). It runs in a worker, so the page never waits for it ----------
+function brain() {
+"use strict";
+const R = 0.03, MAX_STEPS = 360, DP_SCALE = 0.04, DV_SCALE = 0.25;
 function erf(x) {
   const s = x < 0 ? -1 : 1; x = Math.abs(x);
   const t = 1 / (1 + 0.3275911 * x);
@@ -250,18 +252,57 @@ function modelStep(net, s, boxes) {      // one model step (1/30 s) in place; fa
   s.vx += y[2] * DV_SCALE; s.vy += y[3] * DV_SCALE;
   return true;
 }
-function modelPath(net, start, boxes) {  // the whole path at once
-  const s = { ...start }, pts = [[s.x, s.y]];
-  while (pts.length <= MAX_STEPS && modelStep(net, s, boxes)) pts.push([s.x, s.y]);
-  return pts;
+let nets = null, job = 0;
+const pause = () => new Promise(r => setTimeout(r, 0));
+async function load(url, only) {
+  const r = await fetch(url); if (!r.ok) throw new Error("no model file (" + r.status + ")");
+  const total = +r.headers.get("X-Size") || 0, rd = r.body.getReader(), dec = new TextDecoder(), parts = [];
+  for (let got = 0, said = 0; ;) {
+    const { done, value } = await rd.read(); if (done) break;
+    parts.push(dec.decode(value, { stream: true })); got += value.length;
+    if (got - said > 5e5) { said = got; postMessage({ loading: got, total }); }
+  }
+  const w = JSON.parse(parts.join("") + dec.decode());
+  nets = { step: w.step ? makeNet(w.step) : null, shot: w.shot && !only ? makeNet(w.shot) : null };
+  postMessage({ ready: true, step: !!w.step, shot: !!w.shot, test: w.test || null, plat: w.step ? w.step.plat : null });
+}
+onmessage = async e => {
+  const m = e.data;
+  if (m.load) { load(m.load, m.only).catch(err => postMessage({ failed: String(err && err.message || err) })); return; }
+  const id = job = m.id;
+  if (m.cancel || !nets) return;
+  const b = m.ball, boxes = m.boxes;
+  if (m.main && nets.shot) { const y = nets.shot(b.x, b.y, b.vx, b.vy, boxes); postMessage({ id, shot: [b.x + y[0] * 0.3, b.y + y[1] * 0.3] }); }
+  if (!nets.step) return;
+  // the main ball: one step per 1/30 s of room time, sent in small batches
+  const s = { ...b }; let pts = [], t = performance.now();
+  for (let n = 0; m.main;) {
+    const go = n < MAX_STEPS && modelStep(nets.step, s, boxes);
+    if (go) { n++; pts.push(s.x, s.y); }
+    if (!go || performance.now() - t > 15) {
+      postMessage({ id, law: pts, done: !go }); pts = [];
+      await pause(); if (job !== id) return;
+      t = performance.now();
+    }
+    if (!go) break;
+  }
+  // the cloud: each nudged copy rolled to its end
+  for (const q of m.starts) {
+    const c = { ...q };
+    for (let n = 0; n < MAX_STEPS && modelStep(nets.step, c, boxes); n++) {
+      if (performance.now() - t > 15) { await pause(); if (job !== id) return; t = performance.now(); }
+    }
+    postMessage({ id, end: [c.x, c.y] });
+  }
+};
 }
 
 // ---------- the room and the editor ----------
 const cv = document.getElementById("cv"), cx = cv.getContext("2d"), $ = id => document.getElementById(id);
-const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const ink = {}, css = n => ink[n] || (ink[n] = getComputedStyle(document.documentElement).getPropertyValue(n).trim());
 const ARROW = 0.16;                      // arrow length per unit of speed
 let room = { ball: { x: 0.2, y: 0.85, vx: 0.9, vy: 0.2 }, plats: [[0.3, 0.55, 0.16, 0.018], [0.72, 0.35, 0.14, 0.018], [0.55, 0.75, 0.1, 0.018]] };
-let nets = null, run = null, drag = null, raf = 0;
+let model = null, run = null, drag = null, raf = 0, jobId = 0;   // model: {step, shot} once the worker has it
 
 function randomRoom() {
   const n = 2 + Math.floor(Math.random() * 4), gap = R + 0.012, plats = [];
@@ -305,7 +346,7 @@ function draw() {
     trail(run.law, mi + 1, css("--law"), 3);
     if (run.shot) { cx.strokeStyle = css("--shot"); cx.lineWidth = 4; cx.beginPath(); cx.arc(X(run.shot[0]), Y(run.shot[1]), R * W, 0, 7); cx.stroke(); }
     const a = run.law[mi], c = run.law[Math.min(run.law.length - 1, mi + 1)];
-    ball(a[0] + (c[0] - a[0]) * fr, a[1] + (c[1] - a[1]) * fr, css("--law"), 0.9);
+    if (run.step) ball(a[0] + (c[0] - a[0]) * fr, a[1] + (c[1] - a[1]) * fr, css("--law"), 0.9);
     const tp = run.truth[tn - 1]; ball(tp[0], tp[1], css("--truth"), 0.9);
     if (run.mainDone && run.cloud) {      // the clouds: small dots where the nudged copies end
       const dots = (pts, col) => { cx.fillStyle = col; cx.strokeStyle = css("--bg"); cx.lineWidth = 2;
@@ -324,60 +365,89 @@ function setReadout(id1, id2, d) {
   $(id1).textContent = d == null ? "–" : d.toFixed(3);
   $(id2).textContent = d == null ? "–" : (d / (2 * R)).toFixed(1);
 }
-function clearRun() { cancelAnimationFrame(raf); run = null; setReadout("m1", "b1", null); setReadout("m2", "b2", null); $("c1").textContent = "–"; $("c2").textContent = "–"; $("run").textContent = "Run"; draw(); }
+function clearRun() {
+  cancelAnimationFrame(raf);
+  if (run) { ++jobId; for (const w of brains) w.postMessage({ id: jobId, cancel: true }); }
+  run = null; setReadout("m1", "b1", null); setReadout("m2", "b2", null); $("c1").textContent = "–"; $("c2").textContent = "–";
+  $("run").textContent = "Run"; if (model) $("status").textContent = modelLine; draw();
+}
 const CLOUD = 24;
 function gauss() { return Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random()); }
 
 function start() {
   if (run) { clearRun(); return; }
-  const boxes = WALLS.concat(room.plats), b = room.ball, step = nets && nets.step;
+  const boxes = WALLS.concat(room.plats), b = { ...room.ball }, step = !!(model && model.step);
   const truth = truePath(b, room.plats);
-  let shot = null;
-  if (nets && nets.shot) { const y = nets.shot(b.x, b.y, b.vx, b.vy, boxes); shot = [b.x + y[0] * 0.3, b.y + y[1] * 0.3]; }
-  // the step model is rolled forward while it plays, one step per 1/30 s
-  run = { truth, law: [[b.x, b.y]], ls: { ...b }, lawDone: !step, shot, t: 0, t0: performance.now() };
-  const me = run;
-  $("run").textContent = "Reset"; $("status").textContent = "Running…";
-  const advance = upTo => {
-    while (!me.lawDone && me.law.length - 1 < upTo) {
-      if (me.law.length <= MAX_STEPS && modelStep(step, me.ls, boxes)) me.law.push([me.ls.x, me.ls.y]); else me.lawDone = true;
-    }
-  };
   const end = truth[truth.length - 1], dist = q => Math.hypot(q[0] - end[0], q[1] - end[1]);
-  // the cloud: the same ball started a hair away, many times. True endings at once, the model's as time allows.
+  // the cloud: the same ball started a hair away, many times
   const starts = Array.from({ length: CLOUD }, () => ({
     x: Math.max(R, Math.min(1 - R, b.x + 0.002 * gauss())), y: Math.max(R, Math.min(1 - R, b.y + 0.002 * gauss())),
     vx: b.vx + 0.02 * gauss(), vy: b.vy + 0.02 * gauss() }));
-  const cloud = me.cloud = { trueEnds: starts.map(q => { const t = truePath(q, room.plats); return t[t.length - 1]; }), modelEnds: [], cur: null, n: 0 };
-  const near = pts => pts.filter(q => dist(q) < 2 * R).length;
-  const cloudDone = () => !step || cloud.modelEnds.length >= CLOUD;
-  const cloudWork = ms => {              // roll the model's copies a few milliseconds at a time
-    const stop = performance.now() + ms;
-    while (!cloudDone() && performance.now() < stop) {
-      if (!cloud.cur) { cloud.cur = { ...starts[cloud.modelEnds.length] }; cloud.n = 0; }
-      if (++cloud.n > MAX_STEPS || !modelStep(step, cloud.cur, boxes)) { cloud.modelEnds.push([cloud.cur.x, cloud.cur.y]); cloud.cur = null; }
-    }
-  };
-  const finish = () => {
-    me.mainDone = true;
-    if (step) setReadout("m1", "b1", dist(me.law[me.law.length - 1]));
-    if (shot) setReadout("m2", "b2", dist(shot));
-    $("c1").textContent = near(cloud.trueEnds) + " of " + CLOUD;
-    $("status").textContent = "True rest after " + ((truth.length - 1) / 120).toFixed(1) + " s." + (step ? " Step model stopped after " + ((me.law.length - 1) / 30).toFixed(1) + " s." : "");
-  };
-  const cloudReadout = () => { if (step) $("c2").textContent = cloudDone() ? near(cloud.modelEnds) + " of " + CLOUD : "rolling " + cloud.modelEnds.length + " of " + CLOUD + "…"; };
-  if (matchMedia("(prefers-reduced-motion: reduce)").matches) { advance(Infinity); cloudWork(Infinity); me.t = 1e9; finish(); cloudReadout(); draw(); return; }
-  const tick = now => {
-    if (run !== me) return;
-    me.t = Math.max(0, (now - me.t0) / 1000);
-    advance(me.t * 30);
-    if (!me.mainDone && !(me.t * 120 < truth.length || !me.lawDone || me.t * 30 < me.law.length - 1)) finish();
-    if (me.mainDone) { cloudWork(12); cloudReadout(); }
-    draw();
-    if (!me.mainDone || !cloudDone()) raf = requestAnimationFrame(tick);
-  };
+  const cloud = { trueEnds: starts.map(q => { const t = truePath(q, room.plats); return t[t.length - 1]; }), modelEnds: [] };
+  // the worker rolls the step model and sends its path as it goes; playback shows what has arrived
+  run = { id: ++jobId, truth, law: [[b.x, b.y]], lawDone: !step, shot: null, cloud, t: 0, t0: performance.now(), dist, step,
+          still: matchMedia("(prefers-reduced-motion: reduce)").matches };
+  if (model) {                             // the first worker rolls the main ball; all that are ready share the cloud
+    const team = brains.filter(w => w.ready);
+    team.forEach((w, i) => w.postMessage({ id: run.id, main: w === brainWork, ball: b, boxes, starts: step ? starts.filter((_, k) => k % team.length === i) : [] }));
+  }
+  $("run").textContent = "Reset"; $("status").textContent = "Running…";
   raf = requestAnimationFrame(tick);
 }
+const near = (me, pts) => pts.filter(q => me.dist(q) < 2 * R).length;
+function finish(me) {
+  me.mainDone = true;
+  if (me.step) setReadout("m1", "b1", me.dist(me.law[me.law.length - 1]));
+  $("c1").textContent = near(me, me.cloud.trueEnds) + " of " + CLOUD;
+  $("status").textContent = "True rest after " + ((me.truth.length - 1) / 120).toFixed(1) + " s." +
+    (me.step ? " Step model stopped after " + ((me.law.length - 1) / 30).toFixed(1) + " s." : " " + modelLine);
+}
+function cloudReadout(me) {
+  if (!me.step) return;
+  const n = me.cloud.modelEnds.length;
+  $("c2").textContent = n >= CLOUD ? near(me, me.cloud.modelEnds) + " of " + CLOUD : "rolling " + n + " of " + CLOUD + "…";
+}
+function tick(now) {
+  const me = run; if (!me) return;
+  me.t = me.still ? 1e9 : Math.max(0, (now - me.t0) / 1000);
+  const playing = me.t * 120 < me.truth.length || !me.lawDone || me.t * 30 < me.law.length - 1;
+  if (!me.mainDone && !playing) finish(me);
+  if (me.mainDone) cloudReadout(me);
+  draw();
+  if (playing) raf = requestAnimationFrame(tick);      // after that, the worker's messages redraw
+}
+
+// the worker: loads the model file and does all the model's arithmetic
+const brainUrl = URL.createObjectURL(new Blob(["(" + brain.toString() + ")()"], { type: "text/javascript" }));
+const weightsUrl = new URL("weights.json?v=" + (window.WEIGHTS_V || Date.now()), location.href).href;
+const brainWork = new Worker(brainUrl), brains = [brainWork];
+let modelLine = "Loading the model…";
+const hear = e => {
+  const m = e.data, from = e.target;
+  if (from !== brainWork && !m.id) { if (m.ready) from.ready = true; return; }
+  if (m.loading) { $("status").textContent = "Loading the model… " + (m.total ? Math.round(100 * m.loading / m.total) + "%" : (m.loading / 1e6).toFixed(0) + " MB"); return; }
+  if (m.ready || m.failed) {
+    model = m.ready ? { step: m.step, shot: m.shot } : null; from.ready = !!m.ready;
+    if (m.ready && m.step) for (let i = Math.min(3, (navigator.hardwareConcurrency || 2) - 2); i > 0; i--) {   // helpers for the cloud
+      const w = new Worker(brainUrl); w.onmessage = hear; brains.push(w); w.postMessage({ load: weightsUrl, only: "step" });
+    }
+    modelLine = m.failed ? "No model here: Run shows the exact simulator only. Train one with bash runpod/ballroom.sh"
+      : !m.step ? "No step model in the model file: Run shows the exact simulator" + (m.shot ? " and the one-shot guess." : " only.")
+      : "Model ready. Press Run.";
+    $("run").disabled = false; $("run").textContent = run ? "Reset" : "Run";
+    if (!run || run.mainDone) $("status").textContent = modelLine;
+    if (m.test) showBench(m.test, m);
+    return;
+  }
+  const me = run; if (!me || m.id !== me.id) return;
+  if (m.shot) { me.shot = m.shot; setReadout("m2", "b2", me.dist(m.shot)); }
+  if (m.law) { for (let i = 0; i < m.law.length; i += 2) me.law.push([m.law[i], m.law[i + 1]]); if (m.done) me.lawDone = true; }
+  if (m.end) me.cloud.modelEnds.push(m.end);
+  if (me.mainDone) { cloudReadout(me); draw(); }
+  else if (me.still && me.lawDone) { cancelAnimationFrame(raf); raf = requestAnimationFrame(tick); }
+};
+brainWork.onmessage = hear;
+brainWork.onerror = () => { modelLine = "The model could not start in this browser: Run shows the exact simulator only."; $("run").disabled = false; $("run").textContent = "Run"; $("status").textContent = modelLine; };
 
 // pointer editing
 function pos(e) { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, 1 - (e.clientY - r.top) / r.height]; }
@@ -433,9 +503,6 @@ function showBench(test, pack) {
 }
 
 draw();
-fetch("weights.json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(w => {
-  nets = { step: w.step ? makeNet(w.step) : null, shot: w.shot ? makeNet(w.shot) : null };
-  $("status").textContent = "Model ready. Press Run.";
-  if (w.test) showBench(w.test, w.step);
-}).catch(() => { $("status").textContent = "The model file did not load, so Run shows the exact simulator only."; });
+$("run").disabled = true; $("run").textContent = "Loading…";
+brainWork.postMessage({ load: weightsUrl });
 </script>
