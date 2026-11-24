@@ -13,12 +13,12 @@ What it does (not next-token: next-state, in a learned space):
   readout  from z: where the ball is, and whether it has come to rest.
   one-shot from the first z only: where the ball will end (the "intuition" head, for comparison).
 
-Training rolls z forward K steps and asks the readout for the true position at every step, so the
-inner state has to carry everything the motion needs. One more term asks the rolled state to agree
+Training rolls z forward in several windows of K steps, one after another, and asks the readout for the
+true position at every step, so the inner state has to carry everything the motion needs, for seconds. One more term asks the rolled state to agree
 with what the eye would see at that later moment (a JEPA-style target), which keeps long rolls on track.
 
-The cloud of possibilities: the first inner state is nudged a little, many times, and every copy is rolled
-to its end. Where the copies land is the model's own spread of answers.
+The cloud of possibilities: the same start is asked many times, with the picture or the first inner state
+nudged a little, and every copy is rolled to its end. The cloud then votes: the middle of its biggest clump.
 """
 import argparse, json, os, time
 import numpy as np
@@ -27,7 +27,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from . import sim
 from .model import Block
-from .test import score
+from .test import score, vote
 
 
 def render(pa, pb, boxes, res):
@@ -120,30 +120,44 @@ def evaluate(net, dev, a, rooms=3000):
     for label, plat, seed in (("2-3 platforms (like training)", (2, 3), 101), ("4-5 platforms (never seen)", (4, 5), 102)):
         boxes, tb, P, stop = rooms_on(dev, rooms, plat, seed)      # the same rooms ballroom.test uses
         fin = P[-1].cpu().numpy()
-        shot, law, seen, cloud = [], [], [], []
+        shot, law, seen = [], [], []
+        kinds = [("nudged pictures", 0.0)] + [(f"nudged inner state x{n:g}", n) for n in a.noise]
+        ends = {k: [] for k, _ in kinds}
         with torch.no_grad():
             for i in range(0, rooms, 500):
                 sl = slice(i, i + 500)
                 z = net.see(render(P[0, sl], P[1, sl], tb[sl], a.res))
                 shot.append(net.shot(z)); law.append(roll(net, z))
                 seen.append((net.read(z)[:, :2] - P[1, sl]).norm(dim=1))
-                # the cloud: the same inner state nudged a little, many times, each copy rolled to its end
-                ends = torch.stack([roll(net, z, noise=a.noise) for _ in range(a.cloud)])        # [C,n,2]
-                cloud.append((ends - P[-1, sl][None]).norm(dim=2) < 2 * sim.R)                   # [C,n] copy hits the true rest
+                # clouds: the same start asked many times, each copy rolled to its end
+                for kind, n in kinds:
+                    if n:       # the first inner state itself is nudged
+                        e = [roll(net, z, noise=n) for _ in range(a.cloud)]
+                    else:       # the picture is nudged: ball a hair away (0.002) with a hair of other speed (0.02), as in the object test
+                        e = []
+                        for _ in range(a.cloud):
+                            pa = (P[0, sl] + 0.002 * torch.randn_like(P[0, sl])).clamp(sim.R, 1 - sim.R)
+                            pb = pa + (P[1, sl] - P[0, sl]) + 0.02 / 30 * torch.randn_like(pa)
+                            e.append(roll(net, net.see(render(pa, pb, tb[sl], a.res))))
+                    ends[kind].append(torch.stack(e))                                             # [C,n,2]
         rows = [score("pixels, one shot", torch.cat(shot).cpu().numpy(), fin, boxes),
                 score("pixels, steps in its own space", torch.cat(law).cpu().numpy(), fin, boxes)]
+        notes = []
+        for kind, _ in kinds:                                         # every cloud votes: the middle of its biggest clump
+            pred, sure = vote(torch.cat(ends[kind], 1))
+            pred, sure = pred.cpu().numpy(), sure.cpu().numpy()
+            rows.append(score("cloud vote, " + kind, pred, fin, boxes))
+            hit = np.sqrt(((pred - fin) ** 2).sum(1)) < 2 * sim.R; m = sure >= 0.75
+            notes.append(f"  {kind}: 3/4 of the cloud agrees in {100 * m.mean():.0f}% of rooms" + (f", hits {100 * hit[m].mean():.0f}% there" if m.any() else "")
+                         + (f", {100 * hit[~m].mean():.0f}% elsewhere" if (~m).any() else ""))
         see_err = torch.cat(seen).median().item()
-        cl = torch.cat(cloud, 1).float()
-        cloud_res = dict(copies=a.cloud, noise=a.noise, copies_hit=100 * cl.mean().item(), most_hit=100 * (cl.mean(0) > 0.5).float().mean().item(),
-                         any_hit=100 * (cl.amax(0) > 0).float().mean().item())
-        res[label] = dict(rows=rows, sees_ball_within=see_err, cloud=cloud_res)
+        res[label] = dict(rows=rows, sees_ball_within=see_err, clouds=notes)
         print(f"\n== {label}, {rooms} fresh rooms ==")
         print(f"{'':40s}{'mean miss':>10s}{'median':>9s}{'within a ball':>15s}{'right surface':>15s}")
         for r in rows:
             print(f"{r['model']:40s}{r['mean']:10.3f}{r['median']:9.3f}{r['within_ball']:14.1f}%{r['right_surface']:14.1f}%")
         print(f"how well it sees the ball it is shown: median error {see_err:.4f} = {see_err / (2 * sim.R):.2f} ball widths")
-        print(f"cloud of {a.cloud} nudged inner states per room: {cloud_res['copies_hit']:.1f}% of copies end within a ball of the truth; "
-              f"most of the cloud is right in {cloud_res['most_hit']:.1f}% of rooms; some copy is right in {cloud_res['any_hit']:.1f}%")
+        print(f"when the cloud of {a.cloud} agrees, is it right?"); print("\n".join(notes))
     net.train()
     return res
 
@@ -165,8 +179,10 @@ def main():
     ap.add_argument("--reg", type=int, default=8)
     ap.add_argument("--latent", type=float, default=1.0, help="weight of the agree-with-the-eye term")
     ap.add_argument("--test-rooms", type=int, default=3000)
+    ap.add_argument("--windows", type=int, default=4, help="windows of --unroll steps rolled one after another in training")
+    ap.add_argument("--init", default="", help="start from a saved eye.pt")
     ap.add_argument("--cloud", type=int, default=16, help="nudged copies per room in the test")
-    ap.add_argument("--noise", type=float, default=0.05, help="size of the nudge to the inner state")
+    ap.add_argument("--noise", type=float, nargs="*", default=[0.1, 0.3], help="sizes of the nudge to the inner state")
     ap.add_argument("--out", default="ballroom/runs/eye")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -177,11 +193,14 @@ def main():
     lo, hi = map(int, a.plat.split(","))
     t0 = time.time()
     _, tb, P, stop = rooms_on(dev, a.rooms, (lo, hi), a.seed)
-    T = P.shape[0] - 1; K = a.unroll
+    T = P.shape[0] - 1; K = a.unroll; W = a.windows
+    torch.backends.cuda.matmul.allow_tf32 = True; torch.backends.cudnn.allow_tf32 = True
     net = Eye(a.res, a.patch, a.d, a.enc, a.step, reg=a.reg).to(dev)
+    if a.init:
+        net.load_state_dict(torch.load(a.init, map_location=dev)["model"]); print(f"starting from {a.init}", flush=True)
     opt = torch.optim.AdamW(net.parameters(), a.lr, weight_decay=0.01)
     print(f"rooms {a.rooms} ({lo}-{hi} platforms) {time.time() - t0:.0f}s; eye model {sum(p.numel() for p in net.parameters()):,} weights "
-          f"on {dev}; {a.res}x{a.res} pictures, inner state {a.reg} tokens of {a.d}, rolled {K} steps", flush=True)
+          f"on {dev}; {a.res}x{a.res} pictures, inner state {a.reg} tokens of {a.d}, rolled {W} x {K} steps", flush=True)
     budget = a.minutes * 60; it = 0; t0 = time.time()
     ks = torch.arange(K + 1, device=dev)
     while (it < a.iters) if a.iters else (time.time() - t0 < budget):
@@ -191,24 +210,27 @@ def main():
             g["lr"] = lr
         r = torch.randint(0, a.rooms, (a.batch,), device=dev)
         # a moment on the true path: anywhere before rest (a quarter of the time the very start)
-        t = (torch.rand(a.batch, device=dev) * (stop[r] + 3).float()).long().clamp(max=T - K - 2)
+        t = (torch.rand(a.batch, device=dev) * (stop[r] + 3).float()).long().clamp(max=T - W * K - 2)
         t = torch.where(torch.rand(a.batch, device=dev) < 0.25, torch.zeros_like(t), t)
         br = tb[r]
         z = net.see(render(P[t, r], P[t + 1, r], br, a.res))
-        tgt = P[(t + 1)[None, :] + ks[:, None], r[None, :]]            # [K+1,B,2] true positions
-        at_rest = ((t + 1)[None, :] + ks[:, None] >= stop[r][None, :]).float()
         l_shot = F.smooth_l1_loss(net.shot(z) / 0.3, P[stop[r], r] / 0.3, beta=0.1)
-        l_pos = 0.0; l_rest = 0.0
-        for k in range(K + 1):
-            y = net.read(z)
-            l_pos = l_pos + F.smooth_l1_loss(y[:, :2] / 0.05, tgt[k] / 0.05, beta=0.2)
-            l_rest = l_rest + F.binary_cross_entropy_with_logits(y[:, 2], at_rest[k])
-            if k < K:
-                z = net.step(z)
-        l_pos = l_pos / (K + 1); l_rest = l_rest / (K + 1)
-        with torch.no_grad():                                          # what the eye sees at that later moment
-            z_eye = net.see(render(P[t + K, r], P[t + K + 1, r], br, a.res))
-        l_lat = F.mse_loss(z, z_eye)
+        l_pos = 0.0; l_rest = 0.0; l_lat = 0.0
+        for w in range(W):                                                 # a long roll, learned one window at a time
+            t1 = t + 1 + w * K
+            tgt = P[t1[None, :] + ks[:, None], r[None, :]]                 # [K+1,B,2] true positions
+            at_rest = (t1[None, :] + ks[:, None] >= stop[r][None, :]).float()
+            for k in range(K + 1):
+                y = net.read(z)
+                l_pos = l_pos + F.smooth_l1_loss(y[:, :2] / 0.05, tgt[k] / 0.05, beta=0.2)
+                l_rest = l_rest + F.binary_cross_entropy_with_logits(y[:, 2], at_rest[k])
+                if k < K:
+                    z = net.step(z)
+            with torch.no_grad():                                          # what the eye sees at that later moment
+                z_eye = net.see(render(P[t1 + K - 1, r], P[t1 + K, r], br, a.res))
+            l_lat = l_lat + F.mse_loss(z, z_eye)
+            z = z.detach()                                                 # the next window starts from the rolled state, never from the eye
+        l_pos = l_pos / (W * (K + 1)); l_rest = l_rest / (W * (K + 1)); l_lat = l_lat / W
         loss = l_pos + 0.3 * l_rest + l_shot + a.latent * l_lat
         opt.zero_grad(set_to_none=True); loss.backward()
         torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0); opt.step()
