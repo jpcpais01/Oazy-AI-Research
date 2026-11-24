@@ -79,6 +79,10 @@ class Gnosis2Config(Bee6Config):
     thought_width: int = 512   # the denoiser's width
     thought_blocks: int = 3    # and its depth
     thought_every: int = 16    # sentence ends the mind learns from: one per this many pieces a row
+    thought_tie: float = 0.0   # v2: how much of the mind's lesson also shapes the thought itself (0 = the thought is
+                               # shaped by the words alone). Comes in between 5% and 15% of the run
+    thought_keep: float = 1.0  # v2: with the tie, the weight of the lesson that keeps a batch's thoughts spread out
+    thought_min: int = 1       # v2: a sentence end within this many pieces of the one before does not count
 
     def hint_ns(self):
         return [int(s) for s in str(self.hint_orders).split(",") if s.strip()]
@@ -287,6 +291,11 @@ class Gnosis2(Bee6):
         return e, raw_last
 
     # ---------------------------------------------------------------- Think-135 (gnosis2/think.py)
+    def set_progress(self, progress: float):
+        super().set_progress(progress)
+        if self.cfg.thought and self.cfg.thought_tie:
+            self.mind.tie_now.fill_(self.cfg.thought_tie * min(1.0, max(0.0, (progress - 0.05) / 0.10)))
+
     def _begin(self, idx):
         if self.cfg.thought:
             from . import think as THINK

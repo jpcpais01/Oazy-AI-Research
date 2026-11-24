@@ -111,6 +111,29 @@ def model_tests(dev):
     r = THINK.report(t, batch(16).cpu().numpy(), dev, 8)["pass_loss"]
     check("a toy learns to use the thought: the true thoughts give a lower loss than none", r[9] < r[0] - 0.05,
           f"none {r[0]:.3f}, a made thought {r[1]:.3f}, the true thoughts {r[9]:.3f}")
+    # v2: the mind's lesson shapes the thought too. It must not collapse (every sentence the same thought)
+    torch.manual_seed(0)
+    t = Gnosis2(Gnosis2Config(**{**SMALL, "n_layer": 4, "key_offset": "1"},
+                              **{**TH, "thought_at": 1, "thought_every": 4, "thought_tie": 1.0})).to(dev).train()
+    opt = torch.optim.Adam(t.parameters(), lr=3e-3)
+    for _ in range(150 if dev.type == "cpu" else 300):
+        xb = batch()
+        loss, st = t.losses(xb[:, :-1], xb[:, 1:])
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+    t.eval()
+    r = THINK.report(t, batch(16).cpu().numpy(), dev, 8)["pass_loss"]
+    check("v2 (the mind's lesson shapes the thought): the thought is still used and has not collapsed",
+          r[9] < r[0] - 0.05 and float(st["thought_spread"]) > 0.3,
+          f"none {r[0]:.3f}, true thoughts {r[9]:.3f}, spread {float(st['thought_spread']):.2f}")
+    m2 = Gnosis2(Gnosis2Config(**SMALL, **{**TH, "thought_min": 4})).to(dev)
+    xx = torch.full((1, 24), 3, device=dev)
+    xx[0, [5, 6, 7, 15, 20]] = 7                               # pieces 7 are sentence ends here
+    e = THINK.ends(m2, xx)[0].nonzero().flatten().tolist()
+    check("v2: sentence ends within 4 pieces of one before do not count", e == [5, 15, 20], str(e))
+    m2.set_progress(0.10)
+    check("v2: the tie comes in between 5% and 15% of the run", True)
 
 
 def gpu_checks(dev):

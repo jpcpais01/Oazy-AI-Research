@@ -15,6 +15,9 @@ answer's last piece); the answer nearest the made thoughts wins. No answer's wor
     words        the usual way, by next-word loss, no thoughts (what the trainer's tests show)
     words+4      next-word loss of each answer written under each of 4 made thoughts (averaged as probabilities)
 
+Version 2 (thinkab-think2-135, 24 Nov: `thought_tie=1 thought_min=8`, see gnosis2/think.py): `bash runpod/think2.sh`,
+tables with `--arm think2`. The same rule.
+
 Rule fixed before the run (23 Nov 2026), on the reasoning mean (ARC-Easy, ARC-Challenge, CommonsenseQA, Winogrande):
     1. it thinks:   "meaning 64" is 1.5 points or more above Bee-135's usual score
     2. search pays: "sure 64" is 1.0 point or more above "sure 1"
@@ -32,9 +35,9 @@ import torch.nn.functional as F
 
 from gnosis2.judgeab import LEAN, RUNS as JRUNS, TESTS, read as jread
 
-ARMS = {"plain": LEAN, "think": dict(LEAN, thought=1)}
-RUNS = {"plain": JRUNS["plain"], "think": "thinkab-think-135"}
-LABEL = {"plain": "Bee-135 (plain)", "think": "Think-135"}
+ARMS = {"plain": LEAN, "think": dict(LEAN, thought=1), "think2": dict(LEAN, thought=1, thought_tie=1.0, thought_min=8)}
+RUNS = {"plain": JRUNS["plain"], "think": "thinkab-think-135", "think2": "thinkab-think2-135"}
+LABEL = {"plain": "Bee-135 (plain)", "think": "Think-135", "think2": "Think-135 v2"}
 REASON = ("arc_easy", "arc_challenge", "csqa", "winogrande")
 NS = (1, 4, 16, 64)
 NEED_THINK, NEED_SEARCH = 0.015, 0.010
@@ -76,7 +79,7 @@ def by_meaning(model, path: Path, device, limit=None, batch_examples=8, n_words=
             own[i, a:b] = True
         x, mask, own = x.to(device), mask.to(device), own.to(device)
         mask_b = torch.cat([mask > 0, torch.zeros_like(own[:, :1])], 1)   # the pieces whose next word is the answer's
-        bounds = mind.ends_tab[x] & ~own                      # the answer is ONE sentence: it starts after the question's
+        bounds = THINK.ends(model, x) & ~own                     # the answer is ONE sentence: it starts after the question's
         ar = torch.arange(S, device=device)                   # last piece and ends at its own last piece
         qa = torch.tensor([a - 1 for a, _ in spans], device=device)
         qb = torch.tensor([b - 1 for _, b in spans], device=device)
@@ -176,6 +179,7 @@ def main(argv=None):
     ap.add_argument("--name", choices=list(ARMS), default=None)
     ap.add_argument("--tune", action="store_true")
     ap.add_argument("--score", action="store_true", help="score Think-135's run by meaning (writes think.json)")
+    ap.add_argument("--arm", choices=("think", "think2"), default="think", help="which Think-135 the tables and --score are for")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--device", default=None)
     a = ap.parse_args(argv)
@@ -187,7 +191,7 @@ def main(argv=None):
     from oazy.report import pct
     runs = Path(a.runs or default_dir("runs"))
     data = Path(a.data or default_dir("data"))
-    td = run_dir(runs, RUNS["think"])
+    td = run_dir(runs, RUNS[a.arm])
     if a.score:
         score(td, data, torch.device(a.device or ("cuda" if torch.cuda.is_available() else "cpu")), a.limit)
     got = {arm: jread(run_dir(runs, rn)) for arm, rn in RUNS.items()}
@@ -197,6 +201,8 @@ def main(argv=None):
     body = []
     for arm, label in LABEL.items():
         g = got[arm]
+        if g is None and arm not in ("plain", a.arm):
+            continue
         if g is None:
             body.append([label, "not run yet"] + [""] * (3 + len(TESTS)))
             continue

@@ -20,6 +20,12 @@ of all futures is already the best guess. Its job is to CHOOSE one sharp future 
     early state of the closing piece. Other noise lands on another thought: many candidates, almost free.
     A sureness head learns how wrong each made thought turned out.
 
+Version 2 (Nov 24, after the first run answered by meaning at chance: the thought, shaped only by "help the mouth",
+held what cannot be guessed, and the mind pinned down ~15% of it): `thought_tie` lets the mind's lesson shape the
+thought too (useful AND guessable; it comes in between 5% and 15% of the run, once the mouth uses the thought), and
+a spread-out lesson keeps the thoughts of a batch unlike each other (the tie alone collapsed them in a toy), and
+`thought_min` stops sentences of a piece or two (`thought_spread` in the log: 1 = thoughts all unlike, 0 = collapsed).
+
 All 24 layers stay in the word path (the canvas took half away). One sentence = up to `thought_cap` pieces, cut at
 . ! ? or a new line. New weights: ~1.6M. Compute: Bee-135's, +~3%.
 
@@ -59,6 +65,7 @@ class Mind(nn.Module):
         self.out = nn.Linear(W, dz)
         self.sure = nn.Sequential(nn.Linear(2 * W + dz, W), nn.SiLU(), nn.Linear(W, 1))
         self.register_buffer("ends_tab", sentence_ends(cfg.vocab_size))      # kept in the checkpoint
+        self.register_buffer("tie_now", torch.tensor(float(cfg.thought_tie)), persistent=False)   # (set_progress ramps it)
         with torch.no_grad():
             nn.init.normal_(self.to_z.weight, std=D ** -0.5)
             nn.init.zeros_(self.z_in.weight)              # starts as nothing: the model starts exactly as Bee-135
@@ -109,6 +116,19 @@ def context(model, h, ex):
     return model.mind.cond(hp) + ex["c2"]
 
 
+def ends(model, idx):
+    """(B, T) words -> where a sentence ends by the text alone: at . ! ? a new line or the end of a text, but not within
+    `thought_min` pieces of such a place before it (a full stop and the blank line after it are ONE end; a heading's
+    new line and the next do not make a sentence of one piece)."""
+    e = model.mind.ends_tab[idx]
+    m = model.cfg.thought_min
+    if m > 1:
+        T = idx.shape[1]
+        c = F.pad(e.long().cumsum(1), (m, 0))
+        e = e & ~((c[:, m - 1:m - 1 + T] - c[:, :T]) > 0)
+    return e
+
+
 def check(cfg):
     if not 1 <= cfg.thought_at < cfg.n_layer:
         raise ValueError(f"thought_at must be a layer from 1 to {cfg.n_layer - 1}")
@@ -123,7 +143,7 @@ def begin(model, idx):
     B, T = idx.shape
     g = torch.arange(T, device=idx.device).expand(B, T)
     forced = getattr(model, "_tbounds", None)
-    e = model.mind.ends_tab[idx] if forced is None or model.training else forced
+    e = ends(model, idx) if forced is None or model.training else forced
     cm = torch.where(e, g, torch.full_like(g, -1)).cummax(1).values
     prev = torch.cat([torch.full_like(g[:, :1], -1), cm[:, :-1]], 1)             # the last end before this piece
     b = e | ((g - prev) % model.cfg.thought_cap == 0) | (g == T - 1)
@@ -183,7 +203,8 @@ def lesson(model, h, ex):
     p = (ok.float() + torch.rand(B, T, device=h.device)).topk(M, dim=1).indices  # M sentence ends a row, at random
     w = ok.gather(1, p).float()
     nxt = end.gather(1, (p + 1).clamp(max=T - 1))                                # the next sentence's last piece
-    tgt = z.gather(1, nxt[..., None].expand(B, M, m.dz)).detach()
+    tgt = z.gather(1, nxt[..., None].expand(B, M, m.dz))
+    tgt = tgt.detach() + m.tie_now * (tgt - tgt.detach())      # thought_tie: the mind's lesson also shapes the thought
     c = context(model, h, ex).gather(1, p[..., None].expand(B, M, m.W))
     t = torch.rand(B, M, 1, device=h.device)
     a, s = torch.cos(t * math.pi / 2), torch.sin(t * math.pi / 2)
@@ -192,9 +213,20 @@ def lesson(model, h, ex):
     n = w.sum().clamp_min(1.0)
     diff = (err * w).sum() / n
     sl = ((sure - (err.detach() + 1e-4).log()).pow(2) * w).sum() / n
-    blur = ((c.new_zeros(()) + tgt).pow(2).mean(-1) * w).sum() / n               # the error of guessing nothing: 1
-    return {"aux": cfg.thought_w * diff + 0.1 * sl, "thought_err": diff.detach(), "thought_sure": sl.detach(),
-            "thought_sentences": ok.float().sum(1).mean().detach(), "thought_blur": blur.detach()}
+    td = tgt.detach()
+    blur = ((c.new_zeros(()) + td).pow(2).mean(-1) * w).sum() / n                # the error of guessing nothing: 1
+    mean = (td * w[..., None]).sum((0, 1)) / n                                   # how unlike the thoughts are: 1 = as
+    spread = 1.0 - mean.pow(2).mean()                                            # unlike as can be, 0 = all the same
+    keepup = diff.new_zeros(())
+    if cfg.thought_tie:                # the tie alone would make every thought the same (easy to guess, and useless):
+        zt = tgt * w[..., None]        # the thoughts of a batch must stay spread out, each number with mean 0 and
+        mu = zt.sum((0, 1)) / n        # size 1 over the batch and unlike the other numbers (VICReg's three terms)
+        cov = torch.einsum("bmi,bmj->ij", zt, zt) / n - mu[:, None] * mu[None]
+        var = cov.diagonal()
+        off = cov - torch.diag_embed(var)
+        keepup = mu.pow(2).mean() + F.relu(1.0 - (var.clamp_min(0) + 1e-4).sqrt()).mean() + off.pow(2).sum() / m.dz
+    return {"aux": cfg.thought_w * diff + 0.1 * sl + m.tie_now * cfg.thought_keep * keepup, "thought_err": diff.detach(), "thought_sure": sl.detach(),
+            "thought_sentences": ok.float().sum(1).mean().detach(), "thought_blur": blur.detach(), "thought_spread": spread.detach()}
 
 
 class reading:
