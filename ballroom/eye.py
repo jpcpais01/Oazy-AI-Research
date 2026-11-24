@@ -107,6 +107,16 @@ def roll(net, z, steps=360, noise=0.0):
     return out
 
 
+def window(net, z, K):
+    """Read, step, read ... K steps. Returns the K+1 readouts [K+1,N,3] and the last state."""
+    ys = []
+    for k in range(K + 1):
+        ys.append(net.read(z))
+        if k < K:
+            z = net.step(z)
+    return torch.stack(ys), z
+
+
 def rooms_on(dev, n, plat, seed):
     rng = np.random.default_rng(seed)
     boxes, count, p0, v0 = sim.make_rooms(n, rng, plat)
@@ -181,6 +191,7 @@ def main():
     ap.add_argument("--test-rooms", type=int, default=3000)
     ap.add_argument("--windows", type=int, default=4, help="windows of --unroll steps rolled one after another in training")
     ap.add_argument("--init", default="", help="start from a saved eye.pt")
+    ap.add_argument("--compile", default="", help="torch.compile mode for the rolled window: default, reduce-overhead, max-autotune")
     ap.add_argument("--cloud", type=int, default=16, help="nudged copies per room in the test")
     ap.add_argument("--noise", type=float, nargs="*", default=[0.1, 0.3], help="sizes of the nudge to the inner state")
     ap.add_argument("--out", default="ballroom/runs/eye")
@@ -198,6 +209,10 @@ def main():
     net = Eye(a.res, a.patch, a.d, a.enc, a.step, reg=a.reg).to(dev)
     if a.init:
         net.load_state_dict(torch.load(a.init, map_location=dev)["model"]); print(f"starting from {a.init}", flush=True)
+    win = window
+    if a.compile:                # fuse the many small operations of a window; reduce-overhead also replays them as one CUDA graph
+        win = torch.compile(window, mode=a.compile)
+        print(f"compiling the rolled window ({a.compile}); the first steps are slow while it compiles", flush=True)
     opt = torch.optim.AdamW(net.parameters(), a.lr, weight_decay=0.01)
     print(f"rooms {a.rooms} ({lo}-{hi} platforms) {time.time() - t0:.0f}s; eye model {sum(p.numel() for p in net.parameters()):,} weights "
           f"on {dev}; {a.res}x{a.res} pictures, inner state {a.reg} tokens of {a.d}, rolled {W} x {K} steps", flush=True)
@@ -218,30 +233,26 @@ def main():
         opt.zero_grad(set_to_none=True)
         tot = dict(pos=0.0, rest=0.0, lat=0.0, loss=0.0)
         for w in range(W):                                                 # each window frees its memory before the next
-            l_pos = 0.0; l_rest = 0.0                                                 # a long roll, learned one window at a time
-            t1 = t + 1 + w * K
+            t1 = t + 1 + w * K                                             # a long roll, learned one window at a time
             tgt = P[t1[None, :] + ks[:, None], r[None, :]]                 # [K+1,B,2] true positions
             at_rest = (t1[None, :] + ks[:, None] >= stop[r][None, :]).float()
-            for k in range(K + 1):
-                y = net.read(z)
-                l_pos = l_pos + F.smooth_l1_loss(y[:, :2] / 0.05, tgt[k] / 0.05, beta=0.2)
-                l_rest = l_rest + F.binary_cross_entropy_with_logits(y[:, 2], at_rest[k])
-                if k < K:
-                    z = net.step(z)
+            ys, z = win(net, z, K)
+            l_pos = F.smooth_l1_loss(ys[..., :2] / 0.05, tgt / 0.05, beta=0.2)
+            l_rest = F.binary_cross_entropy_with_logits(ys[..., 2], at_rest)
             with torch.no_grad():                                          # what the eye sees at that later moment
                 z_eye = net.see(render(P[t1 + K - 1, r], P[t1 + K, r], br, a.res))
             l_lat = F.mse_loss(z, z_eye)
-            part = (l_pos / (K + 1) + 0.3 * l_rest / (K + 1) + a.latent * l_lat) / W + (l_shot if w == 0 else 0.0)
+            part = (l_pos + 0.3 * l_rest + a.latent * l_lat) / W + (l_shot if w == 0 else 0.0)
             part.backward()
             z = z.detach()                                                 # the next window starts from the rolled state, never from the eye
-            for k_, v_ in (("pos", l_pos / (K + 1)), ("rest", l_rest / (K + 1)), ("lat", l_lat), ("loss", part)):
-                tot[k_] += v_.item() / (W if k_ != "loss" else 1)
+            for k_, v_ in (("pos", l_pos), ("rest", l_rest), ("lat", l_lat), ("loss", part * W)):
+                tot[k_] = tot[k_] + v_.detach() / W                        # kept on the GPU: no waiting until a line is printed
         torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0); opt.step()
         it += 1
         if it % 100 == 0:
             el = time.time() - t0
-            print(f"it {it} loss {tot['loss']:.4f} pos {tot['pos']:.4f} rest {tot['rest']:.4f} shot {l_shot.item():.4f} "
-                  f"agree {tot['lat']:.4f} {el:.0f}s ({it / el:.1f} steps/s)", flush=True)
+            print(f"it {it} loss {float(tot['loss']):.4f} pos {float(tot['pos']):.4f} rest {float(tot['rest']):.4f} shot {l_shot.item():.4f} "
+                  f"agree {float(tot['lat']):.4f} {el:.0f}s ({it / el:.1f} steps/s)", flush=True)
     torch.save({"model": net.state_dict(), "cfg": net.cfg, "plat": [lo, hi], "steps": it}, os.path.join(a.out, "eye.pt"))
     print(f"saved {a.out}/eye.pt after {it} steps", flush=True)
     res = evaluate(net, dev, a, a.test_rooms)
