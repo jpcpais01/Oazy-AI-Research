@@ -47,10 +47,13 @@ def render(pa, pb, boxes, res):
 
 
 class Eye(nn.Module):
-    def __init__(self, res=128, patch=16, d=192, enc=4, step=3, heads=4, reg=8):
+    def __init__(self, res=128, patch=16, d=192, enc=4, step=3, heads=4, reg=8, dn=0):
         super().__init__()
-        self.cfg = dict(res=res, patch=patch, d=d, enc=enc, step=step, heads=heads, reg=reg)
-        self.res, self.patch, self.reg = res, patch, reg
+        self.cfg = dict(res=res, patch=patch, d=d, enc=enc, step=step, heads=heads, reg=reg, dn=dn)
+        self.res, self.patch, self.reg, self.dn = res, patch, reg, dn
+        if dn:      # chance: every step draws a little fresh noise, so the same picture can have several futures
+            self.noise_in = nn.Linear(dn, d)
+            nn.init.zeros_(self.noise_in.weight); nn.init.zeros_(self.noise_in.bias)   # starts as the plain model
         n = (res // patch) ** 2
         self.embed = nn.Linear(3 * patch * patch, d)
         self.where = nn.Parameter(torch.randn(n, d) * 0.02)       # which patch is where
@@ -77,6 +80,8 @@ class Eye(nn.Module):
     def step(self, z):
         m = torch.ones(z.shape[0], z.shape[1], dtype=torch.bool, device=z.device)
         x = z
+        if self.dn:
+            x = x + self.noise_in(torch.randn(z.shape[0], self.dn, device=z.device))[:, None]
         for b in self.stp:
             x = b(x, m)
         return self.stp_norm(x)
@@ -125,6 +130,26 @@ def rooms_on(dev, n, plat, seed, starts=False):
     return (boxes, t(boxes), t(P), t(stop, torch.long)) + ((p0, v0) if starts else ())
 
 
+def _paths(args):
+    b, p, v = args
+    P, _, stop = sim.rollout(b, p, v)
+    return P.astype(np.float32), stop
+
+
+def nudged_paths(boxes, p0, v0, copies, seed=1):
+    """The exact simulator's own cloud: each room started `copies` times a hair away (0.002, 0.02).
+    Returns paths [T+1,copies,n,2] and rest steps [copies,n]."""
+    from . import robot
+    robot.land(boxes[:1], p0[:1], v0[:1])                               # makes sure the pool of simulator processes is up
+    rng = np.random.default_rng(seed); n = len(p0)
+    cp = np.clip(p0[None] + 0.002 * rng.standard_normal((copies, n, 2)), sim.R, 1 - sim.R).reshape(-1, 2)
+    cv = (v0[None] + 0.02 * rng.standard_normal((copies, n, 2))).reshape(-1, 2)
+    B = np.tile(boxes, (copies, 1, 1))
+    parts = list(robot._pool.map(_paths, [(B[i:i + 4000], cp[i:i + 4000], cv[i:i + 4000]) for i in range(0, len(cp), 4000)]))
+    P = np.concatenate([q for q, _ in parts], 1)
+    return P.reshape(P.shape[0], copies, n, 2), np.concatenate([q for _, q in parts]).reshape(copies, n)
+
+
 def learnable(boxes, p0, v0, fin, copies=8, seed=0):
     """How predictable each room is at all: the share of the exact simulator's own nudged copies
     (0.002 in position, 0.02 in speed) that rest within a ball of the true rest. Low = a knife-edge."""
@@ -139,10 +164,11 @@ def learnable(boxes, p0, v0, fin, copies=8, seed=0):
 def evaluate(net, dev, a, rooms=3000):
     net.eval(); res = {}
     for label, plat, seed in (("2-3 platforms (like training)", (2, 3), 101), ("4-5 platforms (never seen)", (4, 5), 102)):
-        boxes, tb, P, stop = rooms_on(dev, rooms, plat, seed)      # the same rooms ballroom.test uses
+        boxes, tb, P, stop, p0, v0 = rooms_on(dev, rooms, plat, seed, starts=True)      # the same rooms ballroom.test uses
         fin = P[-1].cpu().numpy()
+        true_odds = learnable(boxes, p0, v0, fin.astype(np.float64), copies=16, seed=7)  # the real chance that a nudged ball rests on the true spot
         shot, law, seen = [], [], []
-        kinds = [("nudged pictures", 0.0)] + [(f"nudged inner state x{n:g}", n) for n in a.noise]
+        kinds = [("nudged pictures", 0.0)] + [(f"nudged inner state x{n:g}", n) for n in a.noise] + ([("its own chance", -1.0)] if net.dn else [])
         ends = {k: [] for k, _ in kinds}
         with torch.no_grad():
             for i in range(0, rooms, 500):
@@ -152,7 +178,9 @@ def evaluate(net, dev, a, rooms=3000):
                 seen.append((net.read(z)[:, :2] - P[1, sl]).norm(dim=1))
                 # clouds: the same start asked many times, each copy rolled to its end
                 for kind, n in kinds:
-                    if n:       # the first inner state itself is nudged
+                    if n < 0:   # the model's own chance: every step draws fresh noise
+                        e = [roll(net, z) for _ in range(a.cloud)]
+                    elif n:     # the first inner state itself is nudged
                         e = [roll(net, z, noise=n) for _ in range(a.cloud)]
                     else:       # the picture is nudged: ball a hair away (0.002) with a hair of other speed (0.02), as in the object test
                         e = []
@@ -169,8 +197,10 @@ def evaluate(net, dev, a, rooms=3000):
             pred, sure = pred.cpu().numpy(), sure.cpu().numpy()
             rows.append(score("cloud vote, " + kind, pred, fin, boxes))
             hit = np.sqrt(((pred - fin) ** 2).sum(1)) < 2 * sim.R; m = sure >= 0.75
+            odds = (torch.cat(ends[kind], 1) - torch.as_tensor(fin, device=dev)[None]).norm(dim=2).lt(2 * sim.R).float().mean(0).cpu().numpy()
             notes.append(f"  {kind}: 3/4 of the cloud agrees in {100 * m.mean():.0f}% of rooms" + (f", hits {100 * hit[m].mean():.0f}% there" if m.any() else "")
-                         + (f", {100 * hit[~m].mean():.0f}% elsewhere" if (~m).any() else ""))
+                         + (f", {100 * hit[~m].mean():.0f}% elsewhere" if (~m).any() else "")
+                         + f"; its odds of the true spot are off the real odds by {100 * np.abs(odds - true_odds).mean():.0f} points")
         see_err = torch.cat(seen).median().item()
         res[label] = dict(rows=rows, sees_ball_within=see_err, clouds=notes)
         print(f"\n== {label}, {rooms} fresh rooms ==")
@@ -178,7 +208,8 @@ def evaluate(net, dev, a, rooms=3000):
         for r in rows:
             print(f"{r['model']:40s}{r['mean']:10.3f}{r['median']:9.3f}{r['within_ball']:14.1f}%{r['right_surface']:14.1f}%")
         print(f"how well it sees the ball it is shown: median error {see_err:.4f} = {see_err / (2 * sim.R):.2f} ball widths")
-        print(f"when the cloud of {a.cloud} agrees, is it right?"); print("\n".join(notes))
+        print(f"when the cloud of {a.cloud} agrees, is it right? (real odds: the simulator's own cloud lands on the true spot "
+              f"{100 * true_odds.mean():.0f}% of the time, and splits in {100 * (true_odds < 0.75).mean():.0f}% of rooms)"); print("\n".join(notes))
     net.train()
     return res
 
@@ -203,6 +234,8 @@ def main():
     ap.add_argument("--windows", type=int, default=4, help="windows of --unroll steps rolled one after another in training")
     ap.add_argument("--init", default="", help="start from a saved eye.pt")
     ap.add_argument("--emotion", type=int, default=0, help="1 = learning strength = surprise x learnable x importance")
+    ap.add_argument("--odds", type=int, default=0, help="copies per room: learn the spread of futures (a model with chance), 0 = off")
+    ap.add_argument("--odds-rooms", type=int, default=50000, help="rooms whose simulator clouds are kept for that")
     ap.add_argument("--compile", default="", help="torch.compile mode for the rolled window: default, reduce-overhead, max-autotune")
     ap.add_argument("--cloud", type=int, default=16, help="nudged copies per room in the test")
     ap.add_argument("--noise", type=float, nargs="*", default=[0.1, 0.3], help="sizes of the nudge to the inner state")
@@ -218,9 +251,17 @@ def main():
     boxes, tb, P, stop, p0, v0 = rooms_on(dev, a.rooms, (lo, hi), a.seed, starts=True)
     T = P.shape[0] - 1; K = a.unroll; W = a.windows
     torch.backends.cuda.matmul.allow_tf32 = True; torch.backends.cudnn.allow_tf32 = True
-    net = Eye(a.res, a.patch, a.d, a.enc, a.step, reg=a.reg).to(dev)
+    net = Eye(a.res, a.patch, a.d, a.enc, a.step, reg=a.reg, dn=16 if a.odds else 0).to(dev)
     if a.init:
-        net.load_state_dict(torch.load(a.init, map_location=dev)["model"]); print(f"starting from {a.init}", flush=True)
+        miss = net.load_state_dict(torch.load(a.init, map_location=dev)["model"], strict=False).missing_keys
+        print(f"starting from {a.init}" + (f" (new: {', '.join(miss)})" if miss else ""), flush=True)
+    if a.odds:
+        # learn the odds: from the start picture, its own clouds must spread like the simulator's own cloud
+        t1_ = time.time(); NO = min(a.odds_rooms, a.rooms)
+        PO, SO = nudged_paths(boxes[:NO], p0[:NO], v0[:NO], a.odds)
+        PO = torch.as_tensor(PO, device=dev); SO = torch.as_tensor(SO, dtype=torch.long, device=dev)
+        print(f"odds on: {a.odds} nudged copies of {NO:,} rooms by the simulator in {time.time() - t1_:.0f}s; "
+              f"half of each batch learns the spread of futures", flush=True)
     win = window
     if a.compile:                # fuse the many small operations of a window; reduce-overhead also replays them as one CUDA graph
         win = torch.compile(window, mode=a.compile)
@@ -286,12 +327,27 @@ def main():
             z = z.detach()                                                 # the next window starts from the rolled state, never from the eye
             for k_, v_ in (("pos", l_pos), ("rest", l_rest), ("lat", l_lat), ("loss", part * W)):
                 tot[k_] = tot[k_] + v_.detach() / W                        # kept on the GPU: no waiting until a line is printed
+        if a.odds:          # the other half: whole clouds from the very start, scored as distributions (energy score)
+            C = a.odds; nbo = max(1, a.batch // (2 * C)); ro = torch.randint(0, NO, (nbo,), device=dev)
+            zo = net.see(render(P[0, ro], P[1, ro], tb[ro], a.res)).repeat(C, 1, 1)          # [C*nbo,reg,d], copy-major
+            for w in range(W):
+                ys, zo = win(net, zo, K)
+                when = 1 + w * K + ks                                                       # [K+1] moments
+                X = ys[..., :2].view(K + 1, C, nbo, 2)
+                Y = PO[when][:, :, ro]                                                      # [K+1,C,nbo,2] the simulator's cloud
+                dist = lambda A, B: ((A[:, :, None] - B[:, None]) ** 2).sum(-1).add(1e-10).sqrt().mean((1, 2))
+                l_o = ((dist(X, Y) - 0.5 * dist(X, X)) / 0.05).mean()                     # a proper score: only the true spread wins
+                at_o = (when[:, None, None] >= SO[:, ro][None]).float().mean(1)            # [K+1,nbo] share of the cloud at rest
+                l_ro = F.binary_cross_entropy_with_logits(ys[..., 2].view(K + 1, C, nbo), at_o[:, None].expand(-1, C, -1))
+                ((l_o + 0.3 * l_ro) / W).backward()
+                zo = zo.detach()
+                tot["odds"] = tot.get("odds", 0.0) + l_o.detach() / W
         torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0); opt.step()
         it += 1
         if it % 100 == 0:
             el = time.time() - t0
             print(f"it {it} loss {float(tot['loss']):.4f} pos {float(tot['pos']):.4f} rest {float(tot['rest']):.4f} shot {l_shot.item():.4f} "
-                  f"agree {float(tot['lat']):.4f} {el:.0f}s ({it / el:.1f} steps/s)", flush=True)
+                  f"agree {float(tot['lat']):.4f} " + (f"odds {float(tot['odds']):.4f} " if a.odds else "") + f"{el:.0f}s ({it / el:.1f} steps/s)", flush=True)
     torch.save({"model": net.state_dict(), "cfg": net.cfg, "plat": [lo, hi], "steps": it}, os.path.join(a.out, "eye.pt"))
     print(f"saved {a.out}/eye.pt after {it} steps", flush=True)
     res = evaluate(net, dev, a, a.test_rooms)
