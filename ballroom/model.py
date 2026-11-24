@@ -16,6 +16,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+R = 0.03            # ball radius (same as sim.R)
 DP_SCALE = 0.04   # typical change of position in one model step
 DV_SCALE = 0.25   # typical change of velocity in one model step
 
@@ -37,10 +38,11 @@ class Block(nn.Module):
 
 
 class Net(nn.Module):
-    def __init__(self, out, d=128, layers=3, heads=4):
+    def __init__(self, out, d=128, layers=3, heads=4, feat=0):
         super().__init__()
-        self.cfg = dict(out=out, d=d, layers=layers, heads=heads)
-        self.box1 = nn.Linear(6, d); self.box2 = nn.Linear(d, d)
+        self.cfg = dict(out=out, d=d, layers=layers, heads=heads, feat=feat)
+        self.feat = feat
+        self.box1 = nn.Linear((6, 8, 11, 15)[feat], d); self.box2 = nn.Linear(d, d)
         self.ball1 = nn.Linear(2, d); self.ball2 = nn.Linear(d, d)
         self.blocks = nn.ModuleList(Block(d, heads) for _ in range(layers))
         self.norm = nn.LayerNorm(d)
@@ -49,7 +51,18 @@ class Net(nn.Module):
     def forward(self, p, v, boxes, mask):
         """p, v: [N,2]; boxes: [N,B,4]; mask: [N,B] true for real boxes."""
         N, B, _ = boxes.shape
-        f = torch.cat([p[:, None] - boxes[..., :2], boxes[..., 2:], v[:, None].expand(N, B, 2)], -1)
+        dc = p[:, None] - boxes[..., :2]; half = boxes[..., 2:]
+        parts = [dc, half, v[:, None].expand(N, B, 2)]
+        if self.feat >= 1:                           # how far past each face (negative = alongside the box)
+            parts.append(dc.abs() - half)
+        if self.feat >= 2:                           # from the nearest point of the box to the ball, and the gap left
+            o = dc - torch.maximum(torch.minimum(dc, half), -half)
+            dist = o.norm(dim=-1, keepdim=True)
+            parts += [o, dist - R]
+            if self.feat >= 3:                       # the same, at the scale where a hit is decided:
+                n = o / (dist + 1e-6)                # which way the surface faces, the gap magnified, the approach speed
+                parts += [n, ((dist - R) * 25).clamp(-1, 4), (v[:, None] * n).sum(-1, keepdim=True)]
+        f = torch.cat(parts, -1)
         f = f * mask[..., None]                      # padding boxes carry nothing
         x = self.box2(F.gelu(self.box1(f)))
         b = self.ball2(F.gelu(self.ball1(v)))[:, None]

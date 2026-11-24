@@ -23,8 +23,10 @@ def main():
     ap.add_argument("--out", default="ballroom/editor/weights.json")
     a = ap.parse_args()
     out = {}
-    for what in ("step", "shot"):
-        f = os.path.join(a.runs, what + ".pt")
+    best = os.path.join(a.runs, "best.txt")
+    files = dict(step=open(best).read().strip() if os.path.exists(best) else os.path.join(a.runs, "step.pt"),
+                 shot=os.path.join(a.runs, "shot.pt"))
+    for what, f in files.items():
         if os.path.exists(f):
             out[what] = pack(f)
     f = os.path.join(a.runs, "test.json")
