@@ -117,12 +117,23 @@ def window(net, z, K):
     return torch.stack(ys), z
 
 
-def rooms_on(dev, n, plat, seed):
+def rooms_on(dev, n, plat, seed, starts=False):
     rng = np.random.default_rng(seed)
     boxes, count, p0, v0 = sim.make_rooms(n, rng, plat)
     P, _, stop = sim.rollout(boxes, p0, v0)
     t = lambda x, dt=torch.float32: torch.as_tensor(x, dtype=dt, device=dev)
-    return boxes, t(boxes), t(P), t(stop, torch.long)
+    return (boxes, t(boxes), t(P), t(stop, torch.long)) + ((p0, v0) if starts else ())
+
+
+def learnable(boxes, p0, v0, fin, copies=8, seed=0):
+    """How predictable each room is at all: the share of the exact simulator's own nudged copies
+    (0.002 in position, 0.02 in speed) that rest within a ball of the true rest. Low = a knife-edge."""
+    from .robot import land                       # the simulator on every CPU core
+    rng = np.random.default_rng(seed); n = len(p0)
+    cp = np.clip(p0[None] + 0.002 * rng.standard_normal((copies, n, 2)), sim.R, 1 - sim.R).reshape(-1, 2)
+    cv = (v0[None] + 0.02 * rng.standard_normal((copies, n, 2))).reshape(-1, 2)
+    ends = land(np.tile(boxes, (copies, 1, 1)), cp, cv)[0].reshape(copies, n, 2)
+    return (np.linalg.norm(ends - fin[None], axis=-1) < 2 * sim.R).mean(0)
 
 
 def evaluate(net, dev, a, rooms=3000):
@@ -191,6 +202,7 @@ def main():
     ap.add_argument("--test-rooms", type=int, default=3000)
     ap.add_argument("--windows", type=int, default=4, help="windows of --unroll steps rolled one after another in training")
     ap.add_argument("--init", default="", help="start from a saved eye.pt")
+    ap.add_argument("--emotion", type=int, default=0, help="1 = learning strength = surprise x learnable x importance")
     ap.add_argument("--compile", default="", help="torch.compile mode for the rolled window: default, reduce-overhead, max-autotune")
     ap.add_argument("--cloud", type=int, default=16, help="nudged copies per room in the test")
     ap.add_argument("--noise", type=float, nargs="*", default=[0.1, 0.3], help="sizes of the nudge to the inner state")
@@ -203,7 +215,7 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     lo, hi = map(int, a.plat.split(","))
     t0 = time.time()
-    _, tb, P, stop = rooms_on(dev, a.rooms, (lo, hi), a.seed)
+    boxes, tb, P, stop, p0, v0 = rooms_on(dev, a.rooms, (lo, hi), a.seed, starts=True)
     T = P.shape[0] - 1; K = a.unroll; W = a.windows
     torch.backends.cuda.matmul.allow_tf32 = True; torch.backends.cudnn.allow_tf32 = True
     net = Eye(a.res, a.patch, a.d, a.enc, a.step, reg=a.reg).to(dev)
@@ -218,6 +230,19 @@ def main():
           f"on {dev}; {a.res}x{a.res} pictures, inner state {a.reg} tokens of {a.d}, rolled {W} x {K} steps", flush=True)
     budget = a.minutes * 60; it = 0; t0 = time.time()
     ks = torch.arange(K + 1, device=dev)
+    if a.emotion:
+        # learning strength = surprise x learnable x importance (João's "emotion" idea)
+        #   surprise   per room and moment, the model's own recent error there; half of each batch is drawn by it
+        #   learnable  the simulator's own cloud: a room where nudged copies split cannot be predicted, so it pulls less
+        #   importance the steps where the ball has come to rest count double: that is the answer
+        t1_ = time.time()
+        learn = torch.as_tensor(learnable(boxes, p0, v0, P[-1].cpu().numpy().astype(np.float64)), dtype=torch.float32, device=dev)
+        nb = (T - W * K - 2) // K + 1                                   # moments per room, one per window length
+        surp = torch.ones(a.rooms, nb, device=dev)
+        last = ((stop + 3).clamp(max=T - W * K - 2) // K)              # the last useful moment of each room
+        valid = torch.arange(nb, device=dev)[None, :] <= last[:, None]
+        print(f"emotion on: {100 * (learn < 0.5).float().mean().item():.0f}% of rooms are knife-edges (their own cloud splits), "
+              f"measured in {time.time() - t1_:.0f}s", flush=True)
     while (it < a.iters) if a.iters else (time.time() - t0 < budget):
         frac = it / a.iters if a.iters else (time.time() - t0) / budget
         lr = a.lr * min(1.0, (it + 1) / 500) * (0.5 + 0.5 * np.cos(np.pi * min(1.0, frac))) + 1e-5
@@ -227,6 +252,13 @@ def main():
         # a moment on the true path: anywhere before rest (a quarter of the time the very start)
         t = (torch.rand(a.batch, device=dev) * (stop[r] + 3).float()).long().clamp(max=T - W * K - 2)
         t = torch.where(torch.rand(a.batch, device=dev) < 0.25, torch.zeros_like(t), t)
+        if a.emotion:                                                   # the other half: where it hurt, and can be learned
+            h = a.batch // 2
+            pri = (surp * (0.1 + learn[:, None]) * valid).flatten()
+            idx = torch.multinomial(pri, h, replacement=True)
+            r = torch.cat([r[:a.batch - h], idx // nb]); b = idx % nb
+            tb_ = (b * K + torch.randint(0, K, (h,), device=dev)).clamp(max=T - W * K - 2)
+            t = torch.cat([t[:a.batch - h], torch.minimum(tb_, (stop[idx // nb] + 3).clamp(max=T - W * K - 2))])
         br = tb[r]
         z = net.see(render(P[t, r], P[t + 1, r], br, a.res))
         l_shot = F.smooth_l1_loss(net.shot(z) / 0.3, P[stop[r], r] / 0.3, beta=0.1)
@@ -237,7 +269,14 @@ def main():
             tgt = P[t1[None, :] + ks[:, None], r[None, :]]                 # [K+1,B,2] true positions
             at_rest = (t1[None, :] + ks[:, None] >= stop[r][None, :]).float()
             ys, z = win(net, z, K)
-            l_pos = F.smooth_l1_loss(ys[..., :2] / 0.05, tgt / 0.05, beta=0.2)
+            if a.emotion:
+                e = F.smooth_l1_loss(ys[..., :2] / 0.05, tgt / 0.05, beta=0.2, reduction="none").mean(2)   # [K+1,B]
+                l_pos = (e * (1 + at_rest)).sum() / (1 + at_rest).sum()          # importance: the resting answer counts double
+                with torch.no_grad():                                          # remember the surprise of this moment
+                    bi = ((t1 - 1) // K).clamp(max=nb - 1)
+                    surp[r, bi] = 0.7 * surp[r, bi] + 0.3 * e.mean(0).clamp(max=10)
+            else:
+                l_pos = F.smooth_l1_loss(ys[..., :2] / 0.05, tgt / 0.05, beta=0.2)
             l_rest = F.binary_cross_entropy_with_logits(ys[..., 2], at_rest)
             with torch.no_grad():                                          # what the eye sees at that later moment
                 z_eye = net.see(render(P[t1 + K - 1, r], P[t1 + K, r], br, a.res))
