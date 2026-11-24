@@ -89,6 +89,7 @@ h2 { font-size: 13px; font-weight: 500; color: var(--dim); text-transform: upper
         <span><i class="dot" style="background:var(--law)"></i>Step model: learned one moment of motion, rolled forward</span>
         <span><i class="ring"></i>One-shot model: guesses the end without moving</span>
         <span><i class="dot small" style="background:var(--truth)"></i><i class="dot small" style="background:var(--law)"></i>Clouds: where 24 barely nudged copies end, true and model</span>
+        <span><i class="ring" style="border-color:var(--law)"></i>Cloud vote: the middle of the model cloud's biggest clump</span>
       </div>
 
       <div>
@@ -99,6 +100,7 @@ h2 { font-size: 13px; font-weight: 500; color: var(--dim); text-transform: upper
           <tbody>
             <tr><td>Step model</td><td class="num" id="m1">–</td><td class="num" id="b1">–</td></tr>
             <tr><td>One-shot model</td><td class="num" id="m2">–</td><td class="num" id="b2">–</td></tr>
+            <tr><td>Cloud vote</td><td class="num" id="m3">–</td><td class="num" id="b3">–</td></tr>
           </tbody>
         </table>
         </div>
@@ -116,7 +118,7 @@ h2 { font-size: 13px; font-weight: 500; color: var(--dim); text-transform: upper
           </tbody>
         </table>
         </div>
-        <p class="note">Each copy starts a hair away: 0.002 in position, 0.02 in speed. If the true cloud splits, the room is on a knife-edge and no single answer is right.</p>
+        <p class="note">Each copy starts a hair away: 0.002 in position, 0.02 in speed. If the true cloud splits, the room is on a knife-edge and no single answer is right. The vote takes the model's 24 answers and keeps the place where most of them agree.</p>
       </div>
 
       <div id="bench" hidden>
@@ -352,6 +354,7 @@ function draw() {
       const dots = (pts, col) => { cx.fillStyle = col; cx.strokeStyle = css("--bg"); cx.lineWidth = 2;
         for (const q of pts) { cx.beginPath(); cx.arc(X(q[0]), Y(q[1]), 8, 0, 7); cx.fill(); cx.stroke(); } };
       dots(run.cloud.trueEnds, css("--truth")); dots(run.cloud.modelEnds, css("--law"));
+      if (run.vote) { cx.strokeStyle = css("--law"); cx.lineWidth = 4; cx.beginPath(); cx.arc(X(run.vote.at[0]), Y(run.vote.at[1]), R * W, 0, 7); cx.stroke(); }
     }
   } else {
     ball(b.x, b.y, css("--fg"), 1);
@@ -368,7 +371,7 @@ function setReadout(id1, id2, d) {
 function clearRun() {
   cancelAnimationFrame(raf);
   if (run) { ++jobId; for (const w of brains) w.postMessage({ id: jobId, cancel: true }); }
-  run = null; setReadout("m1", "b1", null); setReadout("m2", "b2", null); $("c1").textContent = "–"; $("c2").textContent = "–";
+  run = null; setReadout("m1", "b1", null); setReadout("m2", "b2", null); setReadout("m3", "b3", null); $("c1").textContent = "–"; $("c2").textContent = "–";
   $("run").textContent = "Run"; if (model) $("status").textContent = modelLine; draw();
 }
 const CLOUD = 24;
@@ -402,10 +405,19 @@ function finish(me) {
   $("status").textContent = "True rest after " + ((me.truth.length - 1) / 120).toFixed(1) + " s." +
     (me.step ? " Step model stopped after " + ((me.law.length - 1) / 30).toFixed(1) + " s." : " " + modelLine);
 }
+function vote(pts) {                     // the middle of the biggest clump: the copies within a ball of the best-connected copy
+  let best = null;
+  for (const p of pts) { const c = pts.filter(q => Math.hypot(q[0] - p[0], q[1] - p[1]) < 2 * R); if (!best || c.length > best.length) best = c; }
+  return { at: [best.reduce((a, q) => a + q[0], 0) / best.length, best.reduce((a, q) => a + q[1], 0) / best.length], share: best.length / pts.length };
+}
 function cloudReadout(me) {
   if (!me.step) return;
   const n = me.cloud.modelEnds.length;
   $("c2").textContent = n >= CLOUD ? near(me, me.cloud.modelEnds) + " of " + CLOUD : "rolling " + n + " of " + CLOUD + "…";
+  if (n >= CLOUD && !me.vote) {
+    me.vote = vote(me.cloud.modelEnds); setReadout("m3", "b3", me.dist(me.vote.at));
+    $("status").textContent += " Cloud vote: " + Math.round(100 * me.vote.share) + "% of the copies agree.";
+  }
 }
 function tick(now) {
   const me = run; if (!me) return;
