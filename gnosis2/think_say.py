@@ -59,7 +59,7 @@ def write(model, enc, prompt, words=80, thoughts=16, ghosts=0, temp=0.7, top_k=4
     Z = torch.zeros(1, L, mind.dz, device=dev)                 # the thought each place reads (for its next word)
     M = torch.zeros(1, L, dtype=torch.bool, device=dev)
     B = torch.zeros(1, L, dtype=torch.bool, device=dev)        # where sentences end
-    B[0, :P] = mind.ends_tab[torch.tensor(ids, device=dev)]
+    B[0, :P] = THINK.ends(model, torch.tensor([ids], device=dev))[0]
     B[0, P - 1] = True                                         # what is written starts a sentence of its own
     V = cfg.vocab_size
     if plain:
@@ -111,7 +111,7 @@ def write(model, enc, prompt, words=80, thoughts=16, ghosts=0, temp=0.7, top_k=4
         nxt = sample_logits(lg[:V], temp, top_k, vocab=V, recent=ids[-64:], rep=1.1)
         ids.append(nxt)
         t = len(ids) - 1
-        if bool(mind.ends_tab[nxt]) or (t - last_end) % cap == 0:
+        if bool(THINK.ends(model, torch.tensor([ids], device=dev))[0, -1]) or (t - last_end) % cap == 0:
             B[0, t] = True
     return enc.decode(ids[P:]), log
 
