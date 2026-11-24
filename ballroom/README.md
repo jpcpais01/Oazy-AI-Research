@@ -13,6 +13,7 @@ Not next-token: next-state.
 
 - `eye.py`: the same task from pixels. A picture of the room goes in, a few tokens of inner state come out, a small transformer steps that state forward, and the position is read out. Also not next-token. Its test nudges the inner state to give a cloud of answers. One line: `bash runpod/eye.sh` (20 minutes).
 
+  `--emotion 1` (EMOTION=1): learning strength = surprise x learnable x importance. Half of each batch is drawn where the model's own recent error was high, rooms where the simulator's own nudged cloud splits (unpredictable) pull less, and steps at rest count double.
 - `robot.py`: a cart with a cannon looks at a picture of the room and a target, proposes 16 throws, imagines each with noise and fires the one that lands most often. Learns by hindsight from random throws; its body is off by a little noise every throw. One line: `bash runpod/robot.sh`.
 
 One line on a GPU pod: `bash runpod/ballroom.sh` (about 15 minutes, then the editor is on port 8000).
