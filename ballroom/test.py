@@ -70,6 +70,8 @@ def main():
     res = {}
     for label, plat, seed in (("2-3 platforms (like training)", (2, 3), 101), ("4-5 platforms (never seen)", (4, 5), 102)):
         rng = np.random.default_rng(seed)
+        say = lambda what: print(f"[{label.split(' (')[0]}] {what}...", flush=True)   # so a long test never looks frozen
+        say(f"simulating {a.rooms} rooms")
         boxes, count, p0, v0 = sim.make_rooms(a.rooms, rng, plat)
         P, V, stop = sim.rollout(boxes, p0, v0)
         fin = P[-1]
@@ -81,6 +83,7 @@ def main():
         rows = []; notes = []
         C = a.cloud; rep = lambda x: x.repeat(C, *[1] * (x.dim() - 1))
         if C:                                   # the ceiling: the exact simulator's own cloud, voting on the un-nudged answer
+            say(f"simulating {C * a.rooms} nudged balls for the ceiling row")
             cp, cv = nudged(p0, v0, C, rng)
             ends = sim.rollout(np.tile(boxes, (C, 1, 1)), cp.reshape(-1, 2), cv.reshape(-1, 2))[0][-1].reshape(C, a.rooms, 2)
             pred, sure = vote(ends)
@@ -96,9 +99,11 @@ def main():
             rows.append(score("one shot (intuition)", pred, fin, boxes))
         for name, f in steps:
             net = load(f, dev); tag = f" [{name}]" if name else " (law)"
+            say("rolling step model" + tag)
             pred = roll(net, tp, tv, tb, tm).cpu().numpy()
             rows.append(score("step by step" + tag, pred, fin, boxes))
             if C:                               # the same model, asked 24 times from a hair away; the cloud votes
+                say(f"rolling {C * a.rooms} nudged copies for the cloud vote" + tag)
                 with torch.no_grad():
                     ends = torch.cat([roll(net, cpt[i:i + 20000], cvt[i:i + 20000], rep(tb)[i:i + 20000], rep(tm)[i:i + 20000])
                                       for i in range(0, C * a.rooms, 20000)]).view(C, a.rooms, 2)
