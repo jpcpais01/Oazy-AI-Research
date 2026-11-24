@@ -46,23 +46,27 @@ def train_step(a, net, opt, boxes, mask, budget, dev):
         return d.clamp(min=0).norm(dim=-1).amin(1)
 
     def fresh(which, share):
-        idx = which.nonzero()[:, 0]
-        if not len(idx):
-            return
-        r[idx] = torch.randint(0, rooms, (len(idx),), generator=g, device=dev)
-        todo = idx
-        for _ in range(30):                              # a free spot: not inside or touching a box
-            cand = sim.R + 0.01 + rnd(len(todo), 2) * (1 - 2 * sim.R - 0.02)
-            p[todo] = cand
-            todo = todo[gap_to(cand, r[todo]) < sim.R + 0.01]
-            if not len(todo):
-                break
-        ang = rnd(len(idx)) * 2 * np.pi; sp = rnd(len(idx)) * 1.5
-        v[idx] = torch.stack([sp * torch.cos(ang), sp * torch.sin(ang)], 1)
-        age[idx] = 0; rested[idx] = 0
-        by_model[idx] = rnd(len(idx)) < share
+        """Restart the chosen balls in a new room, at a free spot. Never waits on the device:
+        a ball that draws three bad spots in a row simply tries again next step."""
+        nonlocal r, p, v, age, rested, by_model
+        nr = torch.randint(0, rooms, (n,), generator=g, device=dev)
+        spot = p; found = torch.zeros(n, dtype=torch.bool, device=dev)
+        for _ in range(3):
+            cand = sim.R + 0.01 + rnd(n, 2) * (1 - 2 * sim.R - 0.02)
+            good = (gap_to(cand, nr) >= sim.R + 0.01) & ~found
+            spot = torch.where(good[:, None], cand, spot); found = found | good
+        do = which & found
+        ang = rnd(n) * 2 * np.pi; sp = rnd(n) * 1.5
+        nv = torch.stack([sp * torch.cos(ang), sp * torch.sin(ang)], 1)
+        r = torch.where(do, nr, r)
+        p = torch.where(do[:, None], spot, p); v = torch.where(do[:, None], nv, v)
+        age = torch.where(do, torch.zeros_like(age), age); rested = torch.where(do, torch.zeros_like(rested), rested)
+        by_model = torch.where(do, rnd(n) < share, by_model)
+        return do
 
-    fresh(torch.ones(n, dtype=torch.bool, device=dev), 0.0)
+    placed = torch.zeros(n, dtype=torch.bool, device=dev)
+    for _ in range(8):
+        placed = placed | fresh(~placed, 0.0)
     # spread the starting ages so the first batches are not all "just launched"
     for _ in range(40):
         pn, vn = sim.step_t(p, v, tb[r], sim.SUB)
@@ -97,7 +101,7 @@ def train_step(a, net, opt, boxes, mask, budget, dev):
             age += 1; rested += still
             lost = follow & ((gap_to(p, r) < sim.R - 0.006) | (v.abs().amax(1) > 3.5))
             fresh((rested >= 3) | (age > 400) | lost, share)
-        if it % 500 == 0:
+        if it % 250 == 0:
             li = loss.item(); run = li if run is None else 0.7 * run + 0.3 * li
             print(f"it {it} loss {run:.4f} pos {lp.item():.4f} vel {lv.item():.4f} rest {ls.item():.4f} "
                   f"model-led {by_model.float().mean().item() * 100:.0f}% {time.time() - t0:.0f}s "
@@ -158,9 +162,9 @@ def main():
             y = net(tp[i], tv[i], tb[i], tm[i])
             loss = F.smooth_l1_loss(y, (tf[i] - tp[i]) / 0.3, beta=0.1)
             opt.zero_grad(); loss.backward(); opt.step()
-            run = loss.item() if run is None else 0.99 * run + 0.01 * loss.item()
             it += 1
             if it % 200 == 0:
+                run = loss.item() if run is None else 0.7 * run + 0.3 * loss.item()
                 print(f"it {it} loss {run:.4f} {time.time() - t0:.0f}s", flush=True)
     else:
         it = train_step(a, net, opt, boxes, mask, budget, dev)
