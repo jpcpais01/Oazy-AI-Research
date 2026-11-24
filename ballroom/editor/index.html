@@ -1,0 +1,391 @@
+<title>Ballroom</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one lab bench. The room on the left, the bench controls and the readout on the right; stacks on a phone. */
+:root {
+  color-scheme: dark;
+  --bg: #07080b;
+  --panel: #0f1116;
+  --line: #232732;
+  --fg: #eef0f4;
+  --dim: #8a90a0;
+  --truth: #c6f25a;   /* the exact simulator, same lime as Bee on the dashboard */
+  --law: #ff6fb7;     /* the step model, same pink as the test arm */
+  --shot: #7fb6ff;    /* the one-shot guess */
+  --solid: #3a4050;   /* platforms */
+  --display: "Outfit", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+html, body { background: var(--bg); color: var(--fg); }
+body {
+  font-family: var(--display); font-size: 15px; line-height: 1.45;
+  padding-block: 20px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 1060px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+h1 { font-size: 26px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
+header p { margin: 0; color: var(--dim); max-width: 62ch; }
+.bench { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
+.room { flex: 1 1 420px; min-width: 0; max-width: 620px; }
+.room canvas {
+  display: block; width: 100%; aspect-ratio: 1; max-width: 100%;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px; touch-action: none; cursor: crosshair;
+}
+.hint { color: var(--dim); font-size: 13px; margin: 8px 0 0; }
+.side { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; }
+button {
+  font: 500 14px var(--display); color: var(--fg); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 6px; padding: 9px 14px; cursor: pointer;
+}
+button:hover { border-color: var(--dim); }
+button:focus-visible { outline: 2px solid var(--truth); outline-offset: 2px; }
+button:disabled { opacity: 0.45; cursor: default; }
+#run { background: var(--truth); color: #10140a; border-color: var(--truth); font-weight: 600; padding-inline: 26px; }
+.legend { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.legend span { display: flex; align-items: center; gap: 9px; }
+.dot { width: 11px; height: 11px; border-radius: 50%; flex: none; }
+.ring { width: 11px; height: 11px; border-radius: 50%; flex: none; border: 2px solid var(--shot); box-sizing: border-box; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+th:first-child, td:first-child { text-align: left; padding-left: 0; }
+th { color: var(--dim); font-weight: 400; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+h2 { font-size: 13px; font-weight: 500; color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 6px; }
+.note { color: var(--dim); font-size: 13px; margin: 6px 0 0; }
+#status { font-family: var(--mono); font-size: 13px; color: var(--dim); min-height: 1.4em; }
+.scroll { overflow-x: auto; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Ballroom</h1>
+    <p>Set up a room, press Run. The exact simulator and the learned model start from the same ball and you watch where each one ends.</p>
+  </header>
+
+  <div class="bench">
+    <div class="room">
+      <canvas id="cv" width="1000" height="1000" aria-label="The room. Drag the ball, its arrow, or a platform."></canvas>
+      <p class="hint">Drag the ball, the tip of its arrow (its starting push), a platform, or a platform's right end to resize it.</p>
+    </div>
+
+    <div class="side">
+      <div class="row">
+        <button id="run">Run</button>
+        <button id="new">New room</button>
+        <button id="add">Add platform</button>
+        <button id="del">Remove platform</button>
+      </div>
+      <div id="status">Loading the model…</div>
+
+      <div class="legend">
+        <span><i class="dot" style="background:var(--truth)"></i>Exact simulator (the true answer)</span>
+        <span><i class="dot" style="background:var(--law)"></i>Step model: learned one moment of motion, rolled forward</span>
+        <span><i class="ring"></i>One-shot model: guesses the end without moving</span>
+      </div>
+
+      <div>
+        <h2>This run</h2>
+        <div class="scroll">
+        <table>
+          <thead><tr><th>Model</th><th>Miss</th><th>In ball widths</th></tr></thead>
+          <tbody>
+            <tr><td>Step model</td><td class="num" id="m1">–</td><td class="num" id="b1">–</td></tr>
+            <tr><td>One-shot model</td><td class="num" id="m2">–</td><td class="num" id="b2">–</td></tr>
+          </tbody>
+        </table>
+        </div>
+        <p class="note">The room is 1 wide. The ball is 0.06 wide. A miss under one ball width counts as a hit.</p>
+      </div>
+
+      <div id="bench" hidden>
+        <h2>Measured on fresh rooms</h2>
+        <div class="scroll"><table id="tbl"></table></div>
+        <p class="note" id="trained"></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+// ---------- the exact simulator (mirrors ballroom/sim.py line by line) ----------
+const R = 0.03, G = 2.5, DT = 1 / 120, E = 0.65, KEEP_T = 0.9, VTH = 0.15, ROLL = 1.6, SUB = 4, MAX_STEPS = 360;
+const WALLS = [[0.5, -0.5, 1.5, 0.5], [0.5, 1.5, 1.5, 0.5], [-0.5, 0.5, 0.5, 1.5], [1.5, 0.5, 0.5, 1.5]];
+
+function simStep(s, plats) {           // s = {x,y,vx,vy}; platforms first, walls last
+  s.vy -= G * DT; s.x += s.vx * DT; s.y += s.vy * DT;
+  for (let i = 0; i < plats.length + 4; i++) {
+    const b = i < plats.length ? plats[i] : WALLS[i - plats.length];
+    const dx = s.x - b[0], dy = s.y - b[1];
+    const qx = Math.max(-b[2], Math.min(b[2], dx)), qy = Math.max(-b[3], Math.min(b[3], dy));
+    const ox = dx - qx, oy = dy - qy, dist = Math.sqrt(ox * ox + oy * oy);
+    if (!(dist < R)) continue;
+    let nx, ny, push;
+    if (dist > 0) { nx = ox / dist; ny = oy / dist; push = R - dist; }
+    else {
+      const px = b[2] - Math.abs(dx), py = b[3] - Math.abs(dy);
+      if (px < py) { nx = dx >= 0 ? 1 : -1; ny = 0; push = px + R; } else { nx = 0; ny = dy >= 0 ? 1 : -1; push = py + R; }
+    }
+    s.x += nx * push; s.y += ny * push;
+    const vn = s.vx * nx + s.vy * ny;
+    if (!(vn < 0)) continue;
+    const tx = s.vx - vn * nx, ty = s.vy - vn * ny;
+    if (vn < -VTH) { s.vx = tx * KEEP_T - E * vn * nx; s.vy = ty * KEEP_T - E * vn * ny; }
+    else {
+      const ts = Math.sqrt(tx * tx + ty * ty);
+      const cut = ny > 0.5 ? Math.min(ts, ROLL * DT) : 0;
+      const k = ts > 0 ? (ts - cut) / ts : 0;
+      s.vx = tx * k; s.vy = ty * k;
+    }
+  }
+}
+function truePath(start, plats) {      // one point per simulator step, until it rests
+  const s = { ...start }, pts = [[s.x, s.y]];
+  for (let t = 0; t < MAX_STEPS; t++) {
+    const x0 = s.x, y0 = s.y;
+    for (let k = 0; k < SUB; k++) { simStep(s, plats); pts.push([s.x, s.y]); }
+    if (Math.max(Math.abs(s.x - x0), Math.abs(s.y - y0)) < 1e-9) break;
+  }
+  return pts;
+}
+
+// ---------- the model (mirrors ballroom/model.py) ----------
+const DP_SCALE = 0.04, DV_SCALE = 0.25;
+function erf(x) {
+  const s = x < 0 ? -1 : 1; x = Math.abs(x);
+  const t = 1 / (1 + 0.3275911 * x);
+  return s * (1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x));
+}
+const gelu = x => 0.5 * x * (1 + erf(x * Math.SQRT1_2));
+function linear(x, n, W, b, din, dout, act) {   // x: n rows of din -> n rows of dout
+  const y = new Float32Array(n * dout);
+  for (let r = 0; r < n; r++) for (let o = 0; o < dout; o++) {
+    let a = b[o]; const wo = o * din, xr = r * din;
+    for (let i = 0; i < din; i++) a += W[wo + i] * x[xr + i];
+    y[r * dout + o] = act ? gelu(a) : a;
+  }
+  return y;
+}
+function layerNorm(x, n, d, w, b) {
+  const y = new Float32Array(n * d);
+  for (let r = 0; r < n; r++) {
+    let m = 0; for (let i = 0; i < d; i++) m += x[r * d + i]; m /= d;
+    let v = 0; for (let i = 0; i < d; i++) { const e = x[r * d + i] - m; v += e * e; }
+    const s = 1 / Math.sqrt(v / d + 1e-5);
+    for (let i = 0; i < d; i++) y[r * d + i] = (x[r * d + i] - m) * s * w[i] + b[i];
+  }
+  return y;
+}
+function makeNet(pack) {
+  const bin = atob(pack.data), buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  const all = new Float32Array(buf.buffer), P = {};
+  for (const [name, shape, off] of pack.tensors) P[name] = all.subarray(off, off + shape.reduce((a, b) => a * b, 1));
+  const { d, layers, heads, out } = pack.cfg, hd = d / heads;
+  return function forward(x, y, vx, vy, boxes) {   // boxes: [cx,cy,hw,hh] each
+    const nb = boxes.length, T = nb + 1, f = new Float32Array(nb * 6);
+    boxes.forEach((b, i) => f.set([x - b[0], y - b[1], b[2], b[3], vx, vy], i * 6));
+    const bx = linear(linear(f, nb, P["box1.weight"], P["box1.bias"], 6, d, true), nb, P["box2.weight"], P["box2.bias"], d, d, false);
+    const bl = linear(linear(new Float32Array([vx, vy]), 1, P["ball1.weight"], P["ball1.bias"], 2, d, true), 1, P["ball2.weight"], P["ball2.bias"], d, d, false);
+    let h = new Float32Array(T * d); h.set(bl, 0); h.set(bx, d);
+    for (let l = 0; l < layers; l++) {
+      const p = "blocks." + l + ".";
+      const qkv = linear(layerNorm(h, T, d, P[p + "n1.weight"], P[p + "n1.bias"]), T, P[p + "qkv.weight"], P[p + "qkv.bias"], d, 3 * d, false);
+      const att = new Float32Array(T * d), w = new Float32Array(T);
+      for (let hh = 0; hh < heads; hh++) for (let i = 0; i < T; i++) {
+        let mx = -Infinity;
+        for (let j = 0; j < T; j++) {
+          let a = 0; const qi = i * 3 * d + hh * hd, kj = j * 3 * d + d + hh * hd;
+          for (let c = 0; c < hd; c++) a += qkv[qi + c] * qkv[kj + c];
+          w[j] = a / Math.sqrt(hd); if (w[j] > mx) mx = w[j];
+        }
+        let z = 0; for (let j = 0; j < T; j++) { w[j] = Math.exp(w[j] - mx); z += w[j]; }
+        for (let j = 0; j < T; j++) {
+          const a = w[j] / z, vj = j * 3 * d + 2 * d + hh * hd, oi = i * d + hh * hd;
+          for (let c = 0; c < hd; c++) att[oi + c] += a * qkv[vj + c];
+        }
+      }
+      const pr = linear(att, T, P[p + "proj.weight"], P[p + "proj.bias"], d, d, false);
+      for (let i = 0; i < T * d; i++) h[i] += pr[i];
+      const ff = linear(linear(layerNorm(h, T, d, P[p + "n2.weight"], P[p + "n2.bias"]), T, P[p + "f1.weight"], P[p + "f1.bias"], d, 2 * d, true), T, P[p + "f2.weight"], P[p + "f2.bias"], 2 * d, d, false);
+      for (let i = 0; i < T * d; i++) h[i] += ff[i];
+    }
+    const top = layerNorm(h.subarray(0, d), 1, d, P["norm.weight"], P["norm.bias"]);
+    return linear(linear(top, 1, P["out1.weight"], P["out1.bias"], d, d, true), 1, P["out2.weight"], P["out2.bias"], d, out, false);
+  };
+}
+const clamp01 = x => Math.max(0, Math.min(1, x));
+function modelStep(net, s, boxes) {      // one model step (1/30 s) in place; false once it says the ball rests
+  const y = net(s.x, s.y, s.vx, s.vy, boxes);
+  if (y[4] > 0) return false;
+  s.x = clamp01(s.x + y[0] * DP_SCALE); s.y = clamp01(s.y + y[1] * DP_SCALE);
+  s.vx += y[2] * DV_SCALE; s.vy += y[3] * DV_SCALE;
+  return true;
+}
+function modelPath(net, start, boxes) {  // the whole path at once
+  const s = { ...start }, pts = [[s.x, s.y]];
+  while (pts.length <= MAX_STEPS && modelStep(net, s, boxes)) pts.push([s.x, s.y]);
+  return pts;
+}
+
+// ---------- the room and the editor ----------
+const cv = document.getElementById("cv"), cx = cv.getContext("2d"), $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const ARROW = 0.16;                      // arrow length per unit of speed
+let room = { ball: { x: 0.2, y: 0.85, vx: 0.9, vy: 0.2 }, plats: [[0.3, 0.55, 0.16, 0.018], [0.72, 0.35, 0.14, 0.018], [0.55, 0.75, 0.1, 0.018]] };
+let nets = null, run = null, drag = null, raf = 0;
+
+function randomRoom() {
+  const n = 2 + Math.floor(Math.random() * 4), gap = R + 0.012, plats = [];
+  for (let tries = 0; plats.length < n && tries < 2000; tries++) {
+    const hw = 0.08 + Math.random() * 0.2, hh = 0.01 + Math.random() * 0.015;
+    const x = hw + Math.random() * (1 - 2 * hw), y = 0.12 + Math.random() * 0.7;
+    if (plats.every(q => Math.abs(x - q[0]) > hw + q[2] + 2 * gap || Math.abs(y - q[1]) > hh + q[3] + 2 * gap)) plats.push([x, y, hw, hh]);
+  }
+  let x, y;
+  do { x = R + 0.01 + Math.random() * (1 - 2 * R - 0.02); y = R + 0.01 + Math.random() * (1 - 2 * R - 0.02); }
+  while (!plats.every(q => Math.abs(x - q[0]) > q[2] + R + 0.01 || Math.abs(y - q[1]) > q[3] + R + 0.01));
+  const a = Math.random() * 2 * Math.PI, sp = Math.random() * 1.5;
+  room = { ball: { x, y, vx: sp * Math.cos(a), vy: sp * Math.sin(a) }, plats };
+}
+const X = x => x * cv.width, Y = y => (1 - y) * cv.height;
+
+function draw() {
+  const W = cv.width;
+  cx.clearRect(0, 0, W, W);
+  cx.fillStyle = css("--solid");
+  for (const p of room.plats) {
+    cx.fillRect(X(p[0] - p[2]), Y(p[1] + p[3]), 2 * p[2] * W, 2 * p[3] * W);
+  }
+  if (!run) {                            // resize grips
+    cx.fillStyle = css("--dim");
+    for (const p of room.plats) cx.fillRect(X(p[0] + p[2]) - 7, Y(p[1] + p[3]) - 5, 7, 2 * p[3] * W + 10);
+  }
+  const b = room.ball;
+  const trail = (pts, n, col, wd) => {
+    if (n < 2) return;
+    cx.strokeStyle = col; cx.lineWidth = wd; cx.lineJoin = "round"; cx.beginPath();
+    cx.moveTo(X(pts[0][0]), Y(pts[0][1]));
+    for (let i = 1; i < n; i++) cx.lineTo(X(pts[i][0]), Y(pts[i][1]));
+    cx.stroke();
+  };
+  const ball = (x, y, col, alpha) => { cx.globalAlpha = alpha; cx.fillStyle = col; cx.beginPath(); cx.arc(X(x), Y(y), R * W, 0, 7); cx.fill(); cx.globalAlpha = 1; };
+  if (run) {
+    const tn = Math.min(run.truth.length, Math.floor(run.t * 120) + 1);
+    const mf = Math.min(run.law.length - 1, run.t * 30), mi = Math.floor(mf), fr = mf - mi;
+    trail(run.truth, tn, css("--truth"), 3);
+    trail(run.law, mi + 1, css("--law"), 3);
+    if (run.shot) { cx.strokeStyle = css("--shot"); cx.lineWidth = 4; cx.beginPath(); cx.arc(X(run.shot[0]), Y(run.shot[1]), R * W, 0, 7); cx.stroke(); }
+    const a = run.law[mi], c = run.law[Math.min(run.law.length - 1, mi + 1)];
+    ball(a[0] + (c[0] - a[0]) * fr, a[1] + (c[1] - a[1]) * fr, css("--law"), 0.9);
+    const tp = run.truth[tn - 1]; ball(tp[0], tp[1], css("--truth"), 0.9);
+  } else {
+    ball(b.x, b.y, css("--fg"), 1);
+    const tx = b.x + b.vx * ARROW, ty = b.y + b.vy * ARROW;
+    cx.strokeStyle = css("--fg"); cx.lineWidth = 3; cx.beginPath(); cx.moveTo(X(b.x), Y(b.y)); cx.lineTo(X(tx), Y(ty)); cx.stroke();
+    cx.fillStyle = css("--fg"); cx.beginPath(); cx.arc(X(tx), Y(ty), 9, 0, 7); cx.fill();
+  }
+}
+
+function setReadout(id1, id2, d) {
+  $(id1).textContent = d == null ? "–" : d.toFixed(3);
+  $(id2).textContent = d == null ? "–" : (d / (2 * R)).toFixed(1);
+}
+function clearRun() { cancelAnimationFrame(raf); run = null; setReadout("m1", "b1", null); setReadout("m2", "b2", null); $("run").textContent = "Run"; draw(); }
+
+function start() {
+  if (run) { clearRun(); return; }
+  const boxes = WALLS.concat(room.plats), b = room.ball, step = nets && nets.step;
+  const truth = truePath(b, room.plats);
+  let shot = null;
+  if (nets && nets.shot) { const y = nets.shot(b.x, b.y, b.vx, b.vy, boxes); shot = [b.x + y[0] * 0.3, b.y + y[1] * 0.3]; }
+  // the step model is rolled forward while it plays, one step per 1/30 s
+  run = { truth, law: [[b.x, b.y]], ls: { ...b }, lawDone: !step, shot, t: 0, t0: performance.now() };
+  const me = run;
+  $("run").textContent = "Reset"; $("status").textContent = "Running…";
+  const advance = upTo => {
+    while (!me.lawDone && me.law.length - 1 < upTo) {
+      if (me.law.length <= MAX_STEPS && modelStep(step, me.ls, boxes)) me.law.push([me.ls.x, me.ls.y]); else me.lawDone = true;
+    }
+  };
+  const end = truth[truth.length - 1], dist = q => Math.hypot(q[0] - end[0], q[1] - end[1]);
+  const finish = () => {
+    if (step) setReadout("m1", "b1", dist(me.law[me.law.length - 1]));
+    if (shot) setReadout("m2", "b2", dist(shot));
+    $("status").textContent = "True rest after " + ((truth.length - 1) / 120).toFixed(1) + " s." + (step ? " Step model stopped after " + ((me.law.length - 1) / 30).toFixed(1) + " s." : "");
+  };
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) { advance(Infinity); me.t = 1e9; draw(); finish(); return; }
+  const tick = now => {
+    if (run !== me) return;
+    me.t = (now - me.t0) / 1000;
+    advance(me.t * 30);
+    draw();
+    if (me.t * 120 < truth.length || !me.lawDone || me.t * 30 < me.law.length - 1) raf = requestAnimationFrame(tick); else finish();
+  };
+  raf = requestAnimationFrame(tick);
+}
+
+// pointer editing
+function pos(e) { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, 1 - (e.clientY - r.top) / r.height]; }
+cv.addEventListener("pointerdown", e => {
+  if (run) clearRun();
+  const [x, y] = pos(e), b = room.ball, grab = 0.045;
+  if (Math.hypot(x - b.x - b.vx * ARROW, y - b.y - b.vy * ARROW) < grab) drag = { kind: "vel" };
+  else if (Math.hypot(x - b.x, y - b.y) < grab) drag = { kind: "ball", dx: x - b.x, dy: y - b.y };
+  else {
+    for (let i = room.plats.length - 1; i >= 0 && !drag; i--) {
+      const p = room.plats[i];
+      if (Math.abs(y - p[1]) < p[3] + 0.03 && Math.abs(x - (p[0] + p[2])) < 0.03) drag = { kind: "size", i, left: p[0] - p[2] };
+      else if (Math.abs(y - p[1]) < p[3] + 0.03 && Math.abs(x - p[0]) < p[2]) drag = { kind: "plat", i, dx: x - p[0], dy: y - p[1] };
+    }
+  }
+  if (drag) cv.setPointerCapture(e.pointerId);
+});
+cv.addEventListener("pointermove", e => {
+  if (!drag) return;
+  const [x, y] = pos(e), b = room.ball;
+  if (drag.kind === "ball") { b.x = Math.max(R, Math.min(1 - R, x - drag.dx)); b.y = Math.max(R, Math.min(1 - R, y - drag.dy)); }
+  else if (drag.kind === "vel") {
+    let vx = (x - b.x) / ARROW, vy = (y - b.y) / ARROW; const sp = Math.hypot(vx, vy);
+    if (sp > 1.5) { vx *= 1.5 / sp; vy *= 1.5 / sp; }
+    b.vx = vx; b.vy = vy;
+  } else {
+    const p = room.plats[drag.i];
+    if (drag.kind === "plat") { p[0] = Math.max(p[2], Math.min(1 - p[2], x - drag.dx)); p[1] = Math.max(0.08, Math.min(0.9, y - drag.dy)); }
+    else { const right = Math.max(drag.left + 0.1, Math.min(1, x)); p[2] = Math.min(0.3, (right - drag.left) / 2); p[0] = drag.left + p[2]; }
+  }
+  draw();
+});
+const drop = () => { drag = null; };
+cv.addEventListener("pointerup", drop); cv.addEventListener("pointercancel", drop);
+
+$("run").addEventListener("click", start);
+$("new").addEventListener("click", () => { clearRun(); randomRoom(); draw(); });
+$("add").addEventListener("click", () => {
+  if (room.plats.length >= 5) { $("status").textContent = "Five platforms is the most the model has room for."; return; }
+  clearRun(); room.plats.push([0.3 + Math.random() * 0.4, 0.2 + Math.random() * 0.6, 0.12, 0.018]); draw();
+});
+$("del").addEventListener("click", () => { if (room.plats.length) { clearRun(); room.plats.pop(); draw(); } });
+
+// results table from the last test
+function showBench(test, pack) {
+  const groups = Object.keys(test); if (!groups.length) return;
+  let h = "<thead><tr><th>Rooms</th><th>Model</th><th>Mean miss</th><th>Hit</th></tr></thead><tbody>";
+  for (const g of groups) for (const r of test[g])
+    h += "<tr><td>" + g.replace(/ \(.*/, "") + "</td><td>" + r.model.replace(/ \(.*/, "") + "</td><td class='num'>" + r.mean.toFixed(3) + "</td><td class='num'>" + r.within_ball.toFixed(0) + "%</td></tr>";
+  $("tbl").innerHTML = h + "</tbody>";
+  if (pack && pack.plat) $("trained").textContent = "Trained only on rooms with " + pack.plat[0] + " to " + pack.plat[1] + " platforms. Hit means the miss is under one ball width.";
+  $("bench").hidden = false;
+}
+
+draw();
+fetch("weights.json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(w => {
+  nets = { step: w.step ? makeNet(w.step) : null, shot: w.shot ? makeNet(w.shot) : null };
+  $("status").textContent = "Model ready. Press Run.";
+  if (w.test) showBench(w.test, w.step);
+}).catch(() => { $("status").textContent = "The model file did not load, so Run shows the exact simulator only."; });
+</script>
