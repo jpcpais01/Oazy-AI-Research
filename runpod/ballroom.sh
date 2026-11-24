@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Ballroom: train the ball-in-a-room models, score them, open the room editor.
 #   bash runpod/ballroom.sh
-#   MIN=10 ARENA=16384 PLAT=2,3 PORT=8000 ARMS="dist:2:128:3 sharp:3:128:3 big:3:256:4" bash runpod/ballroom.sh
+#   MIN=10 ARENA=16384 PLAT=2,3 PORT=8000 ARMS="sharp:3:128:3 big:3:256:4" bash runpod/ballroom.sh
 # Each arm is name:features:width:layers, and all arms train at the same time on the one GPU.
 # Trains on rooms with 2-3 platforms, tests on fresh rooms with 2-3 and with 4-5. The best arm goes to the editor.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 RUNS="${RUNS:-$(python3 -c "from oazy.data import default_dir; print(default_dir('runs'))" 2>/dev/null || echo /workspace/oazy_runs)}/ballroom"
 mkdir -p "$RUNS"
-ARMS="${ARMS:-dist:2:128:3 sharp:3:128:3 big:3:256:4}"
+ARMS="${ARMS:-sharp:3:128:3 big:3:256:4}"
 PLAT="${PLAT:-2,3}"
 pids=()
 for arm in $ARMS; do

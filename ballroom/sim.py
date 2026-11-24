@@ -149,60 +149,53 @@ if __name__ == "__main__":
     print(f"x spread {fin[:, 0].std():.3f}  bounds {P.min():.3f} {P.max():.3f}")
 
 
-def step_t(p, v, boxes, n=1):
-    """The same step as step(), on torch tensors (float64), built for the GPU: few, wide operations.
+def step_t(p, v, boxes, n=1, passes=3):
+    """The same step as step(), on torch tensors (float64), built for the GPU.
 
     step() visits the boxes one after another. Here every ball is tested against all its boxes at
-    once and the first box it touches is resolved in one go. That equals the box-after-box answer
-    unless the push leaves the ball touching a LATER box (a corner, a wedge); those few balls are
-    sent to the box-after-box code on the CPU, so the result is identical in every case.
+    once, the first box it touches is resolved, and the test is repeated for the boxes after that
+    one. `passes` repeats give exactly the box-after-box answer for any ball that touches at most
+    `passes` boxes in one simulator step (a floor, a wall and a platform at once is three).
+    Nothing here waits on the GPU: no sizes are read back, so the device never stalls the program.
     """
     import torch
-    B = boxes.shape[1]
+    N, B = boxes.shape[:2]
     bo = boxes[:, ORDER] if B == MAX_BOX else boxes     # in visiting order
-    later_than = torch.arange(B, device=p.device)[None, :]
-    p = p.clone(); v = v.clone()
+    c = bo[..., :2]; hb = bo[..., 2:]
+    col = torch.arange(B, device=p.device)[None, :]
+    row = torch.arange(N, device=p.device)
+    grav = torch.tensor([0.0, -G * DT], dtype=p.dtype, device=p.device)
+    one = torch.ones(N, dtype=p.dtype, device=p.device); zero = torch.zeros_like(one)
     for _ in range(n):
-        v[:, 1] -= G * DT
-        p += v * DT
-        d = p[:, None] - bo[..., :2]
-        o = d - torch.maximum(torch.minimum(d, bo[..., 2:]), -bo[..., 2:])
-        hit = (o[..., 0] ** 2 + o[..., 1] ** 2).sqrt() < R
-        s = hit.any(1).nonzero()[:, 0]                  # balls touching something
-        if not len(s):
-            continue
-        k = hit[s].to(torch.uint8).argmax(1)            # the first box each one touches
-        bs = bo[s]; bk = bs[torch.arange(len(s), device=p.device), k]
-        ps = p[s]; vs = v[s]
-        h = bk[:, 2:]; dk = ps - bk[:, :2]
-        ok = dk - torch.maximum(torch.minimum(dk, h), -h)
-        dist = (ok[:, 0] ** 2 + ok[:, 1] ** 2).sqrt()
-        out = dist > 0
-        safe = torch.where(out, dist, torch.ones_like(dist)); zero = torch.zeros_like(dist)
-        px = h[:, 0] - dk[:, 0].abs(); py = h[:, 1] - dk[:, 1].abs()
-        sx = torch.where(dk[:, 0] >= 0, 1.0, -1.0).to(p.dtype); sy = torch.where(dk[:, 1] >= 0, 1.0, -1.0).to(p.dtype)
-        ux = px < py
-        nx = torch.where(out, ok[:, 0] / safe, torch.where(ux, sx, zero))
-        ny = torch.where(out, ok[:, 1] / safe, torch.where(ux, zero, sy))
-        push = torch.where(out, R - dist, torch.where(ux, px, py) + R)
-        p1 = torch.stack([ps[:, 0] + nx * push, ps[:, 1] + ny * push], 1)
-        vn = vs[:, 0] * nx + vs[:, 1] * ny
-        into = vn < 0
-        tx = vs[:, 0] - vn * nx; ty = vs[:, 1] - vn * ny
-        bounce = into & (vn < -VTH); rest = into & ~bounce
-        ts = (tx ** 2 + ty ** 2).sqrt()
-        cut = torch.where(rest & (ny > 0.5), torch.clamp(ts, max=ROLL * DT), zero)
-        kk = torch.where(ts > 0, (ts - cut) / torch.where(ts > 0, ts, torch.ones_like(ts)), zero)
-        v1 = torch.stack([torch.where(bounce, tx * KEEP_T - E * vn * nx, torch.where(rest, tx * kk, vs[:, 0])),
-                          torch.where(bounce, ty * KEEP_T - E * vn * ny, torch.where(rest, ty * kk, vs[:, 1]))], 1)
-        # does the pushed ball now touch a later box? then it needs the box-after-box code
-        d1 = p1[:, None] - bs[..., :2]
-        o1 = d1 - torch.maximum(torch.minimum(d1, bs[..., 2:]), -bs[..., 2:])
-        again = (((o1[..., 0] ** 2 + o1[..., 1] ** 2).sqrt() < R) & (later_than > k[:, None])).any(1)
-        m = again.nonzero()[:, 0]
-        if len(m):
-            pm = ps[m].cpu().numpy(); vm = vs[m].cpu().numpy()
-            resolve(pm, vm, bs[m].cpu().numpy(), range(B))
-            p1[m] = torch.as_tensor(pm, device=p.device); v1[m] = torch.as_tensor(vm, device=p.device)
-        p[s] = p1; v[s] = v1
+        v = v + grav
+        p = p + v * DT
+        after = torch.full((N,), -1, device=p.device)   # only boxes later than this one are still to visit
+        for _ in range(passes):
+            d = p[:, None] - c
+            o = d - torch.maximum(torch.minimum(d, hb), -hb)
+            hit = ((o[..., 0] ** 2 + o[..., 1] ** 2).sqrt() < R) & (col > after[:, None])
+            touch = hit.any(1)
+            k = hit.to(torch.uint8).argmax(1)           # the first box touched (0 when none: masked below)
+            h = hb[row, k]; dk = d[row, k]; ok = o[row, k]
+            dist = (ok[:, 0] ** 2 + ok[:, 1] ** 2).sqrt()
+            out = dist > 0
+            safe = torch.where(out, dist, one)
+            px = h[:, 0] - dk[:, 0].abs(); py = h[:, 1] - dk[:, 1].abs()
+            sx = torch.where(dk[:, 0] >= 0, one, -one); sy = torch.where(dk[:, 1] >= 0, one, -one)
+            ux = px < py
+            nx = torch.where(out, ok[:, 0] / safe, torch.where(ux, sx, zero))
+            ny = torch.where(out, ok[:, 1] / safe, torch.where(ux, zero, sy))
+            push = torch.where(out, R - dist, torch.where(ux, px, py) + R)
+            p1 = torch.stack([p[:, 0] + nx * push, p[:, 1] + ny * push], 1)
+            vn = v[:, 0] * nx + v[:, 1] * ny
+            into = vn < 0
+            tx = v[:, 0] - vn * nx; ty = v[:, 1] - vn * ny
+            bounce = into & (vn < -VTH); rest = into & ~bounce
+            ts = (tx ** 2 + ty ** 2).sqrt()
+            cut = torch.where(rest & (ny > 0.5), torch.clamp(ts, max=ROLL * DT), zero)
+            kk = torch.where(ts > 0, (ts - cut) / torch.where(ts > 0, ts, one), zero)
+            v1 = torch.stack([torch.where(bounce, tx * KEEP_T - E * vn * nx, torch.where(rest, tx * kk, v[:, 0])),
+                              torch.where(bounce, ty * KEEP_T - E * vn * ny, torch.where(rest, ty * kk, v[:, 1]))], 1)
+            p = torch.where(touch[:, None], p1, p); v = torch.where(touch[:, None], v1, v)
+            after = torch.where(touch, k, torch.full_like(k, B))
     return p, v
