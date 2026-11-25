@@ -11,9 +11,9 @@ run() {  # batch compile
     | grep -E "BENCH|Error|error" | tail -1 || true
 }
 echo "speed test, view $VIEW, $N steps each (only the second half is timed)"
-run 1024 "" 0     # without the room view, for reference
-for b in 512 1024 2048; do run "$b" ""; done
-run 1024 default
-run 1024 reduce-overhead
+run 1024 "" 0                 # without the room view, for reference
+run 1024 ""                   # room view, plain
+run 1024 default              # room view, compiled
+run 1024 reduce-overhead      # room view, compiled + CUDA graphs
 run 2048 reduce-overhead
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader

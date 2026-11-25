@@ -58,14 +58,13 @@ class Look(nn.Module):
     def keys(self, room):
         """The room's answers, worked out once per picture: [2,B,h,S,dh]."""
         B, S, D = room.shape
-        return self.kv(self.nk(room)).view(B, S, 2, self.h, D // self.h).permute(2, 0, 3, 1, 4)
+        return self.kv(self.nk(room)).view(B, S, 2, self.h, D // self.h).permute(2, 0, 3, 1, 4).contiguous()   # contiguous: no copy per step
 
     def forward(self, x, kv):
         B, T, D = x.shape; h = self.h
         q = self.q(self.nq(x)).view(B, T, h, D // h).transpose(1, 2)
-        k, v = kv[0], kv[1]
-        a = ((q @ k.transpose(-1, -2)) / math.sqrt(D // h)).softmax(-1)
-        return x + self.proj((a @ v).transpose(1, 2).reshape(B, T, D))
+        o = F.scaled_dot_product_attention(q, kv[0], kv[1])          # fused: keeps nothing big for the backward pass
+        return x + self.proj(o.transpose(1, 2).reshape(B, T, D))
 
 
 class Eye(nn.Module):
