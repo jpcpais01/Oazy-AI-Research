@@ -39,6 +39,7 @@ header p { margin: 0; color: var(--dim); }
 .hint { color: var(--dim); font-size: 13px; margin: 0; }
 .side { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.card[hidden] { display: none; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; }
 button, select {
   font: 500 14px var(--display); color: var(--fg); background: var(--bg);
@@ -80,6 +81,8 @@ td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; white-spa
 td .bar { width: 46px; display: inline-block; vertical-align: middle; margin-right: 8px; height: 6px; }
 tr.best td { color: var(--dim); }
 .scroll { overflow-x: auto; }
+#lc text { font: 11px var(--mono); fill: var(--dim); }
+.tip { position: absolute; pointer-events: none; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font-size: 12px; white-space: nowrap; transform: translate(-50%, -120%); }
 </style>
 
 <div class="wrap">
@@ -130,6 +133,16 @@ tr.best td { color: var(--dim); }
           <span>Model</span><span class="bar"><i id="cb2" style="background:var(--law)"></i></span><span class="val" id="c2">–</span>
         </div>
         <p class="small">Each copy starts a hair away. If even real physics splits, the room is a knife-edge.</p>
+      </div>
+
+      <div class="card" id="learn" hidden>
+        <h2>How it learned</h2>
+        <div style="position:relative">
+          <svg id="lc" viewBox="0 0 600 260" width="100%" role="img" aria-label="Training error over time for each pixel model"></svg>
+          <div id="ltip" class="tip" hidden></div>
+        </div>
+        <div class="key" id="lkey"></div>
+        <p class="small">Step-by-step error while training, lower is better. Smoothed with its neighbours; hover for the raw value.</p>
       </div>
 
       <div class="card" id="bench" hidden>
@@ -534,6 +547,41 @@ $("add").addEventListener("click", () => {
 });
 $("del").addEventListener("click", () => { if (room.plats.length) { clearRun(); room.plats.pop(); draw(); } });
 
+// how each pixel model learned: its step-by-step error over training time, the chosen one in pink
+let curves = [];
+function drawCurves() {
+  const svg = $("lc"), card = $("learn"); card.hidden = !curves.length; if (!curves.length) return;
+  const W = 600, H = 260, L = 44, Rm = 12, T = 10, B = 30, pick = $("pick").value;
+  const sm = a => a.map((v, i) => (a[Math.max(0, i - 1)] + v + a[Math.min(a.length - 1, i + 1)]) / 3);
+  const all = curves.map(c => ({ name: c.name, x: c.curve.min, raw: c.curve.pos, y: sm(c.curve.pos) }));
+  const xs = Math.max(...all.flatMap(c => c.x)), ys = all.flatMap(c => c.y).sort((a, b) => a - b);
+  const top = Math.min(ys[ys.length - 1], 3 * ys[Math.floor(ys.length / 2)]) * 1.05;
+  const X = x => L + (W - L - Rm) * x / xs, Y = y => T + (H - T - B) * (1 - Math.min(y, top) / top);
+  let h = "";
+  for (let k = 0; k <= 3; k++) { const v = top * k / 3, y = Y(v);
+    h += `<line x1="${L}" x2="${W - Rm}" y1="${y}" y2="${y}" stroke="var(--line)" stroke-width="1"/><text x="${L - 6}" y="${y + 4}" text-anchor="end">${v.toFixed(2)}</text>`; }
+  for (let k = 0; k <= 4; k++) { const v = xs * k / 4; h += `<text x="${X(v)}" y="${H - 10}" text-anchor="${k === 4 ? "end" : k ? "middle" : "start"}">${v.toFixed(0)}${k === 4 ? " min" : ""}</text>`; }
+  const line = (c, col, wd, op) => `<polyline fill="none" stroke="${col}" stroke-width="${wd}" stroke-opacity="${op}" stroke-linejoin="round" points="${c.x.map((x, i) => X(x).toFixed(1) + "," + Y(c.y[i]).toFixed(1)).join(" ")}"/>`;
+  for (const c of all) if (c.name !== pick) h += line(c, "var(--dim)", 1.5, 0.55);
+  for (const c of all) if (c.name === pick) h += line(c, "var(--law)", 2.5, 1);
+  h += `<line id="lx" y1="${T}" y2="${H - B}" stroke="var(--dim)" stroke-width="1" visibility="hidden"/><circle id="ld" r="5" fill="var(--law)" stroke="var(--bg)" stroke-width="2" visibility="hidden"/>`;
+  svg.innerHTML = h;
+  $("lkey").innerHTML = all.map(c => `<span><i class="dot" style="background:${c.name === pick ? "var(--law)" : "var(--dim)"}"></i>${c.name}</span>`).join("");
+  svg.onpointermove = e => {
+    const r = svg.getBoundingClientRect(), mx = (e.clientX - r.left) * W / r.width, my = (e.clientY - r.top) * H / r.height;
+    let best = null;
+    for (const c of all) c.x.forEach((x, i) => { const d = Math.hypot(X(x) - mx, (Y(c.y[i]) - my) * 0.5); if (!best || d < best.d) best = { d, c, i }; });
+    if (!best) return;
+    const px = X(best.c.x[best.i]), py = Y(best.c.y[best.i]);
+    $("lx").setAttribute("x1", px); $("lx").setAttribute("x2", px); $("lx").setAttribute("visibility", "visible");
+    $("ld").setAttribute("cx", px); $("ld").setAttribute("cy", py); $("ld").setAttribute("visibility", "visible");
+    $("ld").setAttribute("fill", best.c.name === pick ? "var(--law)" : "var(--dim)");
+    const tip = $("ltip"); tip.hidden = false; tip.style.left = (px / W * r.width) + "px"; tip.style.top = (py / H * r.height) + "px";
+    tip.textContent = best.c.name + " · " + best.c.x[best.i].toFixed(1) + " min · error " + best.c.raw[best.i].toFixed(3);
+  };
+  svg.onpointerleave = () => { $("ltip").hidden = true; $("lx").setAttribute("visibility", "hidden"); $("ld").setAttribute("visibility", "hidden"); };
+}
+
 // scores on fresh rooms, for the chosen model: hit rate on rooms like training and on harder, never-seen rooms
 let objTest = null, pixTests = {};
 function nice(name) {
@@ -579,6 +627,7 @@ async function listPixel() {
     }
     if ([...sel.options].some(o => o.value === was)) sel.value = was;
     for (const m of ms) if (m.test) pixTests[m.name] = { test: m.test, plat: m.plat };
+    curves = ms.filter(m => m.curve && m.curve.pos.length > 1); drawCurves();
   } catch (e) {}
 }
 listPixel();
@@ -586,6 +635,6 @@ $("pick").addEventListener("focus", listPixel);
 $("pick").addEventListener("change", () => {
   const v = $("pick").value; clearRun();
   if (v) { $("run").disabled = false; $("run").textContent = "Run"; $("status").textContent = "Pixel model " + v + ": it sees only the picture. Press Run."; }
-  showBench(v ? pixTests[v] : objTest, v ? "pixel model " + v : "the objects model");
+  showBench(v ? pixTests[v] : objTest, v ? "pixel model " + v : "the objects model"); drawCurves();
 });
 </script>

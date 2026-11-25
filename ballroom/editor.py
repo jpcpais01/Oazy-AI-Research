@@ -3,13 +3,14 @@
 The objects model runs inside the page. Pixel models (ballroom.eye) run here, on this machine's GPU if it has one:
 every eye.pt under --runs shows up in the page's model picker as soon as it is saved.
 """
-import argparse, glob, gzip, http.server, json, os, threading
+import argparse, glob, gzip, http.server, json, os, re, threading
 import numpy as np
 
 HERE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "editor")
 WEIGHTS = os.path.join(HERE, "weights.json")
 packed = {}                                   # the model file, squeezed once per version
 RUNS = None
+LINE = re.compile(r"it (\d+) loss [\d.]+ pos ([\d.]+) rest [\d.]+ shot ([\d.]+) .*?(\d+)s \(")
 nets, lock = {}, threading.Lock()             # pixel models, loaded once each (reloaded when the file changes)
 
 
@@ -109,6 +110,11 @@ class H(http.server.BaseHTTPRequestHandler):
                     m["test"] = {g: v["rows"] for g, v in json.load(open(j)).items() if isinstance(v, dict) and "rows" in v}
                 except Exception:
                     pass
+                log = os.path.join(os.path.dirname(f), "eye.log") if f.endswith(os.sep + "eye.pt") else ""
+                if log and os.path.exists(log):                   # how it learned: the training lines of its log
+                    pts = [(float(g[3]) / 60, float(g[1])) for g in LINE.findall(open(log, errors="ignore").read())]
+                    if pts:
+                        m["curve"] = {"min": [round(x, 2) for x, _ in pts], "pos": [round(y, 4) for _, y in pts]}
                 ms.append(m)
             self.send(200, json.dumps(ms).encode(), "application/json", [("Cache-Control", "no-store")])
         else:
