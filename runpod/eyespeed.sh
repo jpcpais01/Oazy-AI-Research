@@ -18,6 +18,7 @@ run 1024 default                                     # room view, compiled: 1.68
 run 1024 default "" "--bf16 1"                       # + the imagining in bf16
 run 1024 default "" "--glances 1"                    # + the eye checks only the last window
 run 1024 default "" "--bf16 1 --glances 1"           # both
+run 1024 default "" "--bf16 1 --glances 1 --room-patch 8 --walls 1"   # both + the room read in 8x8 squares, floor drawn
 run 1024 default "" "--bf16 1 --glances 1 --res 64 --patch 8"    # + 64x64 pictures, same 64 patches
 run 1024 default "" "--bf16 1 --glances 1 --res 96 --patch 16"   # + 96x96 pictures, 36 patches
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader

@@ -68,13 +68,14 @@ class Look(nn.Module):
 
 
 class Eye(nn.Module):
-    def __init__(self, res=128, patch=16, d=192, enc=4, step=3, heads=4, reg=8, dn=0, view=0, walls=0):
+    def __init__(self, res=128, patch=16, d=192, enc=4, step=3, heads=4, reg=8, dn=0, view=0, walls=0, room_patch=0):
         super().__init__()
-        self.cfg = dict(res=res, patch=patch, d=d, enc=enc, step=step, heads=heads, reg=reg, dn=dn, view=view, walls=walls)
+        self.cfg = dict(res=res, patch=patch, d=d, enc=enc, step=step, heads=heads, reg=reg, dn=dn, view=view, walls=walls, room_patch=room_patch)
         self.res, self.patch, self.reg, self.dn, self.view, self.walls = res, patch, reg, dn, view, walls
         if view:    # the room stays in view: every imagined step looks at the room picture again (the ball is only imagined)
-            self.room_embed = nn.Linear(patch * patch, d)
-            self.room_where = nn.Parameter(torch.randn((res // patch) ** 2, d) * 0.02)
+            self.rp = rp = room_patch or patch      # the room can be read in finer squares than the moving picture
+            self.room_embed = nn.Linear(rp * rp, d)
+            self.room_where = nn.Parameter(torch.randn((res // rp) ** 2, d) * 0.02)
             self.room_enc = nn.ModuleList(Block(d, heads) for _ in range(view))
             self.room_norm = nn.LayerNorm(d)
             self.look = nn.ModuleList(Look(d, heads) for _ in range(step))
@@ -109,7 +110,8 @@ class Eye(nn.Module):
             for b in self.enc:
                 x = b(x, m)
             if self.view and look:   # the room alone (the platforms channel), read once; every step asks it again
-                r = img[:, 2:3].unfold(2, P, P).unfold(3, P, P).permute(0, 2, 3, 1, 4, 5).reshape(N, -1, P * P)
+                Q = self.rp
+                r = img[:, 2:3].unfold(2, Q, Q).unfold(3, Q, Q).permute(0, 2, 3, 1, 4, 5).reshape(N, -1, Q * Q)
                 r = self.room_embed(r) + self.room_where
                 mr = torch.ones(N, r.shape[1], dtype=torch.bool, device=r.device)
                 for b in self.room_enc:
@@ -336,6 +338,7 @@ def main():
     ap.add_argument("--enc", type=int, default=4)
     ap.add_argument("--step", type=int, default=3)
     ap.add_argument("--reg", type=int, default=8)
+    ap.add_argument("--room-patch", type=int, default=0, help="square size the room view reads the room in (0 = same as --patch)")
     ap.add_argument("--walls", type=int, default=0, help="1 = floor, ceiling and walls drawn as solid in the picture")
     ap.add_argument("--view", type=int, default=0, help="layers of a room encoder that every imagined step looks at again (0 = off)")
     ap.add_argument("--latent", type=float, default=1.0, help="weight of the agree-with-the-eye term")
@@ -366,9 +369,11 @@ def main():
     boxes, tb, P, stop, p0, v0 = rooms_on(dev, a.rooms, (lo, hi), a.seed, starts=True)
     T = P.shape[0] - 1; K = a.unroll; W = a.windows
     torch.backends.cuda.matmul.allow_tf32 = True; torch.backends.cudnn.allow_tf32 = True
-    net = Eye(a.res, a.patch, a.d, a.enc, a.step, reg=a.reg, dn=16 if a.odds else 0, view=a.view, walls=a.walls).to(dev)
+    net = Eye(a.res, a.patch, a.d, a.enc, a.step, reg=a.reg, dn=16 if a.odds else 0, view=a.view, walls=a.walls, room_patch=a.room_patch).to(dev)
     if a.init:
-        miss = net.load_state_dict(torch.load(a.init, map_location=dev)["model"], strict=False).missing_keys
+        own = net.state_dict()
+        old = {k: v for k, v in torch.load(a.init, map_location=dev)["model"].items() if k in own and own[k].shape == v.shape}
+        miss = net.load_state_dict(old, strict=False).missing_keys       # parts whose shape changed start fresh
         print(f"starting from {a.init}" + (f" (new: {', '.join(miss)})" if miss else ""), flush=True)
     if a.odds:
         # learn the odds: from the start picture, its own clouds must spread like the simulator's own cloud
