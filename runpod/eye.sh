@@ -8,5 +8,5 @@ cd "$(dirname "$0")/.."
 RUNS="${RUNS:-$(python3 -c "from oazy.data import default_dir; print(default_dir('runs'))" 2>/dev/null || echo /workspace/oazy_runs)}/ballroom/${OUT:-eye}"
 mkdir -p "$RUNS"
 python3 -m ballroom.eye --minutes "${MIN:-20}" --rooms "${ROOMS:-100000}" --plat "${PLAT:-2,3}" --res "${RES:-128}" --patch "${PATCH:-16}" \
-    --d "${D:-192}" --enc "${ENC:-4}" --step "${STEP:-3}" --unroll "${UNROLL:-24}" --windows "${WINDOWS:-4}" --batch "${BATCH:-1024}" ${INIT:+--init "$INIT"} ${COMPILE:+--compile "$COMPILE"} --view "${VIEW:-0}" ${FAST:+--fast "$FAST"} ${FAST_BATCH:+--fast-batch "$FAST_BATCH"} --emotion "${EMOTION:-0}" --odds "${ODDS:-0}" --out "$RUNS" 2>&1 | tee "$RUNS/eye.log"
+    --d "${D:-192}" --enc "${ENC:-4}" --step "${STEP:-3}" --unroll "${UNROLL:-24}" --windows "${WINDOWS:-4}" --batch "${BATCH:-1024}" ${INIT:+--init "$INIT"} ${COMPILE:+--compile "$COMPILE"} --view "${VIEW:-0}" --bf16 "${BF16:-0}" --glances "${GLANCES:-0}" ${FAST:+--fast "$FAST"} ${FAST_BATCH:+--fast-batch "$FAST_BATCH"} --emotion "${EMOTION:-0}" --odds "${ODDS:-0}" --out "$RUNS" 2>&1 | tee "$RUNS/eye.log"
 if [ -f "$RUNS/../test.log" ]; then echo; echo "For comparison, the object models on the same rooms:"; cat "$RUNS/../test.log"; fi

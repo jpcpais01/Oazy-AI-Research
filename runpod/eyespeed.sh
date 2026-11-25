@@ -14,10 +14,10 @@ echo "compare 'moments learned/s' (higher = faster learning)"
 echo "speed test, view $VIEW, $N steps each (only the second half is timed)"
 # run 1024 "" 0 (no view: 1.81 steps/s on the 4090)
 # run 1024 "" (room view, plain: 1.10 steps/s on the 4090)
-run 1024 default              # room view, compiled (fastest so far: 1.68 steps/s on the 4090)
-run 1024 reduce-overhead      # room view, compiled + CUDA graphs
-run 1024 "" "" "--fast 4 --fast-batch 4096"          # parallel training: short chains side by side
-run 1024 "" "" "--fast 4 --fast-batch 8192"
-run 1024 default "" "--fast 4 --fast-batch 4096"
-run 1024 reduce-overhead "" "--fast 4 --fast-batch 4096"
+run 1024 default                                     # room view, compiled: 1.68 steps/s on the 4090 (the current setup)
+run 1024 default "" "--bf16 1"                       # + the imagining in bf16
+run 1024 default "" "--glances 1"                    # + the eye checks only the last window
+run 1024 default "" "--bf16 1 --glances 1"           # both
+run 1024 default "" "--bf16 1 --glances 1 --res 64 --patch 8"    # + 64x64 pictures, same 64 patches
+run 1024 default "" "--bf16 1 --glances 1 --res 96 --patch 16"   # + 96x96 pictures, 36 patches
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader

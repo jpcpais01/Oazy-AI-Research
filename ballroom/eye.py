@@ -348,6 +348,8 @@ def main():
     ap.add_argument("--fast", type=int, default=0, help="parallel training: short chains of this many moments, side by side (0 = off)")
     ap.add_argument("--fast-batch", type=int, default=4096, help="rooms per fast step")
     ap.add_argument("--long-every", type=int, default=8, help="with --fast: every this-many steps one long chain as before")
+    ap.add_argument("--bf16", type=int, default=0, help="1 = the rolled steps in bf16 too (the eye always is)")
+    ap.add_argument("--glances", type=int, default=0, help="windows whose end is checked against the eye (0 = all); fewer = less eye work")
     ap.add_argument("--bench", type=int, default=0, help="speed test: run this many steps, print the speed, save nothing")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     a = ap.parse_args()
@@ -371,6 +373,7 @@ def main():
         print(f"odds on: {a.odds} nudged copies of {NO:,} rooms by the simulator in {time.time() - t1_:.0f}s; "
               f"half of each batch learns the spread of futures", flush=True)
     win = window
+    a.glances = min(a.glances or W, W)
     graphs = a.compile == "reduce-overhead"         # CUDA graphs: each replay overwrites the last one's outputs
     if a.compile:                # fuse the many small operations of a window; reduce-overhead also replays them as one CUDA graph
         win = torch.compile(window, mode=a.compile)
@@ -453,7 +456,9 @@ def main():
                 at_rest = (t1[None, :] + ks[:, None] >= stop[r][None, :]).float()
                 if graphs:
                     torch.compiler.cudagraph_mark_step_begin()
-                ys, z = win(net, z, K, net.room)
+                with torch.autocast("cuda", dtype=torch.bfloat16, enabled=bool(a.bf16) and dev.startswith("cuda")):
+                    ys, z = win(net, z, K, net.room)                       # bf16: the imagining in half precision too
+                ys, z = ys.float(), z.float()
                 if a.emotion:
                     e = F.smooth_l1_loss(ys[..., :2] / 0.05, tgt / 0.05, beta=0.2, reduction="none").mean(2)   # [K+1,B]
                     l_pos = (e * (1 + at_rest)).sum() / (1 + at_rest).sum()          # importance: the resting answer counts double
@@ -463,9 +468,12 @@ def main():
                 else:
                     l_pos = F.smooth_l1_loss(ys[..., :2] / 0.05, tgt / 0.05, beta=0.2)
                 l_rest = F.binary_cross_entropy_with_logits(ys[..., 2], at_rest)
-                with torch.no_grad():                                          # what the eye sees at that later moment
-                    z_eye = net.see(render(P[t1 + K - 1, r], P[t1 + K, r], br, a.res), look=False)
-                l_lat = F.mse_loss(z, z_eye)
+                if w >= W - a.glances:                                         # what the eye sees at that later moment
+                    with torch.no_grad():
+                        z_eye = net.see(render(P[t1 + K - 1, r], P[t1 + K, r], br, a.res), look=False)
+                    l_lat = F.mse_loss(z, z_eye) * W / a.glances
+                else:
+                    l_lat = torch.zeros((), device=dev)
                 part = (l_pos + 0.3 * l_rest + a.latent * l_lat) / W + (l_shot if w == 0 else 0.0)
                 part.backward()
                 z = z.detach().clone() if graphs else z.detach()               # (a CUDA graph reuses its output memory) the next window starts from the rolled state, never from the eye
@@ -501,7 +509,7 @@ def main():
                 sps = (a.bench - a.bench // 2) / (time.time() - tb0)
                 per = ((a.long_every - 1) * a.fast_batch * (a.fast + 1) + a.batch * W * K) / a.long_every if a.fast else a.batch * W * K
                 mem = torch.cuda.max_memory_allocated() / 1e9 if dev.startswith("cuda") else 0
-                print(f"BENCH batch {a.batch:5d} compile {a.compile or 'off':16s} view {a.view} odds {a.odds}: {sps:5.2f} steps/s = "
+                print(f"BENCH batch {a.batch:5d} compile {a.compile or 'off':8s} view {a.view} bf16 {a.bf16} glances {a.glances} res {a.res}: {sps:5.2f} steps/s = "
                       f"{sps * per:8.0f} moments learned/s" + (f" (fast {a.fast} x {a.fast_batch}, long chain every {a.long_every})" if a.fast else "")
                       + f", peak memory {mem:.1f} GB", flush=True)
                 return
