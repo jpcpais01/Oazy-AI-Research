@@ -371,6 +371,7 @@ def main():
         print(f"odds on: {a.odds} nudged copies of {NO:,} rooms by the simulator in {time.time() - t1_:.0f}s; "
               f"half of each batch learns the spread of futures", flush=True)
     win = window
+    graphs = a.compile == "reduce-overhead"         # CUDA graphs: each replay overwrites the last one's outputs
     if a.compile:                # fuse the many small operations of a window; reduce-overhead also replays them as one CUDA graph
         win = torch.compile(window, mode=a.compile)
         print(f"compiling the rolled window ({a.compile}); the first steps are slow while it compiles", flush=True)
@@ -450,6 +451,8 @@ def main():
                 t1 = t + 1 + w * K                                             # a long roll, learned one window at a time
                 tgt = P[t1[None, :] + ks[:, None], r[None, :]]                 # [K+1,B,2] true positions
                 at_rest = (t1[None, :] + ks[:, None] >= stop[r][None, :]).float()
+                if graphs:
+                    torch.compiler.cudagraph_mark_step_begin()
                 ys, z = win(net, z, K, net.room)
                 if a.emotion:
                     e = F.smooth_l1_loss(ys[..., :2] / 0.05, tgt / 0.05, beta=0.2, reduction="none").mean(2)   # [K+1,B]
@@ -465,7 +468,7 @@ def main():
                 l_lat = F.mse_loss(z, z_eye)
                 part = (l_pos + 0.3 * l_rest + a.latent * l_lat) / W + (l_shot if w == 0 else 0.0)
                 part.backward()
-                z = z.detach()                                                 # the next window starts from the rolled state, never from the eye
+                z = z.detach().clone() if graphs else z.detach()               # (a CUDA graph reuses its output memory) the next window starts from the rolled state, never from the eye
                 for k_, v_ in (("pos", l_pos), ("rest", l_rest), ("lat", l_lat), ("loss", part * W)):
                     tot[k_] = tot[k_] + v_.detach() / W                        # kept on the GPU: no waiting until a line is printed
             net.release_room(room_src)
@@ -474,6 +477,8 @@ def main():
                 zo = net.see(render(P[0, ro], P[1, ro], tb[ro], a.res)).repeat(C, 1, 1)          # [C*nbo,reg,d], copy-major
                 net.repeat_room(C); room_o = net.hold_room()
                 for w in range(W):
+                    if graphs:
+                        torch.compiler.cudagraph_mark_step_begin()
                     ys, zo = win(net, zo, K, net.room)
                     when = 1 + w * K + ks                                                       # [K+1] moments
                     X = ys[..., :2].view(K + 1, C, nbo, 2)
@@ -483,7 +488,7 @@ def main():
                     at_o = (when[:, None, None] >= SO[:, ro][None]).float().mean(1)            # [K+1,nbo] share of the cloud at rest
                     l_ro = F.binary_cross_entropy_with_logits(ys[..., 2].view(K + 1, C, nbo), at_o[:, None].expand(-1, C, -1))
                     ((l_o + 0.3 * l_ro) / W).backward()
-                    zo = zo.detach()
+                    zo = zo.detach().clone() if graphs else zo.detach()
                     tot["odds"] = tot.get("odds", 0.0) + l_o.detach() / W
                 net.release_room(room_o)
         torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0); opt.step()
