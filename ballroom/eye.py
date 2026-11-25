@@ -20,7 +20,7 @@ with what the eye would see at that later moment (a JEPA-style target), which ke
 The cloud of possibilities: the same start is asked many times, with the picture or the first inner state
 nudged a little, and every copy is rolled to its end. The cloud then votes: the middle of its biggest clump.
 """
-import argparse, json, math, os, time
+import argparse, hashlib, json, math, os, time
 import numpy as np
 import torch
 import torch.nn as nn
@@ -180,10 +180,45 @@ def window(net, z, K, room=None):
     return torch.stack(ys), z
 
 
+def cache_dir():
+    """Where simulated paths are kept between runs ($BALLROOM_CACHE, else the runs folder's ballroom/cache)."""
+    d = os.environ.get("BALLROOM_CACHE")
+    if not d:
+        try:
+            from oazy.data import default_dir
+            d = os.path.join(default_dir("runs"), "ballroom", "cache")
+        except Exception:
+            d = os.path.join("ballroom", "runs", "cache")
+    return d
+
+
+def cached(name, make):
+    """The simulator is exact and seeded, so the same rooms give the same paths: work them out once, keep them on disk."""
+    path = os.path.join(cache_dir(), f"{name}-v1.npz")
+    try:
+        with np.load(path) as f:
+            return tuple(f[f"arr_{i}"] for i in range(len(f.files)))
+    except Exception:
+        pass
+    out = make()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        np.savez(path + ".tmp.npz", *out); os.replace(path + ".tmp.npz", path)
+    except Exception as e:
+        print(f"(could not keep {name} on disk: {e})", flush=True)
+    return out
+
+
 def rooms_on(dev, n, plat, seed, starts=False):
     rng = np.random.default_rng(seed)
     boxes, count, p0, v0 = sim.make_rooms(n, rng, plat)
-    P, _, stop = sim.rollout(boxes, p0, v0)
+
+    def make():                                   # on every CPU core
+        from . import robot
+        robot.land(boxes[:1], p0[:1], v0[:1])    # makes sure the pool of simulator processes is up
+        parts = list(robot._pool.map(_paths, [(boxes[i:i + 2000], p0[i:i + 2000], v0[i:i + 2000]) for i in range(0, n, 2000)]))
+        return np.concatenate([q for q, _ in parts], 1), np.concatenate([q for _, q in parts])
+    P, stop = cached(f"rooms-{n}-{plat[0]}{plat[1]}-{seed}", make)
     t = lambda x, dt=torch.float32: torch.as_tensor(x, dtype=dt, device=dev)
     return (boxes, t(boxes), t(P), t(stop, torch.long)) + ((p0, v0) if starts else ())
 
@@ -197,6 +232,11 @@ def _paths(args):
 def nudged_paths(boxes, p0, v0, copies, seed=1):
     """The exact simulator's own cloud: each room started `copies` times a hair away (0.002, 0.02).
     Returns paths [T+1,copies,n,2] and rest steps [copies,n]."""
+    key = f"nudged-{len(p0)}-{copies}-{seed}-{hashlib.md5(p0.tobytes() + v0.tobytes()).hexdigest()[:10]}"
+    return cached(key, lambda: _nudged_paths(boxes, p0, v0, copies, seed))
+
+
+def _nudged_paths(boxes, p0, v0, copies, seed):
     from . import robot
     robot.land(boxes[:1], p0[:1], v0[:1])                               # makes sure the pool of simulator processes is up
     rng = np.random.default_rng(seed); n = len(p0)
@@ -211,6 +251,11 @@ def nudged_paths(boxes, p0, v0, copies, seed=1):
 def learnable(boxes, p0, v0, fin, copies=8, seed=0):
     """How predictable each room is at all: the share of the exact simulator's own nudged copies
     (0.002 in position, 0.02 in speed) that rest within a ball of the true rest. Low = a knife-edge."""
+    key = f"learnable-{len(p0)}-{copies}-{seed}-{hashlib.md5(p0.tobytes() + v0.tobytes()).hexdigest()[:10]}"
+    return cached(key, lambda: (_learnable(boxes, p0, v0, fin, copies, seed),))[0]
+
+
+def _learnable(boxes, p0, v0, fin, copies, seed):
     from .robot import land                       # the simulator on every CPU core
     rng = np.random.default_rng(seed); n = len(p0)
     cp = np.clip(p0[None] + 0.002 * rng.standard_normal((copies, n, 2)), sim.R, 1 - sim.R).reshape(-1, 2)
