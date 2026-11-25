@@ -276,6 +276,7 @@ def main():
     ap.add_argument("--noise", type=float, nargs="*", default=[0.1, 0.3], help="sizes of the nudge to the inner state")
     ap.add_argument("--out", default="ballroom/runs/eye")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--bench", type=int, default=0, help="speed test: run this many steps, print the speed, save nothing")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     a = ap.parse_args()
     dev = a.device
@@ -379,6 +380,16 @@ def main():
                 tot["odds"] = tot.get("odds", 0.0) + l_o.detach() / W
         torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0); opt.step()
         it += 1
+        if a.bench:                  # speed test: time the second half only (the first half warms up and compiles)
+            if it == a.bench // 2:
+                torch.cuda.synchronize() if dev.startswith("cuda") else None; tb0 = time.time()
+            elif it == a.bench:
+                torch.cuda.synchronize() if dev.startswith("cuda") else None
+                sps = (a.bench - a.bench // 2) / (time.time() - tb0)
+                mem = torch.cuda.max_memory_allocated() / 1e9 if dev.startswith("cuda") else 0
+                print(f"BENCH batch {a.batch:5d} compile {a.compile or 'off':16s} view {a.view} odds {a.odds}: {sps:5.2f} steps/s = "
+                      f"{sps * a.batch:7.0f} examples/s (each rolled {W * K} steps), peak memory {mem:.1f} GB", flush=True)
+                return
         if it % 100 == 0:
             el = time.time() - t0
             print(f"it {it} loss {float(tot['loss']):.4f} pos {float(tot['pos']):.4f} rest {float(tot['rest']):.4f} shot {l_shot.item():.4f} "
