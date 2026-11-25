@@ -3,13 +3,15 @@
 #   bash runpod/eyespeed.sh
 # Tries batch sizes and compile modes, prints examples per second for each. The fastest line wins.
 set -uo pipefail
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 cd "$(dirname "$0")/.."
 N="${N:-40}"; VIEW="${VIEW:-2}"
 run() {  # batch compile
-  python3 -m ballroom.eye --bench "$N" --rooms 20000 --batch "$1" ${2:+--compile "$2"} --view "$VIEW" --out /tmp/eyespeed 2>&1 \
+  python3 -m ballroom.eye --bench "$N" --rooms 20000 --batch "$1" ${2:+--compile "$2"} --view "${3:-$VIEW}" --out /tmp/eyespeed 2>&1 \
     | grep -E "BENCH|Error|error" | tail -1 || true
 }
 echo "speed test, view $VIEW, $N steps each (only the second half is timed)"
+run 1024 "" 0     # without the room view, for reference
 for b in 512 1024 2048; do run "$b" ""; done
 run 1024 default
 run 1024 reduce-overhead
