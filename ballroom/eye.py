@@ -68,10 +68,10 @@ class Look(nn.Module):
 
 
 class Eye(nn.Module):
-    def __init__(self, res=128, patch=16, d=192, enc=4, step=3, heads=4, reg=8, dn=0, view=0):
+    def __init__(self, res=128, patch=16, d=192, enc=4, step=3, heads=4, reg=8, dn=0, view=0, walls=0):
         super().__init__()
-        self.cfg = dict(res=res, patch=patch, d=d, enc=enc, step=step, heads=heads, reg=reg, dn=dn, view=view)
-        self.res, self.patch, self.reg, self.dn, self.view = res, patch, reg, dn, view
+        self.cfg = dict(res=res, patch=patch, d=d, enc=enc, step=step, heads=heads, reg=reg, dn=dn, view=view, walls=walls)
+        self.res, self.patch, self.reg, self.dn, self.view, self.walls = res, patch, reg, dn, view, walls
         if view:    # the room stays in view: every imagined step looks at the room picture again (the ball is only imagined)
             self.room_embed = nn.Linear(patch * patch, d)
             self.room_where = nn.Parameter(torch.randn((res // patch) ** 2, d) * 0.02)
@@ -97,6 +97,10 @@ class Eye(nn.Module):
         """Pictures -> inner state z [N,reg,d]. With the room in view, it also puts this room in view for the steps
         that follow (look=False: a glance that leaves the room in view as it is)."""
         N, P = img.shape[0], self.patch
+        if self.walls:   # draw the floor, ceiling and walls as solid, like platforms, instead of leaving them as the picture's edge
+            w = max(1, self.res // 64)
+            img = img.clone()
+            img[:, 2, :w] = 1; img[:, 2, -w:] = 1; img[:, 2, :, :w] = 1; img[:, 2, :, -w:] = 1
         x = img.unfold(2, P, P).unfold(3, P, P).permute(0, 2, 3, 1, 4, 5).reshape(N, -1, 3 * P * P)
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=img.is_cuda):   # the heavy part; the rest stays exact
             x = self.embed(x) + self.where
@@ -332,6 +336,7 @@ def main():
     ap.add_argument("--enc", type=int, default=4)
     ap.add_argument("--step", type=int, default=3)
     ap.add_argument("--reg", type=int, default=8)
+    ap.add_argument("--walls", type=int, default=0, help="1 = floor, ceiling and walls drawn as solid in the picture")
     ap.add_argument("--view", type=int, default=0, help="layers of a room encoder that every imagined step looks at again (0 = off)")
     ap.add_argument("--latent", type=float, default=1.0, help="weight of the agree-with-the-eye term")
     ap.add_argument("--test-rooms", type=int, default=3000)
@@ -361,7 +366,7 @@ def main():
     boxes, tb, P, stop, p0, v0 = rooms_on(dev, a.rooms, (lo, hi), a.seed, starts=True)
     T = P.shape[0] - 1; K = a.unroll; W = a.windows
     torch.backends.cuda.matmul.allow_tf32 = True; torch.backends.cudnn.allow_tf32 = True
-    net = Eye(a.res, a.patch, a.d, a.enc, a.step, reg=a.reg, dn=16 if a.odds else 0, view=a.view).to(dev)
+    net = Eye(a.res, a.patch, a.d, a.enc, a.step, reg=a.reg, dn=16 if a.odds else 0, view=a.view, walls=a.walls).to(dev)
     if a.init:
         miss = net.load_state_dict(torch.load(a.init, map_location=dev)["model"], strict=False).missing_keys
         print(f"starting from {a.init}" + (f" (new: {', '.join(miss)})" if miss else ""), flush=True)
