@@ -345,6 +345,9 @@ def main():
     ap.add_argument("--noise", type=float, nargs="*", default=[0.1, 0.3], help="sizes of the nudge to the inner state")
     ap.add_argument("--out", default="ballroom/runs/eye")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--fast", type=int, default=0, help="parallel training: short chains of this many moments, side by side (0 = off)")
+    ap.add_argument("--fast-batch", type=int, default=4096, help="rooms per fast step")
+    ap.add_argument("--long-every", type=int, default=8, help="with --fast: every this-many steps one long chain as before")
     ap.add_argument("--bench", type=int, default=0, help="speed test: run this many steps, print the speed, save nothing")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     a = ap.parse_args()
@@ -389,68 +392,100 @@ def main():
         valid = torch.arange(nb, device=dev)[None, :] <= last[:, None]
         print(f"emotion on: {100 * (learn < 0.5).float().mean().item():.0f}% of rooms are knife-edges (their own cloud splits), "
               f"measured in {time.time() - t1_:.0f}s", flush=True)
+    def fast_step():
+        """Learn many moments at once: from what it sees at moment t, imagine only a.fast moments, and check
+        every one of them against the truth and against what the eye would see there. Short chains run side by side
+        on the GPU, so far more moments are learned per second than with one long chain."""
+        S, B2 = a.fast, a.fast_batch
+        r = torch.randint(0, a.rooms, (B2,), device=dev)
+        t = (torch.rand(B2, device=dev) * (stop[r] + 3).float()).long().clamp(max=T - S - 2)
+        t = torch.where(torch.rand(B2, device=dev) < 0.1, torch.zeros_like(t), t)
+        br = tb[r]
+        z = net.see(render(P[t, r], P[t + 1, r], br, a.res))
+        room_src = net.hold_room()
+        l_shot = F.smooth_l1_loss(net.shot(z) / 0.3, P[stop[r], r] / 0.3, beta=0.1)
+        l_pos = l_rest = l_lat = 0.0
+        for k in range(S + 1):
+            y = net.read(z); now = t + 1 + k
+            l_pos = l_pos + F.smooth_l1_loss(y[:, :2] / 0.05, P[now, r] / 0.05, beta=0.2) / (S + 1)
+            l_rest = l_rest + F.binary_cross_entropy_with_logits(y[:, 2], (now >= stop[r]).float()) / (S + 1)
+            if k:
+                with torch.no_grad():
+                    z_eye = net.see(render(P[now - 1, r], P[now, r], br, a.res), look=False)
+                l_lat = l_lat + F.mse_loss(z, z_eye) / S
+            if k < S:
+                z = net.step(z)
+        loss = l_pos + 0.3 * l_rest + a.latent * l_lat + l_shot
+        loss.backward()
+        net.release_room(room_src)
+        return l_shot, dict(pos=l_pos.detach(), rest=l_rest.detach(), lat=l_lat.detach(), loss=loss.detach(), odds=0.0)
+
     while (it < a.iters) if a.iters else (time.time() - t0 < budget):
         frac = it / a.iters if a.iters else (time.time() - t0) / budget
         lr = a.lr * min(1.0, (it + 1) / 500) * (0.5 + 0.5 * np.cos(np.pi * min(1.0, frac))) + 1e-5
         for g in opt.param_groups:
             g["lr"] = lr
-        r = torch.randint(0, a.rooms, (a.batch,), device=dev)
-        # a moment on the true path: anywhere before rest (a quarter of the time the very start)
-        t = (torch.rand(a.batch, device=dev) * (stop[r] + 3).float()).long().clamp(max=T - W * K - 2)
-        t = torch.where(torch.rand(a.batch, device=dev) < 0.25, torch.zeros_like(t), t)
-        if a.emotion:                                                   # the other half: where it hurt, and can be learned
-            h = a.batch // 2
-            pri = (surp * (0.1 + learn[:, None]) * valid).flatten()
-            idx = torch.multinomial(pri, h, replacement=True)
-            r = torch.cat([r[:a.batch - h], idx // nb]); b = idx % nb
-            tb_ = (b * K + torch.randint(0, K, (h,), device=dev)).clamp(max=T - W * K - 2)
-            t = torch.cat([t[:a.batch - h], torch.minimum(tb_, (stop[idx // nb] + 3).clamp(max=T - W * K - 2))])
-        br = tb[r]
-        z = net.see(render(P[t, r], P[t + 1, r], br, a.res))
-        room_src = net.hold_room()
-        l_shot = F.smooth_l1_loss(net.shot(z) / 0.3, P[stop[r], r] / 0.3, beta=0.1)
-        opt.zero_grad(set_to_none=True)
-        tot = dict(pos=0.0, rest=0.0, lat=0.0, loss=0.0)
-        for w in range(W):                                                 # each window frees its memory before the next
-            t1 = t + 1 + w * K                                             # a long roll, learned one window at a time
-            tgt = P[t1[None, :] + ks[:, None], r[None, :]]                 # [K+1,B,2] true positions
-            at_rest = (t1[None, :] + ks[:, None] >= stop[r][None, :]).float()
-            ys, z = win(net, z, K, net.room)
-            if a.emotion:
-                e = F.smooth_l1_loss(ys[..., :2] / 0.05, tgt / 0.05, beta=0.2, reduction="none").mean(2)   # [K+1,B]
-                l_pos = (e * (1 + at_rest)).sum() / (1 + at_rest).sum()          # importance: the resting answer counts double
-                with torch.no_grad():                                          # remember the surprise of this moment
-                    bi = ((t1 - 1) // K).clamp(max=nb - 1)
-                    surp[r, bi] = 0.7 * surp[r, bi] + 0.3 * e.mean(0).clamp(max=10)
-            else:
-                l_pos = F.smooth_l1_loss(ys[..., :2] / 0.05, tgt / 0.05, beta=0.2)
-            l_rest = F.binary_cross_entropy_with_logits(ys[..., 2], at_rest)
-            with torch.no_grad():                                          # what the eye sees at that later moment
-                z_eye = net.see(render(P[t1 + K - 1, r], P[t1 + K, r], br, a.res), look=False)
-            l_lat = F.mse_loss(z, z_eye)
-            part = (l_pos + 0.3 * l_rest + a.latent * l_lat) / W + (l_shot if w == 0 else 0.0)
-            part.backward()
-            z = z.detach()                                                 # the next window starts from the rolled state, never from the eye
-            for k_, v_ in (("pos", l_pos), ("rest", l_rest), ("lat", l_lat), ("loss", part * W)):
-                tot[k_] = tot[k_] + v_.detach() / W                        # kept on the GPU: no waiting until a line is printed
-        net.release_room(room_src)
-        if a.odds:          # the other half: whole clouds from the very start, scored as distributions (energy score)
-            C = a.odds; nbo = max(1, a.batch // (2 * C)); ro = torch.randint(0, NO, (nbo,), device=dev)
-            zo = net.see(render(P[0, ro], P[1, ro], tb[ro], a.res)).repeat(C, 1, 1)          # [C*nbo,reg,d], copy-major
-            net.repeat_room(C); room_o = net.hold_room()
-            for w in range(W):
-                ys, zo = win(net, zo, K, net.room)
-                when = 1 + w * K + ks                                                       # [K+1] moments
-                X = ys[..., :2].view(K + 1, C, nbo, 2)
-                Y = PO[when][:, :, ro]                                                      # [K+1,C,nbo,2] the simulator's cloud
-                dist = lambda A, B: ((A[:, :, None] - B[:, None]) ** 2).sum(-1).add(1e-10).sqrt().mean((1, 2))
-                l_o = ((dist(X, Y) - 0.5 * dist(X, X)) / 0.05).mean()                     # a proper score: only the true spread wins
-                at_o = (when[:, None, None] >= SO[:, ro][None]).float().mean(1)            # [K+1,nbo] share of the cloud at rest
-                l_ro = F.binary_cross_entropy_with_logits(ys[..., 2].view(K + 1, C, nbo), at_o[:, None].expand(-1, C, -1))
-                ((l_o + 0.3 * l_ro) / W).backward()
-                zo = zo.detach()
-                tot["odds"] = tot.get("odds", 0.0) + l_o.detach() / W
-            net.release_room(room_o)
+        if a.fast and it % a.long_every:     # most steps: many short chains side by side (parallel), see fast_step
+            opt.zero_grad(set_to_none=True)
+            l_shot, tot = fast_step()
+        else:                                 # every long_every-th step: the long chain that keeps long imaginations on track
+            r = torch.randint(0, a.rooms, (a.batch,), device=dev)
+            # a moment on the true path: anywhere before rest (a quarter of the time the very start)
+            t = (torch.rand(a.batch, device=dev) * (stop[r] + 3).float()).long().clamp(max=T - W * K - 2)
+            t = torch.where(torch.rand(a.batch, device=dev) < 0.25, torch.zeros_like(t), t)
+            if a.emotion:                                                   # the other half: where it hurt, and can be learned
+                h = a.batch // 2
+                pri = (surp * (0.1 + learn[:, None]) * valid).flatten()
+                idx = torch.multinomial(pri, h, replacement=True)
+                r = torch.cat([r[:a.batch - h], idx // nb]); b = idx % nb
+                tb_ = (b * K + torch.randint(0, K, (h,), device=dev)).clamp(max=T - W * K - 2)
+                t = torch.cat([t[:a.batch - h], torch.minimum(tb_, (stop[idx // nb] + 3).clamp(max=T - W * K - 2))])
+            br = tb[r]
+            z = net.see(render(P[t, r], P[t + 1, r], br, a.res))
+            room_src = net.hold_room()
+            l_shot = F.smooth_l1_loss(net.shot(z) / 0.3, P[stop[r], r] / 0.3, beta=0.1)
+            opt.zero_grad(set_to_none=True)
+            tot = dict(pos=0.0, rest=0.0, lat=0.0, loss=0.0)
+            for w in range(W):                                                 # each window frees its memory before the next
+                t1 = t + 1 + w * K                                             # a long roll, learned one window at a time
+                tgt = P[t1[None, :] + ks[:, None], r[None, :]]                 # [K+1,B,2] true positions
+                at_rest = (t1[None, :] + ks[:, None] >= stop[r][None, :]).float()
+                ys, z = win(net, z, K, net.room)
+                if a.emotion:
+                    e = F.smooth_l1_loss(ys[..., :2] / 0.05, tgt / 0.05, beta=0.2, reduction="none").mean(2)   # [K+1,B]
+                    l_pos = (e * (1 + at_rest)).sum() / (1 + at_rest).sum()          # importance: the resting answer counts double
+                    with torch.no_grad():                                          # remember the surprise of this moment
+                        bi = ((t1 - 1) // K).clamp(max=nb - 1)
+                        surp[r, bi] = 0.7 * surp[r, bi] + 0.3 * e.mean(0).clamp(max=10)
+                else:
+                    l_pos = F.smooth_l1_loss(ys[..., :2] / 0.05, tgt / 0.05, beta=0.2)
+                l_rest = F.binary_cross_entropy_with_logits(ys[..., 2], at_rest)
+                with torch.no_grad():                                          # what the eye sees at that later moment
+                    z_eye = net.see(render(P[t1 + K - 1, r], P[t1 + K, r], br, a.res), look=False)
+                l_lat = F.mse_loss(z, z_eye)
+                part = (l_pos + 0.3 * l_rest + a.latent * l_lat) / W + (l_shot if w == 0 else 0.0)
+                part.backward()
+                z = z.detach()                                                 # the next window starts from the rolled state, never from the eye
+                for k_, v_ in (("pos", l_pos), ("rest", l_rest), ("lat", l_lat), ("loss", part * W)):
+                    tot[k_] = tot[k_] + v_.detach() / W                        # kept on the GPU: no waiting until a line is printed
+            net.release_room(room_src)
+            if a.odds:          # the other half: whole clouds from the very start, scored as distributions (energy score)
+                C = a.odds; nbo = max(1, a.batch // (2 * C)); ro = torch.randint(0, NO, (nbo,), device=dev)
+                zo = net.see(render(P[0, ro], P[1, ro], tb[ro], a.res)).repeat(C, 1, 1)          # [C*nbo,reg,d], copy-major
+                net.repeat_room(C); room_o = net.hold_room()
+                for w in range(W):
+                    ys, zo = win(net, zo, K, net.room)
+                    when = 1 + w * K + ks                                                       # [K+1] moments
+                    X = ys[..., :2].view(K + 1, C, nbo, 2)
+                    Y = PO[when][:, :, ro]                                                      # [K+1,C,nbo,2] the simulator's cloud
+                    dist = lambda A, B: ((A[:, :, None] - B[:, None]) ** 2).sum(-1).add(1e-10).sqrt().mean((1, 2))
+                    l_o = ((dist(X, Y) - 0.5 * dist(X, X)) / 0.05).mean()                     # a proper score: only the true spread wins
+                    at_o = (when[:, None, None] >= SO[:, ro][None]).float().mean(1)            # [K+1,nbo] share of the cloud at rest
+                    l_ro = F.binary_cross_entropy_with_logits(ys[..., 2].view(K + 1, C, nbo), at_o[:, None].expand(-1, C, -1))
+                    ((l_o + 0.3 * l_ro) / W).backward()
+                    zo = zo.detach()
+                    tot["odds"] = tot.get("odds", 0.0) + l_o.detach() / W
+                net.release_room(room_o)
         torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0); opt.step()
         it += 1
         if a.bench:                  # speed test: time the second half only (the first half warms up and compiles)
@@ -459,9 +494,11 @@ def main():
             elif it == a.bench:
                 torch.cuda.synchronize() if dev.startswith("cuda") else None
                 sps = (a.bench - a.bench // 2) / (time.time() - tb0)
+                per = ((a.long_every - 1) * a.fast_batch * (a.fast + 1) + a.batch * W * K) / a.long_every if a.fast else a.batch * W * K
                 mem = torch.cuda.max_memory_allocated() / 1e9 if dev.startswith("cuda") else 0
                 print(f"BENCH batch {a.batch:5d} compile {a.compile or 'off':16s} view {a.view} odds {a.odds}: {sps:5.2f} steps/s = "
-                      f"{sps * a.batch:7.0f} examples/s (each rolled {W * K} steps), peak memory {mem:.1f} GB", flush=True)
+                      f"{sps * per:8.0f} moments learned/s" + (f" (fast {a.fast} x {a.fast_batch}, long chain every {a.long_every})" if a.fast else "")
+                      + f", peak memory {mem:.1f} GB", flush=True)
                 return
         if it % 100 == 0:
             el = time.time() - t0
