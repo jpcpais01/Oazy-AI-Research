@@ -20,7 +20,7 @@ with what the eye would see at that later moment (a JEPA-style target), which ke
 The cloud of possibilities: the same start is asked many times, with the picture or the first inner state
 nudged a little, and every copy is rolled to its end. The cloud then votes: the middle of its biggest clump.
 """
-import argparse, json, os, time
+import argparse, json, math, os, time
 import numpy as np
 import torch
 import torch.nn as nn
@@ -46,11 +46,34 @@ def render(pa, pb, boxes, res):
     return torch.stack([ball(pa), ball(pb), plat], 1)
 
 
-class Eye(nn.Module):
-    def __init__(self, res=128, patch=16, d=192, enc=4, step=3, heads=4, reg=8, dn=0):
+class Look(nn.Module):
+    """The inner state looks at the room: its tokens ask, the room's patches answer. Starts silent (zero output)."""
+    def __init__(self, d, heads):
         super().__init__()
-        self.cfg = dict(res=res, patch=patch, d=d, enc=enc, step=step, heads=heads, reg=reg, dn=dn)
-        self.res, self.patch, self.reg, self.dn = res, patch, reg, dn
+        self.h = heads
+        self.nq = nn.LayerNorm(d); self.nk = nn.LayerNorm(d)
+        self.q = nn.Linear(d, d); self.kv = nn.Linear(d, 2 * d); self.proj = nn.Linear(d, d)
+        nn.init.zeros_(self.proj.weight); nn.init.zeros_(self.proj.bias)
+
+    def forward(self, x, room):
+        B, T, D = x.shape; S = room.shape[1]; h = self.h
+        q = self.q(self.nq(x)).view(B, T, h, D // h).transpose(1, 2)
+        k, v = self.kv(self.nk(room)).view(B, S, 2, h, D // h).permute(2, 0, 3, 1, 4)
+        a = ((q @ k.transpose(-1, -2)) / math.sqrt(D // h)).softmax(-1)
+        return x + self.proj((a @ v).transpose(1, 2).reshape(B, T, D))
+
+
+class Eye(nn.Module):
+    def __init__(self, res=128, patch=16, d=192, enc=4, step=3, heads=4, reg=8, dn=0, view=0):
+        super().__init__()
+        self.cfg = dict(res=res, patch=patch, d=d, enc=enc, step=step, heads=heads, reg=reg, dn=dn, view=view)
+        self.res, self.patch, self.reg, self.dn, self.view = res, patch, reg, dn, view
+        if view:    # the room stays in view: every imagined step looks at the room picture again (the ball is only imagined)
+            self.room_embed = nn.Linear(patch * patch, d)
+            self.room_where = nn.Parameter(torch.randn((res // patch) ** 2, d) * 0.02)
+            self.room_enc = nn.ModuleList(Block(d, heads) for _ in range(view))
+            self.room_norm = nn.LayerNorm(d)
+            self.look = nn.ModuleList(Look(d, heads) for _ in range(step))
         if dn:      # chance: every step draws a little fresh noise, so the same picture can have several futures
             self.noise_in = nn.Linear(dn, d)
             nn.init.zeros_(self.noise_in.weight); nn.init.zeros_(self.noise_in.bias)   # starts as the plain model
@@ -75,16 +98,27 @@ class Eye(nn.Module):
             m = torch.ones(N, x.shape[1], dtype=torch.bool, device=x.device)
             for b in self.enc:
                 x = b(x, m)
-        return self.enc_norm(x[:, :self.reg].float())
+            if self.view:   # the room alone (the platforms channel): carried next to the inner state, never changed by a step
+                r = img[:, 2:3].unfold(2, P, P).unfold(3, P, P).permute(0, 2, 3, 1, 4, 5).reshape(N, -1, P * P)
+                r = self.room_embed(r) + self.room_where
+                mr = torch.ones(N, r.shape[1], dtype=torch.bool, device=r.device)
+                for b in self.room_enc:
+                    r = b(r, mr)
+        z = self.enc_norm(x[:, :self.reg].float())
+        return torch.cat([z, self.room_norm(r.float())], 1) if self.view else z
 
     def step(self, z):
-        m = torch.ones(z.shape[0], z.shape[1], dtype=torch.bool, device=z.device)
-        x = z
+        room = z[:, self.reg:] if self.view else None
+        x = z[:, :self.reg]
+        m = torch.ones(x.shape[0], x.shape[1], dtype=torch.bool, device=z.device)
         if self.dn:
             x = x + self.noise_in(torch.randn(z.shape[0], self.dn, device=z.device))[:, None]
-        for b in self.stp:
+        for i, b in enumerate(self.stp):
             x = b(x, m)
-        return self.stp_norm(x)
+            if self.view:
+                x = self.look[i](x, room)
+        x = self.stp_norm(x)
+        return torch.cat([x, room], 1) if self.view else x
 
     def read(self, z):
         return self.read2(F.gelu(self.read1(z[:, 0])))
@@ -96,8 +130,8 @@ class Eye(nn.Module):
 @torch.no_grad()
 def roll(net, z, steps=360, noise=0.0):
     """Roll the inner state until the readout says the ball rests. Returns the final position."""
-    if noise:
-        z = z + noise * torch.randn_like(z)
+    if noise:                                   # nudge the inner state only, not the room it is looking at
+        z = torch.cat([z[:, :net.reg] + noise * torch.randn_like(z[:, :net.reg]), z[:, net.reg:]], 1)
     N = z.shape[0]
     out = torch.zeros(N, 2, device=z.device)
     live = torch.ones(N, dtype=torch.bool, device=z.device)
@@ -229,6 +263,7 @@ def main():
     ap.add_argument("--enc", type=int, default=4)
     ap.add_argument("--step", type=int, default=3)
     ap.add_argument("--reg", type=int, default=8)
+    ap.add_argument("--view", type=int, default=0, help="layers of a room encoder that every imagined step looks at again (0 = off)")
     ap.add_argument("--latent", type=float, default=1.0, help="weight of the agree-with-the-eye term")
     ap.add_argument("--test-rooms", type=int, default=3000)
     ap.add_argument("--windows", type=int, default=4, help="windows of --unroll steps rolled one after another in training")
@@ -251,7 +286,7 @@ def main():
     boxes, tb, P, stop, p0, v0 = rooms_on(dev, a.rooms, (lo, hi), a.seed, starts=True)
     T = P.shape[0] - 1; K = a.unroll; W = a.windows
     torch.backends.cuda.matmul.allow_tf32 = True; torch.backends.cudnn.allow_tf32 = True
-    net = Eye(a.res, a.patch, a.d, a.enc, a.step, reg=a.reg, dn=16 if a.odds else 0).to(dev)
+    net = Eye(a.res, a.patch, a.d, a.enc, a.step, reg=a.reg, dn=16 if a.odds else 0, view=a.view).to(dev)
     if a.init:
         miss = net.load_state_dict(torch.load(a.init, map_location=dev)["model"], strict=False).missing_keys
         print(f"starting from {a.init}" + (f" (new: {', '.join(miss)})" if miss else ""), flush=True)
@@ -268,7 +303,7 @@ def main():
         print(f"compiling the rolled window ({a.compile}); the first steps are slow while it compiles", flush=True)
     opt = torch.optim.AdamW(net.parameters(), a.lr, weight_decay=0.01)
     print(f"rooms {a.rooms} ({lo}-{hi} platforms) {time.time() - t0:.0f}s; eye model {sum(p.numel() for p in net.parameters()):,} weights "
-          f"on {dev}; {a.res}x{a.res} pictures, inner state {a.reg} tokens of {a.d}, rolled {W} x {K} steps", flush=True)
+          f"on {dev}; {a.res}x{a.res} pictures, inner state {a.reg} tokens of {a.d}" + (", the room stays in view" if a.view else "") + f", rolled {W} x {K} steps", flush=True)
     budget = a.minutes * 60; it = 0; t0 = time.time()
     ks = torch.arange(K + 1, device=dev)
     if a.emotion:
@@ -321,7 +356,7 @@ def main():
             l_rest = F.binary_cross_entropy_with_logits(ys[..., 2], at_rest)
             with torch.no_grad():                                          # what the eye sees at that later moment
                 z_eye = net.see(render(P[t1 + K - 1, r], P[t1 + K, r], br, a.res))
-            l_lat = F.mse_loss(z, z_eye)
+            l_lat = F.mse_loss(z[:, :net.reg], z_eye[:, :net.reg])
             part = (l_pos + 0.3 * l_rest + a.latent * l_lat) / W + (l_shot if w == 0 else 0.0)
             part.backward()
             z = z.detach()                                                 # the next window starts from the rolled state, never from the eye
