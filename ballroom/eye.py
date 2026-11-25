@@ -55,10 +55,15 @@ class Look(nn.Module):
         self.q = nn.Linear(d, d); self.kv = nn.Linear(d, 2 * d); self.proj = nn.Linear(d, d)
         nn.init.zeros_(self.proj.weight); nn.init.zeros_(self.proj.bias)
 
-    def forward(self, x, room):
-        B, T, D = x.shape; S = room.shape[1]; h = self.h
+    def keys(self, room):
+        """The room's answers, worked out once per picture: [2,B,h,S,dh]."""
+        B, S, D = room.shape
+        return self.kv(self.nk(room)).view(B, S, 2, self.h, D // self.h).permute(2, 0, 3, 1, 4)
+
+    def forward(self, x, kv):
+        B, T, D = x.shape; h = self.h
         q = self.q(self.nq(x)).view(B, T, h, D // h).transpose(1, 2)
-        k, v = self.kv(self.nk(room)).view(B, S, 2, h, D // h).permute(2, 0, 3, 1, 4)
+        k, v = kv[0], kv[1]
         a = ((q @ k.transpose(-1, -2)) / math.sqrt(D // h)).softmax(-1)
         return x + self.proj((a @ v).transpose(1, 2).reshape(B, T, D))
 
@@ -74,6 +79,7 @@ class Eye(nn.Module):
             self.room_enc = nn.ModuleList(Block(d, heads) for _ in range(view))
             self.room_norm = nn.LayerNorm(d)
             self.look = nn.ModuleList(Look(d, heads) for _ in range(step))
+        self.room = None    # the room in view: set by see(), read by every step() until the next see()
         if dn:      # chance: every step draws a little fresh noise, so the same picture can have several futures
             self.noise_in = nn.Linear(dn, d)
             nn.init.zeros_(self.noise_in.weight); nn.init.zeros_(self.noise_in.bias)   # starts as the plain model
@@ -88,8 +94,9 @@ class Eye(nn.Module):
         self.read1 = nn.Linear(d, d); self.read2 = nn.Linear(d, 3)   # x, y, rest logit
         self.shot1 = nn.Linear(d, d); self.shot2 = nn.Linear(d, 2)   # final x, y
 
-    def see(self, img):
-        """Pictures -> inner state z [N,reg,d]."""
+    def see(self, img, look=True):
+        """Pictures -> inner state z [N,reg,d]. With the room in view, it also puts this room in view for the steps
+        that follow (look=False: a glance that leaves the room in view as it is)."""
         N, P = img.shape[0], self.patch
         x = img.unfold(2, P, P).unfold(3, P, P).permute(0, 2, 3, 1, 4, 5).reshape(N, -1, 3 * P * P)
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=img.is_cuda):   # the heavy part; the rest stays exact
@@ -98,27 +105,45 @@ class Eye(nn.Module):
             m = torch.ones(N, x.shape[1], dtype=torch.bool, device=x.device)
             for b in self.enc:
                 x = b(x, m)
-            if self.view:   # the room alone (the platforms channel): carried next to the inner state, never changed by a step
+            if self.view and look:   # the room alone (the platforms channel), read once; every step asks it again
                 r = img[:, 2:3].unfold(2, P, P).unfold(3, P, P).permute(0, 2, 3, 1, 4, 5).reshape(N, -1, P * P)
                 r = self.room_embed(r) + self.room_where
                 mr = torch.ones(N, r.shape[1], dtype=torch.bool, device=r.device)
                 for b in self.room_enc:
                     r = b(r, mr)
-        z = self.enc_norm(x[:, :self.reg].float())
-        return torch.cat([z, self.room_norm(r.float())], 1) if self.view else z
+        if self.view and look:
+            r = self.room_norm(r.float())
+            self.room = [lk.keys(r) for lk in self.look]
+        return self.enc_norm(x[:, :self.reg].float())
 
-    def step(self, z):
-        room = z[:, self.reg:] if self.view else None
-        x = z[:, :self.reg]
+    def hold_room(self):
+        """Training learns one window at a time: the room in view becomes a leaf whose gradient adds up over the windows."""
+        if not self.view:
+            return None
+        src, self.room = self.room, [kv.detach().requires_grad_() for kv in self.room]
+        return src
+
+    def release_room(self, src):
+        """After the last window: pass the summed gradient on into the room encoder, once."""
+        if src is not None:
+            torch.autograd.backward(src, [kv.grad if kv.grad is not None else torch.zeros_like(kv) for kv in self.room])
+
+    def repeat_room(self, c):
+        """The same rooms for c copies of each inner state (copy-major, like z.repeat(c, 1, 1))."""
+        if self.view:
+            self.room = [kv.repeat(1, c, 1, 1, 1) for kv in self.room]
+
+    def step(self, z, room=None):
+        room = self.room if room is None else room
+        x = z
         m = torch.ones(x.shape[0], x.shape[1], dtype=torch.bool, device=z.device)
         if self.dn:
             x = x + self.noise_in(torch.randn(z.shape[0], self.dn, device=z.device))[:, None]
         for i, b in enumerate(self.stp):
             x = b(x, m)
             if self.view:
-                x = self.look[i](x, room)
-        x = self.stp_norm(x)
-        return torch.cat([x, room], 1) if self.view else x
+                x = self.look[i](x, room[i])
+        return self.stp_norm(x)
 
     def read(self, z):
         return self.read2(F.gelu(self.read1(z[:, 0])))
@@ -130,8 +155,8 @@ class Eye(nn.Module):
 @torch.no_grad()
 def roll(net, z, steps=360, noise=0.0):
     """Roll the inner state until the readout says the ball rests. Returns the final position."""
-    if noise:                                   # nudge the inner state only, not the room it is looking at
-        z = torch.cat([z[:, :net.reg] + noise * torch.randn_like(z[:, :net.reg]), z[:, net.reg:]], 1)
+    if noise:
+        z = z + noise * torch.randn_like(z)
     N = z.shape[0]
     out = torch.zeros(N, 2, device=z.device)
     live = torch.ones(N, dtype=torch.bool, device=z.device)
@@ -146,13 +171,13 @@ def roll(net, z, steps=360, noise=0.0):
     return out
 
 
-def window(net, z, K):
+def window(net, z, K, room=None):
     """Read, step, read ... K steps. Returns the K+1 readouts [K+1,N,3] and the last state."""
     ys = []
     for k in range(K + 1):
         ys.append(net.read(z))
         if k < K:
-            z = net.step(z)
+            z = net.step(z, room)
     return torch.stack(ys), z
 
 
@@ -338,6 +363,7 @@ def main():
             t = torch.cat([t[:a.batch - h], torch.minimum(tb_, (stop[idx // nb] + 3).clamp(max=T - W * K - 2))])
         br = tb[r]
         z = net.see(render(P[t, r], P[t + 1, r], br, a.res))
+        room_src = net.hold_room()
         l_shot = F.smooth_l1_loss(net.shot(z) / 0.3, P[stop[r], r] / 0.3, beta=0.1)
         opt.zero_grad(set_to_none=True)
         tot = dict(pos=0.0, rest=0.0, lat=0.0, loss=0.0)
@@ -345,7 +371,7 @@ def main():
             t1 = t + 1 + w * K                                             # a long roll, learned one window at a time
             tgt = P[t1[None, :] + ks[:, None], r[None, :]]                 # [K+1,B,2] true positions
             at_rest = (t1[None, :] + ks[:, None] >= stop[r][None, :]).float()
-            ys, z = win(net, z, K)
+            ys, z = win(net, z, K, net.room)
             if a.emotion:
                 e = F.smooth_l1_loss(ys[..., :2] / 0.05, tgt / 0.05, beta=0.2, reduction="none").mean(2)   # [K+1,B]
                 l_pos = (e * (1 + at_rest)).sum() / (1 + at_rest).sum()          # importance: the resting answer counts double
@@ -356,18 +382,20 @@ def main():
                 l_pos = F.smooth_l1_loss(ys[..., :2] / 0.05, tgt / 0.05, beta=0.2)
             l_rest = F.binary_cross_entropy_with_logits(ys[..., 2], at_rest)
             with torch.no_grad():                                          # what the eye sees at that later moment
-                z_eye = net.see(render(P[t1 + K - 1, r], P[t1 + K, r], br, a.res))
-            l_lat = F.mse_loss(z[:, :net.reg], z_eye[:, :net.reg])
+                z_eye = net.see(render(P[t1 + K - 1, r], P[t1 + K, r], br, a.res), look=False)
+            l_lat = F.mse_loss(z, z_eye)
             part = (l_pos + 0.3 * l_rest + a.latent * l_lat) / W + (l_shot if w == 0 else 0.0)
             part.backward()
             z = z.detach()                                                 # the next window starts from the rolled state, never from the eye
             for k_, v_ in (("pos", l_pos), ("rest", l_rest), ("lat", l_lat), ("loss", part * W)):
                 tot[k_] = tot[k_] + v_.detach() / W                        # kept on the GPU: no waiting until a line is printed
+        net.release_room(room_src)
         if a.odds:          # the other half: whole clouds from the very start, scored as distributions (energy score)
             C = a.odds; nbo = max(1, a.batch // (2 * C)); ro = torch.randint(0, NO, (nbo,), device=dev)
             zo = net.see(render(P[0, ro], P[1, ro], tb[ro], a.res)).repeat(C, 1, 1)          # [C*nbo,reg,d], copy-major
+            net.repeat_room(C); room_o = net.hold_room()
             for w in range(W):
-                ys, zo = win(net, zo, K)
+                ys, zo = win(net, zo, K, net.room)
                 when = 1 + w * K + ks                                                       # [K+1] moments
                 X = ys[..., :2].view(K + 1, C, nbo, 2)
                 Y = PO[when][:, :, ro]                                                      # [K+1,C,nbo,2] the simulator's cloud
@@ -378,6 +406,7 @@ def main():
                 ((l_o + 0.3 * l_ro) / W).backward()
                 zo = zo.detach()
                 tot["odds"] = tot.get("odds", 0.0) + l_o.detach() / W
+            net.release_room(room_o)
         torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0); opt.step()
         it += 1
         if a.bench:                  # speed test: time the second half only (the first half warms up and compiles)
