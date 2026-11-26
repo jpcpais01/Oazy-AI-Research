@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Creature</title>
+<style>
+:root{--bg:#eef1f5;--card:rgba(255,255,255,.72);--line:rgba(20,30,50,.08);--ink:#1d2433;--sub:#6b7385;--acc:#4a5bd4;--good:#3f9b6e;--bad:#d0583a;--warn:#c9932c}
+*{box-sizing:border-box}
+body{margin:0;background:linear-gradient(160deg,#f4f6fa,#e8ecf3);color:var(--ink);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:20px 16px 40px}
+h1{font:600 28px/1.1 Georgia,"Times New Roman",serif;margin:0}
+.tag{color:var(--sub);margin:4px 0 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;box-shadow:0 6px 24px rgba(30,40,70,.06)}
+.card h2{font:600 18px Georgia,serif;margin:0 0 2px}
+.card .sub{color:var(--sub);font-size:13px;margin-bottom:10px}
+.bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+select,button{font:inherit;border:1px solid var(--line);background:#fff;border-radius:10px;padding:7px 10px;color:var(--ink)}
+button{cursor:pointer}
+.grid{display:grid;grid-template-columns:1.15fr 1fr;gap:14px}
+@media (max-width:860px){.grid{grid-template-columns:1fr}}
+.eyes{display:flex;gap:8px}
+.eyes canvas{width:50%;aspect-ratio:1;image-rendering:pixelated;border-radius:10px;background:#cfd6e0}
+#map{width:100%;aspect-ratio:1;border-radius:12px;background:#e7ece4}
+.dream{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.dream canvas{width:100%;aspect-ratio:1;image-rendering:pixelated;border-radius:8px;background:#d8dde6}
+.dream div{font-size:12px;color:var(--sub);text-align:center}
+.meter{display:grid;grid-template-columns:80px 1fr 46px;gap:8px;align-items:center;font-size:13px;margin:4px 0}
+.meter .t{height:8px;border-radius:6px;background:rgba(0,0,0,.06);overflow:hidden}
+.meter .f{height:100%;border-radius:6px}
+.status{font-size:13px;color:var(--sub)}
+.charts{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px}
+.chart .n{font-size:13px;color:var(--sub)} .chart .v{font-size:13px}
+.chart svg{width:100%;height:70px}
+table{border-collapse:collapse;font-size:13px;width:100%}
+td{padding:3px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+td:first-child{color:var(--sub);width:42%}
+.legend{display:flex;flex-wrap:wrap;gap:10px;font-size:12px;color:var(--sub);margin-top:6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:-1px}
+.stack{display:flex;flex-direction:column;gap:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Creature</h1>
+  <div class="tag">A mind that learned to stay alive from its own eyes, ears and body. Nobody told it what anything is.</div>
+  <div class="card bar">
+    <label>Mind <select id="mind"></select></label>
+    <label>World <select id="mode"><option value="test">new (unseen)</option><option value="hard">hard</option><option value="train">like training</option></select></label>
+    <button id="neww">New world</button>
+    <span class="status" id="status">loading…</span>
+  </div>
+  <div class="grid">
+    <div class="stack">
+      <div class="card"><h2>What it sees</h2><div class="sub">Its two eyes, the real pixels, 120° each.</div>
+        <div class="eyes"><canvas id="eyeL"></canvas><canvas id="eyeR"></canvas></div></div>
+      <div class="card"><h2>What it imagines</h2><div class="sub">Its inner state 0.3 to 1.2 s ahead, drawn by a decoder that only watches (it never uses these pictures).</div>
+        <div class="dream" id="dream"></div></div>
+      <div class="card"><h2>How it feels</h2><div class="sub">Body feelings, and what its imagination expects.</div><div id="meters"></div></div>
+    </div>
+    <div class="stack">
+      <div class="card"><h2>From above</h2><div class="sub">Our view of its world. It never sees this.</div>
+        <canvas id="map" width="560" height="560"></canvas>
+        <div class="legend"><span><i style="background:#3b4a8f"></i>creature</span><span><i style="background:#f2a93b"></i>food</span><span><i style="background:#e0703a"></i>lava</span><span><i style="background:#7e4fc9"></i>predator</span><span><i style="background:#4b9ea6"></i>wanderer</span><span><i style="background:#d8d2a8"></i>strange being</span><span><i style="background:#c49a63"></i>crate</span></div></div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:14px"><h2>How it learned</h2><div class="sub" id="curvesub"></div><div class="charts" id="charts"></div></div>
+  <div class="card" style="margin-top:14px"><h2>About this mind</h2><div id="about"></div></div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+let since=-1,queue=[],cur=null,mindPath=null,cfgKey=null;
+const eyeL=$('eyeL'),eyeR=$('eyeR'),map=$('map').getContext('2d');
+const dreamEls=[];for(let i=0;i<4;i++){const d=document.createElement('div');const c=document.createElement('canvas');d.appendChild(c);const l=document.createElement('div');l.textContent='+'+(0.3*(i+1)).toFixed(1)+' s';d.appendChild(l);$('dream').appendChild(d);dreamEls.push(c)}
+function b64(s){const b=atob(s),a=new Uint8Array(b.length);for(let i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a}
+function drawRGB(cv,data,res,off,stride){cv.width=res;cv.height=res;const ctx=cv.getContext('2d'),im=ctx.createImageData(res,res);for(let p=0;p<res*res;p++){for(let k=0;k<3;k++)im.data[p*4+k]=data[p*stride+off+k];im.data[p*4+3]=255}ctx.putImageData(im,0,0)}
+function meter(name,v,col,fmt){return `<div class="meter"><span>${name}</span><div class="t"><div class="f" style="width:${Math.max(0,Math.min(1,v))*100}%;background:${col}"></div></div><span>${fmt??Math.round(v*100)+'%'}</span></div>`}
+let lastDream=null,lastFear=0,lastWb=[];
+function show(f){
+  const res=f.res,e=b64(f.eyes);drawRGB(eyeL,e,res,0,6);drawRGB(eyeR,e,res,3,6);
+  if(f.dream){lastDream=f.dream;lastFear=f.fear;lastWb=f.wb;f.dream.forEach((d,i)=>drawRGB(dreamEls[i],b64(d),res,0,3))}
+  const s=f.state;const I=s.intensity,E=s.ears;
+  const side=(k)=>Math.max(I[k*4+2],I[k*4+3]);
+  $('meters').innerHTML=meter('energy',s.energy,'var(--good)')+meter('health',s.health,'#4a8fd4')+meter('fear',lastFear,'var(--bad)',(lastFear*100).toFixed(1)+'%')+
+    meter('heat',Math.min(1,Math.max(...[0,1,2,3].map(k=>I[k*4]))/3),'#e0703a','')+meter('hears L',Math.min(1,(E[0]+E[1]+E[2]+E[3])/2),'#7e4fc9','')+meter('hears R',Math.min(1,(E[4]+E[5]+E[6]+E[7])/2),'#7e4fc9','')+
+    meter('touch',s.body[2],'#888','')+meter('holding',s.body[4],'#c49a63','');
+  $('status').textContent=`life ${f.life} · ${(f.t/10).toFixed(1)} s · food ${f.food}`+(f.end?` · ${f.end}`:'');
+  drawMap(s);
+}
+function drawMap(s){
+  const W=560,k=W/s.L,y=v=>W-v*k;map.clearRect(0,0,W,W);
+  for(let i=0;i<Math.ceil(s.L);i++)for(let j=0;j<Math.ceil(s.L);j++){map.fillStyle=(i+j)%2?'#e1e8dc':'#d7dfd2';map.fillRect(i*k,W-(j+1)*k,k,k)}
+  map.fillStyle='#e0703a';s.lava.forEach(l=>map.fillRect(l[0]*k,y(l[3]),(l[2]-l[0])*k,(l[3]-l[1])*k));
+  s.boxes.forEach(b=>{map.fillStyle=`rgb(${b[6]*255},${b[7]*255},${b[8]*255})`;map.globalAlpha=b[9]?0.95:0.85;map.fillRect(b[0]*k,y(b[4]),(b[3]-b[0])*k,(b[4]-b[1])*k);if(b[10]){map.strokeStyle='#3b4a8f';map.lineWidth=2;map.strokeRect(b[0]*k,y(b[4]),(b[3]-b[0])*k,(b[4]-b[1])*k)}});map.globalAlpha=1;
+  const fc=['#e8593e','#e9c92f','#5fcf4a'];s.food.forEach(f=>{map.fillStyle=fc[f[3]];map.beginPath();map.arc(f[0]*k,y(f[1]),5,0,7);map.fill()});
+  const dot=(p,r,c)=>{map.fillStyle=c;map.beginPath();map.arc(p[0]*k,y(p[1]),r*k,0,7);map.fill()};
+  dot(s.pred,.35,'#7e4fc9');dot(s.wand,.3,'#4b9ea6');map.fillStyle='#d8d2a8';map.fillRect((s.strange[0]-.3)*k,y(s.strange[1]+.3),.6*k,.6*k);
+  // eye cones (to the walls, fading like the haze)
+  const p=s.pos,h=s.head;
+  [-1,1].forEach(()=>{});
+  const g=map.createRadialGradient(p[0]*k,y(p[1]),0,p[0]*k,y(p[1]),12*k);g.addColorStop(0,'rgba(74,91,212,.22)');g.addColorStop(1,'rgba(74,91,212,0)');
+  map.fillStyle=g;map.beginPath();map.moveTo(p[0]*k,y(p[1]));map.arc(p[0]*k,y(p[1]),16*k,-(h+Math.PI/3),-(h-Math.PI/3));map.closePath();map.fill();
+  dot(p,.25,'#3b4a8f');map.strokeStyle='#fff';map.lineWidth=2;map.beginPath();map.moveTo(p[0]*k,y(p[1]));map.lineTo((p[0]+.35*Math.cos(h))*k,y(p[1]+.35*Math.sin(h)));map.stroke();
+}
+async function poll(){
+  try{const r=await (await fetch('/api/frames?since='+since)).json();
+    const key=JSON.stringify(r.cfg);if(key!==cfgKey){cfgKey=key;queue=[]}
+    for(const f of r.frames){queue.push(f);since=Math.max(since,f.seq)}}catch(e){}
+  setTimeout(poll,400)}
+let started=false;
+setInterval(()=>{if(!started&&queue.length<30)return;started=true;if(queue.length){show(queue.shift())}else started=false},100);
+async function loadMinds(){
+  const r=await (await fetch('/api/minds')).json();const sel=$('mind');sel.innerHTML='';
+  r.minds.forEach(m=>{const o=document.createElement('option');o.value=m.path;o.textContent=m.name;sel.appendChild(o)});
+  if(r.cfg){sel.value=r.cfg.path;$('mode').value=r.cfg.mode}
+  mindPath=sel.value;loadInfo()}
+async function select(){mindPath=$('mind').value;queue=[];started=false;await fetch(`/api/select?mind=${encodeURIComponent(mindPath)}&mode=${$('mode').value}`);loadInfo()}
+$('mind').onchange=select;$('mode').onchange=select;$('neww').onclick=select;
+function spark(rows,key,log){const pts=rows.filter(r=>r[key]!=null).map(r=>[r.min,r[key]]);if(pts.length<2)return null;
+  const xs=pts.map(p=>p[0]),vs=pts.map(p=>log?Math.log10(Math.max(p[1],1e-6)):p[1]);const x0=Math.min(...xs),x1=Math.max(...xs),v0=Math.min(...vs),v1=Math.max(...vs);
+  const d=pts.map((p,i)=>`${i?'L':'M'}${((p[0]-x0)/(x1-x0||1)*196+2).toFixed(1)},${(66-(vs[i]-v0)/(v1-v0||1)*62).toFixed(1)}`).join(' ');
+  return {d,last:pts[pts.length-1]}}
+const CH=[['test_steps','Survival in new worlds (steps)',0,'#3f9b6e'],['life_steps','Life length while training (steps)',0,'#3f9b6e'],['sen','Body feelings + ears error',1,'#4a5bd4'],['cont','Death prediction error',1,'#d0583a'],['kl','Surprise (KL)',0,'#7e4fc9'],['estd','Eye feature spread (std)',0,'#c9932c'],['rank','Eye effective rank',0,'#c9932c'],['wb','Imagined wellbeing',0,'#3f9b6e'],['me',"Mind's-eye picture error (page only)",1,'#888']];
+async function loadInfo(){
+  const c=await (await fetch('/api/curves?mind='+encodeURIComponent(mindPath))).json();
+  $('curvesub').textContent='Against minutes of training. Losses on a log scale.';
+  $('charts').innerHTML=CH.map(([k,n,lg,col])=>{const s=spark(c.rows||[],k,lg);if(!s)return'';return `<div class="chart"><div class="n">${n}</div><div class="v">${(+s.last[1]).toPrecision(3)} · ${s.last[0].toFixed(0)} min</div><svg viewBox="0 0 200 70" preserveAspectRatio="none"><path d="${s.d}" fill="none" stroke="${col}" stroke-width="1.6"/></svg></div>`}).join('');
+  const a=await (await fetch('/api/about?mind='+encodeURIComponent(mindPath))).json();
+  const rows=[['Eyes',`two, stereo, 120°, ${a.res} px each`],['Other senses','2 ears × 4 bands (outer ear dulls high sounds from behind); intensity: 4 sensors × 4 bands (heat, pressure, hum, field)'],['Body feelings','energy, health, touch, on ground, holding'],['Muscles','push, turn, jump, grip (raw, nothing scripted)'],['Drive','wellbeing = (energy + health) / 2, and staying alive'],['How it learns to see','eye kept rich by VICReg (vary, don\'t repeat); no picture is redrawn'],['Memory','512 numbers carried through life + 32 × 16 "moment" slots'],['Imagination',`${a.horizon} steps (${a.horizon/10} s) ahead, horizon γ = ${a.gamma}`],['Trained',`${a.minutes} min, ${a.frames? (a.frames/1e6).toFixed(1)+'M frames learned':''}, ${a.params}M parameters`],['Saved as',a.path]];
+  if(a.bench){for(const m of ['test','hard','train']){const b=a.bench[m];if(b)rows.push([`Bench: ${m} (${b.lives} lives)`,`${b.steps} steps, ${b.food} food, ${b.cap_pct}% reach 100 s; deaths ${Object.entries(b.deaths_pct).map(([k,v])=>k+' '+v+'%').join(', ')}`])}}
+  $('about').innerHTML='<table>'+rows.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('')+'</table>';
+}
+loadMinds().then(poll);
+</script>
+</body>
+</html>
