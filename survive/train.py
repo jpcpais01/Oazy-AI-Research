@@ -206,7 +206,11 @@ class Learner:
         l_cont = F.binary_cross_entropy_with_logits(cont_logit, cont)
         dyn = kl_cat(post.detach(), prior)
         rep = kl_cat(post, prior.detach())
-        l_kl = 0.5 * dyn.clamp(min=1.0).mean() + 0.1 * rep.clamp(min=1.0).mean()
+        # free bits: the prior is always pulled toward the posterior above 1 nat; the posterior is
+        # only squeezed toward the prior above rep_free nats. With no picture loss, nothing else
+        # asks the moment to keep what the eyes saw, so a 1-nat squeeze slowly pushed vision out
+        # of z (KL fell to the floor and foraging faded); rep_free 3 leaves room for it.
+        l_kl = 0.5 * dyn.clamp(min=1.0).mean() + 0.1 * rep.clamp(min=a.rep_free).mean()
         e_all = emb.flatten(0, 1)
         rows = getattr(a, "vic_rows", 0)
         if rows and e_all.shape[0] > rows:          # the 4096x4096 covariance on a random subset of moments
@@ -413,6 +417,7 @@ def main():
     ap.add_argument("--lr-wm", type=float, default=3e-4)
     ap.add_argument("--lr-ac", type=float, default=8e-5)
     ap.add_argument("--ent", type=float, default=3e-4)
+    ap.add_argument("--rep-free", type=float, default=3.0, help="free nats before the posterior is squeezed toward the prior (was 1)")
     ap.add_argument("--ent-squash", type=int, default=1, help="entropy of the real (tanh) muscles, not pre-tanh")
     ap.add_argument("--vic-var", type=float, default=1.0)
     ap.add_argument("--vic-cov", type=float, default=1.0)

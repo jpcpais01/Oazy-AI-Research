@@ -99,6 +99,7 @@ def run_arm(arm, ck, a, dev):
     mind.ent_squash = bool(a.ent_squash)
     args = SimpleNamespace(**{**ck["args"], "compile": a.compile, "compile_mode": "default"})
     args.vic_rows = getattr(args, "vic_rows", 2048)
+    args.rep_free = getattr(args, "rep_free", 1.0)
     learner = Learner(mind, args)
     world = World(a.envs, dev, mode=a.mode, seed=a.seed + 1, compile=bool(a.compile))
     actor = Actor(mind, world, res, dev, compile=bool(a.compile))
