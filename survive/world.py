@@ -76,7 +76,8 @@ def _jit(g, shape, dev, a=0.05):
 class World:
     """B arenas stepped together. All state lives in tensors on `device`."""
 
-    def __init__(self, B: int, device="cuda", mode="train", seed=0, metabolism=True):
+    def __init__(self, B: int, device="cuda", mode="train", seed=0, metabolism=True, compile=False):
+        self.compile, self._step_c = compile, None
         self.B, self.dev, self.metabolism = B, torch.device(device), metabolism
         self.g = torch.Generator(device=self.dev)
         self.g.manual_seed(seed)
@@ -112,18 +113,25 @@ class World:
     def _rand(self, *shape):
         return torch.rand(*shape, generator=self.g, device=self.dev)
 
-    def _free_points(self, idx, k, avoid_lava=True, margin=0.6):
-        """For each env in idx, k random floor points not inside boxes (and lava)."""
-        n, C = len(idx), 24
-        p = 0.8 + self._rand(n, k, C, 2) * (L - 1.6)
-        bmin, bmax = self.bmin[idx][:, None, None], self.bmax[idx][:, None, None]   # n,1,1,NB,3
+    def _sel(self, x, idx):
+        return x if idx is None else x[idx]
+
+    def _free_points(self, idx, k, avoid_lava=True, margin=0.6, gen=True):
+        """For each env in idx (None = all), k random floor points not inside boxes (and lava).
+        gen=False draws from the global generator (used inside steps, which may be compiled)."""
+        n, C = (self.B if idx is None else len(idx)), 24
+        r = self._rand(n, k, C, 2) if gen else torch.rand(n, k, C, 2, device=self.dev)
+        p = 0.8 + r * (L - 1.6)
+        S = lambda x: self._sel(x, idx)
+        bmin, bmax = S(self.bmin)[:, None, None], S(self.bmax)[:, None, None]   # n,1,1,NB,3
         inside = ((p[..., None, :] > bmin[..., :2] - margin) & (p[..., None, :] < bmax[..., :2] + margin)).all(-1)
-        bad = (inside & self.bact[idx][:, None, None]).any(-1)
+        bad = (inside & S(self.bact)[:, None, None]).any(-1)
         if avoid_lava:
-            lmin, lmax = self.lmin[idx][:, None, None], self.lmax[idx][:, None, None]
+            lmin, lmax = S(self.lmin)[:, None, None], S(self.lmax)[:, None, None]
             inl = ((p[..., None, :] > lmin - 0.3) & (p[..., None, :] < lmax + 0.3)).all(-1)
-            bad |= (inl & self.lact[idx][:, None, None]).any(-1)
-        score = (~bad).float() + self._rand(n, k, C) * 0.01      # first good candidate (random tie-break)
+            bad |= (inl & S(self.lact)[:, None, None]).any(-1)
+        tie = self._rand(n, k, C) if gen else torch.rand(n, k, C, device=self.dev)
+        score = (~bad).float() + tie * 0.01      # first good candidate (random tie-break)
         best = score.argmax(-1)
         return torch.gather(p, 2, best[..., None, None].expand(n, k, 1, 2)).squeeze(2)
 
@@ -197,25 +205,36 @@ class World:
         self.pressure[idx] = 0
         self._sense(self.pos)
 
-    def _place_food(self, idx, which):
-        """(Re)place food slots `which` (n,NF bool) of envs idx: on their ledge or on free floor."""
-        n = len(idx)
-        floor = self._free_points(idx, NF)                                       # n,NF,2
-        kinds = self.fkind[idx]
+    def _place_food(self, idx, which, gen=True):
+        """(Re)place food slots `which` (n,NF bool) of envs idx (None = all): on their ledge or on free floor."""
+        S = lambda x: self._sel(x, idx)
+        floor = self._free_points(idx, NF, gen=gen)                              # n,NF,2
+        n = floor.shape[0]
+        kinds = S(self.fkind)
         hz = self.food_half[kinds][..., 2]
-        led = self.fledge[idx]
+        led = S(self.fledge)
         lidx = led.clamp(min=0)
-        bmin = torch.gather(self.bmin[idx], 1, lidx[..., None].expand(n, NF, 3))
-        bmax = torch.gather(self.bmax[idx], 1, lidx[..., None].expand(n, NF, 3))
+        bmin = torch.gather(S(self.bmin), 1, lidx[..., None].expand(n, NF, 3))
+        bmax = torch.gather(S(self.bmax), 1, lidx[..., None].expand(n, NF, 3))
         on_ledge = led >= 0
         xy = torch.where(on_ledge[..., None], (bmin[..., :2] + bmax[..., :2]) / 2, floor)
         zc = torch.where(on_ledge, bmax[..., 2] + hz, hz)
         new = torch.cat([xy, zc[..., None]], -1)
-        self.fpos[idx] = torch.where(which[..., None], new, self.fpos[idx])
+        if idx is None:
+            self.fpos = torch.where(which[..., None], new, self.fpos)
+        else:
+            self.fpos[idx] = torch.where(which[..., None], new, self.fpos[idx])
 
     # ------------------------------------------------------------------ physics
     def step(self, action):
         """action (B,4) in [-1,1]. Returns (done, trunc, cause, ate_kind) for this step."""
+        if self.compile:
+            if self._step_c is None:
+                self._step_c = torch.compile(self._step)
+            return self._step_c(action)
+        return self._step(action)
+
+    def _step(self, action):
         B, dev = self.B, self.dev
         a = action.clamp(-1, 1)
         push, turn = a[:, 0], a[:, 1]
@@ -273,8 +292,7 @@ class World:
         # --- vertical: ground under the creature (floor or a box top it is over)
         over = ((p[:, None, :2] > bmin[..., :2]) & (p[:, None, :2] < bmax[..., :2])).all(-1) & self.bact
         over &= bmax[..., 2] <= old[:, None, 2] + STEP_UP + 1e-4
-        if holding.any():
-            over &= ~(torch.arange(NB, device=dev)[None] == self.held[:, None])
+        over &= ~(holding[:, None] & (torch.arange(NB, device=dev)[None] == self.held[:, None]))
         ground = torch.where(over, bmax[..., 2], torch.zeros_like(bmax[..., 2])).amax(-1)
         land = p[:, 2] <= ground
         p[:, 2] = torch.where(land, ground, p[:, 2])
@@ -296,7 +314,7 @@ class World:
         self.held = torch.where(can, pick, self.held)
         self.held = torch.where(~grip, torch.full_like(self.held, -1), self.held)
         holding = self.held >= 0
-        if holding.any():
+        if True:                       # (mask-safe for every env: no GPU->CPU wait)
             hi_ = self.held.clamp(min=0)
             size = (self.bmax[ar, hi_, :2] - self.bmin[ar, hi_, :2])
             target = p[:, :2] + fwd * (R_BODY + 0.32)
@@ -315,7 +333,7 @@ class World:
             self.bmax[ar, hi_, 2] = zb + hgt
         # dropped crates fall to whatever is under them
         free_c = self.bmov & self.bact & ~(holding[:, None] & (torch.arange(NB, device=dev)[None] == self.held[:, None]))
-        if free_c.any():
+        if True:
             cmin, cmax = self.bmin[..., :2], self.bmax[..., :2]
             ov = ((cmin[:, :, None] < self.bmax[:, None, :, :2]) & (cmax[:, :, None] > self.bmin[:, None, :, :2])).all(-1)
             ov &= self.bact[:, None, :] & ~torch.eye(NB, dtype=torch.bool, device=dev)[None]
@@ -353,10 +371,8 @@ class World:
         self.fup &= ~eaten
         self.ftimer = torch.where(eaten, torch.full_like(self.ftimer, 200), (self.ftimer - 1).clamp(min=0))
         respawn = self.fslot & ~self.fup & (self.ftimer == 0)
-        if respawn.any():
-            envs = respawn.any(-1).nonzero().squeeze(-1)
-            self._place_food(envs, respawn[envs])
-            self.fup |= respawn
+        self._place_food(None, respawn, gen=False)      # all envs, only the slots due (no sync)
+        self.fup |= respawn
 
         # --- beings
         self._move_beings(p)
@@ -411,12 +427,12 @@ class World:
         # predator: walks straight at the creature (with a little wobble), slides around boxes
         to = p[:, :2] - self.pred
         d = to.norm(dim=-1, keepdim=True).clamp(min=1e-4)
-        wob = (self._rand(B, 2) - 0.5) * 0.6
+        wob = (torch.rand(B, 2, device=self.dev) - 0.5) * 0.6
         step = (to / d + wob) * (self.pred_speed * DT)[:, None]
         step = torch.where(d > 0.55, step, torch.zeros_like(step))
         self.pred = self._slide(self.pred + step, PRED_R)
         # wanderer: a slow random walk
-        self.wand_dir = self.wand_dir + (self._rand(B) - 0.5) * 0.8
+        self.wand_dir = self.wand_dir + (torch.rand(B, device=self.dev) - 0.5) * 0.8
         w = torch.stack([torch.cos(self.wand_dir), torch.sin(self.wand_dir)], -1) * 0.8 * DT
         nw = self._slide(self.wand + w, WAND_R)
         stuck = (nw - (self.wand + w)).norm(dim=-1) > 1e-3
@@ -427,9 +443,8 @@ class World:
         d = to.norm(dim=-1, keepdim=True).clamp(min=1e-4)
         self.strange = self._slide(self.strange + to / d * 0.4 * DT, STRANGE_HALF)
         arrived = d.squeeze(-1) < 0.5
-        if arrived.any():
-            idx = arrived.nonzero().squeeze(-1)
-            self.strange_goal[idx] = self._free_points(idx, 1, avoid_lava=False)[:, 0]
+        new_goal = self._free_points(None, 1, avoid_lava=False, gen=False)[:, 0]
+        self.strange_goal = torch.where(arrived[:, None], new_goal, self.strange_goal)
 
     # ------------------------------------------------------------------ senses
     def _sense(self, p):

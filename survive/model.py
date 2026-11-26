@@ -61,7 +61,7 @@ class Eye(nn.Module):
         self.net = nn.Sequential(*layers)
 
     def forward(self, img_u8):
-        x = img_u8.float() / 255.0 - 0.5
+        x = (img_u8.float() / 255.0 - 0.5).contiguous(memory_format=torch.channels_last)
         return self.net(x).flatten(1)
 
 
@@ -114,7 +114,9 @@ class Mind(nn.Module):
 
     @staticmethod
     def sample(probs):
-        idx = torch.multinomial(probs.reshape(-1, Z_CLS), 1).view(probs.shape[:-1])
+        # Gumbel-max: the same draw as multinomial, but a few fused element-wise ops (compiles well)
+        u = torch.rand_like(probs).clamp_(1e-10, 1.0)
+        idx = (torch.log(probs) - torch.log(-torch.log(u))).argmax(-1)
         hard = F.one_hot(idx, Z_CLS).to(probs.dtype)
         return (hard + probs - probs.detach()).flatten(-2)              # straight-through
 

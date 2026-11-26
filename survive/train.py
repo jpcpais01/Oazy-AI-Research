@@ -65,126 +65,182 @@ def lambda_returns(r, c, v, gamma, lam):
     return torch.stack(out)
 
 
+METRICS = ["sen", "cont", "kl", "var", "cov", "estd", "me", "actor", "critic", "wb", "ret", "ent", "gn"]
+
+
 class Learner:
+    """One learning update = world model + mind's eye + actor/critic in imagination.
+
+    Speed: the three parts are pure functions of tensors, compiled with torch.compile (the
+    32-step and 15-step loops unroll into a few hundred fused kernels instead of thousands of
+    tiny launches); optimizers are fused; nothing waits on the GPU (metrics stay on the GPU and
+    are read every 100 updates).
+    """
+
     def __init__(self, mind: Mind, args):
         self.m, self.a = mind, args
+        dev = next(mind.parameters()).device
+        fused = dict(fused=True) if dev.type == "cuda" else {}
         wm = [p for n, p in mind.named_parameters() if not n.startswith(("actor", "critic", "slow_critic", "minds_eye"))]
-        self.opt_wm = torch.optim.Adam(wm, lr=args.lr_wm, eps=1e-8)
         self.wm_params = wm
-        self.opt_actor = torch.optim.Adam(mind.actor.parameters(), lr=args.lr_ac, eps=1e-5)
-        self.opt_critic = torch.optim.Adam(mind.critic.parameters(), lr=args.lr_ac, eps=1e-5)
-        self.opt_me = torch.optim.Adam(mind.minds_eye.parameters(), lr=3e-4)
-        self.ret_lo = self.ret_hi = None
+        self.opt_wm = torch.optim.Adam(wm, lr=args.lr_wm, eps=1e-8, **fused)
+        self.opt_actor = torch.optim.Adam(mind.actor.parameters(), lr=args.lr_ac, eps=1e-5, **fused)
+        self.opt_critic = torch.optim.Adam(mind.critic.parameters(), lr=args.lr_ac, eps=1e-5, **fused)
+        self.opt_me = torch.optim.Adam(mind.minds_eye.parameters(), lr=3e-4, **fused)
+        self.ret_lo = torch.zeros((), device=dev)
+        self.ret_hi = torch.zeros((), device=dev)
+        self.first_call = True
+        self.amp = bool(dev.type == "cuda" and args.bf16)
+        mode = getattr(args, "compile_mode", "default")
+        comp = (lambda f: torch.compile(f, mode=None if mode == "default" else mode)) if getattr(args, "compile", 0) else (lambda f: f)
+        self.wm_fn, self.me_fn, self.ac_fn = comp(self._wm), comp(self._me), comp(self._ac)
 
-    def update(self, batch):
+    def _autocast(self):
+        return torch.autocast("cuda", dtype=torch.bfloat16, enabled=self.amp)
+
+    # ------------------------------------------------ world model
+    def _wm(self, img, sen, act, first, cont, h0):
         m, a = self.m, self.a
-        bs, T = batch["first"].shape
-        dev = batch["first"].device
-        amp = torch.autocast("cuda", dtype=torch.bfloat16, enabled=bool(dev.type == "cuda" and a.bf16))
-        # ------------------------------------------------ world model
-        with amp:
-            emb = m.eye(batch["img"].flatten(0, 1)).view(bs, T, -1)
-        h = batch["h0"]
-        z = torch.zeros(bs, Z_DIM, device=dev)
-        hs, zs, posts, priors = [], [], [], []
+        bs, T = first.shape
+        with self._autocast():
+            emb = m.eye(img.flatten(0, 1)).view(bs, T, -1)
+            # the posterior's first layer, split: the part that sees eye+senses is done for all
+            # moments at once; only the memory part runs inside the loop
+            W, bias = m.post[0].weight, m.post[0].bias
+            xin = F.linear(torch.cat([m.eye_in(emb), sen.to(emb.dtype)], -1), W[:, H_DIM:], bias)
+        post_rest = m.post[1:]
+        h = h0
+        z = torch.zeros(bs, Z_DIM, device=h0.device)
+        firstf = first.float()[..., None]
+        hs, zs, posts = [], [], []
         for t in range(T):
-            f = batch["first"][:, t].float()[:, None]
             if t > 0:      # (at t = 0 the stored memory is exactly what the creature had)
-                with amp:
-                    h = m.step_h(h * (1 - f), z * (1 - f), batch["act"][:, t] * (1 - f))
-            with amp:
-                q = m.observe(h, emb[:, t], batch["sen"][:, t])
-                p = m.imagine_z(h)
+                keep = 1 - firstf[:, t]
+                with self._autocast():
+                    h = m.step_h(h * keep, z * keep, act[:, t] * keep)
+            with self._autocast():
+                q = m.dist(post_rest(F.linear(h.to(xin.dtype), W[:, :H_DIM]) + xin[:, t]))
             z = m.sample(q)
-            hs.append(h); zs.append(z); posts.append(q); priors.append(p)
-        hs, zs = torch.stack(hs, 1), torch.stack(zs, 1)
-        post, prior = torch.stack(posts, 1), torch.stack(priors, 1)
+            hs.append(h); zs.append(z); posts.append(q)
+        hs, zs, post = torch.stack(hs, 1), torch.stack(zs, 1), torch.stack(posts, 1)
         feat = torch.cat([hs, zs], -1)
-        with amp:
+        with self._autocast():
+            prior = m.imagine_z(hs)
             sen_pred = m.sense_head(feat).float()
             cont_logit = m.cont_head(feat).float().squeeze(-1)
-        l_sen = F.mse_loss(sen_pred, batch["sen"], reduction="none").sum(-1).mean()
-        l_cont = F.binary_cross_entropy_with_logits(cont_logit, batch["cont"])
+        l_sen = F.mse_loss(sen_pred, sen, reduction="none").sum(-1).mean()
+        l_cont = F.binary_cross_entropy_with_logits(cont_logit, cont)
         dyn = kl_cat(post.detach(), prior)
         rep = kl_cat(post, prior.detach())
         l_kl = 0.5 * dyn.clamp(min=1.0).mean() + 0.1 * rep.clamp(min=1.0).mean()
-        var, cov, estd = vicreg(emb.flatten(0, 1))
-        l_eye = a.vic_var * var + a.vic_cov * cov
-        loss = l_sen + l_cont + l_kl + l_eye
-        self.opt_wm.zero_grad(set_to_none=True)
-        loss.backward()
-        gn = torch.nn.utils.clip_grad_norm_(self.wm_params, 1000.0)
-        self.opt_wm.step()
+        e_all = emb.flatten(0, 1)
+        rows = getattr(a, "vic_rows", 0)
+        if rows and e_all.shape[0] > rows:          # the 4096x4096 covariance on a random subset of moments
+            e_all = e_all[torch.randperm(e_all.shape[0], device=e_all.device)[:rows]]
+        var, cov, estd = vicreg(e_all)
+        loss = l_sen + l_cont + l_kl + a.vic_var * var + a.vic_cov * cov
+        met = torch.stack([l_sen, l_cont, dyn.mean(), var, cov, estd]).detach()
+        return loss, hs.detach(), zs.detach(), met, emb.detach()
 
-        # ------------------------------------------------ mind's eye (detached, page only)
-        with amp:
-            pic = m.minds_eye(feat.detach().flatten(0, 1)[:: max(1, T // 4)]).float()
-        tgt = batch["img"].flatten(0, 1)[:: max(1, T // 4), :3].float() / 255.0
-        l_me = F.mse_loss(pic, tgt)
-        self.opt_me.zero_grad(set_to_none=True)
-        l_me.backward()
-        self.opt_me.step()
+    # ------------------------------------------------ mind's eye (detached, page only)
+    def _me(self, feat, img):
+        with self._autocast():
+            pic = self.m.minds_eye(feat).float()
+        return F.mse_loss(pic, img[:, :3].float() / 255.0)
 
-        # ------------------------------------------------ imagination: actor and critic
-        for p_ in self.wm_params:
-            p_.requires_grad_(False)
-        h = hs.detach().flatten(0, 1)
-        z = zs.detach().flatten(0, 1)
+    # ------------------------------------------------ imagination: actor and critic
+    def _ac(self, hs, zs, cont0, ret_lo, ret_hi, init):
+        m, a = self.m, self.a
+        h, z = hs.flatten(0, 1), zs.flatten(0, 1)
         fts, ents = [torch.cat([h, z], -1)], []
         for _ in range(a.horizon):
-            with amp:
+            with self._autocast():
                 act, ent = m.act(fts[-1])
                 h = m.step_h(h, z, act)
                 z = m.sample(m.imagine_z(h))
             fts.append(torch.cat([h, z], -1))
             ents.append(ent)
         ft = torch.stack(fts)                                              # H+1, N, FEAT
-        with amp:
+        with self._autocast():
             sen = m.sense_head(ft).float()
             cont = torch.sigmoid(m.cont_head(ft).float().squeeze(-1))
             v_slow = m.slow_critic(ft).float().squeeze(-1)
-        for p_ in self.wm_params:
-            p_.requires_grad_(True)
         r = wellbeing(sen[1:])                                             # reward on arrival
         c = cont[1:]
         scale = 1.0 / (1 - a.gamma)
         ret = lambda_returns(r, c, v_slow * scale, a.gamma, a.lam)         # H, N
-        start_alive = batch["cont"].flatten()[None]                     # don't imagine from a dead moment
+        start_alive = cont0.flatten()[None]                                # don't imagine from a dead moment
         w = (torch.cumprod(torch.cat([torch.ones_like(c[:1]), c[:-1]], 0), 0) * start_alive).detach()
         # return normalisation (Dreamer v3): divide by the 5-95% range, at least 1
-        lo, hi = torch.quantile(ret.detach().flatten()[:65536], torch.tensor([0.05, 0.95], device=dev))
-        if self.ret_lo is None:
-            self.ret_lo, self.ret_hi = lo, hi
-        self.ret_lo = 0.99 * self.ret_lo + 0.01 * lo
-        self.ret_hi = 0.99 * self.ret_hi + 0.01 * hi
-        S = torch.clamp(self.ret_hi - self.ret_lo, min=1.0)
+        qs = torch.quantile(ret.detach().flatten()[:65536], torch.tensor([0.05, 0.95], device=ret.device))
+        lo = torch.where(init, qs[0], 0.99 * ret_lo + 0.01 * qs[0])
+        hi = torch.where(init, qs[1], 0.99 * ret_hi + 0.01 * qs[1])
+        S = torch.clamp(hi - lo, min=1.0)
         ent = torch.stack(ents)
         l_actor = -(w * ret / S).mean() - a.ent * (w * ent).mean()
-        self.opt_actor.zero_grad(set_to_none=True)
-        l_actor.backward(inputs=list(m.actor.parameters()))
-        torch.nn.utils.clip_grad_norm_(m.actor.parameters(), 100.0)
-        self.opt_actor.step()
-        with amp:
+        with self._autocast():
             v = m.critic(ft[:-1].detach()).float().squeeze(-1)
-        target = (ret.detach() / scale)
+        target = ret.detach() / scale
         l_critic = (w * ((v - target) ** 2 + (v - v_slow[:-1].detach()) ** 2)).mean()
+        met = torch.stack([l_actor, l_critic, r.mean(), ret.mean() / scale, ent.mean()]).detach()
+        return l_actor, l_critic, lo.detach(), hi.detach(), met
+
+    def update(self, batch):
+        m, a = self.m, self.a
+        T = batch["first"].shape[1]
+        loss, hs, zs, met_wm, emb = self.wm_fn(batch["img"], batch["sen"], batch["act"], batch["first"],
+                                               batch["cont"], batch["h0"])
+        self.opt_wm.zero_grad(set_to_none=True)
+        loss.backward()
+        gn = torch.nn.utils.clip_grad_norm_(self.wm_params, 1000.0, foreach=True)
+        self.opt_wm.step()
+
+        k = max(1, T // 4)
+        l_me = self.me_fn(torch.cat([hs, zs], -1)[:, ::k].flatten(0, 1), batch["img"][:, ::k].flatten(0, 1))
+        self.opt_me.zero_grad(set_to_none=True)
+        l_me.backward()
+        self.opt_me.step()
+
+        for p_ in self.wm_params:
+            p_.requires_grad_(False)
+        init = torch.tensor(self.first_call, device=hs.device)
+        l_actor, l_critic, self.ret_lo, self.ret_hi, met_ac = self.ac_fn(hs, zs, batch["cont"], self.ret_lo, self.ret_hi, init)
+        self.first_call = False
+        self.opt_actor.zero_grad(set_to_none=True)
         self.opt_critic.zero_grad(set_to_none=True)
-        l_critic.backward()
-        torch.nn.utils.clip_grad_norm_(m.critic.parameters(), 100.0)
+        (l_actor + l_critic).backward()          # critic sees detached states; actor never touches the critic
+        for p_ in self.wm_params:
+            p_.requires_grad_(True)
+        torch.nn.utils.clip_grad_norm_(m.actor.parameters(), 100.0, foreach=True)
+        torch.nn.utils.clip_grad_norm_(m.critic.parameters(), 100.0, foreach=True)
+        self.opt_actor.step()
         self.opt_critic.step()
         with torch.no_grad():
-            for ps, pc in zip(m.slow_critic.parameters(), m.critic.parameters()):
-                ps.lerp_(pc, 0.02)
-        return dict(sen=l_sen.item(), cont=l_cont.item(), kl=dyn.mean().item(), var=var.item(), cov=cov.item(),
-                    estd=estd.item(), me=l_me.item(), actor=l_actor.item(), critic=l_critic.item(),
-                    wb=r.mean().item(), ret=(ret.mean() / scale).item(), ent=ent.mean().item(), gn=gn.item(),
-                    _emb=emb)
+            torch._foreach_lerp_(list(m.slow_critic.parameters()), list(m.critic.parameters()), 0.02)
+        met = torch.cat([met_wm, l_me.detach()[None], met_ac[:2], met_ac[2:], gn.detach().float()[None]])
+        return met, emb
+
+
+def _policy_step(m, h, z, prev_a, first, img, sen, det: bool, amp: bool):
+    """One moment of a creature: update memory, look, settle the moment, choose muscles."""
+    keep = 1 - first.float()[:, None]
+    with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
+        h = m.step_h(h * keep, z * keep, prev_a * keep)
+        emb = m.eye(img)
+        q = m.observe(h, emb, sen)
+    z = m.sample(q)
+    with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
+        a, _ = m.act(torch.cat([h, z], -1), deterministic=det)
+    return a.float(), h.float(), z.float(), emb
+
+
+_policy_compiled = None
 
 
 class Actor:
     """Runs the B creatures in their worlds with the current mind."""
 
-    def __init__(self, mind, world, res, dev, deterministic=False):
+    def __init__(self, mind, world, res, dev, deterministic=False, compile=False):
         self.m, self.w, self.res, self.dev, self.det = mind, world, res, dev, deterministic
         B = world.B
         self.h, self.z = mind.initial(B, dev)
@@ -193,24 +249,20 @@ class Actor:
         self.cont = torch.ones(B, dtype=torch.bool, device=dev)
         self.life_t = torch.zeros(B, dtype=torch.long, device=dev)
         self.life_food = torch.zeros(B, 3, device=dev)
+        global _policy_compiled
+        if compile and _policy_compiled is None:
+            _policy_compiled = torch.compile(_policy_step)
+        self.policy = _policy_compiled if compile else _policy_step
+        self.compile = compile
 
     @torch.no_grad()
     def observe_act(self, bf16=True):
-        m, B = self.m, self.w.B
-        img = render(self.w, self.res)
+        img = render(self.w, self.res, compile=self.compile)
         sen = self.w.senses.clone()
-        f = self.first.float()[:, None]
-        amp = torch.autocast("cuda", dtype=torch.bfloat16, enabled=bool(self.dev.type == "cuda" and bf16))
-        with amp:
-            h = m.step_h(self.h * (1 - f), self.z * (1 - f), self.prev_a * (1 - f))
-            emb = m.eye(img)
-            q = m.observe(h, emb, sen)
-        z = m.sample(q)
-        with amp:
-            a, _ = m.act(torch.cat([h, z], -1), deterministic=self.det)
-        a = a.float()
+        amp = bool(self.dev.type == "cuda" and bf16)
+        a, h, z, emb = self.policy(self.m, self.h, self.z, self.prev_a, self.first, img, sen, self.det, amp)
         rec = (img, sen, self.prev_a.clone(), self.first.clone(), self.cont.clone(), h.half())
-        self.h, self.z = h.float(), z.float()
+        self.h, self.z = h, z
         return a, rec, emb
 
     def advance(self, a):
@@ -244,10 +296,10 @@ class Actor:
         return stats
 
 
-def quick_test(mind, res, dev, mode="test", n=64, seed=12345, bf16=True):
+def quick_test(mind, res, dev, mode="test", n=64, seed=12345, bf16=True, compile=False):
     """n lives in unseen worlds, acting on habit. Returns mean steps alive and food."""
-    w = World(n, dev, mode=mode, seed=seed)
-    act = Actor(mind, w, res, dev, deterministic=True)
+    w = World(n, dev, mode=mode, seed=seed, compile=compile)
+    act = Actor(mind, w, res, dev, deterministic=True, compile=compile)
     alive = torch.ones(n, dtype=torch.bool, device=dev)
     steps = torch.zeros(n, device=dev)
     food = torch.zeros(n, device=dev)
@@ -282,7 +334,10 @@ def main():
     ap.add_argument("--ent", type=float, default=3e-4)
     ap.add_argument("--vic-var", type=float, default=1.0)
     ap.add_argument("--vic-cov", type=float, default=1.0)
+    ap.add_argument("--vic-rows", type=int, default=2048, help="moments used for VICReg (0 = all)")
     ap.add_argument("--bf16", type=int, default=1)
+    ap.add_argument("--compile", type=int, default=1, help="torch.compile the learner and the creatures' step")
+    ap.add_argument("--compile-mode", default="default", help="default | reduce-overhead | max-autotune-no-cudagraphs")
     ap.add_argument("--prefill", type=int, default=64, help="random steps before learning")
     ap.add_argument("--save-every", type=float, default=15)
     ap.add_argument("--test-every", type=float, default=15)
@@ -300,19 +355,22 @@ def main():
     (out / "args.json").write_text(json.dumps(vars(a), indent=1))
     mind = Mind(a.res).to(dev)
     print(f"mind: {sum(p.numel() for p in mind.parameters()) / 1e6:.1f}M parameters, eyes {a.res} px", flush=True)
-    world = World(a.envs, dev, mode="train", seed=a.seed)
+    world = World(a.envs, dev, mode="train", seed=a.seed, compile=bool(a.compile))
     per = 6 * a.res * a.res + SENSES * 2 + ACT * 2 + 2 + H_DIM * 2
     cap = max(a.seq * 4, int(a.replay_gb * 1e9 / (per * a.envs)))
     print(f"replay: {cap} steps per world ({cap / 10:.0f} s), {cap * a.envs / 1e6:.2f}M moments", flush=True)
     rb = Replay(cap, a.envs, a.res, dev)
     learner = Learner(mind, a)
-    actor = Actor(mind, world, a.res, dev)
+    actor = Actor(mind, world, a.res, dev, compile=a.compile)
     log = open(out / "log.jsonl", "a")
     t0 = time.time()
     last_save = last_test = t0
     steps = updates = 0
-    lives = dict(n=0, t=0.0, food=torch.zeros(3), cause=torch.zeros(6))
-    stats_acc = {}
+    def fresh_lives():
+        return dict(n=torch.zeros((), device=dev), t=torch.zeros((), device=dev),
+                    food=torch.zeros(3, device=dev), cause=torch.zeros(6, device=dev))
+    lives = fresh_lives()
+    stats_acc = torch.zeros(len(METRICS), device=dev)
     while True:
         el = (time.time() - t0) / 60
         a_, rec, _ = actor.observe_act(a.bf16)
@@ -321,36 +379,35 @@ def main():
         rb.add(*rec)
         st = actor.env_step(a_)
         steps += 1
-        fin = st["dead"] | st["trunc"]
-        if fin.any():
-            lives["n"] += int(fin.sum())
-            lives["t"] += float(st["t"][fin].sum())
-            lives["food"] += st["food"][fin].sum(0).cpu()
-            cc = torch.where(st["dead"], st["cause"], torch.zeros_like(st["cause"]))[fin]
-            lives["cause"] += torch.bincount(cc, minlength=6)[:6].float().cpu()
+        fin = (st["dead"] | st["trunc"]).float()            # all on the GPU: nothing waits here
+        lives["n"] += fin.sum()
+        lives["t"] += (st["t"].float() * fin).sum()
+        lives["food"] += (st["food"] * fin[:, None]).sum(0)
+        cc = torch.where(st["dead"], st["cause"], torch.zeros_like(st["cause"]))
+        lives["cause"] += torch.zeros(6, device=dev).index_add_(0, cc.clamp(0, 5), fin)
         if rb.n >= a.seq + 1 and steps >= a.prefill and steps % a.every == 0:
-            r = learner.update(rb.sample(a.batch, a.seq))
-            emb = r.pop("_emb")
+            met, emb = learner.update(rb.sample(a.batch, a.seq))
             updates += 1
-            for k, v in r.items():
-                stats_acc[k] = stats_acc.get(k, 0.0) + v
+            stats_acc += met
             if updates % 100 == 0:
-                row = {k: round(v / 100, 5) for k, v in stats_acc.items()}
-                stats_acc = {}
+                row = {k: round(v / 100, 5) for k, v in zip(METRICS, stats_acc.tolist())}
+                stats_acc.zero_()
                 row.update(min=round(el, 2), updates=updates, steps=steps, frames=updates * a.batch * a.seq,
-                           rank=round(eff_rank(emb.flatten(0, 1)[:2048]), 1))
-                if lives["n"]:
-                    row.update(lives=lives["n"], life_steps=round(lives["t"] / lives["n"], 1),
-                               food=[round(x, 2) for x in (lives["food"] / lives["n"]).tolist()],
+                           rank=round(eff_rank(emb.flatten(0, 1)[:2048]), 1),
+                           fps=round(updates * a.batch * a.seq / max(1.0, time.time() - t0)))
+                n = lives["n"].item()
+                if n:
+                    row.update(lives=int(n), life_steps=round(lives["t"].item() / n, 1),
+                               food=[round(x / n, 2) for x in lives["food"].tolist()],
                                deaths={k: int(v) for k, v in zip(["cap", "hunger", "lava", "predator", "strange", "blows"], lives["cause"].tolist())})
-                    lives = dict(n=0, t=0.0, food=torch.zeros(3), cause=torch.zeros(6))
+                    lives = fresh_lives()
                 log.write(json.dumps(row) + "\n"); log.flush()
                 print(json.dumps(row), flush=True)
         now = time.time()
         done_time = el >= a.minutes
         if now - last_test >= a.test_every * 60 or done_time:
             mind.eval()
-            s, f, _ = quick_test(mind, a.res, dev, bf16=a.bf16)
+            s, f, _ = quick_test(mind, a.res, dev, bf16=a.bf16, compile=a.compile)
             mind.train()
             row = dict(min=round(el, 2), updates=updates, test_steps=round(s, 1), test_food=round(f, 2))
             log.write(json.dumps(row) + "\n"); log.flush()

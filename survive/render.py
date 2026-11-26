@@ -122,14 +122,27 @@ def _render_chunk(sc, H):
     return img.view(B, 2, H, H, 3).permute(0, 1, 4, 2, 3).reshape(B, 6, H, H)
 
 
-def render(world, H=64, chunk=None):
+_render_compiled = None
+
+
+def render(world, H=64, chunk=None, compile=False):
     """uint8 (B, 6, H, H): left eye RGB then right eye RGB."""
+    global _render_compiled
+    fn = _render_chunk
+    if compile:
+        if _render_compiled is None:
+            _render_compiled = torch.compile(_render_chunk)
+        fn = _render_compiled
     sc = world.scene()
     B = sc["pos"].shape[0]
     if chunk is None:
         chunk = max(1, int(2 ** 24 // (H * H * 2 * sc["amin"].shape[1])))
+    n = -(-B // chunk)
+    chunk = -(-B // n)                          # equal chunks (at most two shapes to compile)
+    if n == 1:
+        return fn(sc, H)
     outs = []
     for s in range(0, B, chunk):
         sub = {k: v[s:s + chunk] for k, v in sc.items()}
-        outs.append(_render_chunk(sub, H))
+        outs.append(fn(sub, H))
     return torch.cat(outs, 0)
