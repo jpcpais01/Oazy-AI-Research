@@ -16,6 +16,7 @@ import torch
 from .render import set_eyes
 from .model import load_mind, Mind
 from .train import Actor
+from . import world as _world
 from .world import DEATH_CAUSES, MAX_STEPS, World
 
 KINDS = ["cube", "stick", "tile"]
@@ -32,11 +33,11 @@ def bench_mode(mind, res, dev, mode, lives, chunk=256, seed=777, bf16=True):
         steps = torch.zeros(n, device=dev)
         food = torch.zeros(n, 3, device=dev)
         cause = torch.zeros(n, dtype=torch.long, device=dev)
-        for _ in range(MAX_STEPS):
+        for _ in range(MAX_STEPS + _world.LIGHT):
             a, _, _ = act.observe_act(bf16)
             act.advance(a)
             done, trunc, c, ate = w.step(a)
-            steps += alive.float()
+            steps += (alive & (w.dying == 0)).float()   # the light after death is not lifetime
             got = alive & (ate >= 0)
             food[got, ate[got]] += 1
             cause = torch.where(alive & done, c, cause)

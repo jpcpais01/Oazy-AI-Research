@@ -44,6 +44,7 @@ def set_eyes(args):
     from . import world
     set_fovea(args.get("fovea", 0))
     set_gaze(args.get("gaze", 0))
+    world.set_light(args.get("light", 0))
     world.EYE_SEP = float(args.get("eye_sep", 0.08)) / 2
 
 
@@ -170,9 +171,11 @@ def render(world, H=64, chunk=None, compile=False):
     chunk = B // n
     _pixel_dirs(H, sc["pos"].device)           # fill the cache outside the compiled code
     if n == 1:
-        return fn(sc, H)
-    outs = []
-    for s in range(0, B, chunk):
-        sub = {k: v[s:s + chunk] for k, v in sc.items()}
-        outs.append(fn(sub, H))
-    return torch.cat(outs, 0)
+        img = fn(sc, H)
+    else:
+        img = torch.cat([fn({k: v[s:s + chunk] for k, v in sc.items()}, H) for s in range(0, B, chunk)], 0)
+    from . import world as _w
+    if _w.LIGHT:                                # the light after death: eyes fade to white
+        f = (world.dying.float() / _w.LIGHT).clamp(0, 1).view(-1, 1, 1, 1)
+        img = (img.float() + (255 - img.float()) * f).round().to(img.dtype)
+    return img

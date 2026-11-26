@@ -50,6 +50,16 @@ def set_gaze(deg):
     global GAZE
     GAZE = math.radians(float(deg or 0))
 
+
+LIGHT = 0           # steps of white light seen after dying, before the life ends (0 = off)
+
+
+def set_light(n):
+    """When a creature dies, its eyes fade to white for n steps (muscles do nothing, body frozen),
+    then the life ends. Lifetime (bench) counts only up to the moment of death."""
+    global LIGHT
+    LIGHT = int(n or 0)
+
 FOOD_HALF = torch.tensor([[0.15, 0.15, 0.15], [0.05, 0.05, 0.25], [0.22, 0.22, 0.05]])
 FOOD_COL = torch.tensor([[0.95, 0.35, 0.25], [0.95, 0.85, 0.20], [0.40, 0.95, 0.30]])
 PRED_R, WAND_R, STRANGE_HALF = 0.35, 0.30, 0.30
@@ -104,6 +114,7 @@ class World:
         self.on_ground = z(B, dt=torch.bool)
         self.energy, self.health = z(B), z(B)
         self.t = z(B, dt=torch.long)
+        self.dying, self.dcause = z(B, dt=torch.long), z(B, dt=torch.long)   # light steps seen; cause
         self.bmin, self.bmax, self.bcol = z(B, NB, 3), z(B, NB, 3), z(B, NB, 3)
         self.bact, self.bmov = z(B, NB, dt=torch.bool), z(B, NB, dt=torch.bool)
         self.lmin, self.lmax, self.lact = z(B, NL, 2), z(B, NL, 2), z(B, NL, dt=torch.bool)
@@ -206,6 +217,7 @@ class World:
         self.energy[idx] = 0.7 + self._rand(n) * 0.3
         self.health[idx] = 1.0
         self.t[idx] = 0
+        self.dying[idx], self.dcause[idx] = 0, 0
         self.held[idx] = -1
         # food
         kinds = (self._rand(n, NF) * 3).long()
@@ -269,6 +281,10 @@ class World:
     def _step(self, action):
         B, dev = self.B, self.dev
         a = action.clamp(-1, 1)
+        was_dying = self.dying > 0
+        if LIGHT:
+            e0, h0 = self.energy, self.health
+            a = torch.where(was_dying[:, None], torch.zeros_like(a), a)
         push, turn = a[:, 0], a[:, 1]
         jump = (a[:, 2] > 0.5) & self.on_ground
         grip = a[:, 3] > 0
@@ -395,7 +411,7 @@ class World:
         fz = fc[..., 2]
         reach = (dxy < R_BODY + 0.25) & (fz > p[:, None, 2] - 0.2) & (fz < p[:, None, 2] + 0.9) & self.fup
         first = reach.float().argmax(-1)
-        ate = reach.any(-1)
+        ate = reach.any(-1) & ~was_dying
         ate_kind = torch.where(ate, self.fkind[ar, first], torch.full_like(first, -1))
         self.energy = torch.where(ate, (self.energy + 0.3).clamp(max=1.0), self.energy)
         self.health = torch.where(ate, (self.health + 0.05).clamp(max=1.0), self.health)
@@ -430,7 +446,10 @@ class World:
         dmg = dmg_lava + dmg_bite + dmg_str + dmg_blow
         self.health = (self.health - dmg + 0.001).clamp(max=1.0)
 
-        self.t += 1
+        if LIGHT:                                # the dying keep the body they died with
+            self.energy = torch.where(was_dying, e0, self.energy)
+            self.health = torch.where(was_dying, h0, self.health)
+        self.t += (~was_dying).long()
         starve = self.energy <= 0
         killed = self.health <= 0
         done = starve | killed
@@ -438,7 +457,13 @@ class World:
         harms = torch.stack([dmg_lava, dmg_bite, dmg_str, dmg_blow], -1)
         cause = torch.where(killed, harms.argmax(-1) + 2, cause)
         cause = torch.where(starve & ~killed, torch.ones_like(cause), cause)
-        trunc = (self.t >= MAX_STEPS) & ~done
+        if LIGHT:                                # death starts the light; the life ends after it
+            newly = done & ~was_dying
+            self.dcause = torch.where(newly, cause, self.dcause)
+            done = was_dying & (self.dying >= LIGHT)
+            cause = torch.where(done, self.dcause, torch.zeros_like(cause))
+            self.dying = torch.where(newly | was_dying, self.dying + 1, self.dying)
+        trunc = (self.t >= MAX_STEPS) & ~done & (self.dying == 0)
         self._sense(p)
         return done, trunc, cause, ate_kind
 
