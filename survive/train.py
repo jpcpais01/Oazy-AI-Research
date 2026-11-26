@@ -80,7 +80,7 @@ class Learner:
         m, a = self.m, self.a
         bs, T = batch["first"].shape
         dev = batch["first"].device
-        amp = torch.autocast("cuda", dtype=torch.bfloat16, enabled=(dev.type == "cuda" and a.bf16))
+        amp = torch.autocast("cuda", dtype=torch.bfloat16, enabled=bool(dev.type == "cuda" and a.bf16))
         # ------------------------------------------------ world model
         with amp:
             emb = m.eye(batch["img"].flatten(0, 1)).view(bs, T, -1)
@@ -200,7 +200,7 @@ class Actor:
         img = render(self.w, self.res)
         sen = self.w.senses.clone()
         f = self.first.float()[:, None]
-        amp = torch.autocast("cuda", dtype=torch.bfloat16, enabled=(self.dev.type == "cuda" and bf16))
+        amp = torch.autocast("cuda", dtype=torch.bfloat16, enabled=bool(self.dev.type == "cuda" and bf16))
         with amp:
             h = m.step_h(self.h * (1 - f), self.z * (1 - f), self.prev_a * (1 - f))
             emb = m.eye(img)
