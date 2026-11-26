@@ -17,7 +17,7 @@ from pathlib import Path
 import torch
 
 from .data import as_stream, load
-from .model import ByteGPT, SentenceMind
+from .model import ByteGPT, SentenceMind, SentenceMind2
 
 
 def evaluate(model, arm, va, dev, n=512, bs=64):
@@ -26,7 +26,7 @@ def evaluate(model, arm, va, dev, n=512, bs=64):
     with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16, enabled=dev.type == "cuda"):
         for i in range(0, min(n, len(va)), bs):
             x = va[i:i + bs].to(dev).long()
-            _, b, c, _ = model(x) if arm == "sent" else model(as_stream(x))
+            _, b, c, _ = model(x) if arm != "gpt" else model(as_stream(x))
             bits += b.item(); nb += c.item()
     model.train()
     return bits / nb
@@ -34,7 +34,7 @@ def evaluate(model, arm, va, dev, n=512, bs=64):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--arm", choices=["sent", "gpt"], required=True)
+    ap.add_argument("--arm", choices=["sent", "sent2", "gpt"], required=True)
     ap.add_argument("--minutes", type=float, default=40)
     ap.add_argument("--steps", type=int, default=0, help="stop after this many steps (0 = by time)")
     ap.add_argument("--batch", type=int, default=64)
@@ -55,7 +55,7 @@ def main():
     d = load(a.data, a.S, a.L, a.train_mb)
     tr, va = d["train"], d["valid"]
     print(f"stories: train {len(tr)}, valid {len(va)}", flush=True)
-    model = (SentenceMind(a.L) if a.arm == "sent" else ByteGPT(ctx=a.S * (a.L + 1))).to(dev)
+    model = (SentenceMind(a.L) if a.arm == "sent" else SentenceMind2(a.L, S=a.S) if a.arm == "sent2" else ByteGPT(ctx=a.S * (a.L + 1))).to(dev)
     nparam = sum(p.numel() for p in model.parameters())
     print(f"{a.arm}: {nparam / 1e6:.1f}M parameters", flush=True)
     opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=0.05, betas=(0.9, 0.95),
@@ -74,7 +74,7 @@ def main():
         idx = torch.randint(0, len(tr), (a.batch,), generator=g)
         x = tr[idx].to(dev, non_blocking=True).long()
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=dev.type == "cuda"):
-            loss, bits, n, extra = fwd(x) if a.arm == "sent" else fwd(as_stream(x))
+            loss, bits, n, extra = fwd(x) if a.arm != "gpt" else fwd(as_stream(x))
         opt.zero_grad(set_to_none=True)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
