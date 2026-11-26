@@ -25,9 +25,16 @@ from .world import ACT, NF, SENSES, World
 
 
 class Replay:
-    """What the creatures lived, kept on the GPU: eyes as uint8, plus senses, muscles, memory."""
+    """What the creatures lived, kept on the GPU: eyes as uint8, plus senses, muscles, memory.
 
-    def __init__(self, cap, B, res, dev):
+    Emotion (optional): every moment carries how much it mattered to the body (the size of the
+    change in wellbeing, and death) and how surprising it was (the world model's KL the last
+    time it was studied; new moments start as "very surprising"). Clips are then drawn around
+    moments in proportion to surprise x importance, half the time; the other half uniformly.
+    Nothing about rewards or goals changes: only what the mind goes back to study.
+    """
+
+    def __init__(self, cap, B, res, dev, emotion=0.0):
         self.cap, self.B, self.n, self.ptr = cap, B, 0, 0
         self.img = torch.zeros(cap, B, 6, res, res, dtype=torch.uint8, device=dev)
         self.sen = torch.zeros(cap, B, SENSES, dtype=torch.float16, device=dev)
@@ -35,12 +42,23 @@ class Replay:
         self.first = torch.zeros(cap, B, dtype=torch.bool, device=dev)
         self.cont = torch.zeros(cap, B, dtype=torch.bool, device=dev)
         self.h = torch.zeros(cap, B, H_DIM, dtype=torch.float16, device=dev)     # memory it had
+        self.emotion = emotion
+        self.imp = torch.zeros(cap, B, device=dev)                                # how much it mattered
+        self.surp = torch.zeros(cap, B, device=dev)                               # how surprising it was
+        self.surp_max = torch.ones((), device=dev)
+        self.prev_wb = None
         self.dev = dev
 
     def add(self, img, sen, act, first, cont, h):
         i = self.ptr
         self.img[i], self.sen[i], self.act[i] = img, sen, act
         self.first[i], self.cont[i], self.h[i] = first, cont, h
+        wb = wellbeing(sen.float())
+        if self.prev_wb is None:
+            self.prev_wb = wb
+        self.imp[i] = (wb - self.prev_wb).abs() * (~first) + (~cont).float() * 0.1
+        self.prev_wb = wb
+        self.surp[i] = self.surp_max
         self.ptr = (self.ptr + 1) % self.cap
         self.n = min(self.n + 1, self.cap)
 
@@ -48,10 +66,30 @@ class Replay:
         base = (self.ptr - self.n) % self.cap
         s = torch.randint(0, self.n - T + 1, (bs,), device=self.dev)
         e = torch.randint(0, self.B, (bs,), device=self.dev)
+        if self.emotion > 0:
+            k = int(bs * self.emotion)
+            logical = (torch.arange(self.cap, device=self.dev) - base) % self.cap         # cap
+            filled = (logical < self.n).float()[:, None]
+            cnt = self.n * self.B
+            imp = self.imp / ((self.imp * filled).sum() / cnt + 1e-6)
+            surp = self.surp / ((self.surp * filled).sum() / cnt + 1e-6)
+            prio = ((0.5 + surp) * (0.5 + imp) * filled).flatten()
+            anchor = torch.multinomial(prio, k, replacement=True)
+            at, ae = anchor // self.B, anchor % self.B
+            start = (logical[at] - torch.randint(0, T, (k,), device=self.dev)).clamp(0, self.n - T)
+            s = torch.cat([start, s[k:]])
+            e = torch.cat([ae, e[k:]])
         t = (base + s[:, None] + torch.arange(T, device=self.dev)[None]) % self.cap      # bs,T
         ee = e[:, None].expand(bs, T)
+        self.last_idx = (t, ee)
         return dict(img=self.img[t, ee], sen=self.sen[t, ee].float(), act=self.act[t, ee].float(),
                     first=self.first[t, ee], cont=self.cont[t, ee].float(), h0=self.h[t[:, 0], e].float())
+
+    def feel(self, kl):
+        """After studying a batch: remember how surprising each of its moments was."""
+        t, ee = self.last_idx
+        self.surp[t, ee] = kl.detach().float()
+        self.surp_max = torch.maximum(self.surp_max * 0.999, kl.detach().float().max())
 
 
 def lambda_returns(r, c, v, gamma, lam):
@@ -140,7 +178,7 @@ class Learner:
         var, cov, estd = vicreg(e_all)
         loss = l_sen + l_cont + l_kl + a.vic_var * var + a.vic_cov * cov
         met = torch.stack([l_sen, l_cont, dyn.mean(), var, cov, estd]).detach()
-        return loss, hs.detach(), zs.detach(), met, emb.detach()
+        return loss, hs.detach(), zs.detach(), met, emb.detach(), dyn.detach()
 
     # ------------------------------------------------ mind's eye (detached, page only)
     def _me(self, feat, img):
@@ -188,7 +226,7 @@ class Learner:
     def update(self, batch):
         m, a = self.m, self.a
         T = batch["first"].shape[1]
-        loss, hs, zs, met_wm, emb = self.wm_fn(batch["img"], batch["sen"], batch["act"], batch["first"],
+        loss, hs, zs, met_wm, emb, kl = self.wm_fn(batch["img"], batch["sen"], batch["act"], batch["first"],
                                                batch["cont"], batch["h0"])
         self.opt_wm.zero_grad(set_to_none=True)
         loss.backward()
@@ -218,7 +256,7 @@ class Learner:
         with torch.no_grad():
             torch._foreach_lerp_(list(m.slow_critic.parameters()), list(m.critic.parameters()), 0.02)
         met = torch.cat([met_wm, l_me.detach()[None], met_ac[:2], met_ac[2:], gn.detach().float()[None]])
-        return met, emb
+        return met, emb, kl
 
 
 def _policy_step(m, h, z, prev_a, first, img, sen, det: bool, amp: bool):
@@ -327,7 +365,7 @@ def main():
     ap.add_argument("--replay-gb", type=float, default=8.0)
     ap.add_argument("--every", type=int, default=1, help="env steps per learning update")
     ap.add_argument("--horizon", type=int, default=15)
-    ap.add_argument("--gamma", type=float, default=0.985)
+    ap.add_argument("--gamma", type=float, default=0.997, help="how far ahead it cares: 1/(1-gamma) steps (0.997 = ~33 s)")
     ap.add_argument("--lam", type=float, default=0.95)
     ap.add_argument("--lr-wm", type=float, default=3e-4)
     ap.add_argument("--lr-ac", type=float, default=8e-5)
@@ -336,6 +374,7 @@ def main():
     ap.add_argument("--vic-cov", type=float, default=1.0)
     ap.add_argument("--vic-rows", type=int, default=2048, help="moments used for VICReg (0 = all)")
     ap.add_argument("--bf16", type=int, default=1)
+    ap.add_argument("--emotion", type=float, default=0.0, help="share of clips drawn around moments that mattered (surprise x importance)")
     ap.add_argument("--compile", type=int, default=1, help="torch.compile the learner and the creatures' step")
     ap.add_argument("--compile-mode", default="default", help="default | reduce-overhead | max-autotune-no-cudagraphs")
     ap.add_argument("--prefill", type=int, default=64, help="random steps before learning")
@@ -359,7 +398,7 @@ def main():
     per = 6 * a.res * a.res + SENSES * 2 + ACT * 2 + 2 + H_DIM * 2
     cap = max(a.seq * 4, int(a.replay_gb * 1e9 / (per * a.envs)))
     print(f"replay: {cap} steps per world ({cap / 10:.0f} s), {cap * a.envs / 1e6:.2f}M moments", flush=True)
-    rb = Replay(cap, a.envs, a.res, dev)
+    rb = Replay(cap, a.envs, a.res, dev, emotion=a.emotion)
     learner = Learner(mind, a)
     actor = Actor(mind, world, a.res, dev, compile=a.compile)
     log = open(out / "log.jsonl", "a")
@@ -386,7 +425,9 @@ def main():
         cc = torch.where(st["dead"], st["cause"], torch.zeros_like(st["cause"]))
         lives["cause"] += torch.zeros(6, device=dev).index_add_(0, cc.clamp(0, 5), fin)
         if rb.n >= a.seq + 1 and steps >= a.prefill and steps % a.every == 0:
-            met, emb = learner.update(rb.sample(a.batch, a.seq))
+            met, emb, kl = learner.update(rb.sample(a.batch, a.seq))
+            if a.emotion > 0:
+                rb.feel(kl)
             updates += 1
             stats_acc += met
             if updates % 100 == 0:

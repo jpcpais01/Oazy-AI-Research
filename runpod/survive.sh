@@ -7,4 +7,4 @@ cd "$(dirname "$0")/.."
 RUNS=/workspace/oazy_runs/survive/${OUT:-clean}
 mkdir -p "$RUNS"
 python3 -m survive.train --minutes "${MIN:-300}" --res "${RES:-64}" --envs "${ENVS:-256}" --batch "${BATCH:-64}" \
-  --seq "${SEQ:-32}" --replay-gb "${REPLAY_GB:-8}" --every "${EVERY:-1}" --seed "${SEED:-0}" --out "$RUNS" 2>&1 | tee -a "$RUNS/train.log"
+  --seq "${SEQ:-32}" --replay-gb "${REPLAY_GB:-8}" --every "${EVERY:-1}" --gamma "${GAMMA:-0.997}" --compile "${COMPILE:-1}" --seed "${SEED:-0}" --out "$RUNS" 2>&1 | tee -a "$RUNS/train.log"

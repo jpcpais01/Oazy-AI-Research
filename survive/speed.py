@@ -39,6 +39,7 @@ def main():
     ap.add_argument("--compile-mode", default="default")
     ap.add_argument("--n", type=int, default=30)
     ap.add_argument("--vic-rows", type=int, default=2048)
+    ap.add_argument("--emotion", type=float, default=0.0)
     ap.add_argument("--device", default="cuda")
     a = ap.parse_args()
     dev = torch.device(a.device if torch.cuda.is_available() else "cpu")
@@ -51,7 +52,7 @@ def main():
     mind = Mind(a.res).to(dev)
     world = World(a.envs, dev, mode="train", seed=0, compile=bool(a.compile))
     actor = Actor(mind, world, a.res, dev, compile=bool(a.compile))
-    rb = Replay(a.seq * 3, a.envs, a.res, dev)
+    rb = Replay(a.seq * 3, a.envs, a.res, dev, emotion=a.emotion)
     learner = Learner(mind, args)
 
     def env_step():
@@ -77,7 +78,9 @@ def main():
 
     def both():
         env_step()
-        learner.update(rb.sample(a.batch, a.seq))
+        _, _, kl = learner.update(rb.sample(a.batch, a.seq))
+        if a.emotion > 0:
+            rb.feel(kl)
     b_ms = timeit(both, a.n, sync)
     fr = a.batch * a.seq
     print(f"res {a.res} envs {a.envs} batch {a.batch} seq {a.seq} compile {a.compile}/{a.compile_mode}")
