@@ -193,6 +193,9 @@ class World:
         self.bite_cd[idx] = 0
         self.near_strange[idx] = 0
         self.pred_speed[idx] = m.pred_speed
+        self.touch[idx] = 0
+        self.pressure[idx] = 0
+        self._sense(self.pos)
 
     def _place_food(self, idx, which):
         """(Re)place food slots `which` (n,NF bool) of envs idx: on their ledge or on free floor."""

@@ -33,6 +33,7 @@ def bench_mode(mind, res, dev, mode, lives, chunk=256, seed=777, bf16=True):
         cause = torch.zeros(n, dtype=torch.long, device=dev)
         for _ in range(MAX_STEPS):
             a, _, _ = act.observe_act(bf16)
+            act.advance(a)
             done, trunc, c, ate = w.step(a)
             steps += alive.float()
             got = alive & (ate >= 0)

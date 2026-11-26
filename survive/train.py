@@ -89,11 +89,9 @@ class Learner:
         hs, zs, posts, priors = [], [], [], []
         for t in range(T):
             f = batch["first"][:, t].float()[:, None]
-            if t > 0:
+            if t > 0:      # (at t = 0 the stored memory is exactly what the creature had)
                 with amp:
                     h = m.step_h(h * (1 - f), z * (1 - f), batch["act"][:, t] * (1 - f))
-            else:
-                h = h * (1 - f)
             with amp:
                 q = m.observe(h, emb[:, t], batch["sen"][:, t])
                 p = m.imagine_z(h)
@@ -151,7 +149,8 @@ class Learner:
         c = cont[1:]
         scale = 1.0 / (1 - a.gamma)
         ret = lambda_returns(r, c, v_slow * scale, a.gamma, a.lam)         # H, N
-        w = torch.cumprod(torch.cat([torch.ones_like(c[:1]), c[:-1]], 0), 0).detach()
+        start_alive = batch["cont"].flatten()[None]                     # don't imagine from a dead moment
+        w = (torch.cumprod(torch.cat([torch.ones_like(c[:1]), c[:-1]], 0), 0) * start_alive).detach()
         # return normalisation (Dreamer v3): divide by the 5-95% range, at least 1
         lo, hi = torch.quantile(ret.detach().flatten()[:65536], torch.tensor([0.05, 0.95], device=dev))
         if self.ret_lo is None:
@@ -214,6 +213,11 @@ class Actor:
         self.h, self.z = h.float(), z.float()
         return a, rec, emb
 
+    def advance(self, a):
+        """For tests that step the world themselves: remember the muscles, the life goes on."""
+        self.prev_a = a
+        self.first = torch.zeros_like(self.first)
+
     @torch.no_grad()
     def env_step(self, a):
         """Step the worlds. Creatures whose last observation was terminal get a fresh life."""
@@ -231,9 +235,6 @@ class Actor:
         idx = reset.nonzero().squeeze(-1)
         if len(idx):
             w.reset(idx)
-            w.touch[idx] = 0
-            w.pressure[idx] = 0
-            w._sense(w.pos)
             self.life_t[idx] = 0
             self.life_food[idx] = 0
         self.first = reset
@@ -253,6 +254,7 @@ def quick_test(mind, res, dev, mode="test", n=64, seed=12345, bf16=True):
     causes = torch.zeros(n, dtype=torch.long, device=dev)
     for _ in range(1000):
         a, _, _ = act.observe_act(bf16)
+        act.advance(a)
         done, trunc, cause, ate = w.step(a)
         steps += alive.float()
         food += (alive & (ate >= 0)).float()
