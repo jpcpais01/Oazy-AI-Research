@@ -96,6 +96,7 @@ def run_arm(arm, ck, a, dev):
     res = ck["args"]["res"]
     mind = Mind(res).to(dev)
     mind.load_state_dict(ck["mind"])
+    mind.ent_squash = bool(a.ent_squash)
     args = SimpleNamespace(**{**ck["args"], "compile": a.compile, "compile_mode": "default"})
     args.vic_rows = getattr(args, "vic_rows", 2048)
     learner = Learner(mind, args)
@@ -157,6 +158,7 @@ def main():
     ap.add_argument("--envs", type=int, default=512)
     ap.add_argument("--arms", default="awake,sleep,emotion")
     ap.add_argument("--test-lives", type=int, default=512)
+    ap.add_argument("--ent-squash", type=int, default=0, help="nights use the entropy of the real (tanh) muscles")
     ap.add_argument("--keepsakes", type=int, default=4096, help="long-term memory size in clips (lifelong arm)")
     ap.add_argument("--keep-per-night", type=int, default=1024, help="candidate clips offered to it each night")
     ap.add_argument("--compile", type=int, default=1)
@@ -171,7 +173,7 @@ def main():
     out = dict(mind=a.mind, mode=a.mode, days=a.days, day=a.day, night=a.night, envs=a.envs)
     for arm in a.arms.split(","):
         out[arm] = run_arm(arm, ck, a, dev)
-    p = Path(a.mind).with_suffix(f".sleep_{a.mode}.json")
+    p = Path(a.mind).with_suffix(f".sleep_{a.mode}{'_sq' if a.ent_squash else ''}.json")
     p.write_text(json.dumps(out, indent=1))
     print("saved", p)
 
