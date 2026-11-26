@@ -23,7 +23,7 @@ from urllib.parse import parse_qs, urlparse
 
 import torch
 
-from .model import load_mind, Mind, wellbeing
+from .model import gdist, gsample, load_mind, Mind, wellbeing
 from .render import render, set_eyes
 from .train import Actor
 from .world import DEATH_CAUSES, L, World
@@ -60,7 +60,7 @@ class Sim:
         ck = torch.load(w["path"], map_location=self.dev)
         res = ck["args"]["res"]
         set_eyes(ck["args"])
-        m = Mind(res).to(self.dev)
+        m = Mind(res, ck["args"].get("intent", 0)).to(self.dev)
         load_mind(m, ck["mind"])
         m.eval()
         world = World(1, self.dev, mode=w["mode"], seed=w["seed"])
@@ -72,9 +72,16 @@ class Sim:
     @torch.no_grad()
     def imagine(self, m, act, steps=100):
         h, z = act.h.clone(), act.z.clone()
+        code, ctr = act.code.clone(), int(act.ctr[0])
         pics, conts, wbs = [], [], []
         for k in range(1, steps + 1):
-            a, _ = m.act(torch.cat([h, z], -1), deterministic=True)
+            x = torch.cat([h, z], -1)
+            if m.intent:                            # the will keeps choosing inside the dream too
+                if ctr >= m.intent:
+                    code, ctr = gsample(gdist(m.will(x)), True).float(), 0
+                ctr += 1
+                x = torch.cat([x, code], -1)
+            a, _ = m.act(x, deterministic=True)
             h = m.step_h(h, z, a)
             z = m.sample(m.imagine_z(h))
             ft = torch.cat([h, z], -1)

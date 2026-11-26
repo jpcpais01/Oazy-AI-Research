@@ -13,6 +13,13 @@
   actor      muscles from (h, z); learned only inside imagination (15 steps = 1.5 s ahead),
              by backpropagating imagined wellbeing through the learned dynamics.
   critic     how good an inner state looks beyond the imagined 1.5 s.
+  intentions (optional, --intent K) a slow level. Every K steps a "will" picks an intention:
+             8 slots x 8 options, decoded into a memory it wants to be in ~K steps later. The
+             muscles see the intention; inside imagination they are paid wellbeing plus how close
+             memory gets to the intended one, and the will is paid the wellbeing that follows its
+             choice (its own critic looks past the dream). Intentions are not given: their code
+             is learned by squeezing real memories through it (an autoencoder), so every
+             intention is a state the creature has really been in.
   mind's eye a small decoder that draws the left eye from a *detached* inner state, for the
              page only; nothing flows back into the creature.
 
@@ -31,6 +38,8 @@ H_DIM, Z_SLOTS, Z_CLS = 512, 32, 16
 Z_DIM = Z_SLOTS * Z_CLS
 FEAT = H_DIM + Z_DIM
 EMB = 4096
+G_SLOTS, G_CLS = 8, 8
+G_DIM = G_SLOTS * G_CLS
 
 
 def mlp(i, o, hid=512, n=2):
@@ -86,10 +95,34 @@ class MindsEye(nn.Module):
         return self.net(self.fc(feat).view(-1, 256, 4, 4)) + 0.5
 
 
+def gdist(logits):
+    """Intention code: (..., 8, 8) probabilities with a 1% uniform mix."""
+    p = F.softmax(logits.view(*logits.shape[:-1], G_SLOTS, G_CLS).float(), -1)
+    return 0.99 * p + 0.01 / G_CLS
+
+
+def gsample(probs, deterministic=False):
+    if deterministic:
+        idx = probs.argmax(-1)
+    else:
+        u = torch.rand_like(probs).clamp_(1e-10, 1.0)
+        idx = (torch.log(probs) - torch.log(-torch.log(u))).argmax(-1)
+    hard = F.one_hot(idx, G_CLS).to(probs.dtype)
+    return (hard + probs - probs.detach()).flatten(-2)
+
+
+def maxcos(a, b):
+    """Director's max-cosine: 1 only when a matches b in direction AND size."""
+    m = torch.maximum(a.norm(dim=-1), b.norm(dim=-1)).clamp(min=1e-6)
+    return (a * b).sum(-1) / (m * m)
+
+
 class Mind(nn.Module):
-    def __init__(self, res=64):
+    def __init__(self, res=64, intent=0):
         super().__init__()
         self.res = res
+        self.intent = int(intent or 0)
+        gin = G_DIM if self.intent else 0
         self.eye = Eye(res)
         self.eye_in = nn.Sequential(nn.Linear(EMB, 512), nn.LayerNorm(512), nn.SiLU())
         self.img_in = nn.Sequential(nn.Linear(Z_DIM + ACT, 512), nn.LayerNorm(512), nn.SiLU())
@@ -98,12 +131,21 @@ class Mind(nn.Module):
         self.post = mlp(H_DIM + 512 + SENSES, Z_DIM, n=1)
         self.sense_head = mlp(FEAT, SENSES)
         self.cont_head = mlp(FEAT, 1)
-        self.actor = mlp(FEAT, 2 * ACT)
-        self.critic = mlp(FEAT, 1)
-        self.slow_critic = mlp(FEAT, 1)
+        self.actor = mlp(FEAT + gin, 2 * ACT)
+        self.critic = mlp(FEAT + gin, 1)
+        self.slow_critic = mlp(FEAT + gin, 1)
         self.slow_critic.load_state_dict(self.critic.state_dict())
         for p in self.slow_critic.parameters():
             p.requires_grad_(False)
+        if self.intent:
+            self.goal_enc = mlp(H_DIM, G_DIM, n=1)          # real memory -> intention code
+            self.goal_dec = mlp(G_DIM, H_DIM, n=1)          # intention code -> wanted memory
+            self.will = mlp(FEAT, G_DIM)                    # picks the intention
+            self.will_critic = mlp(FEAT, 1)
+            self.will_slow = mlp(FEAT, 1)
+            self.will_slow.load_state_dict(self.will_critic.state_dict())
+            for p in self.will_slow.parameters():
+                p.requires_grad_(False)
         self.minds_eye = MindsEye(res)
 
     # --- the moment as 32 categorical slots

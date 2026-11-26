@@ -19,8 +19,9 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 
-from .model import FEAT, H_DIM, Z_DIM, Mind, eff_rank, kl_cat, vicreg, wellbeing
+from .model import FEAT, G_CLS, G_DIM, H_DIM, Z_DIM, Mind, eff_rank, gdist, gsample, kl_cat, maxcos, vicreg, wellbeing
 from .render import render, set_eyes
+from . import world as _world
 from .world import ACT, NF, SENSES, World
 
 
@@ -139,7 +140,7 @@ def lambda_returns(r, c, v, gamma, lam):
     return torch.stack(out)
 
 
-METRICS = ["sen", "cont", "kl", "var", "cov", "estd", "me", "actor", "critic", "wb", "ret", "ent", "gn"]
+METRICS = ["sen", "cont", "kl", "var", "cov", "estd", "me", "actor", "critic", "wb", "ret", "ent", "rgoal", "went", "goal", "gn"]
 
 
 class Learner:
@@ -155,12 +156,18 @@ class Learner:
         self.m, self.a = mind, args
         dev = next(mind.parameters()).device
         fused = dict(fused=True) if dev.type == "cuda" else {}
-        wm = [p for n, p in mind.named_parameters() if not n.startswith(("actor", "critic", "slow_critic", "minds_eye"))]
+        wm = [p for n, p in mind.named_parameters()
+              if not n.startswith(("actor", "critic", "slow_critic", "minds_eye", "goal_", "will"))]
         self.wm_params = wm
         self.opt_wm = torch.optim.Adam(wm, lr=args.lr_wm, eps=1e-8, **fused)
         self.opt_actor = torch.optim.Adam(mind.actor.parameters(), lr=args.lr_ac, eps=1e-5, **fused)
         self.opt_critic = torch.optim.Adam(mind.critic.parameters(), lr=args.lr_ac, eps=1e-5, **fused)
         self.opt_me = torch.optim.Adam(mind.minds_eye.parameters(), lr=3e-4, **fused)
+        if mind.intent:
+            self.opt_goal = torch.optim.Adam(list(mind.goal_enc.parameters()) + list(mind.goal_dec.parameters()),
+                                             lr=3e-4, **fused)
+            self.opt_will = torch.optim.Adam(list(mind.will.parameters()) + list(mind.will_critic.parameters()),
+                                             lr=args.lr_ac, eps=1e-5, **fused)
         self.ret_lo = torch.zeros((), device=dev)
         self.ret_hi = torch.zeros((), device=dev)
         self.first_call = True
@@ -168,6 +175,7 @@ class Learner:
         mode = getattr(args, "compile_mode", "default")
         comp = (lambda f: torch.compile(f, mode=None if mode == "default" else mode)) if getattr(args, "compile", 0) else (lambda f: f)
         self.wm_fn, self.me_fn, self.ac_fn = comp(self._wm), comp(self._me), comp(self._ac)
+        self.goal_fn = comp(self._goal)
 
     def _autocast(self):
         return torch.autocast("cuda", dtype=torch.bfloat16, enabled=self.amp)
@@ -226,28 +234,62 @@ class Learner:
             pic = self.m.minds_eye(feat).float()
         return F.mse_loss(pic, img[:, :3].float() / 255.0)
 
+    # ------------------------------------------------ intentions: the code of real memories
+    def _goal(self, h):
+        """Squeeze real memories through the 8x8 intention code and back (an autoencoder), so
+        every intention the will can pick decodes to a memory the creature has really had."""
+        m = self.m
+        with self._autocast():
+            q = gdist(m.goal_enc(h))
+            rec = m.goal_dec(gsample(q).to(h.dtype)).float()
+        l_rec = (rec - h.float()).pow(2).sum(-1).mean()
+        l_kl = (q * torch.log(q * G_CLS)).sum((-1, -2)).mean()            # toward using every option
+        return l_rec + l_kl
+
     # ------------------------------------------------ imagination: actor and critic
     def _ac(self, hs, zs, cont0, ret_lo, ret_hi, init):
         m, a = self.m, self.a
-        h, z = hs.flatten(0, 1), zs.flatten(0, 1)
-        fts, ents = [torch.cat([h, z], -1)], []
-        for _ in range(a.horizon):
+        st = max(1, int(getattr(a, "start_stride", 1)))
+        h, z = hs.flatten(0, 1)[::st], zs.flatten(0, 1)[::st]
+        K = m.intent
+        fts, ents, xs = [torch.cat([h, z], -1)], [], []
+        goals, rgoal, logps, wents, dec_at = [], [], [], [], []
+        code = None
+        for k in range(a.horizon):
+            if K and k % K == 0:                       # the will picks an intention (not differentiated)
+                with self._autocast():
+                    q = gdist(m.will(fts[-1].detach()))
+                hard = gsample(q.detach()).detach()
+                logps.append((hard.view_as(q) * torch.log(q)).sum((-1, -2)))
+                wents.append(-(q * torch.log(q)).sum((-1, -2)))
+                dec_at.append(k)
+                code = hard
+                with torch.no_grad(), self._autocast():
+                    goal = m.goal_dec(code).float()
+            x = torch.cat([fts[-1], code.to(fts[-1].dtype)], -1) if K else fts[-1]
+            xs.append(x)
             with self._autocast():
-                act, ent = m.act(fts[-1])
+                act, ent = m.act(x)
                 h = m.step_h(h, z, act)
                 z = m.sample(m.imagine_z(h))
             fts.append(torch.cat([h, z], -1))
             ents.append(ent)
+            if K:
+                rgoal.append(maxcos(h.float(), goal))
+        if K:
+            xs.append(torch.cat([fts[-1], code.to(fts[-1].dtype)], -1))
         ft = torch.stack(fts)                                              # H+1, N, FEAT
+        x = torch.stack(xs) if K else ft
         with self._autocast():
             sen = m.sense_head(ft).float()
             cont = torch.sigmoid(m.cont_head(ft).float().squeeze(-1))
-            v_slow = m.slow_critic(ft).float().squeeze(-1)
-        r = wellbeing(sen[1:])                                             # reward on arrival
+            v_slow = m.slow_critic(x).float().squeeze(-1)
+        r_ext = wellbeing(sen[1:])                                         # reward on arrival
+        r = r_ext + getattr(a, "intent_w", 0.3) * torch.stack(rgoal) if K else r_ext
         c = cont[1:]
         scale = 1.0 / (1 - a.gamma)
         ret = lambda_returns(r, c, v_slow * scale, a.gamma, a.lam)         # H, N
-        start_alive = cont0.flatten()[None]                                # don't imagine from a dead moment
+        start_alive = cont0.flatten()[::st][None]                          # don't imagine from a dead moment
         w = (torch.cumprod(torch.cat([torch.ones_like(c[:1]), c[:-1]], 0), 0) * start_alive).detach()
         # return normalisation (Dreamer v3): divide by the 5-95% range, at least 1
         flat = ret.detach().flatten()
@@ -259,10 +301,27 @@ class Learner:
         ent = torch.stack(ents)
         l_actor = -(w * ret / S).mean() - a.ent * (w * ent).mean()
         with self._autocast():
-            v = m.critic(ft[:-1].detach()).float().squeeze(-1)
+            v = m.critic(x[:-1].detach()).float().squeeze(-1)
         target = ret.detach() / scale
         l_critic = (w * ((v - target) ** 2 + (v - v_slow[:-1].detach()) ** 2)).mean()
-        met = torch.stack([l_actor, l_critic, r.mean(), ret.mean() / scale, ent.mean()]).detach()
+        zero = torch.zeros((), device=ret.device)
+        rg, went = zero, zero
+        if K:
+            # the will: paid the wellbeing that follows its choice; its critic looks past the dream
+            ftd = ft.detach()
+            with self._autocast():
+                vw_slow = m.will_slow(ftd).float().squeeze(-1)
+                vw = m.will_critic(ftd[:-1]).float().squeeze(-1)
+            ret_w = lambda_returns(r_ext.detach(), c.detach(), vw_slow * scale, a.gamma, a.lam)
+            l_wcrit = (w * ((vw - ret_w / scale) ** 2 + (vw - vw_slow[:-1]) ** 2)).mean()
+            adv = torch.stack([(ret_w[d] - vw[d].detach() * scale) for d in dec_at]) / S
+            wd = torch.stack([w[d] for d in dec_at])
+            lp, we = torch.stack(logps), torch.stack(wents)
+            l_will = -(wd * lp * adv.detach()).mean() - getattr(a, "will_ent", 3e-3) * (wd * we).mean()
+            l_actor = l_actor + l_will
+            l_critic = l_critic + l_wcrit
+            rg, went = torch.stack(rgoal).mean(), we.mean()
+        met = torch.stack([l_actor, l_critic, r_ext.mean(), ret.mean() / scale, ent.mean(), rg, went]).detach()
         return l_actor, l_critic, lo.detach(), hi.detach(), met
 
     def update(self, batch):
@@ -283,11 +342,20 @@ class Learner:
 
         for p_ in self.wm_params:
             p_.requires_grad_(False)
+        l_goal = torch.zeros((), device=hs.device)
+        if m.intent:
+            hh = hs.flatten(0, 1)
+            l_goal = self.goal_fn(hh[:: max(1, hh.shape[0] // 4096)])
+            self.opt_goal.zero_grad(set_to_none=True)
+            l_goal.backward()
+            self.opt_goal.step()
         init = torch.tensor(self.first_call, device=hs.device)
         l_actor, l_critic, self.ret_lo, self.ret_hi, met_ac = self.ac_fn(hs, zs, batch["cont"], self.ret_lo, self.ret_hi, init)
         self.first_call = False
         self.opt_actor.zero_grad(set_to_none=True)
         self.opt_critic.zero_grad(set_to_none=True)
+        if m.intent:
+            self.opt_will.zero_grad(set_to_none=True)
         (l_actor + l_critic).backward()          # critic sees detached states; actor never touches the critic
         for p_ in self.wm_params:
             p_.requires_grad_(True)
@@ -295,23 +363,37 @@ class Learner:
         torch.nn.utils.clip_grad_norm_(m.critic.parameters(), 100.0, foreach=True)
         self.opt_actor.step()
         self.opt_critic.step()
+        if m.intent:
+            torch.nn.utils.clip_grad_norm_(list(m.will.parameters()) + list(m.will_critic.parameters()), 100.0, foreach=True)
+            self.opt_will.step()
         with torch.no_grad():
             torch._foreach_lerp_(list(m.slow_critic.parameters()), list(m.critic.parameters()), 0.02)
-        met = torch.cat([met_wm, l_me.detach()[None], met_ac[:2], met_ac[2:], gn.detach().float()[None]])
+            if m.intent:
+                torch._foreach_lerp_(list(m.will_slow.parameters()), list(m.will_critic.parameters()), 0.02)
+        met = torch.cat([met_wm, l_me.detach()[None], met_ac, l_goal.detach()[None], gn.detach().float()[None]])
         return met, emb, kl
 
 
-def _policy_step(m, h, z, prev_a, first, img, sen, det: bool, amp: bool):
-    """One moment of a creature: update memory, look, settle the moment, choose muscles."""
+def _policy_step(m, h, z, prev_a, first, img, sen, code, ctr, det: bool, amp: bool):
+    """One moment of a creature: update memory, look, settle the moment, (every K steps pick an
+    intention), choose muscles. ctr = steps since the intention was picked."""
     keep = 1 - first.float()[:, None]
     with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
         h = m.step_h(h * keep, z * keep, prev_a * keep)
         emb = m.eye(img)
         q = m.observe(h, emb, sen)
     z = m.sample(q)
+    ft = torch.cat([h, z], -1)
+    if m.intent:
+        renew = first | (ctr >= m.intent)
+        with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
+            new = gsample(gdist(m.will(ft)), det).float()
+        code = torch.where(renew[:, None], new, code)
+        ctr = torch.where(renew, torch.ones_like(ctr), ctr + 1)
+        ft = torch.cat([ft, code.to(ft.dtype)], -1)
     with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
-        a, _ = m.act(torch.cat([h, z], -1), deterministic=det)
-    return a.float(), h.float(), z.float(), emb
+        a, _ = m.act(ft, deterministic=det)
+    return a.float(), h.float(), z.float(), emb, code, ctr
 
 
 _policy_compiled = None
@@ -329,6 +411,8 @@ class Actor:
         self.cont = torch.ones(B, dtype=torch.bool, device=dev)
         self.life_t = torch.zeros(B, dtype=torch.long, device=dev)
         self.life_food = torch.zeros(B, 3, device=dev)
+        self.code = torch.zeros(B, G_DIM, device=dev)
+        self.ctr = torch.zeros(B, dtype=torch.long, device=dev)
         global _policy_compiled
         if compile and _policy_compiled is None:
             _policy_compiled = torch.compile(_policy_step, dynamic=False)
@@ -340,7 +424,8 @@ class Actor:
         img = render(self.w, self.res, compile=self.compile)
         sen = self.w.senses.clone()
         amp = bool(self.dev.type == "cuda" and bf16)
-        a, h, z, emb = self.policy(self.m, self.h, self.z, self.prev_a, self.first, img, sen, self.det, amp)
+        a, h, z, emb, self.code, self.ctr = self.policy(self.m, self.h, self.z, self.prev_a, self.first, img, sen,
+                                                        self.code, self.ctr, self.det, amp)
         rec = (img, sen, self.prev_a.clone(), self.first.clone(), self.cont.clone(), h.half())
         self.h, self.z = h, z
         return a, rec, emb
@@ -384,11 +469,11 @@ def quick_test(mind, res, dev, mode="test", n=64, seed=12345, bf16=True, compile
     steps = torch.zeros(n, device=dev)
     food = torch.zeros(n, device=dev)
     causes = torch.zeros(n, dtype=torch.long, device=dev)
-    for _ in range(1000):
+    for _ in range(1000 + _world.LIGHT):
         a, _, _ = act.observe_act(bf16)
         act.advance(a)
         done, trunc, cause, ate = w.step(a)
-        steps += alive.float()
+        steps += (alive & (w.dying == 0)).float()
         food += (alive & (ate >= 0)).float()
         causes = torch.where(alive & done, cause, causes)
         alive &= ~(done | trunc)
@@ -414,6 +499,10 @@ def main():
     ap.add_argument("--long-offer", type=int, default=64, help="clips offered to the long memory every 10 updates")
     ap.add_argument("--every", type=int, default=1, help="env steps per learning update")
     ap.add_argument("--horizon", type=int, default=15)
+    ap.add_argument("--intent", type=int, default=0, help="a will picks an intention every K steps (0 = off; 10 = every 1 s)")
+    ap.add_argument("--intent-w", type=float, default=0.3, help="pay to the muscles for reaching the intended memory (wellbeing pays 1)")
+    ap.add_argument("--will-ent", type=float, default=3e-3, help="how much the will is paid to keep its choices varied")
+    ap.add_argument("--start-stride", type=int, default=1, help="dream from every k-th remembered moment (2 halves the dream cost)")
     ap.add_argument("--gamma", type=float, default=0.997, help="how far ahead it cares: 1/(1-gamma) steps (0.997 = ~33 s)")
     ap.add_argument("--lam", type=float, default=0.95)
     ap.add_argument("--lr-wm", type=float, default=3e-4)
@@ -444,7 +533,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     (out / "args.json").write_text(json.dumps(vars(a), indent=1))
     set_eyes(vars(a))
-    mind = Mind(a.res).to(dev)
+    mind = Mind(a.res, a.intent).to(dev)
     mind.ent_squash = bool(a.ent_squash)
     print(f"mind: {sum(p.numel() for p in mind.parameters()) / 1e6:.1f}M parameters, eyes {a.res} px", flush=True)
     world = World(a.envs, dev, mode="train", seed=a.seed, compile=bool(a.compile), rooms=a.rooms)

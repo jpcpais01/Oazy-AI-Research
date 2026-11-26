@@ -94,7 +94,7 @@ class Keepsakes:
 def run_arm(arm, ck, a, dev):
     torch.manual_seed(a.seed)
     res = ck["args"]["res"]
-    mind = Mind(res).to(dev)
+    mind = Mind(res, ck["args"].get("intent", 0)).to(dev)
     load_mind(mind, ck["mind"])
     mind.ent_squash = bool(a.ent_squash)
     args = SimpleNamespace(**{**ck["args"], "compile": a.compile, "compile_mode": "default"})
