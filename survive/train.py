@@ -167,7 +167,7 @@ class Learner:
             self.opt_goal = torch.optim.Adam(list(mind.goal_enc.parameters()) + list(mind.goal_dec.parameters()),
                                              lr=3e-4, **fused)
             self.opt_will = torch.optim.Adam(list(mind.will.parameters()) + list(mind.will_critic.parameters()),
-                                             lr=args.lr_ac, eps=1e-5, **fused)
+                                             lr=getattr(args, "lr_will", 3e-4), eps=1e-5, **fused)
         self.ret_lo = torch.zeros((), device=dev)
         self.ret_hi = torch.zeros((), device=dev)
         self.first_call = True
@@ -242,9 +242,11 @@ class Learner:
         with self._autocast():
             q = gdist(m.goal_enc(h))
             rec = m.goal_dec(gsample(q).to(h.dtype)).float()
-        l_rec = (rec - h.float()).pow(2).sum(-1).mean()
+        hf = h.float()
+        l_rec = (rec - hf).pow(2).sum(-1).mean()
         l_kl = (q * torch.log(q * G_CLS)).sum((-1, -2)).mean()            # toward using every option
-        return l_rec + l_kl
+        unexpl = l_rec.detach() / hf.var(0).sum().clamp(min=1e-6)          # logged: share of memory the code misses
+        return l_rec + l_kl, unexpl
 
     # ------------------------------------------------ imagination: actor and critic
     def _ac(self, hs, zs, cont0, ret_lo, ret_hi, init):
@@ -317,7 +319,7 @@ class Learner:
             adv = torch.stack([(ret_w[d] - vw[d].detach() * scale) for d in dec_at]) / S
             wd = torch.stack([w[d] for d in dec_at])
             lp, we = torch.stack(logps), torch.stack(wents)
-            l_will = -(wd * lp * adv.detach()).mean() - getattr(a, "will_ent", 3e-3) * (wd * we).mean()
+            l_will = -(wd * lp * adv.detach()).mean() - getattr(a, "will_ent", 1e-3) * (wd * we).mean()
             l_actor = l_actor + l_will
             l_critic = l_critic + l_wcrit
             rg, went = torch.stack(rgoal).mean(), we.mean()
@@ -342,10 +344,10 @@ class Learner:
 
         for p_ in self.wm_params:
             p_.requires_grad_(False)
-        l_goal = torch.zeros((), device=hs.device)
+        l_goal = g_un = torch.zeros((), device=hs.device)
         if m.intent:
             hh = hs.flatten(0, 1)
-            l_goal = self.goal_fn(hh[:: max(1, hh.shape[0] // 4096)])
+            l_goal, g_un = self.goal_fn(hh[:: max(1, hh.shape[0] // 4096)])
             self.opt_goal.zero_grad(set_to_none=True)
             l_goal.backward()
             self.opt_goal.step()
@@ -370,7 +372,7 @@ class Learner:
             torch._foreach_lerp_(list(m.slow_critic.parameters()), list(m.critic.parameters()), 0.02)
             if m.intent:
                 torch._foreach_lerp_(list(m.will_slow.parameters()), list(m.will_critic.parameters()), 0.02)
-        met = torch.cat([met_wm, l_me.detach()[None], met_ac, l_goal.detach()[None], gn.detach().float()[None]])
+        met = torch.cat([met_wm, l_me.detach()[None], met_ac, g_un[None], gn.detach().float()[None]])
         return met, emb, kl
 
 
@@ -501,7 +503,8 @@ def main():
     ap.add_argument("--horizon", type=int, default=15)
     ap.add_argument("--intent", type=int, default=0, help="a will picks an intention every K steps (0 = off; 10 = every 1 s)")
     ap.add_argument("--intent-w", type=float, default=0.3, help="pay to the muscles for reaching the intended memory (wellbeing pays 1)")
-    ap.add_argument("--will-ent", type=float, default=3e-3, help="how much the will is paid to keep its choices varied")
+    ap.add_argument("--lr-will", type=float, default=3e-4)
+    ap.add_argument("--will-ent", type=float, default=1e-3, help="how much the will is paid to keep its choices varied")
     ap.add_argument("--start-stride", type=int, default=1, help="dream from every k-th remembered moment (2 halves the dream cost)")
     ap.add_argument("--gamma", type=float, default=0.997, help="how far ahead it cares: 1/(1-gamma) steps (0.997 = ~33 s)")
     ap.add_argument("--lam", type=float, default=0.95)

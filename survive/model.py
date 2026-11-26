@@ -138,8 +138,8 @@ class Mind(nn.Module):
         for p in self.slow_critic.parameters():
             p.requires_grad_(False)
         if self.intent:
-            self.goal_enc = mlp(H_DIM, G_DIM, n=1)          # real memory -> intention code
-            self.goal_dec = mlp(G_DIM, H_DIM, n=1)          # intention code -> wanted memory
+            self.goal_enc = mlp(H_DIM, G_DIM)                # real memory -> intention code
+            self.goal_dec = mlp(G_DIM, H_DIM)                # intention code -> wanted memory
             self.will = mlp(FEAT, G_DIM)                    # picks the intention
             self.will_critic = mlp(FEAT, 1)
             self.will_slow = mlp(FEAT, 1)
