@@ -92,6 +92,42 @@ class Replay:
         self.surp_max = torch.maximum(self.surp_max * 0.999, kl.detach().float().max())
 
 
+class LongMemory:
+    """Clips kept from the creature's WHOLE life, not just the last minute (reservoir sampling:
+    every clip ever offered has the same chance to be here). Without it the replay holds only
+    the last ~600 updates of experience, so when the creature stops finding food for a while
+    the world model forgets what food was worth, foraging fades further: a slow unlearning loop.
+    """
+
+    def __init__(self, C, T, res, dev):
+        self.C, self.T, self.n, self.seen, self.dev = C, T, 0, 0, dev
+        self.d = dict(img=torch.zeros(C, T, 6, res, res, dtype=torch.uint8, device=dev),
+                      sen=torch.zeros(C, T, SENSES, dtype=torch.float16, device=dev),
+                      act=torch.zeros(C, T, ACT, dtype=torch.float16, device=dev),
+                      first=torch.zeros(C, T, dtype=torch.bool, device=dev),
+                      cont=torch.zeros(C, T, dtype=torch.float16, device=dev),
+                      h0=torch.zeros(C, H_DIM, dtype=torch.float16, device=dev))
+
+    def offer(self, b):
+        k = b["img"].shape[0]
+        if self.n < self.C:                                   # filling up
+            m = min(k, self.C - self.n)
+            slots = torch.arange(self.n, self.n + m, device=self.dev)
+            src = torch.arange(m, device=self.dev)
+            self.n += m
+        else:
+            r = (torch.rand(k, device=self.dev) * (self.seen + torch.arange(1, k + 1, device=self.dev))).long()
+            keep = r < self.C
+            slots, src = r[keep], keep.nonzero().squeeze(1)
+        self.seen += k
+        for key, v in self.d.items():
+            v[slots] = b[key][src].to(v.dtype)
+
+    def sample(self, bs):
+        i = torch.randint(0, self.n, (bs,), device=self.dev)
+        return {k: (v[i] if k in ("img", "first") else v[i].float()) for k, v in self.d.items()}
+
+
 def lambda_returns(r, c, v, gamma, lam):
     """r, c: (T, N) reward/continue for steps 1..T; v: (T+1, N) values for 0..T."""
     T = r.shape[0]
@@ -367,6 +403,8 @@ def main():
     ap.add_argument("--batch", type=int, default=256)
     ap.add_argument("--seq", type=int, default=32)
     ap.add_argument("--replay-gb", type=float, default=8.0)
+    ap.add_argument("--long", type=float, default=0.5, help="share of replay memory kept as clips from the whole life (0 = off)")
+    ap.add_argument("--long-offer", type=int, default=64, help="clips offered to the long memory every 10 updates")
     ap.add_argument("--every", type=int, default=1, help="env steps per learning update")
     ap.add_argument("--horizon", type=int, default=15)
     ap.add_argument("--gamma", type=float, default=0.997, help="how far ahead it cares: 1/(1-gamma) steps (0.997 = ~33 s)")
@@ -403,9 +441,13 @@ def main():
     print(f"mind: {sum(p.numel() for p in mind.parameters()) / 1e6:.1f}M parameters, eyes {a.res} px", flush=True)
     world = World(a.envs, dev, mode="train", seed=a.seed, compile=bool(a.compile), rooms=a.rooms)
     per = 6 * a.res * a.res + SENSES * 2 + ACT * 2 + 2 + H_DIM * 2
-    cap = max(a.seq * 4, int(a.replay_gb * 1e9 / (per * a.envs)))
+    cap = max(a.seq * 4, int(a.replay_gb * (1 - a.long) * 1e9 / (per * a.envs)))
     print(f"replay: {cap} steps per world ({cap / 10:.0f} s), {cap * a.envs / 1e6:.2f}M moments", flush=True)
     rb = Replay(cap, a.envs, a.res, dev, emotion=a.emotion)
+    lm = None
+    if a.long > 0:
+        lm = LongMemory(int(a.replay_gb * a.long * 1e9 / (per * a.seq)), a.seq, a.res, dev)
+        print(f"long memory: {lm.C} clips of {a.seq} steps from the whole life", flush=True)
     learner = Learner(mind, a)
     actor = Actor(mind, world, a.res, dev, compile=a.compile)
     log = open(out / "log.jsonl", "a")
@@ -433,9 +475,18 @@ def main():
         cc = torch.where(st["dead"], st["cause"], torch.zeros_like(st["cause"]))
         lives["cause"] += torch.zeros(6, device=dev).index_add_(0, cc.clamp(0, 5), fin)
         if rb.n >= a.seq + 1 and steps >= a.prefill and steps % a.every == 0:
-            met, emb, kl = learner.update(rb.sample(a.batch, a.seq))
-            if a.emotion > 0:
-                rb.feel(kl)
+            if lm is not None and lm.n >= a.batch:
+                h = a.batch // 2
+                b1, b2 = rb.sample(a.batch - h, a.seq), lm.sample(h)
+                met, emb, kl = learner.update({k: torch.cat([b1[k], b2[k].to(b1[k].dtype)]) for k in b1})
+                if a.emotion > 0:
+                    rb.feel(kl[:a.batch - h])
+            else:
+                met, emb, kl = learner.update(rb.sample(a.batch, a.seq))
+                if a.emotion > 0:
+                    rb.feel(kl)
+            if lm is not None and updates % 10 == 0:
+                lm.offer(rb.sample(a.long_offer, a.seq))
             updates += 1
             stats_acc += met
             if updates % 100 == 0:
