@@ -67,22 +67,25 @@ class Sim:
         act = Actor(m, world, res, self.dev, deterministic=True)
         return m, world, act, res
 
+    DREAM_AT = (2, 5, 10, 20, 50, 100)          # imagined pictures at +0.2, 0.5, 1, 2, 5, 10 s
+
     @torch.no_grad()
-    def imagine(self, m, act, steps=12):
+    def imagine(self, m, act, steps=100):
         h, z = act.h.clone(), act.z.clone()
-        pics, cont_p, wb = [], 1.0, []
+        pics, conts, wbs = [], [], []
         for k in range(1, steps + 1):
             a, _ = m.act(torch.cat([h, z], -1), deterministic=True)
             h = m.step_h(h, z, a)
             z = m.sample(m.imagine_z(h))
             ft = torch.cat([h, z], -1)
-            c = torch.sigmoid(m.cont_head(ft)).item()
-            cont_p *= c
-            wb.append(wellbeing(m.sense_head(ft)).item())
-            if k % 3 == 0:
+            conts.append(torch.sigmoid(m.cont_head(ft)).reshape(()))
+            wbs.append(wellbeing(m.sense_head(ft)).reshape(()))
+            if k in self.DREAM_AT:
                 pic = m.minds_eye(ft).clamp(0, 1)[0]
                 pics.append(base64.b64encode((pic * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy().tobytes()).decode())
-        return pics, 1 - cont_p, wb
+        alive = torch.cumprod(torch.stack(conts), 0)
+        wb = [round(v, 3) for v in torch.stack(wbs).tolist()]
+        return pics, 1 - alive[11].item(), wb, 1 - alive[-1].item()
 
     def loop(self):
         m = world = act = None
@@ -111,7 +114,7 @@ class Sim:
             fr["eyes"] = base64.b64encode(img.permute(1, 2, 0).contiguous().cpu().numpy().tobytes()).decode()
             fr["res"] = img.shape[-1]
             if t_life % 3 == 0:
-                fr["dream"], fr["fear"], fr["wb"] = self.imagine(m, act)
+                fr["dream"], fr["fear"], fr["wb"], fr["fear10"] = self.imagine(m, act)
             fr["state"] = self.state(world)
             fr["act"] = [round(x, 2) for x in a[0].tolist()]
             act.advance(a)
