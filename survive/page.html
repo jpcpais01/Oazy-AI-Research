@@ -105,8 +105,47 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--lilac);outline
 .panel .note{font-size:13px;color:var(--ink-3);margin:2px 0 16px;max-width:60ch}
 .colL{grid-column:span 7;display:flex;flex-direction:column;gap:18px;min-width:0}
 .colR{grid-column:span 5;display:flex;flex-direction:column;gap:18px;min-width:0}
+.colC{grid-column:1/-1;display:flex;flex-direction:column;gap:18px;min-width:0}
 .s-lives,.s-learn,.s-about{grid-column:1/-1}
+.rest{margin-top:18px}
 @media (max-width:980px){.colL,.colR{grid-column:1/-1}}
+/* wide screens: the live view (header, controls, the five live panels) fits one screen */
+@media (min-width:981px){
+  .wrap{max-width:1680px;padding-top:14px}
+  .livebox{height:100vh;height:100dvh;display:flex;flex-direction:column;margin-top:-14px;padding-top:14px;padding-bottom:14px;box-sizing:border-box}
+  header{margin:0 4px 10px;grid-template-columns:auto 1fr auto;align-items:center}
+  header .brand{margin-bottom:2px}
+  h1.gt{font-size:clamp(44px,5vh,64px)}
+  .lede{font-size:15px;max-width:44ch;margin:0 0 0 8px;align-self:end}
+  header>div:first-child{display:contents}
+  header>div:first-child>.brand{display:none}
+  .vital{padding:6px 14px}.vital b{font-size:24px}.pulse canvas{height:34px}
+  .bar{margin-bottom:12px;padding:5px 6px 5px 16px}
+  .livebox>.grid{flex:1;min-height:0;grid-template-columns:5fr 4fr 3.4fr;gap:14px}
+  .livebox .colL,.livebox .colR,.livebox .colC{grid-column:auto;min-height:0;overflow:auto;gap:14px;scrollbar-width:thin}
+  .livebox .panel{padding:12px 16px 14px}
+  .livebox .panel h2{font-size:22px}
+  .livebox .panel .note{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0 0 8px;font-size:12px}
+  .livebox .eyes{grid-template-columns:repeat(2,minmax(0,calc((100vh - 300px) * .46)));justify-content:center}
+  .livebox .strip{grid-template-columns:repeat(4,minmax(0,calc((100vh - 300px) * .19)));justify-content:center}
+  .livebox .future{margin-top:8px;grid-template-columns:1fr 130px}.livebox .future svg{height:52px}.livebox .fearbox b{font-size:30px}
+  .livebox .mapbox{max-width:calc(100vh - 300px);margin:0 auto}
+  .livebox .legend{margin-top:8px;font-size:11.5px;gap:4px 12px}
+  .livebox .near{margin-top:8px}.livebox .near div{padding:6px 10px}.livebox .near b{font-size:18px}
+  .livebox .feel{grid-template-columns:130px 1fr;gap:14px}.livebox .orb{width:130px;height:130px}.livebox .orb .core{inset:32px}.livebox .orb .core b{font-size:26px}
+  .livebox .body{grid-template-columns:1fr;gap:8px}.livebox .muscle{margin:6px 0}.livebox .heat{margin-top:8px}.livebox .heat i{height:15px}
+}
+@media (min-width:981px) and (max-height:860px){
+  .livebox .panel .note{display:none}
+  .livebox .vital{padding:4px 12px}.livebox .vital b{font-size:20px}.livebox .pulse canvas{height:26px}
+  h1.gt{font-size:40px}.lede{font-size:13.5px}
+  .livebox .bar{margin-bottom:10px}
+  .livebox .muscle{margin:3px 0}.livebox .eq{height:22px}.livebox .heat i{height:11px}.livebox .heat{margin-top:6px;gap:3px}
+  .livebox .feel{grid-template-columns:110px 1fr}.livebox .orb{width:110px;height:110px}.livebox .orb .core{inset:27px}
+  .livebox .eyes{grid-template-columns:repeat(2,minmax(0,calc((100vh - 230px) * .46)))}
+  .livebox .mapbox{max-width:calc(100vh - 250px)}
+  .livebox .future svg{height:40px}
+}
 .near{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
 .near div{padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.4);border:1px solid rgba(255,255,255,.65)}
 .near b{display:block;font:400 22px/1.1 var(--serif);margin-top:2px}.near b small{font:300 12px var(--sans);color:var(--ink-3);margin-left:2px}
@@ -241,6 +280,7 @@ footer .caps{color:var(--ink-3)}
 <body>
 <div class="sky" aria-hidden="true"><i class="a"></i><i class="b"></i><i class="c"></i><div class="warm"></div><div class="fear"></div><div class="grain"></div></div>
 <div class="wrap">
+  <div class="livebox">
   <header>
     <div>
       <div class="brand"><span class="mark"></span><span class="caps">Oazy · Survive</span></div>
@@ -288,19 +328,6 @@ footer .caps{color:var(--ink-3)}
       </div>
     </section>
 
-    <section class="panel glass s-body">
-      <div class="ph"><h2>Muscles <em>and</em> senses</h2></div>
-      <p class="note">What it does right now (raw muscle signals, −1 to 1), and what reaches it besides light.</p>
-      <div class="body">
-        <div id="muscles"></div>
-        <div class="sense">
-          <h3>Ears · 4 bands each</h3>
-          <div class="ears"><span>L</span><div class="eq" id="earL"></div><span>R</span><div class="eq" id="earR"></div></div>
-          <div class="heat" id="heat"></div>
-        </div>
-      </div>
-    </section>
-
     </div>
     <div class="colR">
     <section class="panel glass s-map">
@@ -320,6 +347,8 @@ footer .caps{color:var(--ink-3)}
       <div class="near" id="near"></div>
     </section>
 
+    </div>
+    <div class="colC">
     <section class="panel glass s-feel">
       <div class="ph"><h2>How it <em>feels</em></h2></div>
       <p class="note">Its body feelings. Wellbeing, the only thing it cares about, is their mean.</p>
@@ -333,7 +362,23 @@ footer .caps{color:var(--ink-3)}
       </div>
     </section>
 
+    <section class="panel glass s-body">
+      <div class="ph"><h2>Muscles <em>and</em> senses</h2></div>
+      <p class="note">What it does right now (raw muscle signals, −1 to 1), and what reaches it besides light.</p>
+      <div class="body">
+        <div id="muscles"></div>
+        <div class="sense">
+          <h3>Ears · 4 bands each</h3>
+          <div class="ears"><span>L</span><div class="eq" id="earL"></div><span>R</span><div class="eq" id="earR"></div></div>
+          <div class="heat" id="heat"></div>
+        </div>
+      </div>
+    </section>
+
     </div>
+  </div>
+  </div>
+  <div class="grid rest">
     <section class="panel glass s-lives">
       <div class="ph"><h2>Its <em>lives</em> in this world</h2>
         <div class="lkey"><span><i style="background:var(--amber)"></i>hunger</span><span><i style="background:#ef7a4e"></i>lava</span><span><i style="background:var(--violet)"></i>predator</span><span><i style="background:var(--sand)"></i>strange being</span><span><i style="background:#6b6f8c"></i>blows</span><span><i style="background:linear-gradient(135deg,var(--aqua),var(--leaf))"></i>lived 100 s</span></div></div>
@@ -369,7 +414,7 @@ for(let i=0;i<4;i++){const f=document.createElement('div');f.className='frame';
   $('strip').appendChild(f);dreamEls.push(f.querySelector('canvas'))}
 
 /* ---------- muscles, ears, intensity ---------- */
-const MUS=[['push','#7d8de0','#c0506f'],['turn','#4fb8c8','#8a63d2'],['jump','#e9a23b','#b98a5a'],['grip','#5bb58a','#7c84a8']];
+const MUS=[['push','#7d8de0','#c0506f'],['turn','#4fb8c8','#8a63d2'],['jump','#e9a23b','#b98a5a'],['grip','#5bb58a','#7c84a8'],['gaze','#8a63d2','#4fb8c8']];
 $('muscles').innerHTML=MUS.map(([n],i)=>`<div class="muscle"><span>${n}</span><div class="track"><div class="fill" id="m${i}"></div></div><span class="v" id="mv${i}">–</span></div>`).join('');
 ['earL','earR'].forEach(id=>$(id).innerHTML='<i></i><i></i><i></i><i></i>');
 const BANDS=['heat','press','hum','field'],BCOL=[[239,122,78],[125,141,224],[79,184,200],[138,99,210]];
@@ -505,7 +550,7 @@ function show(f){
   $('enV').textContent=Math.round(s.energy*100)+'%';$('hpV').textContent=Math.round(s.health*100)+'%';
   $('fTouch').classList.toggle('on',s.body[2]>.5);$('fGround').classList.toggle('on',s.body[3]>.5);$('fHold').classList.toggle('on',s.body[4]>.5);
   // muscles
-  (f.act||[]).forEach((v,i)=>{const el=$('m'+i);const a=clamp(Math.abs(v));el.style.left=(v<0?50-a*50:50)+'%';el.style.width=a*50+'%';
+  (f.act||[]).forEach((v,i)=>{const el=$('m'+i);if(!el)return;const a=clamp(Math.abs(v));el.style.left=(v<0?50-a*50:50)+'%';el.style.width=a*50+'%';
     el.style.background=`linear-gradient(90deg,${MUS[i][1]},${MUS[i][2]})`;$('mv'+i).textContent=(v>=0?'+':'−')+Math.abs(v).toFixed(2)});
   // ears and intensity
   const E=s.ears;['earL','earR'].forEach((id,side)=>[...$(id).children].forEach((el,b)=>el.style.height=Math.round(8+92*clamp(E[side*4+b]))+'%'));
