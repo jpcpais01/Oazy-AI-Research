@@ -470,10 +470,13 @@ function drawMap(s,tnow){
     if(ring){const ph=(tnow%1600)/1600;map.strokeStyle=`rgba(138,99,210,${.5*(1-ph)})`;map.lineWidth=1.5;map.beginPath();map.arc(x,y,r*k*(1+ph*1.6),0,7);map.stroke()}};
   being(s.wand,.3,'#4fb8c8',false);being(s.pred,.35,'#8a63d2',true);
   // the creature with its two 120° eyes
-  const p=s.pos,h=s.head,cx=X(p[0]),cy=Y(p[1]);
+  const p=s.pos,h=s.head,gz=s.gaze||0,lk=h+gz,cx=X(p[0]),cy=Y(p[1]);
+  // where its eyes look (body heading + gaze): the view cone, and its sharp centre
   const vg=map.createRadialGradient(cx,cy,0,cx,cy,7*k);vg.addColorStop(0,'rgba(125,141,224,.30)');vg.addColorStop(1,'rgba(125,141,224,0)');
-  map.fillStyle=vg;map.beginPath();map.moveTo(cx,cy);map.arc(cx,cy,9*k,-(h+Math.PI/3),-(h-Math.PI/3));map.closePath();map.fill();
-  map.strokeStyle='rgba(125,141,224,.35)';map.lineWidth=1;map.setLineDash([2,4]);[1,-1].forEach(sg=>{map.beginPath();map.moveTo(cx,cy);map.lineTo(cx+Math.cos(h+sg*Math.PI/3)*2.2*k,cy-Math.sin(h+sg*Math.PI/3)*2.2*k);map.stroke()});map.setLineDash([]);
+  map.fillStyle=vg;map.beginPath();map.moveTo(cx,cy);map.arc(cx,cy,9*k,-(lk+Math.PI/3),-(lk-Math.PI/3));map.closePath();map.fill();
+  map.strokeStyle='rgba(125,141,224,.35)';map.lineWidth=1;map.setLineDash([2,4]);[1,-1].forEach(sg=>{map.beginPath();map.moveTo(cx,cy);map.lineTo(cx+Math.cos(lk+sg*Math.PI/3)*2.2*k,cy-Math.sin(lk+sg*Math.PI/3)*2.2*k);map.stroke()});map.setLineDash([]);
+  if(Math.abs(gz)>.02){const fg=map.createLinearGradient(cx,cy,cx+Math.cos(lk)*6*k,cy-Math.sin(lk)*6*k);fg.addColorStop(0,'rgba(178,98,154,.55)');fg.addColorStop(1,'rgba(178,98,154,0)');
+    map.strokeStyle=fg;map.lineWidth=2.5;map.beginPath();map.moveTo(cx,cy);map.lineTo(cx+Math.cos(lk)*6*k,cy-Math.sin(lk)*6*k);map.stroke()}
   map.save();map.shadowColor='rgba(27,33,71,.45)';map.shadowBlur=8;map.shadowOffsetY=2;map.fillStyle='#2c3577';map.beginPath();map.arc(cx,cy,.26*k,0,7);map.fill();map.restore();
   map.strokeStyle='#fff';map.lineWidth=2.4;map.lineCap='round';map.beginPath();map.moveTo(cx,cy);map.lineTo(cx+Math.cos(h)*.36*k,cy-Math.sin(h)*.36*k);map.stroke();
   map.strokeStyle='rgba(255,255,255,.9)';map.lineWidth=1.5;map.beginPath();map.arc(cx,cy,.26*k,0,7);map.stroke();
