@@ -1,0 +1,514 @@
+"""The v2 world: many 3D arenas at once, batched on the GPU.
+
+Each arena (one per "env") holds:
+  - an 11.3 m square floor (two-tone checker) closed by 2 m walls, sky above,
+  - static boxes (some are 1.4 m "ledges" too tall to jump onto from the floor),
+  - movable crates (0.6 m; pushable, and carryable with the grip),
+  - lava patches on the floor,
+  - food of 3 kinds (cube, stick, flat tile), some of it on top of ledges,
+  - three beings: a predator that chases and bites, a harmless wanderer, and a strange
+    being that is harmless at first but drains health if the creature stays near it.
+
+The creature has four muscles, each in [-1, 1]: push (forward/back), turn, jump, grip.
+Its senses (all produced here, nothing privileged):
+  - two eyes: 120 degree stereo pictures (render.py),
+  - body feelings: energy, health, touch (pushing against something), on-ground, holding,
+  - intensity: 4 sensors (left, right, front, bottom) x 4 bands (heat, pressure, hum, field),
+  - ears: left and right x 4 bands; the outer ear dulls high bands coming from behind.
+Its life ends when energy or health reaches 0, or after 100 s (a time limit, not a death).
+
+Step = 0.1 s. Energy is spent by a metabolism (idle drain, more for moving, jumping and
+carrying) and refilled by food. Health is lost to lava heat, bites, hard blows and the
+strange being, and slowly recovers.
+"""
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+
+import torch
+
+DT = 0.1
+L = 11.3            # arena side (m)
+WALL_H = 2.0
+R_BODY = 0.25       # creature radius
+EYE_H = 0.45        # eye height above the feet
+EYE_SEP = 0.04      # half the distance between the eyes
+STEP_UP = 0.3       # it can walk onto anything this low
+MAX_STEPS = 1000    # 100 s life cap
+NB = 24             # box slots (static boxes + crates)
+NL = 7              # lava slots
+NF = 8              # food slots
+SENSES = 29         # 5 body + 16 intensity + 8 ears
+BODY = 5
+ACT = 4
+
+FOOD_HALF = torch.tensor([[0.15, 0.15, 0.15], [0.05, 0.05, 0.25], [0.22, 0.22, 0.05]])
+FOOD_COL = torch.tensor([[0.95, 0.35, 0.25], [0.95, 0.85, 0.20], [0.40, 0.95, 0.30]])
+PRED_R, WAND_R, STRANGE_HALF = 0.35, 0.30, 0.30
+
+DEATH_CAUSES = ["alive", "hunger", "lava", "predator", "strange", "blows"]
+
+
+@dataclass
+class Mode:
+    n_static: int = 16
+    n_ledge: int = 3
+    n_crate: int = 6
+    n_lava: int = 4
+    n_food: int = 8
+    n_ledge_food: int = 2
+    pred_speed: float = 1.6
+
+
+MODES = {
+    "train": Mode(),
+    # unseen worlds: same rules, a different mix of things
+    "test": Mode(n_static=18, n_ledge=2, n_crate=5, n_lava=5, n_food=7, n_ledge_food=1, pred_speed=1.7),
+    "hard": Mode(n_static=17, n_ledge=3, n_crate=4, n_lava=7, n_food=6, n_ledge_food=2, pred_speed=2.0),
+}
+
+
+def _jit(g, shape, dev, a=0.05):
+    return 1 + (torch.rand(shape, generator=g, device=dev) * 2 - 1) * a
+
+
+class World:
+    """B arenas stepped together. All state lives in tensors on `device`."""
+
+    def __init__(self, B: int, device="cuda", mode="train", seed=0, metabolism=True):
+        self.B, self.dev, self.metabolism = B, torch.device(device), metabolism
+        self.g = torch.Generator(device=self.dev)
+        self.g.manual_seed(seed)
+        self.mode_name = mode
+        self.mode = MODES[mode]
+        self.food_half = FOOD_HALF.to(self.dev)
+        self.food_col = FOOD_COL.to(self.dev)
+        z = lambda *s, dt=torch.float32: torch.zeros(*s, device=self.dev, dtype=dt)
+        self.pos, self.vel = z(B, 3), z(B, 3)
+        self.head = z(B)
+        self.on_ground = z(B, dt=torch.bool)
+        self.energy, self.health = z(B), z(B)
+        self.t = z(B, dt=torch.long)
+        self.bmin, self.bmax, self.bcol = z(B, NB, 3), z(B, NB, 3), z(B, NB, 3)
+        self.bact, self.bmov = z(B, NB, dt=torch.bool), z(B, NB, dt=torch.bool)
+        self.lmin, self.lmax, self.lact = z(B, NL, 2), z(B, NL, 2), z(B, NL, dt=torch.bool)
+        self.fpos, self.fkind = z(B, NF, 3), z(B, NF, dt=torch.long)
+        self.fslot, self.fup, self.fledge = z(B, NF, dt=torch.bool), z(B, NF, dt=torch.bool), z(B, NF, dt=torch.long)
+        self.ftimer, self.fcol = z(B, NF, dt=torch.long), z(B, NF, 3)
+        self.pred, self.wand, self.strange = z(B, 2), z(B, 2), z(B, 2)
+        self.wand_dir, self.strange_goal = z(B), z(B, 2)
+        self.bite_cd, self.near_strange = z(B, dt=torch.long), z(B, dt=torch.long)
+        self.pred_speed = z(B)
+        self.held = torch.full((B,), -1, device=self.dev, dtype=torch.long)
+        self.floor_col, self.wall_col = z(B, 2, 3), z(B, 4, 3)
+        self.pred_col, self.wand_col, self.strange_col = z(B, 3), z(B, 3), z(B, 3)
+        # per-step outputs
+        self.touch, self.pressure = z(B), z(B)
+        self.senses = z(B, SENSES)
+        self.reset(torch.arange(B, device=self.dev))
+
+    # ------------------------------------------------------------------ world generation
+    def _rand(self, *shape):
+        return torch.rand(*shape, generator=self.g, device=self.dev)
+
+    def _free_points(self, idx, k, avoid_lava=True, margin=0.6):
+        """For each env in idx, k random floor points not inside boxes (and lava)."""
+        n, C = len(idx), 24
+        p = 0.8 + self._rand(n, k, C, 2) * (L - 1.6)
+        bmin, bmax = self.bmin[idx][:, None, None], self.bmax[idx][:, None, None]   # n,1,1,NB,3
+        inside = ((p[..., None, :] > bmin[..., :2] - margin) & (p[..., None, :] < bmax[..., :2] + margin)).all(-1)
+        bad = (inside & self.bact[idx][:, None, None]).any(-1)
+        if avoid_lava:
+            lmin, lmax = self.lmin[idx][:, None, None], self.lmax[idx][:, None, None]
+            inl = ((p[..., None, :] > lmin - 0.3) & (p[..., None, :] < lmax + 0.3)).all(-1)
+            bad |= (inl & self.lact[idx][:, None, None]).any(-1)
+        score = (~bad).float() + self._rand(n, k, C) * 0.01      # first good candidate (random tie-break)
+        best = score.argmax(-1)
+        return torch.gather(p, 2, best[..., None, None].expand(n, k, 1, 2)).squeeze(2)
+
+    def reset(self, idx):
+        """New random worlds for the envs in idx (a fresh life in a fresh layout)."""
+        if len(idx) == 0:
+            return
+        n, m, dev = len(idx), self.mode, self.dev
+        g = self.g
+        # boxes: static [0, n_static), ledges are the first n_ledge statics, crates after
+        half = 0.3 + self._rand(n, NB, 2) * 0.5
+        hgt = 0.35 + self._rand(n, NB) * 0.65
+        j = torch.arange(NB, device=dev)
+        is_ledge = j < m.n_ledge
+        is_crate = (j >= m.n_static) & (j < m.n_static + m.n_crate)
+        hgt = torch.where(is_ledge, torch.full_like(hgt, 1.4), hgt)
+        hgt = torch.where(is_crate, torch.full_like(hgt, 0.6), hgt)
+        half = torch.where(is_crate[:, None], torch.full_like(half, 0.3), half)
+        ctr = 1.0 + self._rand(n, NB, 2) * (L - 2.0)
+        self.bmin[idx] = torch.cat([ctr - half, torch.zeros(n, NB, 1, device=dev)], -1)
+        self.bmax[idx] = torch.cat([ctr + half, hgt[..., None]], -1)
+        self.bact[idx] = (j < m.n_static + m.n_crate).expand(n, NB)
+        self.bmov[idx] = is_crate.expand(n, NB)
+        base = torch.where(is_crate[:, None], torch.tensor([0.78, 0.62, 0.42], device=dev),
+                           torch.where(is_ledge[:, None], torch.tensor([0.42, 0.40, 0.48], device=dev),
+                                       torch.tensor([0.55, 0.50, 0.44], device=dev)))
+        self.bcol[idx] = base * _jit(g, (n, NB, 3), dev, 0.08)
+        # lava
+        lh = 0.4 + self._rand(n, NL, 2) * 0.6
+        lc = 1.0 + self._rand(n, NL, 2) * (L - 2.0)
+        self.lmin[idx], self.lmax[idx] = lc - lh, lc + lh
+        self.lact[idx] = (torch.arange(NL, device=dev) < m.n_lava).expand(n, NL)
+        # colours
+        self.floor_col[idx] = torch.tensor([[0.62, 0.70, 0.58], [0.55, 0.63, 0.52]], device=dev) * _jit(g, (n, 1, 3), dev)
+        self.wall_col[idx] = torch.tensor([0.70, 0.70, 0.74], device=dev) * _jit(g, (n, 4, 3), dev)
+        self.pred_col[idx] = torch.tensor([0.50, 0.28, 0.78], device=dev) * _jit(g, (n, 3), dev)
+        self.wand_col[idx] = torch.tensor([0.30, 0.62, 0.66], device=dev) * _jit(g, (n, 3), dev)
+        self.strange_col[idx] = torch.tensor([0.90, 0.88, 0.72], device=dev) * _jit(g, (n, 3), dev)
+        # creature
+        self.pos[idx] = torch.cat([self._free_points(idx, 1)[:, 0], torch.zeros(n, 1, device=dev)], -1)
+        self.vel[idx] = 0
+        self.head[idx] = self._rand(n) * 2 * math.pi
+        self.on_ground[idx] = True
+        self.energy[idx] = 0.7 + self._rand(n) * 0.3
+        self.health[idx] = 1.0
+        self.t[idx] = 0
+        self.held[idx] = -1
+        # food
+        kinds = (self._rand(n, NF) * 3).long()
+        self.fkind[idx] = kinds
+        self.fcol[idx] = self.food_col[kinds] * _jit(g, (n, NF, 3), dev)
+        k = torch.arange(NF, device=dev)
+        self.fslot[idx] = (k < m.n_food).expand(n, NF)
+        self.fledge[idx] = torch.where(k < m.n_ledge_food, k % max(m.n_ledge, 1), torch.full_like(k, -1)).expand(n, NF).clone()
+        self.ftimer[idx] = 0
+        self.fup[idx] = self.fslot[idx]
+        self._place_food(idx, torch.ones(n, NF, dtype=torch.bool, device=dev))
+        # beings: start away from the creature
+        cand = self._free_points(idx, 6, avoid_lava=False)                      # n,6,2
+        d = (cand - self.pos[idx, None, :2]).norm(dim=-1)
+        far = d.argmax(-1)
+        self.pred[idx] = cand[torch.arange(n, device=dev), far]
+        self.wand[idx] = cand[:, 0]
+        self.strange[idx] = cand[:, 1]
+        self.wand_dir[idx] = self._rand(n) * 2 * math.pi
+        self.strange_goal[idx] = self._free_points(idx, 1, avoid_lava=False)[:, 0]
+        self.bite_cd[idx] = 0
+        self.near_strange[idx] = 0
+        self.pred_speed[idx] = m.pred_speed
+
+    def _place_food(self, idx, which):
+        """(Re)place food slots `which` (n,NF bool) of envs idx: on their ledge or on free floor."""
+        n = len(idx)
+        floor = self._free_points(idx, NF)                                       # n,NF,2
+        kinds = self.fkind[idx]
+        hz = self.food_half[kinds][..., 2]
+        led = self.fledge[idx]
+        lidx = led.clamp(min=0)
+        bmin = torch.gather(self.bmin[idx], 1, lidx[..., None].expand(n, NF, 3))
+        bmax = torch.gather(self.bmax[idx], 1, lidx[..., None].expand(n, NF, 3))
+        on_ledge = led >= 0
+        xy = torch.where(on_ledge[..., None], (bmin[..., :2] + bmax[..., :2]) / 2, floor)
+        zc = torch.where(on_ledge, bmax[..., 2] + hz, hz)
+        new = torch.cat([xy, zc[..., None]], -1)
+        self.fpos[idx] = torch.where(which[..., None], new, self.fpos[idx])
+
+    # ------------------------------------------------------------------ physics
+    def step(self, action):
+        """action (B,4) in [-1,1]. Returns (done, trunc, cause, ate_kind) for this step."""
+        B, dev = self.B, self.dev
+        a = action.clamp(-1, 1)
+        push, turn = a[:, 0], a[:, 1]
+        jump = (a[:, 2] > 0.5) & self.on_ground
+        grip = a[:, 3] > 0
+        self.head = (self.head + turn * 2.5 * DT) % (2 * math.pi)
+        fwd = torch.stack([torch.cos(self.head), torch.sin(self.head)], -1)
+        want = fwd * (push * 2.5)[:, None]
+        ctrl = torch.where(self.on_ground, 0.5, 0.1)[:, None]
+        vxy = self.vel[:, :2] + ctrl * (want - self.vel[:, :2])
+        vz = torch.where(jump, torch.full_like(self.vel[:, 2], 4.2), self.vel[:, 2]) - 9.8 * DT
+        old = self.pos.clone()
+        p = self.pos + torch.cat([vxy, vz[:, None]], -1) * DT
+        holding = self.held >= 0
+        ar = torch.arange(B, device=dev)
+
+        # --- horizontal collisions with boxes (circle approximated by a square of side 2r)
+        feet = p[:, 2]
+        bmin, bmax = self.bmin, self.bmax
+        solid = self.bact & (bmax[..., 2] > feet[:, None] + STEP_UP)
+        solid &= ~(holding[:, None] & (torch.arange(NB, device=dev)[None] == self.held[:, None]))
+        lo = bmin[..., :2] - R_BODY
+        hi = bmax[..., :2] + R_BODY
+        pxy = p[:, None, :2]
+        inside = ((pxy > lo) & (pxy < hi)).all(-1) & solid                    # B,NB
+        pen_neg = pxy - lo                                                     # push toward -axis
+        pen_pos = hi - pxy                                                     # push toward +axis
+        pen = torch.cat([pen_neg, pen_pos], -1)                                # B,NB,4
+        k = pen.argmin(-1)
+        amt = pen.gather(-1, k[..., None]).squeeze(-1)
+        dirs = torch.tensor([[-1., 0], [0, -1.], [1., 0], [0, 1.]], device=dev)
+        disp = dirs[k] * amt[..., None] * inside[..., None]                    # creature displacement per box
+        # crates move instead of the creature, unless they would run into something
+        crate = inside & self.bmov
+        cmove = -disp * crate[..., None]
+        nmin = bmin[..., :2] + cmove
+        nmax = bmax[..., :2] + cmove
+        blocked_c = (nmin < 0.02).any(-1) | (nmax > L - 0.02).any(-1)
+        # crate vs any other box (footprint overlap)
+        ov = ((nmin[:, :, None] < bmax[:, None, :, :2]) & (nmax[:, :, None] > bmin[:, None, :, :2])).all(-1)
+        ov &= self.bact[:, None, :] & ~torch.eye(NB, dtype=torch.bool, device=dev)[None]
+        blocked_c |= ov.any(-1)
+        ok_c = crate & ~blocked_c
+        self.bmin[..., :2] = torch.where(ok_c[..., None], nmin, bmin[..., :2])
+        self.bmax[..., :2] = torch.where(ok_c[..., None], nmax, bmax[..., :2])
+        disp = disp * (~ok_c)[..., None]
+        p_xy = p[:, :2] + disp.sum(1)
+        hit_box = (inside & ~ok_c).any(-1)
+        # walls
+        clamped = p_xy.clamp(R_BODY, L - R_BODY)
+        hit_wall = (clamped != p_xy).any(-1)
+        p = torch.cat([clamped, p[:, 2:]], -1)
+        self.touch = ((hit_box | hit_wall) & (push.abs() > 0.05)).float()
+
+        # --- vertical: ground under the creature (floor or a box top it is over)
+        over = ((p[:, None, :2] > bmin[..., :2]) & (p[:, None, :2] < bmax[..., :2])).all(-1) & self.bact
+        over &= bmax[..., 2] <= old[:, None, 2] + STEP_UP + 1e-4
+        if holding.any():
+            over &= ~(torch.arange(NB, device=dev)[None] == self.held[:, None])
+        ground = torch.where(over, bmax[..., 2], torch.zeros_like(bmax[..., 2])).amax(-1)
+        land = p[:, 2] <= ground
+        p[:, 2] = torch.where(land, ground, p[:, 2])
+        vz = torch.where(land, torch.zeros_like(vz), vz)
+        self.vel = torch.cat([(p[:, :2] - old[:, :2]) / DT, vz[:, None]], -1)
+        self.pos = p
+        self.on_ground = land
+
+        # --- grip: pick up the crate in front, carry it, drop it when the grip opens
+        fwd = torch.stack([torch.cos(self.head), torch.sin(self.head)], -1)
+        ctr = (self.bmin[..., :2] + self.bmax[..., :2]) / 2
+        rel = ctr - p[:, None, :2]
+        dist = rel.norm(dim=-1)
+        front = (rel * fwd[:, None]).sum(-1) > 0
+        cand = self.bmov & self.bact & (dist < 0.75) & front & ((self.bmin[..., 2] - p[:, None, 2]).abs() < 0.5)
+        dsel = torch.where(cand, dist, torch.full_like(dist, 1e9))
+        pick = dsel.argmin(-1)
+        can = cand.any(-1) & grip & ~holding
+        self.held = torch.where(can, pick, self.held)
+        self.held = torch.where(~grip, torch.full_like(self.held, -1), self.held)
+        holding = self.held >= 0
+        if holding.any():
+            hi_ = self.held.clamp(min=0)
+            size = (self.bmax[ar, hi_, :2] - self.bmin[ar, hi_, :2])
+            target = p[:, :2] + fwd * (R_BODY + 0.32)
+            nmin = target - size / 2
+            nmax = target + size / 2
+            okw = (nmin > 0.02).all(-1) & (nmax < L - 0.02).all(-1)
+            ov = ((nmin[:, None] < self.bmax[..., :2]) & (nmax[:, None] > self.bmin[..., :2])).all(-1) & self.bact
+            ov[ar, hi_] = False
+            okm = holding & okw & ~ov.any(-1)
+            self.bmin[ar, hi_, :2] = torch.where(okm[:, None], nmin, self.bmin[ar, hi_, :2])
+            self.bmax[ar, hi_, :2] = torch.where(okm[:, None], nmax, self.bmax[ar, hi_, :2])
+            # a carried crate rides at the creature's height (lifted onto ledges with it)
+            zb = torch.where(okm, p[:, 2], self.bmin[ar, hi_, 2])
+            hgt = self.bmax[ar, hi_, 2] - self.bmin[ar, hi_, 2]
+            self.bmin[ar, hi_, 2] = zb
+            self.bmax[ar, hi_, 2] = zb + hgt
+        # dropped crates fall to whatever is under them
+        free_c = self.bmov & self.bact & ~(holding[:, None] & (torch.arange(NB, device=dev)[None] == self.held[:, None]))
+        if free_c.any():
+            cmin, cmax = self.bmin[..., :2], self.bmax[..., :2]
+            ov = ((cmin[:, :, None] < self.bmax[:, None, :, :2]) & (cmax[:, :, None] > self.bmin[:, None, :, :2])).all(-1)
+            ov &= self.bact[:, None, :] & ~torch.eye(NB, dtype=torch.bool, device=dev)[None]
+            below = ov & (self.bmax[:, None, :, 2] <= self.bmin[:, :, None, 2] + 1e-3)
+            floor_z = torch.where(below, self.bmax[:, None, :, 2], torch.zeros_like(below, dtype=torch.float)).amax(-1)
+            hgt = self.bmax[..., 2] - self.bmin[..., 2]
+            nz = torch.where(free_c, floor_z, self.bmin[..., 2])
+            self.bmin[..., 2] = nz
+            self.bmax[..., 2] = nz + hgt
+
+        # --- metabolism
+        d0 = 1.0 / 300
+        speed2 = (self.vel[:, :2] ** 2).sum(-1)
+        if self.metabolism:
+            moving = ((push.abs() > 0.05) | (turn.abs() > 0.05)).float()
+            move = 0.2 * moving + 0.15 * push.abs() + 0.05 * turn.abs() + 0.0375 * speed2
+            move = torch.where(holding, 2 * move + 0.1, move)
+            cost = d0 * (1 + move) + 12 * d0 * jump.float()
+        else:
+            cost = torch.full_like(push, d0)
+        self.energy = self.energy - cost
+
+        # --- food
+        fc = self.fpos
+        dxy = (fc[..., :2] - p[:, None, :2]).norm(dim=-1)
+        fz = fc[..., 2]
+        reach = (dxy < R_BODY + 0.25) & (fz > p[:, None, 2] - 0.2) & (fz < p[:, None, 2] + 0.9) & self.fup
+        first = reach.float().argmax(-1)
+        ate = reach.any(-1)
+        ate_kind = torch.where(ate, self.fkind[ar, first], torch.full_like(first, -1))
+        self.energy = torch.where(ate, (self.energy + 0.3).clamp(max=1.0), self.energy)
+        self.health = torch.where(ate, (self.health + 0.05).clamp(max=1.0), self.health)
+        eaten = torch.zeros_like(self.fup)
+        eaten[ar, first] = ate
+        self.fup &= ~eaten
+        self.ftimer = torch.where(eaten, torch.full_like(self.ftimer, 200), (self.ftimer - 1).clamp(min=0))
+        respawn = self.fslot & ~self.fup & (self.ftimer == 0)
+        if respawn.any():
+            envs = respawn.any(-1).nonzero().squeeze(-1)
+            self._place_food(envs, respawn[envs])
+            self.fup |= respawn
+
+        # --- beings
+        self._move_beings(p)
+        cause = torch.zeros(B, dtype=torch.long, device=dev)
+        # lava: heat under the feet
+        on_floor = p[:, 2] < 0.05
+        in_lava = (((p[:, None, :2] > self.lmin) & (p[:, None, :2] < self.lmax)).all(-1) & self.lact).any(-1) & on_floor
+        dmg_lava = in_lava.float() * 0.019
+        # predator bite
+        dpred = (self.pred - p[:, :2]).norm(dim=-1)
+        bite = (dpred < R_BODY + PRED_R + 0.05) & (p[:, 2] < 0.6) & (self.bite_cd == 0)
+        self.bite_cd = torch.where(bite, torch.full_like(self.bite_cd, 10), (self.bite_cd - 1).clamp(min=0))
+        dmg_bite = bite.float() * 0.34
+        # strange being: harmless at first, then drains while the creature stays near
+        dstr = (self.strange - p[:, :2]).norm(dim=-1)
+        near = (dstr < 1.5) & (p[:, 2] < 1.0)
+        self.near_strange = torch.where(near, self.near_strange + 1, torch.zeros_like(self.near_strange))
+        dmg_str = (self.near_strange > 30).float() * 0.02
+        # blows: pressure above a threshold hurts
+        self.pressure = self.touch * 6 * push.abs() + bite.float() * 10
+        dmg_blow = (self.touch * 6 * push.abs() - 5).clamp(min=0) * 0.01
+        dmg = dmg_lava + dmg_bite + dmg_str + dmg_blow
+        self.health = (self.health - dmg + 0.001).clamp(max=1.0)
+
+        self.t += 1
+        starve = self.energy <= 0
+        killed = self.health <= 0
+        done = starve | killed
+        # cause of death: the biggest harm this step if killed, else hunger
+        harms = torch.stack([dmg_lava, dmg_bite, dmg_str, dmg_blow], -1)
+        cause = torch.where(killed, harms.argmax(-1) + 2, cause)
+        cause = torch.where(starve & ~killed, torch.ones_like(cause), cause)
+        trunc = (self.t >= MAX_STEPS) & ~done
+        self._sense(p)
+        return done, trunc, cause, ate_kind
+
+    def _slide(self, q, r):
+        """Push circles (B,2) of radius r out of active boxes taller than 0.3 m and keep them inside."""
+        lo = self.bmin[..., :2] - r
+        hi = self.bmax[..., :2] + r
+        qq = q[:, None]
+        inside = ((qq > lo) & (qq < hi)).all(-1) & self.bact & (self.bmax[..., 2] > 0.3)
+        pen = torch.cat([qq - lo, hi - qq], -1)
+        k = pen.argmin(-1)
+        amt = pen.gather(-1, k[..., None]).squeeze(-1)
+        dirs = torch.tensor([[-1., 0], [0, -1.], [1., 0], [0, 1.]], device=self.dev)
+        q = q + (dirs[k] * amt[..., None] * inside[..., None]).sum(1)
+        return q.clamp(r, L - r)
+
+    def _move_beings(self, p):
+        B = self.B
+        # predator: walks straight at the creature (with a little wobble), slides around boxes
+        to = p[:, :2] - self.pred
+        d = to.norm(dim=-1, keepdim=True).clamp(min=1e-4)
+        wob = (self._rand(B, 2) - 0.5) * 0.6
+        step = (to / d + wob) * (self.pred_speed * DT)[:, None]
+        step = torch.where(d > 0.55, step, torch.zeros_like(step))
+        self.pred = self._slide(self.pred + step, PRED_R)
+        # wanderer: a slow random walk
+        self.wand_dir = self.wand_dir + (self._rand(B) - 0.5) * 0.8
+        w = torch.stack([torch.cos(self.wand_dir), torch.sin(self.wand_dir)], -1) * 0.8 * DT
+        nw = self._slide(self.wand + w, WAND_R)
+        stuck = (nw - (self.wand + w)).norm(dim=-1) > 1e-3
+        self.wand_dir = torch.where(stuck, self.wand_dir + math.pi * 0.7, self.wand_dir)
+        self.wand = nw
+        # strange being: drifts slowly between random spots
+        to = self.strange_goal - self.strange
+        d = to.norm(dim=-1, keepdim=True).clamp(min=1e-4)
+        self.strange = self._slide(self.strange + to / d * 0.4 * DT, STRANGE_HALF)
+        arrived = d.squeeze(-1) < 0.5
+        if arrived.any():
+            idx = arrived.nonzero().squeeze(-1)
+            self.strange_goal[idx] = self._free_points(idx, 1, avoid_lava=False)[:, 0]
+
+    # ------------------------------------------------------------------ senses
+    def _sense(self, p):
+        B, dev = self.B, self.dev
+        fwd = torch.stack([torch.cos(self.head), torch.sin(self.head)], -1)
+        left = torch.stack([-fwd[:, 1], fwd[:, 0]], -1)
+        # intensity sensors: left, right, front side points (normals), and the bottom
+        pts = torch.stack([p[:, :2] + left * R_BODY, p[:, :2] - left * R_BODY, p[:, :2] + fwd * R_BODY, p[:, :2]], 1)
+        nrm = torch.stack([left, -left, fwd], 1)                                       # B,3,2
+        # band 0, heat from lava: falls off with distance to each patch
+        q = pts[:, :, None]                                                            # B,4,1,2
+        dx = torch.maximum(self.lmin[:, None] - q, q - self.lmax[:, None]).clamp(min=0).norm(dim=-1)  # B,4,NL
+        heat = (4.0 / (1 + (dx / 0.4) ** 2) * self.lact[:, None]).sum(-1)              # B,4
+        lift = torch.exp(-p[:, 2] / 0.3)
+        heat = heat * torch.stack([lift, lift, lift, lift * 5], -1)
+        # band 1, pressure: blows on the front, bites on the side facing the predator
+        to_p = self.pred - p[:, :2]
+        dp = to_p.norm(dim=-1).clamp(min=1e-3)
+        u_p = to_p / dp[:, None]
+        gain_p = 0.5 + 0.5 * (nrm * u_p[:, None]).sum(-1).clamp(min=0)                # B,3
+        bite = (self.pressure >= 10).float()
+        press = torch.zeros(B, 4, device=dev)
+        press[:, 2] = self.touch * 6 * 0  # filled below
+        blow = self.pressure - bite * 10
+        press[:, :3] = bite[:, None] * 10 * gain_p
+        press[:, 2] += blow
+        # bands 2-3: the predator's hum and the strange being's field, through the side sensors
+        hum = torch.zeros(B, 4, device=dev)
+        hum[:, :3] = 2.0 / (1 + dp[:, None] ** 2) * gain_p
+        hum[:, 3] = 2.0 / (1 + dp ** 2 + p[:, 2] ** 2) * 0.5
+        to_s = self.strange - p[:, :2]
+        ds = to_s.norm(dim=-1).clamp(min=1e-3)
+        gain_s = 0.5 + 0.5 * (nrm * (to_s / ds[:, None])[:, None]).sum(-1).clamp(min=0)
+        fld = torch.zeros(B, 4, device=dev)
+        fld[:, :3] = 2.0 / (1 + ds[:, None] ** 2) * gain_s
+        fld[:, 3] = 2.0 / (1 + ds ** 2) * 0.5
+        intensity = torch.stack([heat, press, hum, fld], -1)                           # B,4 sensors,4 bands
+        # ears: left/right, 4 bands; predator low+mid, wanderer mid+high, strange highest
+        ears = torch.zeros(B, 2, 4, device=dev)
+        srcs = [(self.pred, torch.tensor([1.0, 0.6, 0.1, 0.0], device=dev) * 3),
+                (self.wand, torch.tensor([0.0, 0.5, 0.8, 0.2], device=dev) * 2),
+                (self.strange, torch.tensor([0.0, 0.0, 0.3, 1.0], device=dev) * 2)]
+        ear_pos = torch.stack([p[:, :2] + left * 0.15, p[:, :2] - left * 0.15], 1)
+        ear_n = torch.stack([left, -left], 1)
+        for src, spec in srcs:
+            to = src[:, None] - ear_pos
+            d = to.norm(dim=-1).clamp(min=0.1)
+            u = to / d[..., None]
+            gain = 0.6 + 0.4 * (u * ear_n).sum(-1)                                     # B,2
+            behind = (u * fwd[:, None]).sum(-1) < 0
+            pinna = torch.where(behind[..., None], torch.tensor([1.0, 1.0, 0.5, 0.5], device=dev),
+                                torch.ones(4, device=dev))
+            ears += spec * pinna * (gain / (1 + d ** 2))[..., None]
+        holding = (self.held >= 0).float()
+        body = torch.stack([self.energy.clamp(0, 1), self.health.clamp(0, 1), self.touch,
+                            self.on_ground.float(), holding], -1)
+        self.senses = torch.cat([body, torch.log1p(intensity.flatten(1)), torch.log1p(ears.flatten(1))], -1)
+
+    # ------------------------------------------------------------------ for the renderer
+    def scene(self):
+        """Everything the renderer needs as tensors (boxes incl. food and the strange being)."""
+        B, dev = self.B, self.dev
+        fh = self.food_half[self.fkind]
+        fmin = self.fpos - fh
+        fmax = self.fpos + fh
+        far = torch.full_like(fmin, -100.0)
+        fmin = torch.where(self.fup[..., None], fmin, far)
+        fmax = torch.where(self.fup[..., None], fmax, far)
+        smin = torch.cat([self.strange - STRANGE_HALF, torch.zeros(B, 1, device=dev)], -1)
+        smax = torch.cat([self.strange + STRANGE_HALF, torch.full((B, 1), 2 * STRANGE_HALF, device=dev)], -1)
+        bmin = torch.where(self.bact[..., None], self.bmin, torch.full_like(self.bmin, -100.0))
+        bmax = torch.where(self.bact[..., None], self.bmax, torch.full_like(self.bmax, -100.0))
+        amin = torch.cat([bmin, fmin, smin[:, None]], 1)
+        amax = torch.cat([bmax, fmax, smax[:, None]], 1)
+        acol = torch.cat([self.bcol, self.fcol, self.strange_col[:, None]], 1)
+        glow = torch.cat([torch.zeros(B, NB, device=dev), torch.ones(B, NF, device=dev), torch.zeros(B, 1, device=dev)], 1)
+        sph = torch.stack([torch.cat([self.pred, torch.full((B, 1), PRED_R, device=dev)], -1),
+                           torch.cat([self.wand, torch.full((B, 1), WAND_R, device=dev)], -1)], 1)   # centre xy, z=r
+        sph_r = torch.tensor([PRED_R, WAND_R], device=dev).expand(B, 2)
+        sph_col = torch.stack([self.pred_col, self.wand_col], 1)
+        lava = torch.cat([self.lmin, self.lmax], -1)
+        lava = torch.where(self.lact[..., None], lava, torch.full_like(lava, -100.0))
+        return dict(pos=self.pos, head=self.head, amin=amin, amax=amax, acol=acol, glow=glow,
+                    sph=sph, sph_r=sph_r, sph_col=sph_col, lava=lava,
+                    floor_col=self.floor_col, wall_col=self.wall_col)
