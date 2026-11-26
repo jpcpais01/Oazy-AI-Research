@@ -19,7 +19,8 @@ import math
 
 import torch
 
-from .world import EYE_H, EYE_SEP, L, WALL_H
+from .world import EYE_H, L, WALL_H
+from . import world as _world
 
 FOG_L = 12.0
 TAN = math.tan(math.radians(60))
@@ -40,8 +41,10 @@ def set_fovea(k):
 def set_eyes(args):
     """Fovea and gaze from a run's args (dict)."""
     from .world import set_gaze
+    from . import world
     set_fovea(args.get("fovea", 0))
     set_gaze(args.get("gaze", 0))
+    world.EYE_SEP = float(args.get("eye_sep", 0.08)) / 2
 
 
 def _pixel_dirs(H, dev):
@@ -69,7 +72,7 @@ def _render_chunk(sc, H):
     d = f[:, None] + px[None, :, None] * r[:, None] + py[None, :, None] * u           # B,P,3
     d = d / d.norm(dim=-1, keepdim=True)
     eye = pos + torch.tensor([0.0, 0.0, EYE_H], device=dev)
-    o = torch.stack([eye - r * EYE_SEP, eye + r * EYE_SEP], 1)                         # B,2,3 (left, right)
+    o = torch.stack([eye - r * _world.EYE_SEP, eye + r * _world.EYE_SEP], 1)                         # B,2,3 (left, right)
     d = d[:, None].expand(B, 2, P, 3).reshape(B, 2 * P, 3)
     o = o[:, :, None].expand(B, 2, P, 3).reshape(B, 2 * P, 3)
     inf = torch.full(d.shape[:2], 1e9, device=dev)

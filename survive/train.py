@@ -402,6 +402,7 @@ def main():
     ap.add_argument("--minutes", type=float, default=300)
     ap.add_argument("--res", type=int, default=64)
     ap.add_argument("--rooms", type=int, default=65536, help="fixed list of training rooms, same order in every run (0 = always new)")
+    ap.add_argument("--eye-sep", type=float, default=0.08, help="distance between the two eyes (m)")
     ap.add_argument("--gaze", type=float, default=0, help="degrees the eyes can turn left/right with the 5th muscle (0 = off)")
     ap.add_argument("--fovea", type=float, default=0, help="0 = plain eye; k = centre k times sharper (same pixels)")
     ap.add_argument("--envs", type=int, default=512)
