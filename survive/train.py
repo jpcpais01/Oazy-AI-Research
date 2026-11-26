@@ -316,8 +316,17 @@ class Learner:
                 vw = m.will_critic(ftd[:-1]).float().squeeze(-1)
             ret_w = lambda_returns(r_ext.detach(), c.detach(), vw_slow * scale, a.gamma, a.lam)
             l_wcrit = (w * ((vw - ret_w / scale) ** 2 + (vw - vw_slow[:-1]) ** 2)).mean()
-            adv = torch.stack([(ret_w[d] - vw[d].detach() * scale) for d in dec_at]) / S
+            adv = torch.stack([(ret_w[d] - vw[d].detach() * scale) for d in dec_at])
             wd = torch.stack([w[d] for d in dec_at])
+            if getattr(a, "will_norm", 1):
+                # standardise the advantage: which intention was better is a small difference in a
+                # long return, and divided by the return range it was too weak to teach the will
+                # (it stayed fully random in will_s1)
+                m_ = (wd * adv).sum() / wd.sum().clamp(min=1)
+                sd = torch.sqrt((wd * (adv - m_) ** 2).sum() / wd.sum().clamp(min=1) + 1e-8)
+                adv = (adv - m_) / sd
+            else:
+                adv = adv / S
             lp, we = torch.stack(logps), torch.stack(wents)
             l_will = -(wd * lp * adv.detach()).mean() - getattr(a, "will_ent", 1e-3) * (wd * we).mean()
             l_actor = l_actor + l_will
@@ -507,6 +516,7 @@ def main():
     ap.add_argument("--intent", type=int, default=0, help="a will picks an intention every K steps (0 = off; 10 = every 1 s)")
     ap.add_argument("--intent-w", type=float, default=0.3, help="pay to the muscles for reaching the intended memory (wellbeing pays 1)")
     ap.add_argument("--lr-will", type=float, default=3e-4)
+    ap.add_argument("--will-norm", type=int, default=1, help="standardise the will's advantage (0 = divide by the return range, as in will_s1)")
     ap.add_argument("--will-ent", type=float, default=1e-3, help="how much the will is paid to keep its choices varied")
     ap.add_argument("--start-stride", type=int, default=1, help="dream from every k-th remembered moment (2 halves the dream cost)")
     ap.add_argument("--gamma", type=float, default=0.997, help="how far ahead it cares: 1/(1-gamma) steps (0.997 = ~33 s)")
