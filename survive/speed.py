@@ -71,9 +71,10 @@ def main():
     sync()
     print(f"warm learner (incl. compile) {time.time() - t0:.1f} s", flush=True)
 
-    r_ms = timeit(lambda: render(world, a.res, compile=bool(a.compile)), a.n, sync)
-    e_ms = timeit(env_step, a.n, sync)
-    w_ms = timeit(lambda: world.step(torch.zeros(a.envs, 4, device=dev)), a.n, sync)
+    with torch.no_grad():
+        r_ms = timeit(lambda: render(world, a.res, compile=bool(a.compile)), a.n, sync)
+        e_ms = timeit(env_step, a.n, sync)
+        w_ms = timeit(lambda: world.step(torch.zeros(a.envs, 4, device=dev)), a.n, sync)
     u_ms = timeit(lambda: learner.update(rb.sample(a.batch, a.seq)), a.n, sync)
 
     def both():

@@ -289,7 +289,7 @@ class Actor:
         self.life_food = torch.zeros(B, 3, device=dev)
         global _policy_compiled
         if compile and _policy_compiled is None:
-            _policy_compiled = torch.compile(_policy_step)
+            _policy_compiled = torch.compile(_policy_step, dynamic=False)
         self.policy = _policy_compiled if compile else _policy_step
         self.compile = compile
 
@@ -359,8 +359,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--minutes", type=float, default=300)
     ap.add_argument("--res", type=int, default=64)
-    ap.add_argument("--envs", type=int, default=256)
-    ap.add_argument("--batch", type=int, default=64)
+    ap.add_argument("--envs", type=int, default=512)
+    ap.add_argument("--batch", type=int, default=256)
     ap.add_argument("--seq", type=int, default=32)
     ap.add_argument("--replay-gb", type=float, default=8.0)
     ap.add_argument("--every", type=int, default=1, help="env steps per learning update")

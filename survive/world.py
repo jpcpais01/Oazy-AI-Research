@@ -230,7 +230,7 @@ class World:
         """action (B,4) in [-1,1]. Returns (done, trunc, cause, ate_kind) for this step."""
         if self.compile:
             if self._step_c is None:
-                self._step_c = torch.compile(self._step)
+                self._step_c = torch.compile(self._step, dynamic=False)
             return self._step_c(action)
         return self._step(action)
 

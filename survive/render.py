@@ -131,14 +131,17 @@ def render(world, H=64, chunk=None, compile=False):
     fn = _render_chunk
     if compile:
         if _render_compiled is None:
-            _render_compiled = torch.compile(_render_chunk)
+            _render_compiled = torch.compile(_render_chunk, dynamic=False)
         fn = _render_compiled
     sc = world.scene()
     B = sc["pos"].shape[0]
     if chunk is None:
         chunk = max(1, int(2 ** 24 // (H * H * 2 * sc["amin"].shape[1])))
     n = -(-B // chunk)
-    chunk = -(-B // n)                          # equal chunks (at most two shapes to compile)
+    while B % n:                                # equal chunks: one shape to compile
+        n += 1
+    chunk = B // n
+    _pixel_dirs(H, sc["pos"].device)           # fill the cache outside the compiled code
     if n == 1:
         return fn(sc, H)
     outs = []
