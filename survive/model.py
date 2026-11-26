@@ -133,6 +133,8 @@ class Mind(nn.Module):
     def imagine_z(self, h):
         return self.dist(self.prior(h))
 
+    ent_squash = False
+
     def act(self, feat, deterministic=False):
         out = self.actor(feat).float()
         mean, std = out.chunk(2, -1)
@@ -142,6 +144,12 @@ class Mind(nn.Module):
         eps = torch.randn_like(mean)
         pre = mean + std * eps
         ent = (torch.log(std) + 0.5 * (1 + 1.8378770664093453)).sum(-1)  # Gaussian entropy (pre-tanh)
+        if self.ent_squash:
+            # entropy of the muscles as they really are (after tanh): add log|d tanh/dx|.
+            # Without this, "be random" is rewarded by pushing the muscles into saturation
+            # (bang-bang, where tanh has no gradient), which also starves the actor of its
+            # return gradient: a runaway that ends in thrashing.
+            ent = ent + (2 * (0.6931471805599453 - pre - F.softplus(-2 * pre))).sum(-1)
         return torch.tanh(pre), ent
 
 

@@ -373,6 +373,7 @@ def main():
     ap.add_argument("--lr-wm", type=float, default=3e-4)
     ap.add_argument("--lr-ac", type=float, default=8e-5)
     ap.add_argument("--ent", type=float, default=3e-4)
+    ap.add_argument("--ent-squash", type=int, default=1, help="entropy of the real (tanh) muscles, not pre-tanh")
     ap.add_argument("--vic-var", type=float, default=1.0)
     ap.add_argument("--vic-cov", type=float, default=1.0)
     ap.add_argument("--vic-rows", type=int, default=2048, help="moments used for VICReg (0 = all)")
@@ -397,6 +398,7 @@ def main():
     (out / "args.json").write_text(json.dumps(vars(a), indent=1))
     set_fovea(a.fovea)
     mind = Mind(a.res).to(dev)
+    mind.ent_squash = bool(a.ent_squash)
     print(f"mind: {sum(p.numel() for p in mind.parameters()) / 1e6:.1f}M parameters, eyes {a.res} px", flush=True)
     world = World(a.envs, dev, mode="train", seed=a.seed, compile=bool(a.compile))
     per = 6 * a.res * a.res + SENSES * 2 + ACT * 2 + 2 + H_DIM * 2
