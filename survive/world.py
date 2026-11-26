@@ -46,6 +46,7 @@ ACT = 4
 FOOD_HALF = torch.tensor([[0.15, 0.15, 0.15], [0.05, 0.05, 0.25], [0.22, 0.22, 0.05]])
 FOOD_COL = torch.tensor([[0.95, 0.35, 0.25], [0.95, 0.85, 0.20], [0.40, 0.95, 0.30]])
 PRED_R, WAND_R, STRANGE_HALF = 0.35, 0.30, 0.30
+PRED_SEE, PRED_HEAR, PRED_FORGET = 6.0, 2.0, 50    # sight range (m, needs a clear line), hearing range, memory (steps)
 
 DEATH_CAUSES = ["alive", "hunger", "lava", "predator", "strange", "blows"]
 
@@ -105,6 +106,8 @@ class World:
         self.wand_dir, self.strange_goal = z(B), z(B, 2)
         self.bite_cd, self.near_strange = z(B, dt=torch.long), z(B, dt=torch.long)
         self.pred_speed = z(B)
+        self.pred_mem, self.pred_mem_t = z(B, 2), z(B, dt=torch.long)   # where/when it last noticed the creature
+        self.pred_dir, self.pred_side = z(B), z(B)                         # patrol heading; which way it goes around
         self.held = torch.full((B,), -1, device=self.dev, dtype=torch.long)
         self.floor_col, self.wall_col = z(B, 2, 3), z(B, 4, 3)
         self.pred_col, self.wand_col, self.strange_col = z(B, 3), z(B, 3), z(B, 3)
@@ -218,6 +221,10 @@ class World:
         self.bite_cd[idx] = 0
         self.near_strange[idx] = 0
         self.pred_speed[idx] = m.pred_speed
+        self.pred_mem[idx] = self.pred[idx]
+        self.pred_mem_t[idx] = PRED_FORGET
+        self.pred_dir[idx] = self._rand(n) * 2 * math.pi
+        self.pred_side[idx] = torch.where(self._rand(n) < 0.5, -1.0, 1.0)
         self.touch[idx] = 0
         self.pressure[idx] = 0
         self._sense(self.pos)
@@ -439,14 +446,58 @@ class World:
         q = q + (dirs[k] * amt[..., None] * inside[..., None]).sum(1)
         return q.clamp(r, L - r)
 
+    def _blocked(self, q, r):
+        """q (B,K,2): inside a tall active box (grown by r), or outside the arena."""
+        lo = self.bmin[:, None, :, :2] - r
+        hi = self.bmax[:, None, :, :2] + r
+        qq = q[:, :, None]
+        tall = (self.bact & (self.bmax[..., 2] > 0.3))[:, None]
+        inside = (((qq > lo) & (qq < hi)).all(-1) & tall).any(-1)
+        return inside | (q < r).any(-1) | (q > L - r).any(-1)
+
+    def _clear(self, a, b):
+        """Line of sight from a to b (B,2) at body height: no tall box crosses the segment."""
+        d = b - a
+        dsafe = torch.where(d.abs() < 1e-6, torch.full_like(d, 1e-6), d)
+        inv = 1.0 / dsafe[:, None]
+        t1 = (self.bmin[..., :2] - a[:, None]) * inv
+        t2 = (self.bmax[..., :2] - a[:, None]) * inv
+        tn = torch.minimum(t1, t2).max(-1).values
+        tf = torch.maximum(t1, t2).min(-1).values
+        hit = (tn < tf) & (tf > 0) & (tn < 1) & self.bact & (self.bmax[..., 2] > 0.6)
+        return ~hit.any(-1)
+
     def _move_beings(self, p):
         B = self.B
-        # predator: walks straight at the creature (with a little wobble), slides around boxes
+        # predator: a simple hunter (no learning). It notices the creature only if it can see it
+        # (within 6 m with no tall box in between) or hear it (within 2 m). Then it chases; when it
+        # loses it, it goes to where it last noticed it, and gives up after 5 s and patrols.
+        # It steers around boxes: if the way ahead is blocked it tries turning more and more to
+        # one side (keeping that side while blocked, like following a wall).
         to = p[:, :2] - self.pred
-        d = to.norm(dim=-1, keepdim=True).clamp(min=1e-4)
-        wob = (torch.rand(B, 2, device=self.dev) - 0.5) * 0.6
-        step = (to / d + wob) * (self.pred_speed * DT)[:, None]
-        step = torch.where(d > 0.55, step, torch.zeros_like(step))
+        d = to.norm(dim=-1).clamp(min=1e-4)
+        notice = ((d < PRED_SEE) & self._clear(self.pred, p[:, :2])) | (d < PRED_HEAR)
+        self.pred_mem = torch.where(notice[:, None], p[:, :2], self.pred_mem)
+        self.pred_mem_t = torch.where(notice, torch.zeros_like(self.pred_mem_t), self.pred_mem_t + 1)
+        goal = self.pred_mem - self.pred
+        gd = goal.norm(dim=-1)
+        hunting = (self.pred_mem_t < PRED_FORGET) & (gd > 0.3)
+        self.pred_mem_t = torch.where(~hunting & (gd <= 0.3), torch.full_like(self.pred_mem_t, PRED_FORGET), self.pred_mem_t)
+        self.pred_dir = self.pred_dir + (torch.rand(B, device=self.dev) - 0.5) * 0.5
+        want = torch.where(hunting, torch.atan2(goal[:, 1], goal[:, 0]), self.pred_dir)
+        speed = torch.where(hunting, self.pred_speed, self.pred_speed * 0.4) * DT
+        # try headings: straight, then 30..150 deg to the current side, then to the other side
+        offs = torch.tensor([0, 30, 60, 90, 120, 150, -30, -60, -90, -120, -150], device=self.dev) * (math.pi / 180)
+        ang = want[:, None] + offs[None] * self.pred_side[:, None]                       # B,K
+        look = 0.25 + PRED_R
+        probe = self.pred[:, None] + torch.stack([torch.cos(ang), torch.sin(ang)], -1) * look
+        free = ~self._blocked(probe, PRED_R)                                             # B,K
+        k = torch.where(free.any(-1), free.float().argmax(-1), torch.zeros_like(free[:, 0], dtype=torch.long))
+        self.pred_side = torch.where(k >= 6, -self.pred_side, self.pred_side)          # went the other way: remember it
+        head = ang.gather(1, k[:, None]).squeeze(1)
+        self.pred_dir = torch.where(hunting, self.pred_dir, head)                       # patrol keeps its new heading
+        step = torch.stack([torch.cos(head), torch.sin(head)], -1) * speed[:, None]
+        step = torch.where((hunting & (d <= 0.55))[:, None], torch.zeros_like(step), step)
         self.pred = self._slide(self.pred + step, PRED_R)
         # wanderer: a slow random walk
         self.wand_dir = self.wand_dir + (torch.rand(B, device=self.dev) - 0.5) * 0.8
