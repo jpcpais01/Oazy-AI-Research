@@ -3,301 +3,595 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Creature</title>
+<title>Creature · Oazy</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
+/* The creature's page, in the Oazy site's dawn: glass over a living sky.
+   The sky follows how the creature feels: calm lilac when it is well, warmer as wellbeing falls,
+   a rose flush when it is afraid. Everything drawn is real data from the world or the mind. */
 :root{
-  --paper:#f4f2ed; --paper2:#e8edf2; --glass:rgba(255,255,255,.62); --glass2:rgba(255,255,255,.82);
-  --edge:rgba(28,34,48,.07); --ink:#1b2130; --sub:#6c7383; --faint:#a3a9b5;
-  --energy:#3f9b6e; --health:#4a7fd4; --fear:#d0583a; --food:#e3a13a; --lava:#e0662f;
-  --pred:#7e4fc9; --wand:#3f9aa3; --strange:#cfc39a; --crate:#c49a63; --me:#3b4a8f;
-  --serif:"Fraunces",Georgia,serif; --sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; --mono:"JetBrains Mono",ui-monospace,monospace;
+  --serif:"Instrument Serif","Times New Roman",serif;
+  --sans:"Outfit",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  --ink:#1b2147;--ink-2:#4b5480;--ink-3:#7c84a8;--line:rgba(27,33,71,.12);--hair:rgba(27,33,71,.07);
+  --rose:#c0506f;--lilac:#7d8de0;--coral:#e2646b;--amber:#e9a23b;--aqua:#4fb8c8;--leaf:#5bb58a;--violet:#8a63d2;--sand:#cdbf8e;--wood:#b98a5a;
+  --glass-bg:linear-gradient(140deg,rgba(255,255,255,.55),rgba(255,255,255,.20));
+  --glass-line:rgba(255,255,255,.66);
+  --glass-shadow:inset 0 1px 0 rgba(255,255,255,.9),0 24px 60px -30px rgba(40,50,120,.38);
+  --wb:.7;--fear:0;
+  color-scheme:light;
 }
 *{box-sizing:border-box}
-html,body{margin:0}
-html{background:var(--paper2)}
-body{background:radial-gradient(1200px 700px at 15% -10%,#fbfaf6 0%,transparent 60%),radial-gradient(900px 600px at 100% 0%,#e3ebf3 0%,transparent 55%),linear-gradient(170deg,var(--paper),var(--paper2));
-  min-height:100vh;color:var(--ink);font:14.5px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
-.wrap{max-width:1240px;margin:0 auto;padding:28px 18px 56px}
-/* header */
-header{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-bottom:22px}
-.brand{display:flex;align-items:center;gap:14px}
-.drop{width:38px;height:46px;flex:none}
-h1{font:400 44px/1 var(--serif);letter-spacing:-.02em;margin:0}
-h1 em{font-style:italic;font-weight:300;color:var(--sub)}
-.tag{color:var(--sub);margin-top:6px;max-width:560px}
-.live{display:flex;align-items:center;gap:10px;font:500 13px var(--sans);color:var(--sub)}
-.pulse{width:8px;height:8px;border-radius:50%;background:var(--energy);box-shadow:0 0 0 0 rgba(63,155,110,.5);animation:p 2s infinite}
-@keyframes p{70%{box-shadow:0 0 0 9px rgba(63,155,110,0)}100%{box-shadow:0 0 0 0 rgba(63,155,110,0)}}
-/* glass */
-.glass{background:var(--glass);border:1px solid var(--edge);border-radius:22px;backdrop-filter:saturate(1.4) blur(14px);-webkit-backdrop-filter:saturate(1.4) blur(14px);
-  box-shadow:0 1px 0 rgba(255,255,255,.7) inset,0 18px 40px -22px rgba(30,40,70,.28)}
-.card{padding:18px 20px}
-.kick{font:500 11px var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
-h2{font:400 22px/1.15 var(--serif);margin:3px 0 4px;letter-spacing:-.01em}
-.note{color:var(--sub);font-size:13px;margin:0 0 14px}
-/* toolbar */
-.tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:8px;margin-bottom:16px}
-.seg{display:flex;background:rgba(28,34,48,.05);border-radius:12px;padding:3px}
-.seg button{border:0;background:transparent;padding:7px 12px;border-radius:9px;font:500 13px var(--sans);color:var(--sub);cursor:pointer}
-.seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
-select{appearance:none;border:0;background:rgba(28,34,48,.05) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236c7383' fill='none' stroke-width='1.4'/%3E%3C/svg%3E") no-repeat right 12px center;
-  padding:9px 32px 9px 12px;border-radius:12px;font:500 13px var(--sans);color:var(--ink);cursor:pointer;max-width:100%}
-.btn{border:0;background:var(--ink);color:#fff;padding:9px 14px;border-radius:12px;font:500 13px var(--sans);cursor:pointer}
-.spacer{flex:1}
-/* layout */
-.grid{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:16px}
-.col{display:flex;flex-direction:column;gap:16px;min-width:0}
-@media (max-width:900px){.grid{grid-template-columns:1fr}h1{font-size:36px}}
-/* eyes */
-.eyes{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.lens{position:relative;border-radius:18px;overflow:hidden;background:#cfd6e0;aspect-ratio:1;box-shadow:0 0 0 1px rgba(0,0,0,.06),0 10px 24px -14px rgba(20,30,60,.5)}
-.lens canvas{width:100%;height:100%;display:block;image-rendering:pixelated}
-.lens::after{content:"";position:absolute;inset:0;border-radius:18px;box-shadow:inset 0 0 40px rgba(10,15,30,.18),inset 0 0 0 1px rgba(255,255,255,.35);pointer-events:none}
-.lens span{position:absolute;left:10px;top:8px;font:500 11px var(--mono);color:rgba(255,255,255,.92);text-shadow:0 1px 2px rgba(0,0,0,.35)}
-/* imagination strip */
-.strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;position:relative;padding-top:4px}
-.frame{display:flex;flex-direction:column;gap:6px}
-.frame canvas{width:100%;aspect-ratio:1;image-rendering:pixelated;border-radius:12px;background:#d8dde6;box-shadow:0 0 0 1px rgba(0,0,0,.05)}
-.frame:nth-child(2) canvas{opacity:.9}.frame:nth-child(3) canvas{opacity:.8}.frame:nth-child(4) canvas{opacity:.7}
-.tick{display:flex;align-items:center;gap:6px;font:400 11px var(--mono);color:var(--sub)}
-.tick::before{content:"";flex:1;height:1px;background:linear-gradient(90deg,transparent,rgba(28,34,48,.18))}
-/* vitals */
-.vitals{display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:center}
-.rings{position:relative;width:132px;height:132px}
-.rings svg{width:100%;height:100%;transform:rotate(-90deg)}
-.rings .c{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
-.rings .big{font:400 26px var(--serif)}
-.rings .small{font:500 10px var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
-.legend2{display:flex;flex-direction:column;gap:8px;font-size:13px}
-.legend2 b{font-weight:500}
-.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:1px}
-.wave{width:100%;height:56px;margin-top:12px}
-.lab{font:400 10px var(--mono);color:var(--faint);letter-spacing:.04em}
-/* senses */
-.senses{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:4px}
-@media (max-width:520px){.senses{grid-template-columns:1fr}}
-.sub2{font:500 11px var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin-bottom:8px}
-.body-diagram{width:100%;max-width:220px;height:auto;display:block;margin:0 auto}
-.eq{display:grid;grid-template-columns:1fr 18px 1fr;align-items:end;height:84px;gap:0}
-.eq .side{display:flex;gap:4px;align-items:flex-end;height:100%}
-.eq .side.l{justify-content:flex-end}
-.eq .b{width:14px;border-radius:5px 5px 2px 2px;background:linear-gradient(180deg,#a487e0,#7e4fc9);transition:height .1s}
-.eq .mid{align-self:center;justify-self:center;width:18px;height:18px;border-radius:50%;background:var(--me);box-shadow:0 0 0 4px rgba(59,74,143,.12)}
-.eq-lab{display:grid;grid-template-columns:1fr 18px 1fr;font:400 10px var(--mono);color:var(--faint);margin-top:6px}
-.eq-lab span:first-child{text-align:right}
-.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
-.chip{font:500 12px var(--sans);padding:5px 10px;border-radius:999px;background:rgba(28,34,48,.05);color:var(--sub);transition:all .15s}
-.chip.on{background:var(--ink);color:#fff}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;color:var(--ink);font:300 15px/1.55 var(--sans);background:#d5dff6;-webkit-font-smoothing:antialiased;overflow-x:hidden;min-height:100vh}
+::selection{background:rgba(125,141,224,.3)}
+
+/* ---------- the living sky ---------- */
+.sky{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;
+  background:linear-gradient(180deg,#c3d2f4 0%,#dcd9f3 38%,#f3dfe5 68%,#fbe8dc 100%)}
+.sky i{position:absolute;border-radius:50%;filter:blur(70px);opacity:.75;will-change:transform}
+.sky .a{width:62vw;height:62vw;left:-14vw;top:-22vw;background:radial-gradient(circle,#aab8f5,transparent 66%);animation:drift1 38s ease-in-out infinite alternate}
+.sky .b{width:54vw;height:54vw;right:-16vw;top:8vh;background:radial-gradient(circle,#f6c3cf,transparent 66%);animation:drift2 46s ease-in-out infinite alternate}
+.sky .c{width:70vw;height:50vw;left:18vw;bottom:-26vw;background:radial-gradient(circle,#ffd9bf,transparent 64%);animation:drift3 52s ease-in-out infinite alternate}
+/* mood layers: warmth rises as wellbeing falls, a rose flush with fear */
+.sky .warm{position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,190,150,.0),rgba(255,160,120,.55));opacity:calc((.75 - var(--wb)) * 2.2);transition:opacity 1.2s ease}
+.sky .fear{position:absolute;inset:0;background:radial-gradient(120% 80% at 50% 0%,rgba(226,80,120,.42),transparent 60%);opacity:calc(var(--fear) * 3);transition:opacity .6s ease}
+.sky .grain{position:absolute;inset:-50%;opacity:.07;mix-blend-mode:multiply;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+@keyframes drift1{to{transform:translate(12vw,8vh) scale(1.12)}}
+@keyframes drift2{to{transform:translate(-10vw,14vh) scale(.92)}}
+@keyframes drift3{to{transform:translate(-14vw,-6vh) scale(1.08)}}
+@media (prefers-reduced-motion:reduce){.sky i{animation:none}}
+
+/* ---------- type ---------- */
+.caps{font:500 11px/1.4 var(--sans);letter-spacing:.26em;text-transform:uppercase;color:var(--ink-2)}
+h1,h2,h3{font-family:var(--serif);font-weight:400;margin:0;letter-spacing:-.01em}
+.gt{font-family:var(--serif);font-weight:400;line-height:.9;letter-spacing:-.02em;color:transparent;-webkit-text-stroke:1px rgba(255,255,255,.7);
+  background:linear-gradient(176deg,#f3f5ff 0%,#b5c1f3 30%,#8494e4 58%,#a9b6f2 78%,#eef1ff 100%);-webkit-background-clip:text;background-clip:text;
+  filter:drop-shadow(0 1.5px 0 rgba(255,255,255,.75)) drop-shadow(0 14px 22px rgba(60,70,150,.22))}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:400}
+p{margin:0;color:var(--ink-2)}
+
+/* ---------- glass ---------- */
+.glass{position:relative;background:var(--glass-bg);border:1px solid var(--glass-line);border-radius:22px;box-shadow:var(--glass-shadow);
+  -webkit-backdrop-filter:blur(18px) saturate(1.35);backdrop-filter:blur(18px) saturate(1.35)}
+.glass::after{content:"";position:absolute;inset:-1px;border-radius:inherit;pointer-events:none;box-shadow:-1px 0 0 rgba(255,60,120,.14),1px 0 0 rgba(40,190,255,.16)}
+
+.wrap{position:relative;z-index:2;max-width:1240px;margin:0 auto;padding:28px max(16px,env(safe-area-inset-left)) 56px}
+
+/* ---------- header ---------- */
+header{display:grid;grid-template-columns:1fr auto;gap:18px 28px;align-items:end;margin:6px 4px 22px}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.brand .mark{width:9px;height:9px;border-radius:50%;background:conic-gradient(from 200deg,#7d8de0,#c0506f,#e9a23b,#4fb8c8,#7d8de0);box-shadow:0 0 0 3px rgba(255,255,255,.6)}
+h1.gt{font-size:clamp(64px,10vw,128px);padding-bottom:.06em}
+.lede{font:italic 400 clamp(19px,2.1vw,24px)/1.3 var(--serif);color:var(--ink-2);max-width:34ch;margin-top:8px;text-wrap:balance}
+.vitals{display:flex;align-items:stretch;gap:0;padding:6px;border-radius:24px}
+.vital{padding:10px 18px;min-width:92px;display:flex;flex-direction:column;justify-content:center}
+.vital+.vital{border-left:1px solid var(--hair)}
+.vital b{font:400 30px/1 var(--serif);letter-spacing:-.01em;display:block;margin-top:4px;white-space:nowrap}
+.vital b small{font:300 13px var(--sans);color:var(--ink-3);margin-left:3px}
+.pulse{width:150px;padding:8px 12px 6px}
+.pulse canvas{width:100%;height:46px;display:block}
+.pulse .caps{display:flex;justify-content:space-between}
+.pulse .caps span:last-child{letter-spacing:.04em;text-transform:none;color:var(--ink-3)}
+
+/* ---------- controls ---------- */
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:8px 8px 8px 18px;border-radius:999px;margin-bottom:22px}
+.bar .caps{margin-right:-4px}
+.sel{position:relative}
+.sel select{appearance:none;-webkit-appearance:none;font:400 14px var(--sans);color:var(--ink);background:rgba(255,255,255,.55);border:1px solid rgba(255,255,255,.8);
+  border-radius:999px;padding:9px 34px 9px 14px;cursor:pointer;box-shadow:0 1px 0 rgba(27,33,71,.04);max-width:56vw}
+.sel::after{content:"";position:absolute;right:14px;top:50%;width:6px;height:6px;border-right:1.5px solid var(--ink-2);border-bottom:1.5px solid var(--ink-2);transform:translateY(-70%) rotate(45deg);pointer-events:none}
+.seg{display:inline-flex;padding:3px;border-radius:999px;background:rgba(27,33,71,.06);position:relative}
+.seg button{position:relative;z-index:1;font:400 13.5px var(--sans);color:var(--ink-2);background:none;border:0;padding:7px 14px;border-radius:999px;cursor:pointer;transition:color .3s}
+.seg button.on{color:var(--ink)}
+.seg .knob{position:absolute;top:3px;bottom:3px;border-radius:999px;background:rgba(255,255,255,.9);box-shadow:0 2px 10px -2px rgba(40,50,120,.25),inset 0 1px 0 #fff;transition:left .45s cubic-bezier(.2,.8,.2,1),width .45s cubic-bezier(.2,.8,.2,1)}
+.chip{display:inline-flex;align-items:center;gap:9px;font:500 13.5px var(--sans);letter-spacing:.02em;color:#fff;border:0;border-radius:999px;padding:10px 18px;cursor:pointer;margin-left:auto;
+  background:linear-gradient(135deg,#8494e4,#6f7fd6 50%,#b2629a);box-shadow:inset 0 1px 0 rgba(255,255,255,.45),0 10px 24px -10px rgba(80,70,170,.7);transition:transform .3s cubic-bezier(.2,.8,.2,1),box-shadow .3s}
+.chip:hover{transform:translateY(-2px);box-shadow:inset 0 1px 0 rgba(255,255,255,.45),0 14px 28px -10px rgba(80,70,170,.8)}
+.chip svg{width:14px;height:14px}
+button:focus-visible,select:focus-visible{outline:2px solid var(--lilac);outline-offset:3px}
+.toast{font-size:13px;color:var(--ink-3);display:flex;align-items:center;gap:8px}
+.toast .live{width:7px;height:7px;border-radius:50%;background:var(--leaf);box-shadow:0 0 0 0 rgba(91,181,138,.6);animation:live 2s infinite}
+@keyframes live{70%{box-shadow:0 0 0 7px rgba(91,181,138,0)}100%{box-shadow:0 0 0 0 rgba(91,181,138,0)}}
+
+/* ---------- panels ---------- */
+.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:18px}
+.panel{padding:20px 22px 22px;min-width:0}
+.panel h2{font-size:28px;line-height:1.05}
+.panel h2 em{font-style:italic;color:var(--ink-2)}
+.ph{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:4px}
+.panel .note{font-size:13px;color:var(--ink-3);margin:2px 0 16px;max-width:60ch}
+.colL{grid-column:span 7;display:flex;flex-direction:column;gap:18px;min-width:0}
+.colR{grid-column:span 5;display:flex;flex-direction:column;gap:18px;min-width:0}
+.s-lives,.s-learn,.s-about{grid-column:1/-1}
+@media (max-width:980px){.colL,.colR{grid-column:1/-1}}
+.near{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+.near div{padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.4);border:1px solid rgba(255,255,255,.65)}
+.near b{display:block;font:400 22px/1.1 var(--serif);margin-top:2px}.near b small{font:300 12px var(--sans);color:var(--ink-3);margin-left:2px}
+.near .caps{font-size:9.5px;letter-spacing:.2em}
+.lwrap{position:relative}
+.lwrap .top{position:absolute;left:0;right:0;top:6px;border-top:1px dashed rgba(27,33,71,.14);font-size:10.5px;color:var(--ink-3);text-align:right;padding-top:2px;pointer-events:none}
+
+/* eyes: two lenses */
+.eyes{display:grid;grid-template-columns:1fr 1fr;gap:12px;position:relative}
+.lens{position:relative;border-radius:20px;overflow:hidden;background:#cdd5e6;box-shadow:0 18px 36px -22px rgba(30,40,100,.55),0 0 0 1px rgba(255,255,255,.7)}
+.lens canvas{display:block;width:100%;aspect-ratio:1;image-rendering:pixelated}
+.lens::before{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;border-radius:inherit;
+  background:linear-gradient(160deg,rgba(255,255,255,.28),rgba(255,255,255,0) 28%),radial-gradient(130% 130% at 50% 50%,transparent 62%,rgba(20,24,60,.28));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.7),inset 0 0 0 1px rgba(255,255,255,.25)}
+.lens .tagl{position:absolute;z-index:2;left:12px;bottom:10px;font:500 10.5px var(--sans);letter-spacing:.24em;text-transform:uppercase;color:rgba(255,255,255,.92);text-shadow:0 1px 8px rgba(0,0,30,.45)}
+.eyes .fov{display:flex;justify-content:space-between;margin-top:12px;font-size:12.5px;color:var(--ink-3)}
+
 /* map */
-.mapbox{position:relative;border-radius:18px;overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,.05)}
-#map{width:100%;aspect-ratio:1;display:block;background:#e6ebe2}
-.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--sub);margin-top:12px}
+.mapbox{position:relative;border-radius:20px;overflow:hidden;box-shadow:0 18px 36px -24px rgba(30,40,100,.5),0 0 0 1px rgba(255,255,255,.7)}
+#map{display:block;width:100%;aspect-ratio:1}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:12.5px;color:var(--ink-2);margin-top:14px}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.legend i{width:9px;height:9px;border-radius:50%;display:inline-block;box-shadow:0 0 0 2px rgba(255,255,255,.7)}
+.legend i.sq{border-radius:2px}
+.compass{position:absolute;right:12px;top:12px;font:500 10px var(--sans);letter-spacing:.22em;color:rgba(27,33,71,.45)}
+
+/* imagination: a strip into the future */
+.strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;position:relative}
+.frame{position:relative}
+.frame .img{border-radius:14px;overflow:hidden;position:relative;box-shadow:0 12px 26px -18px rgba(30,40,100,.6),0 0 0 1px rgba(255,255,255,.7)}
+.frame canvas{display:block;width:100%;aspect-ratio:1;image-rendering:pixelated;transition:filter .4s}
+.frame:nth-child(2) canvas{filter:saturate(.92)}.frame:nth-child(3) canvas{filter:saturate(.82) blur(.2px)}.frame:nth-child(4) canvas{filter:saturate(.7) blur(.4px)}
+.frame .img::after{content:"";position:absolute;inset:0;background:linear-gradient(160deg,rgba(255,255,255,.22),transparent 30%)}
+.frame .t{display:flex;justify-content:space-between;margin-top:8px;font-size:12px;color:var(--ink-3)}
+.frame .t b{font:400 18px/1 var(--serif);color:var(--ink)}
+.future{margin-top:16px;display:grid;grid-template-columns:1fr 170px;gap:18px;align-items:center}
+.future svg{width:100%;height:78px;display:block;overflow:visible}
+.fearbox .caps{display:block;margin-bottom:6px}
+.fearbox b{font:400 40px/1 var(--serif)}
+.fearbox b small{font:300 15px var(--sans);color:var(--ink-3)}
+.fearbox p{font-size:12.5px;color:var(--ink-3);margin-top:6px}
+
+/* feelings: the orb */
+.feel{display:grid;grid-template-columns:200px 1fr;gap:22px;align-items:center}
+.orb{position:relative;width:200px;height:200px}
+.orb svg{width:100%;height:100%;overflow:visible}
+.orb .core{position:absolute;inset:50px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
+  background:radial-gradient(circle at 35% 30%,rgba(255,255,255,.95),rgba(255,255,255,.35) 40%,transparent 70%),var(--orb,#a9b6f2);
+  box-shadow:inset 0 -10px 24px rgba(40,40,120,.18),0 14px 30px -12px var(--orb,#a9b6f2);transition:background 1s,box-shadow 1s}
+.orb .core b{font:400 36px/1 var(--serif);color:var(--ink)}
+.orb .core span{font:500 9.5px var(--sans);letter-spacing:.22em;text-transform:uppercase;color:var(--ink-2);margin-top:4px}
+.flist{display:flex;flex-direction:column;gap:12px}
+.fl{display:grid;grid-template-columns:14px 1fr auto;gap:10px;align-items:center;font-size:14px}
+.fl i{width:10px;height:10px;border-radius:50%}
+.fl .v{font-family:var(--mono);font-size:13px;color:var(--ink-2)}
+.flags{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.flag{font:500 11px var(--sans);letter-spacing:.14em;text-transform:uppercase;padding:6px 11px;border-radius:999px;color:var(--ink-3);background:rgba(27,33,71,.05);transition:all .35s}
+.flag.on{color:#fff;background:linear-gradient(135deg,#8494e4,#b2629a);box-shadow:0 6px 16px -8px rgba(80,70,170,.7)}
+
+/* body: muscles + senses */
+.body{display:grid;grid-template-columns:1fr 1fr;gap:26px}
+.muscle{display:grid;grid-template-columns:52px 1fr 44px;gap:12px;align-items:center;margin:10px 0;font-size:14px}
+.muscle .track{position:relative;height:10px;border-radius:999px;background:rgba(27,33,71,.06);box-shadow:inset 0 1px 2px rgba(27,33,71,.08)}
+.muscle .track::before{content:"";position:absolute;left:50%;top:-4px;bottom:-4px;width:1px;background:rgba(27,33,71,.18)}
+.muscle .fill{position:absolute;top:0;bottom:0;border-radius:999px;transition:left .12s linear,width .12s linear}
+.muscle .v{font-family:var(--mono);font-size:12.5px;color:var(--ink-2);text-align:right}
+.sense h3{font:500 11px var(--sans);letter-spacing:.24em;text-transform:uppercase;color:var(--ink-2);margin:4px 0 10px}
+.ears{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;align-items:center;font-size:12.5px;color:var(--ink-3)}
+.eq{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;height:34px;align-items:end}
+.eq i{display:block;border-radius:4px 4px 2px 2px;background:linear-gradient(180deg,#b2a3f2,#7d8de0);min-height:2px;transition:height .12s linear}
+.heat{display:grid;grid-template-columns:auto repeat(4,1fr);gap:4px;font-size:11px;color:var(--ink-3);margin-top:14px;align-items:center}
+.heat i{display:block;height:20px;border-radius:5px;transition:background .15s}
+.heat .hd{text-align:center;font-size:10.5px;letter-spacing:.06em}
+
 /* lives ribbon */
-.ribbon{display:flex;gap:3px;align-items:flex-end;height:54px;overflow:hidden;margin-top:6px;border-bottom:1px solid rgba(28,34,48,.1);background:repeating-linear-gradient(0deg,transparent 0 26px,rgba(28,34,48,.05) 26px 27px)}
-.ribbon i{flex:0 0 8px;border-radius:3px 3px 1px 1px;opacity:.9}
-.ribbon i.now{outline:2px solid var(--ink);outline-offset:1px}
-.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
-.stat{padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.55);border:1px solid var(--edge)}
-.stat .n{font:400 24px var(--serif)} .stat .l{font-size:12px;color:var(--sub)}
-/* curves */
-.charts{display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:12px}
-.chart{padding:12px 14px 8px;border-radius:16px;background:rgba(255,255,255,.5);border:1px solid var(--edge)}
-.chart .n{font-size:12.5px;color:var(--sub)} .chart .v{font:400 20px var(--serif);margin:2px 0 2px}
-.chart .v small{font:400 11px var(--mono);color:var(--faint);margin-left:6px}
-.chart svg{width:100%;height:64px;display:block}
+.lives{display:flex;align-items:flex-end;gap:3px;height:92px;padding-top:6px;overflow:hidden}
+.lives .lf{flex:0 0 auto;width:10px;border-radius:5px 5px 3px 3px;position:relative;transition:height .6s cubic-bezier(.2,.8,.2,1);min-height:4px}
+.lives .lf.now{background:repeating-linear-gradient(135deg,rgba(125,141,224,.5) 0 4px,rgba(125,141,224,.25) 4px 8px);animation:breathe 2.4s ease-in-out infinite}
+@keyframes breathe{50%{opacity:.55}}
+.lives .lf .fd{position:absolute;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:#fff}
+.lstats{display:flex;flex-wrap:wrap;gap:8px 28px;margin-top:14px;font-size:13px;color:var(--ink-3)}
+.lstats b{font:400 22px/1 var(--serif);color:var(--ink);margin-right:5px}
+.lkey{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--ink-3)}
+.lkey span{display:inline-flex;align-items:center;gap:6px}.lkey i{width:8px;height:8px;border-radius:3px}
+
+/* learning curves */
+.charts{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+.ch{position:relative;padding:14px 16px 10px;border-radius:16px;background:rgba(255,255,255,.34);border:1px solid rgba(255,255,255,.6)}
+.ch .n{font-size:12.5px;color:var(--ink-2);line-height:1.3;min-height:2.6em}
+.ch .v{display:flex;align-items:baseline;gap:8px;margin:2px 0 6px}
+.ch .v b{font:400 28px/1 var(--serif)}
+.ch .v span{font-size:12px;color:var(--ink-3)}
+.ch svg{width:100%;height:84px;display:block;overflow:visible}
+.ch .ax{display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-3);margin-top:4px;font-family:var(--mono)}
+.ch .tip{position:absolute;pointer-events:none;font:400 11.5px var(--mono);background:rgba(27,33,71,.86);color:#fff;padding:4px 8px;border-radius:8px;transform:translate(-50%,-130%);white-space:nowrap;opacity:0;transition:opacity .15s}
+.ch.hover .tip{opacity:1}
+
 /* about */
-dl{display:grid;grid-template-columns:minmax(120px,.42fr) 1fr;gap:0;margin:0}
-dt,dd{padding:9px 0;border-bottom:1px solid var(--edge);margin:0}
-dt{color:var(--sub);font-size:13px;padding-right:12px}
-dd{font-size:13.5px}
-dd code{font:400 12px var(--mono);color:var(--sub);word-break:break-all}
-.benchrow{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
-@media (max-width:620px){.benchrow{grid-template-columns:1fr}.stats{grid-template-columns:repeat(3,1fr)}}
-.bcard{padding:12px 14px;border-radius:14px;background:rgba(255,255,255,.55);border:1px solid var(--edge)}
-.bcard .t{font:500 11px var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
-.bcard .n{font:400 26px var(--serif)} .bcard .s{font-size:12px;color:var(--sub)}
-.deathbar{display:flex;height:6px;border-radius:4px;overflow:hidden;margin-top:8px;background:rgba(0,0,0,.05)}
-footer{color:var(--faint);font-size:12px;text-align:center;margin-top:26px}
+.about{display:grid;grid-template-columns:1fr 1fr;gap:0 40px}
+.about dl{margin:0}
+.about .row{display:grid;grid-template-columns:150px 1fr;gap:14px;padding:11px 0;border-bottom:1px solid var(--hair);font-size:14px}
+.about dt{font:500 10.5px/1.9 var(--sans);letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3)}
+.about dd{margin:0;color:var(--ink)}
+.bench{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:18px}
+.bt{padding:16px 18px;border-radius:16px;background:rgba(255,255,255,.4);border:1px solid rgba(255,255,255,.65)}
+.bt b{font:400 34px/1 var(--serif);display:block;margin:6px 0}
+.bt p{font-size:12.5px;color:var(--ink-3)}
+.bt .dbar i{display:block;height:100%}
+.bt .dbar{display:flex;height:6px;border-radius:999px;overflow:hidden;margin-top:10px;background:rgba(27,33,71,.06)}
+footer{margin-top:28px;text-align:center;font-size:12.5px;color:var(--ink-3)}
+footer .caps{color:var(--ink-3)}
+
+@media (max-width:980px){.about{grid-template-columns:1fr}}
+@media (max-width:720px){
+  header{grid-template-columns:1fr}
+  .vitals{flex-wrap:wrap;border-radius:20px}
+  .vital{min-width:0;flex:1 1 30%;padding:8px 12px}.vital b{font-size:24px}
+  .pulse{flex:1 1 100%;width:auto;border-left:0!important;border-top:1px solid var(--hair)}
+  .bar{border-radius:22px;padding:12px}
+  .chip{margin-left:0}
+  .panel{padding:16px}
+  .panel h2{font-size:24px}
+  .feel{grid-template-columns:1fr;justify-items:center}.flist{width:100%}
+  .body{grid-template-columns:1fr}
+  .future{grid-template-columns:1fr}
+  .strip{gap:6px}.frame .t{font-size:10.5px}.frame .t b{font-size:15px}
+  .about .row{grid-template-columns:1fr;gap:2px}
+  .bench{grid-template-columns:1fr}
+}
 </style>
 </head>
 <body>
+<div class="sky" aria-hidden="true"><i class="a"></i><i class="b"></i><i class="c"></i><div class="warm"></div><div class="fear"></div><div class="grain"></div></div>
 <div class="wrap">
-<header>
-  <div class="brand">
-    <svg class="drop" viewBox="0 0 38 46"><defs><linearGradient id="dg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#bfe0f2"/><stop offset=".55" stop-color="#7fa9e0"/><stop offset="1" stop-color="#4a5bd4"/></linearGradient></defs><path d="M19 2C19 2 4 20 4 30a15 15 0 0030 0C34 20 19 2 19 2z" fill="url(#dg)" opacity=".92"/><ellipse cx="13.5" cy="28" rx="3.2" ry="5.5" fill="#fff" opacity=".55"/></svg>
-    <div><h1>Creature <em>alive</em></h1><div class="tag">A mind that learned to stay alive from its own eyes, ears and body. Nobody told it what anything is.</div></div>
+  <header>
+    <div>
+      <div class="brand"><span class="mark"></span><span class="caps">Oazy · Survive</span></div>
+      <h1 class="gt">Creature</h1>
+      <p class="lede">A mind that learned to stay alive from its own eyes, ears and body. Nobody told it what anything is.</p>
+    </div>
+    <div class="vitals glass">
+      <div class="vital"><span class="caps">Life</span><b id="vLife">–</b></div>
+      <div class="vital"><span class="caps">Alive</span><b><span id="vT">–</span><small>s</small></b></div>
+      <div class="vital"><span class="caps">Eaten</span><b id="vFood">–</b></div>
+      <div class="vital pulse"><div class="caps"><span>Pulse</span><span id="vBpm"></span></div><canvas id="ecg"></canvas></div>
+    </div>
+  </header>
+
+  <div class="bar glass">
+    <span class="caps">Mind</span>
+    <div class="sel"><select id="mind" aria-label="Mind"></select></div>
+    <span class="caps">World</span>
+    <div class="seg" id="mode" role="radiogroup" aria-label="World">
+      <span class="knob"></span>
+      <button data-m="test" role="radio">Unseen</button><button data-m="hard" role="radio">Hard</button><button data-m="train" role="radio">Like training</button>
+    </div>
+    <span class="toast"><span class="live"></span><span id="status">waking up…</span></span>
+    <button class="chip" id="neww"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg>New world</button>
   </div>
-  <div class="live"><span class="pulse" id="pulse"></span><span id="status">waking up…</span></div>
-</header>
 
-<div class="glass tools">
-  <select id="mind" aria-label="Mind"></select>
-  <div class="seg" id="modes"><button data-m="test" class="on">Unseen world</button><button data-m="hard">Hard</button><button data-m="train">Like training</button></div>
-  <span class="spacer"></span>
-  <button class="btn" id="neww">New world</button>
-</div>
-
-<div class="grid">
-  <div class="col">
-    <section class="glass card">
-      <div class="kick">Sight</div><h2>What it sees</h2><p class="note">Its two eyes, 8 cm apart, 120° each. These are the real pixels it learns from.</p>
-      <div class="eyes"><div class="lens"><canvas id="eyeL"></canvas><span>L</span></div><div class="lens"><canvas id="eyeR"></canvas><span>R</span></div></div>
+  <div class="grid">
+    <div class="colL">
+    <section class="panel glass s-eyes">
+      <div class="ph"><h2>What it <em>sees</em></h2><span class="caps" id="resTag"></span></div>
+      <p class="note">Its two eyes, the real pixels it gets, 120° each. This is all the light it ever has.</p>
+      <div class="eyes">
+        <div class="lens"><canvas id="eyeL"></canvas><span class="tagl">Left</span></div>
+        <div class="lens"><canvas id="eyeR"></canvas><span class="tagl">Right</span></div>
+      </div>
     </section>
-    <section class="glass card">
-      <div class="kick">Imagination</div><h2>What it expects next</h2><p class="note">Its inner state rolled forward with its own habits, drawn by a decoder that only watches. The creature never sees these pictures.</p>
+
+    <section class="panel glass s-dream">
+      <div class="ph"><h2>What it <em>imagines</em></h2><span class="caps">next 1.2 s</span></div>
+      <p class="note">Its inner state run forward with no new light, drawn by a decoder that only watches. The mind never uses these pictures.</p>
       <div class="strip" id="strip"></div>
+      <div class="future">
+        <div><span class="caps">Wellbeing it expects</span><svg id="wbCurve" viewBox="0 0 400 78" preserveAspectRatio="none"></svg></div>
+        <div class="fearbox"><span class="caps">Fear</span><b><span id="fearV">–</span><small>%</small></b><p>its imagined chance of dying within 1.2 s</p></div>
+      </div>
     </section>
-    <section class="glass card">
-      <div class="kick">Feeling</div><h2>How it is doing</h2>
-      <div class="vitals">
-        <div class="rings"><svg viewBox="0 0 132 132">
-          <circle cx="66" cy="66" r="58" fill="none" stroke="rgba(63,155,110,.13)" stroke-width="9"/><circle id="rE" cx="66" cy="66" r="58" fill="none" stroke="var(--energy)" stroke-width="9" stroke-linecap="round" stroke-dasharray="364.4" stroke-dashoffset="364.4"/>
-          <circle cx="66" cy="66" r="44" fill="none" stroke="rgba(74,127,212,.13)" stroke-width="9"/><circle id="rH" cx="66" cy="66" r="44" fill="none" stroke="var(--health)" stroke-width="9" stroke-linecap="round" stroke-dasharray="276.5" stroke-dashoffset="276.5"/>
-          <circle cx="66" cy="66" r="30" fill="none" stroke="rgba(208,88,58,.12)" stroke-width="9"/><circle id="rF" cx="66" cy="66" r="30" fill="none" stroke="var(--fear)" stroke-width="9" stroke-linecap="round" stroke-dasharray="188.5" stroke-dashoffset="188.5"/></svg>
-          <div class="c"><div class="big" id="wbBig">–</div><div class="small">wellbeing</div></div></div>
-        <div class="legend2">
-          <div><span class="dot" style="background:var(--energy)"></span><b>Energy</b> <span id="vE" style="color:var(--sub)"></span></div>
-          <div><span class="dot" style="background:var(--health)"></span><b>Health</b> <span id="vH" style="color:var(--sub)"></span></div>
-          <div><span class="dot" style="background:var(--fear)"></span><b>Fear</b> <span id="vF" style="color:var(--sub)"></span><div style="font-size:12px;color:var(--faint)">its imagined chance of dying within 1.2 s</div></div>
+
+    <section class="panel glass s-body">
+      <div class="ph"><h2>Muscles <em>and</em> senses</h2></div>
+      <p class="note">What it does right now (raw muscle signals, −1 to 1), and what reaches it besides light.</p>
+      <div class="body">
+        <div id="muscles"></div>
+        <div class="sense">
+          <h3>Ears · 4 bands each</h3>
+          <div class="ears"><span>L</span><div class="eq" id="earL"></div><span>R</span><div class="eq" id="earR"></div></div>
+          <div class="heat" id="heat"></div>
         </div>
       </div>
-      <div class="lab" style="margin:10px 0 2px">last 10 s</div><svg class="wave" id="wave" viewBox="0 0 400 56" preserveAspectRatio="none"></svg>
-      <div class="senses">
-        <div><div class="sub2">Intensity · heat, pressure, hum, field</div><svg class="body-diagram" id="bodyd" viewBox="0 0 220 150"></svg></div>
-        <div><div class="sub2">Ears · four bands each</div><div class="eq" id="eq"></div><div class="eq-lab"><span>left</span><span></span><span>right</span></div>
-          <div class="chips"><span class="chip" id="cTouch">touch</span><span class="chip" id="cGround">on ground</span><span class="chip" id="cHold">holding</span></div></div>
+    </section>
+
+    </div>
+    <div class="colR">
+    <section class="panel glass s-map">
+      <div class="ph"><h2>From <em>above</em></h2><span class="caps">11.3 m</span></div>
+      <p class="note">Our view of its world. It never sees this. The faint line is where it has been this life.</p>
+      <div class="mapbox"><canvas id="map"></canvas><span class="compass">N</span></div>
+      <div class="legend">
+        <span><i style="background:#2c3577"></i>creature</span>
+        <span><i style="background:#e8593e"></i><i style="background:#e9c92f;margin-left:-4px"></i><i style="background:#5fcf4a;margin-left:-4px"></i>food</span>
+        <span><i class="sq" style="background:#ef7a4e"></i>lava</span>
+        <span><i style="background:var(--violet)"></i>predator</span>
+        <span><i style="background:var(--aqua)"></i>wanderer</span>
+        <span><i class="sq" style="background:var(--sand);transform:rotate(45deg)"></i>strange being</span>
+        <span><i class="sq" style="background:var(--wood)"></i>crate</span>
+        <span><i class="sq" style="background:#8f8aa6"></i>ledge / block</span>
+      </div>
+      <div class="near" id="near"></div>
+    </section>
+
+    <section class="panel glass s-feel">
+      <div class="ph"><h2>How it <em>feels</em></h2></div>
+      <p class="note">Its body feelings. Wellbeing, the only thing it cares about, is their mean.</p>
+      <div class="feel">
+        <div class="orb"><svg viewBox="0 0 200 200" id="orbSvg"></svg><div class="core"><b id="wbV">–</b><span>wellbeing</span></div></div>
+        <div class="flist">
+          <div class="fl"><i style="background:linear-gradient(135deg,#f3c56b,#e9a23b)"></i><span>Energy</span><span class="v" id="enV">–</span></div>
+          <div class="fl"><i style="background:linear-gradient(135deg,#7fd6c9,#4fb8c8)"></i><span>Health</span><span class="v" id="hpV">–</span></div>
+          <div class="flags"><span class="flag" id="fTouch">touch</span><span class="flag" id="fGround">on ground</span><span class="flag" id="fHold">holding</span></div>
+        </div>
       </div>
     </section>
-  </div>
-  <div class="col">
-    <section class="glass card">
-      <div class="kick">World</div><h2>From above</h2><p class="note">Our view, for us only. The trail is its last 5 seconds; the cone is what its eyes cover.</p>
-      <div class="mapbox"><canvas id="map" width="720" height="720"></canvas></div>
-      <div class="legend"><span><span class="dot" style="background:var(--me)"></span>creature</span><span><span class="dot" style="background:var(--food)"></span>food</span><span><span class="dot" style="background:var(--lava)"></span>lava</span><span><span class="dot" style="background:var(--pred)"></span>predator</span><span><span class="dot" style="background:var(--wand)"></span>wanderer</span><span><span class="dot" style="background:var(--strange)"></span>strange being</span><span><span class="dot" style="background:var(--crate)"></span>crate</span></div>
-    </section>
-    <section class="glass card">
-      <div class="kick">Lives</div><h2>Every life so far</h2><p class="note">Each bar is one life on this page; height is how long it lasted, colour is how it ended.</p>
-      <div class="ribbon" id="ribbon"></div>
-      <div class="legend" style="margin-top:8px"><span><span class="dot" style="background:var(--energy)"></span>lived 100 s</span><span><span class="dot" style="background:var(--food)"></span>hunger</span><span><span class="dot" style="background:var(--lava)"></span>lava</span><span><span class="dot" style="background:var(--pred)"></span>predator</span><span><span class="dot" style="background:var(--strange)"></span>strange</span><span><span class="dot" style="background:#9aa"></span>blows</span></div>
-      <div class="stats"><div class="stat"><div class="n" id="sLives">0</div><div class="l">lives watched</div></div><div class="stat"><div class="n" id="sAvg">–</div><div class="l">average life</div></div><div class="stat"><div class="n" id="sFood">–</div><div class="l">meals per life</div></div></div>
-    </section>
-  </div>
-</div>
 
-<section class="glass card" style="margin-top:16px">
-  <div class="kick">Training</div><h2>How it learned</h2><p class="note" id="curvesub">Against minutes of training.</p>
-  <div class="charts" id="charts"></div>
-</section>
-<section class="glass card" style="margin-top:16px">
-  <div class="kick">Anatomy</div><h2>About this mind</h2>
-  <div class="benchrow" id="bench"></div>
-  <dl id="about" style="margin-top:14px"></dl>
-</section>
-<footer>Survive · a creature that learns only from living</footer>
+    </div>
+    <section class="panel glass s-lives">
+      <div class="ph"><h2>Its <em>lives</em> in this world</h2>
+        <div class="lkey"><span><i style="background:var(--amber)"></i>hunger</span><span><i style="background:#ef7a4e"></i>lava</span><span><i style="background:var(--violet)"></i>predator</span><span><i style="background:var(--sand)"></i>strange being</span><span><i style="background:#6b6f8c"></i>blows</span><span><i style="background:linear-gradient(135deg,var(--aqua),var(--leaf))"></i>lived 100 s</span></div></div>
+      <p class="note">One bar per life, as tall as it lasted. A full life is 100 s. White dots are food eaten.</p>
+      <div class="lwrap"><div class="top" id="ltop"></div><div class="lives" id="lives"></div></div>
+      <div class="lstats" id="lstats"></div>
+    </section>
+
+    <section class="panel glass s-learn">
+      <div class="ph"><h2>How it <em>learned</em></h2><span class="caps" id="curveTag"></span></div>
+      <p class="note">Against minutes of training, up to the moment this mind was saved. Errors on a log scale. Hover to read.</p>
+      <div class="charts" id="charts"></div>
+    </section>
+
+    <section class="panel glass s-about">
+      <div class="ph"><h2>About <em>this mind</em></h2><span class="caps" id="aboutTag"></span></div>
+      <div class="about" id="about"></div>
+      <div class="bench" id="bench"></div>
+    </section>
+  </div>
+  <footer><span class="caps">Oazy AI Research</span> · everything on this page is the real world and the real mind, live</footer>
 </div>
 <script>
 const $=id=>document.getElementById(id);
-const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-let since=-1,queue=[],mindPath=null,cfgKey=null,mode='test',started=false;
-let trail=[],fearHist=[],enHist=[],heHist=[],lives=[],curLife=null,lastFear=0,lastWb=null;
-const CAUSE={'lived 100 s':'--energy','died: hunger':'--food','died: lava':'--lava','died: predator':'--pred','died: strange':'--strange','died: blows':'#9aa'};
-// imagination frames
-const frames=[];for(let i=0;i<4;i++){const f=document.createElement('div');f.className='frame';const c=document.createElement('canvas');const t=document.createElement('div');t.className='tick';t.textContent='+'+(0.3*(i+1)).toFixed(1)+' s';f.append(c,t);$('strip').append(f);frames.push(c)}
-// ears equalizer
-const eqBars=[];(()=>{const eq=$('eq');const L=document.createElement('div');L.className='side l';const R=document.createElement('div');R.className='side';
-  for(let i=0;i<4;i++){const b=document.createElement('div');b.className='b';L.append(b);eqBars[3-i]=b}for(let i=0;i<4;i++){const b=document.createElement('div');b.className='b';R.append(b);eqBars[4+i]=b}
-  const m=document.createElement('div');m.className='mid';eq.append(L,m,R)})();
+const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+let since=-1,queue=[],mindPath=null,cfgKey=null,mode='test';
+const eyeL=$('eyeL'),eyeR=$('eyeR');
+
+/* ---------- imagination strip ---------- */
+const dreamEls=[];
+for(let i=0;i<4;i++){const f=document.createElement('div');f.className='frame';
+  f.innerHTML=`<div class="img"><canvas></canvas></div><div class="t"><span>${['soon','then','later','furthest'][i]}</span><b>+${(0.3*(i+1)).toFixed(1)} s</b></div>`;
+  $('strip').appendChild(f);dreamEls.push(f.querySelector('canvas'))}
+
+/* ---------- muscles, ears, intensity ---------- */
+const MUS=[['push','#7d8de0','#c0506f'],['turn','#4fb8c8','#8a63d2'],['jump','#e9a23b','#b98a5a'],['grip','#5bb58a','#7c84a8']];
+$('muscles').innerHTML=MUS.map(([n],i)=>`<div class="muscle"><span>${n}</span><div class="track"><div class="fill" id="m${i}"></div></div><span class="v" id="mv${i}">–</span></div>`).join('');
+['earL','earR'].forEach(id=>$(id).innerHTML='<i></i><i></i><i></i><i></i>');
+const BANDS=['heat','press','hum','field'],BCOL=[[239,122,78],[125,141,224],[79,184,200],[138,99,210]];
+$('heat').innerHTML='<span></span>'+BANDS.map(b=>`<span class="hd">${b}</span>`).join('')+[0,1,2,3].map(k=>`<span>s${k+1}</span>`+[0,1,2,3].map(b=>`<i id="h${k}${b}"></i>`).join('')).join('');
+
+/* ---------- orb ---------- */
+function arc(r,frac,stroke,w,id){const c=2*Math.PI*r;return `<circle cx="100" cy="100" r="${r}" fill="none" stroke="rgba(27,33,71,.07)" stroke-width="${w}"/>
+  <circle id="${id}" cx="100" cy="100" r="${r}" fill="none" stroke="${stroke}" stroke-width="${w}" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${c*(1-frac)}" transform="rotate(-90 100 100)" style="transition:stroke-dashoffset .35s ease"/>`}
+$('orbSvg').innerHTML=`<defs><linearGradient id="gE" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f6d38a"/><stop offset="1" stop-color="#e9a23b"/></linearGradient>
+  <linearGradient id="gH" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8fe0d3"/><stop offset="1" stop-color="#4fb8c8"/></linearGradient>
+  <radialGradient id="gF"><stop offset=".6" stop-color="rgba(226,80,120,0)"/><stop offset="1" stop-color="rgba(226,80,120,.5)"/></radialGradient></defs>
+  <circle id="fearHalo" cx="100" cy="100" r="99" fill="url(#gF)" opacity="0"/>`+arc(88,.8,'url(#gE)',9,'aE')+arc(73,.9,'url(#gH)',9,'aH');
+function setArc(id,r,frac){const c=2*Math.PI*r;$(id).setAttribute('stroke-dashoffset',c*(1-clamp(frac)))}
+function mix(a,b,t){return a.map((v,i)=>Math.round(v+(b[i]-v)*t))}
+function wbColor(w){/* coral at 0.3 or lower, amber mid, lilac-aqua when well */
+  const t=clamp((w-.3)/.6);return t<.5?mix([239,128,120],[242,196,120],t*2):mix([242,196,120],[150,170,240],(t-.5)*2)}
+
+/* ---------- pulse (ECG): rate rises with fear, beat shrinks with health ---------- */
+const ecg=$('ecg'),ex=ecg.getContext('2d');let ecgBuf=[],phase=0,bpm=60,hp=1,lastT=performance.now();
+function beatShape(p){/* p in [0,1) of one beat */
+  if(p<.08)return Math.sin(p/.08*Math.PI)*.12;if(p<.14)return 0;if(p<.16)return -.15*(p-.14)/.02;
+  if(p<.19)return -.15+1.15*(p-.16)/.03;if(p<.22)return 1-1.3*(p-.19)/.03;if(p<.25)return -.3+.3*(p-.22)/.03;
+  if(p<.38)return 0;if(p<.5)return Math.sin((p-.38)/.12*Math.PI)*.22;return 0}
+function drawEcg(now){
+  const dpr=devicePixelRatio||1,W=ecg.clientWidth,H=ecg.clientHeight;if(ecg.width!==W*dpr){ecg.width=W*dpr;ecg.height=H*dpr}
+  const dt=Math.min(.1,(now-lastT)/1000);lastT=now;const n=Math.max(1,Math.round(dt*60));
+  for(let i=0;i<n;i++){phase=(phase+bpm/60/60)%1;ecgBuf.push(beatShape(phase)*(.45+.55*hp))}
+  const N=Math.floor(W*1.2);while(ecgBuf.length>N)ecgBuf.shift();
+  ex.setTransform(dpr,0,0,dpr,0,0);ex.clearRect(0,0,W,H);
+  const g=ex.createLinearGradient(0,0,W,0);g.addColorStop(0,'rgba(192,80,111,0)');g.addColorStop(.6,'rgba(192,80,111,.55)');g.addColorStop(1,'#c0506f');
+  ex.strokeStyle=g;ex.lineWidth=1.6;ex.lineJoin='round';ex.beginPath();
+  ecgBuf.forEach((v,i)=>{const x=W-(ecgBuf.length-1-i)/1.2,y=H*.62-v*H*.5;i?ex.lineTo(x,y):ex.moveTo(x,y)});ex.stroke();
+  const v=ecgBuf[ecgBuf.length-1]||0;ex.fillStyle='#c0506f';ex.beginPath();ex.arc(W-1,H*.62-v*H*.5,2.4,0,7);ex.fill();
+  requestAnimationFrame(drawEcg)}
+requestAnimationFrame(drawEcg);
+
+/* ---------- drawing helpers ---------- */
 function b64(s){const b=atob(s),a=new Uint8Array(b.length);for(let i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a}
-function drawRGB(cv,data,res,off,stride){if(cv.width!==res){cv.width=res;cv.height=res}const ctx=cv.getContext('2d'),im=ctx.createImageData(res,res);for(let p=0;p<res*res;p++){const q=p*stride+off;im.data[p*4]=data[q];im.data[p*4+1]=data[q+1];im.data[p*4+2]=data[q+2];im.data[p*4+3]=255}ctx.putImageData(im,0,0)}
-function ring(id,v,len){$(id).setAttribute('stroke-dashoffset',(len*(1-Math.max(0,Math.min(1,v)))).toFixed(1))}
-function pathOf(arr,max,h,w){if(arr.length<2)return'';return arr.map((v,i)=>`${i?'L':'M'}${(i/(max-1)*w).toFixed(1)},${(h-2-Math.max(0,Math.min(1,v))*(h-6)).toFixed(1)}`).join(' ')}
-function drawWave(){const W=400,H=56,N=100;const e=pathOf(enHist,N,H,W),h=pathOf(heHist,N,H,W),f=pathOf(fearHist,N,H,W);
-  $('wave').innerHTML=`<line x1="0" y1="${H-2}" x2="${W}" y2="${H-2}" stroke="rgba(28,34,48,.08)"/><path d="${e}" fill="none" stroke="${css('--energy')}" stroke-width="1.6"/><path d="${h}" fill="none" stroke="${css('--health')}" stroke-width="1.6"/><path d="${f}" fill="none" stroke="${css('--fear')}" stroke-width="1.6" stroke-dasharray="3 3"/>`}
-function drawBody(I){// sensors: 0 left,1 right,2 front,3 bottom; bands heat,pressure,hum,field
-  const cols=[css('--lava'),'#8a8f9c',css('--pred'),'#b8a861'];const pos=[[52,75],[168,75],[110,22],[110,128]];
-  let s=`<ellipse cx="110" cy="75" rx="38" ry="38" fill="rgba(59,74,143,.08)" stroke="rgba(59,74,143,.35)"/><path d="M110 44 l7 12 h-14z" fill="${css('--me')}" opacity=".7"/>`;
-  for(let k=0;k<4;k++){const [x,y]=pos[k];for(let b=0;b<4;b++){const v=Math.min(1,I[k*4+b]/1.6);const r=3+v*13;const ox=(b%2?1:-1)*(k<2?0:9)+(k<2?0:0),oy=(k<2?(b-1.5)*11:0);const dx=k<2?(k==0?-1:1)*(b*0):((b-1.5)*14);
-    s+=`<circle cx="${x+(k<2?0:dx)}" cy="${y+(k<2?oy:0)}" r="${r.toFixed(1)}" fill="${cols[b]}" opacity="${(0.15+0.75*v).toFixed(2)}"/>`}}
-  s+=`<text x="${pos[0][0]-30}" y="79" font-size="10" fill="${css('--faint')}" font-family="JetBrains Mono">L</text><text x="${pos[1][0]+24}" y="79" font-size="10" fill="${css('--faint')}" font-family="JetBrains Mono">R</text>`;
-  $('bodyd').innerHTML=s}
-function show(f){
-  const res=f.res,e=b64(f.eyes);drawRGB($('eyeL'),e,res,0,6);drawRGB($('eyeR'),e,res,3,6);
-  if(f.dream){lastFear=f.fear;lastWb=f.wb;f.dream.forEach((d,i)=>drawRGB(frames[i],b64(d),res,0,3))}
-  const s=f.state;
-  ring('rE',s.energy,364.4);ring('rH',s.health,276.5);ring('rF',lastFear,188.5);
-  $('wbBig').textContent=Math.round(50*(s.energy+s.health));$('vE').textContent=Math.round(s.energy*100)+'%';$('vH').textContent=Math.round(s.health*100)+'%';$('vF').textContent=(lastFear*100).toFixed(1)+'%';
-  enHist.push(s.energy);heHist.push(s.health);fearHist.push(lastFear);[enHist,heHist,fearHist].forEach(a=>{if(a.length>100)a.shift()});drawWave();
-  drawBody(s.intensity);const E=s.ears;for(let i=0;i<8;i++)eqBars[i].style.height=(4+Math.min(1,E[i]/1.2)*78).toFixed(0)+'px';
-  $('cTouch').classList.toggle('on',s.body[2]>0.5);$('cGround').classList.toggle('on',s.body[3]>0.5);$('cHold').classList.toggle('on',s.body[4]>0.5);
-  if(!curLife||curLife.n!==f.life){curLife={n:f.life,t:0,food:0};trail=[]}
-  curLife.t=f.t;curLife.food=f.food;
-  trail.push([s.pos[0],s.pos[1]]);if(trail.length>50)trail.shift();
-  if(f.end){lives.push({t:f.t+1,food:f.food,end:f.end});trail=[]}
-  $('status').textContent=`life ${f.life} · ${(f.t/10).toFixed(1)} s · ${f.food} meal${f.food==1?'':'s'}`+(f.end?` · ${f.end.replace('died: ','died of ')}`:'');
-  drawMap(s);drawRibbon()}
-function drawRibbon(){const all=[...lives.slice(-90),curLife?{t:curLife.t,food:curLife.food,end:null}:null].filter(Boolean);
-  $('ribbon').innerHTML=all.map(l=>`<i class="${l.end?'':'now'}" style="height:${Math.max(3,l.t/1000*54).toFixed(0)}px;background:${l.end?(CAUSE[l.end]||'#999').startsWith('--')?css(CAUSE[l.end]):CAUSE[l.end]:'rgba(59,74,143,.35)'}" title="${(l.t/10).toFixed(1)} s, ${l.food} meals${l.end?', '+l.end:''}"></i>`).join('');
-  $('sLives').textContent=lives.length;if(lives.length){$('sAvg').textContent=(lives.reduce((a,l)=>a+l.t,0)/lives.length/10).toFixed(1)+' s';$('sFood').textContent=(lives.reduce((a,l)=>a+l.food,0)/lives.length).toFixed(1)}}
-const map=$('map').getContext('2d');
-function drawMap(s){
-  const W=720,k=W/s.L,X=v=>v*k,Y=v=>W-v*k;map.clearRect(0,0,W,W);
-  for(let i=0;i<Math.ceil(s.L);i++)for(let j=0;j<Math.ceil(s.L);j++){map.fillStyle=(i+j)%2?'#e4eadf':'#dbe3d5';map.fillRect(i*k,W-(j+1)*k,k+1,k+1)}
-  // lava with glow
-  s.lava.forEach(l=>{map.save();map.shadowColor='rgba(224,102,47,.55)';map.shadowBlur=18;map.fillStyle=css('--lava');map.beginPath();map.roundRect(X(l[0]),Y(l[3]),(l[2]-l[0])*k,(l[3]-l[1])*k,6);map.fill();map.restore()});
-  // eye cone
-  const p=s.pos,h=s.head,cx=X(p[0]),cy=Y(p[1]);const g=map.createRadialGradient(cx,cy,0,cx,cy,12*k);g.addColorStop(0,'rgba(74,91,212,.26)');g.addColorStop(1,'rgba(74,91,212,0)');
-  map.fillStyle=g;map.beginPath();map.moveTo(cx,cy);map.arc(cx,cy,16*k,-(h+Math.PI/3),-(h-Math.PI/3));map.closePath();map.fill();
-  // boxes: shadow offset by height
-  s.boxes.forEach(b=>{const hh=b[5];map.fillStyle='rgba(20,30,40,.13)';map.beginPath();map.roundRect(X(b[0])+hh*9,Y(b[4])+hh*9,(b[3]-b[0])*k,(b[4]-b[1])*k,4);map.fill()});
-  s.boxes.forEach(b=>{map.fillStyle=`rgb(${b[6]*255|0},${b[7]*255|0},${b[8]*255|0})`;map.beginPath();map.roundRect(X(b[0]),Y(b[4]),(b[3]-b[0])*k,(b[4]-b[1])*k,4);map.fill();
-    if(b[5]>1.2){map.strokeStyle='rgba(255,255,255,.45)';map.lineWidth=1;map.stroke()}if(b[10]){map.strokeStyle=css('--me');map.lineWidth=2.5;map.stroke()}});
-  // food glow
-  const fc=['#e8593e','#e9c22f','#5fcf4a'];s.food.forEach(f=>{map.save();map.shadowColor=fc[f[3]];map.shadowBlur=14;map.fillStyle=fc[f[3]];map.beginPath();map.arc(X(f[0]),Y(f[1]),6,0,7);map.fill();map.restore();if(f[2]>1){map.strokeStyle='#fff';map.lineWidth=1.5;map.beginPath();map.arc(X(f[0]),Y(f[1]),9,0,7);map.stroke()}});
-  // beings
-  const blob=(q,r,c)=>{map.save();map.shadowColor='rgba(0,0,0,.18)';map.shadowBlur=8;map.shadowOffsetY=3;map.fillStyle=c;map.beginPath();map.arc(X(q[0]),Y(q[1]),r*k,0,7);map.fill();map.restore()};
-  blob(s.pred,.35,css('--pred'));blob(s.wand,.3,css('--wand'));map.fillStyle=css('--strange');map.beginPath();map.roundRect(X(s.strange[0]-.3),Y(s.strange[1]+.3),.6*k,.6*k,5);map.fill();
+function drawRGB(cv,data,res,off,stride){if(cv.width!==res){cv.width=res;cv.height=res}const ctx=cv.getContext('2d'),im=ctx.createImageData(res,res);
+  for(let p=0;p<res*res;p++){for(let k=0;k<3;k++)im.data[p*4+k]=data[p*stride+off+k];im.data[p*4+3]=255}ctx.putImageData(im,0,0)}
+
+/* ---------- map ---------- */
+const mapC=$('map'),map=mapC.getContext('2d');let trail=[],lastState=null;
+function sizeMap(){const dpr=devicePixelRatio||1,W=mapC.clientWidth;if(W&&mapC.width!==Math.round(W*dpr)){mapC.width=mapC.height=Math.round(W*dpr)}}
+const FOODC=['#e8593e','#e9c92f','#5fcf4a'];
+function drawMap(s,tnow){
+  sizeMap();const dpr=devicePixelRatio||1,W=mapC.width/dpr;if(!W)return;map.setTransform(dpr,0,0,dpr,0,0);
+  const k=W/s.L,X=v=>v*k,Y=v=>W-v*k;
+  // floor: warm paper with a 1 m grid
+  const fg=map.createLinearGradient(0,0,W,W);fg.addColorStop(0,'#f4f1ea');fg.addColorStop(1,'#e9e6f1');map.fillStyle=fg;map.fillRect(0,0,W,W);
+  map.strokeStyle='rgba(27,33,71,.06)';map.lineWidth=1;map.beginPath();
+  for(let i=1;i<s.L;i++){map.moveTo(Math.round(X(i))+.5,0);map.lineTo(Math.round(X(i))+.5,W);map.moveTo(0,Math.round(Y(i))+.5);map.lineTo(W,Math.round(Y(i))+.5)}map.stroke();
+  // lava, glowing
+  s.lava.forEach(l=>{const x=X(l[0]),y=Y(l[3]),w=(l[2]-l[0])*k,h=(l[3]-l[1])*k;
+    map.save();map.shadowColor='rgba(239,110,60,.55)';map.shadowBlur=18;const g=map.createLinearGradient(x,y,x+w,y+h);g.addColorStop(0,'#f39a5b');g.addColorStop(1,'#e2583f');
+    map.fillStyle=g;rr(x,y,w,h,3);map.fill();map.restore();
+    map.globalAlpha=.25+.15*Math.sin(tnow/400+l[0]);map.fillStyle='#ffd27a';rr(x+w*.2,y+h*.2,w*.6,h*.6,3);map.fill();map.globalAlpha=1});
   // trail
-  if(trail.length>1){for(let i=1;i<trail.length;i++){map.strokeStyle=`rgba(59,74,143,${(i/trail.length*0.7).toFixed(2)})`;map.lineWidth=3;map.lineCap='round';map.beginPath();map.moveTo(X(trail[i-1][0]),Y(trail[i-1][1]));map.lineTo(X(trail[i][0]),Y(trail[i][1]));map.stroke()}}
-  // creature
-  map.save();map.shadowColor='rgba(59,74,143,.45)';map.shadowBlur=12;map.fillStyle=css('--me');map.beginPath();map.arc(cx,cy,.27*k,0,7);map.fill();map.restore();
-  map.strokeStyle='#fff';map.lineWidth=2.5;map.beginPath();map.moveTo(cx,cy);map.lineTo(X(p[0]+.33*Math.cos(h)),Y(p[1]+.33*Math.sin(h)));map.stroke();
-  if(p[2]>0.05){map.strokeStyle='rgba(255,255,255,.9)';map.lineWidth=1.5;map.beginPath();map.arc(cx,cy,.27*k+3+p[2]*6,0,7);map.stroke()}
+  if(trail.length>1){map.lineCap='round';map.lineJoin='round';for(let i=1;i<trail.length;i++){map.strokeStyle=`rgba(44,53,119,${.05+.35*i/trail.length})`;map.lineWidth=1.2+1.4*i/trail.length;
+    map.beginPath();map.moveTo(X(trail[i-1][0]),Y(trail[i-1][1]));map.lineTo(X(trail[i][0]),Y(trail[i][1]));map.stroke()}}
+  // boxes: shadow by height, ledges darker, crates warm and rounded
+  s.boxes.forEach(b=>{const x=X(b[0]),y=Y(b[4]),w=(b[3]-b[0])*k,h=(b[4]-b[1])*k,ht=Math.max(.1,b[5]-b[2]),mov=b[9],held=b[10];
+    map.save();map.shadowColor='rgba(27,33,71,.28)';map.shadowBlur=4+ht*6;map.shadowOffsetX=ht*3;map.shadowOffsetY=ht*4;
+    const c=[b[6]*255,b[7]*255,b[8]*255],top=mix(c,[255,255,255],.18),bot=mix(c,[40,40,80],.08);
+    const g=map.createLinearGradient(x,y,x,y+h);g.addColorStop(0,`rgb(${top})`);g.addColorStop(1,`rgb(${bot})`);map.fillStyle=g;rr(x,y,w,h,mov?4:2);map.fill();map.restore();
+    map.strokeStyle='rgba(255,255,255,.45)';map.lineWidth=1;rr(x+.5,y+.5,w-1,h-1,mov?4:2);map.stroke();
+    if(held){map.strokeStyle='#7d8de0';map.lineWidth=2.5;map.setLineDash([4,3]);rr(x-2,y-2,w+4,h+4,6);map.stroke();map.setLineDash([])}});
+  // food: soft glow dots (raised food on ledges gets a ring)
+  s.food.forEach(f=>{const x=X(f[0]),y=Y(f[1]);map.save();map.shadowColor=FOODC[f[3]];map.shadowBlur=10;map.fillStyle=FOODC[f[3]];map.beginPath();map.arc(x,y,4.5,0,7);map.fill();map.restore();
+    map.fillStyle='rgba(255,255,255,.85)';map.beginPath();map.arc(x-1.2,y-1.2,1.4,0,7);map.fill();
+    if(f[2]>.8){map.strokeStyle=FOODC[f[3]];map.lineWidth=1;map.beginPath();map.arc(x,y,7.5,0,7);map.stroke()}});
+  // the strange being: a shimmering diamond
+  {const x=X(s.strange[0]),y=Y(s.strange[1]),r=.34*k,pul=1+.12*Math.sin(tnow/300);
+    const g=map.createRadialGradient(x,y,0,x,y,r*3.2);g.addColorStop(0,'rgba(205,191,142,.45)');g.addColorStop(1,'rgba(205,191,142,0)');map.fillStyle=g;map.beginPath();map.arc(x,y,r*3.2*pul,0,7);map.fill();
+    map.save();map.translate(x,y);map.rotate(Math.PI/4+tnow/3000);map.fillStyle='#d9cc98';map.strokeStyle='rgba(255,255,255,.8)';map.lineWidth=1.2;rr(-r*.75,-r*.75,r*1.5,r*1.5,3);map.fill();map.stroke();map.restore()}
+  // wanderer, predator
+  const being=(p,r,c,ring)=>{const x=X(p[0]),y=Y(p[1]);map.save();map.shadowColor=c;map.shadowBlur=12;map.fillStyle=c;map.beginPath();map.arc(x,y,r*k,0,7);map.fill();map.restore();
+    const g=map.createRadialGradient(x-r*k*.35,y-r*k*.35,0,x,y,r*k);g.addColorStop(0,'rgba(255,255,255,.55)');g.addColorStop(.6,'rgba(255,255,255,0)');map.fillStyle=g;map.beginPath();map.arc(x,y,r*k,0,7);map.fill();
+    if(ring){const ph=(tnow%1600)/1600;map.strokeStyle=`rgba(138,99,210,${.5*(1-ph)})`;map.lineWidth=1.5;map.beginPath();map.arc(x,y,r*k*(1+ph*1.6),0,7);map.stroke()}};
+  being(s.wand,.3,'#4fb8c8',false);being(s.pred,.35,'#8a63d2',true);
+  // the creature with its two 120° eyes
+  const p=s.pos,h=s.head,cx=X(p[0]),cy=Y(p[1]);
+  const vg=map.createRadialGradient(cx,cy,0,cx,cy,7*k);vg.addColorStop(0,'rgba(125,141,224,.30)');vg.addColorStop(1,'rgba(125,141,224,0)');
+  map.fillStyle=vg;map.beginPath();map.moveTo(cx,cy);map.arc(cx,cy,9*k,-(h+Math.PI/3),-(h-Math.PI/3));map.closePath();map.fill();
+  map.strokeStyle='rgba(125,141,224,.35)';map.lineWidth=1;map.setLineDash([2,4]);[1,-1].forEach(sg=>{map.beginPath();map.moveTo(cx,cy);map.lineTo(cx+Math.cos(h+sg*Math.PI/3)*2.2*k,cy-Math.sin(h+sg*Math.PI/3)*2.2*k);map.stroke()});map.setLineDash([]);
+  map.save();map.shadowColor='rgba(27,33,71,.45)';map.shadowBlur=8;map.shadowOffsetY=2;map.fillStyle='#2c3577';map.beginPath();map.arc(cx,cy,.26*k,0,7);map.fill();map.restore();
+  map.strokeStyle='#fff';map.lineWidth=2.4;map.lineCap='round';map.beginPath();map.moveTo(cx,cy);map.lineTo(cx+Math.cos(h)*.36*k,cy-Math.sin(h)*.36*k);map.stroke();
+  map.strokeStyle='rgba(255,255,255,.9)';map.lineWidth=1.5;map.beginPath();map.arc(cx,cy,.26*k,0,7);map.stroke();
+  // vignette
+  const vv=map.createRadialGradient(W/2,W/2,W*.45,W/2,W/2,W*.78);vv.addColorStop(0,'rgba(27,33,71,0)');vv.addColorStop(1,'rgba(27,33,71,.10)');map.fillStyle=vv;map.fillRect(0,0,W,W)}
+function rr(x,y,w,h,r){r=Math.min(r,w/2,h/2);map.beginPath();map.moveTo(x+r,y);map.arcTo(x+w,y,x+w,y+h,r);map.arcTo(x+w,y+h,x,y+h,r);map.arcTo(x,y+h,x,y,r);map.arcTo(x,y,x+w,y,r);map.closePath()}
+function mapLoop(t){if(lastState)drawMap(lastState,t);requestAnimationFrame(mapLoop)}requestAnimationFrame(mapLoop);
+addEventListener('resize',()=>{sizeMap()});
+
+/* ---------- imagined wellbeing curve ---------- */
+function drawWb(now,wb){const svg=$('wbCurve');if(!wb||!wb.length){svg.innerHTML='';return}
+  const vals=[now,...wb],n=vals.length,W=400,H=78,lo=0,hi=1;const xs=i=>i/(n-1)*W,ys=v=>H-4-(clamp(v)-lo)/(hi-lo)*(H-8);
+  let d='';vals.forEach((v,i)=>{d+=(i?'L':'M')+xs(i).toFixed(1)+','+ys(v).toFixed(1)});
+  const c=wbColor(wb[wb.length-1]);
+  svg.innerHTML=`<defs><linearGradient id="wbA" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgb(${c})" stop-opacity=".35"/><stop offset="1" stop-color="rgb(${c})" stop-opacity="0"/></linearGradient>
+   <linearGradient id="wbS" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2c3577"/><stop offset="1" stop-color="rgb(${c})"/></linearGradient></defs>
+   ${[.25,.5,.75].map(g=>`<line x1="0" x2="${W}" y1="${ys(g)}" y2="${ys(g)}" stroke="rgba(27,33,71,.07)" vector-effect="non-scaling-stroke"/>`).join('')}
+   ${[3,6,9,12].map(i=>`<line x1="${xs(i)}" x2="${xs(i)}" y1="0" y2="${H}" stroke="rgba(27,33,71,.1)" stroke-dasharray="2 3" vector-effect="non-scaling-stroke"/>`).join('')}
+   <path d="${d} L${W},${H} L0,${H} Z" fill="url(#wbA)"/>
+   <path d="${d}" fill="none" stroke="url(#wbS)" stroke-width="2.2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>`}
+
+/* ---------- lives ---------- */
+const CAUSEC={hunger:'var(--amber)',lava:'#ef7a4e',predator:'var(--violet)',strange:'var(--sand)',blows:'#6b6f8c',cap:'linear-gradient(180deg,var(--aqua),var(--leaf))'};
+let lives=[],curLife=null;
+function renderLives(){
+  const el=$('lives');const max=Math.max(200,curLife?curLife.t:0,...lives.map(l=>l.t));$('ltop').textContent=(max/10).toFixed(0)+' s';const maxBars=Math.max(10,Math.floor((el.clientWidth||600)/13));const shown=lives.slice(-(maxBars-1));
+  el.innerHTML=shown.map(l=>`<div class="lf" title="life ${l.n}: ${(l.t/10).toFixed(1)} s, ${l.food} food, ${l.cause==='cap'?'lived 100 s':'died: '+l.cause}" style="height:${Math.max(4,l.t/max*86)}px;background:${CAUSEC[l.cause]||'#999'}">${Array.from({length:Math.min(l.food,12)},(_,i)=>`<span class="fd" style="bottom:${3+i*6}px"></span>`).join('')}</div>`).join('')+
+    (curLife?`<div class="lf now" title="this life" style="height:${Math.max(4,curLife.t/max*86)}px"></div>`:'');
+  if(lives.length){const n=lives.length,mean=lives.reduce((a,l)=>a+l.t,0)/n/10,fd=lives.reduce((a,l)=>a+l.food,0)/n,best=Math.max(...lives.map(l=>l.t))/10;
+    const cnt={};lives.forEach(l=>cnt[l.cause]=(cnt[l.cause]||0)+1);const top=Object.entries(cnt).sort((a,b)=>b[1]-a[1])[0];
+    $('lstats').innerHTML=`<span><b>${n}</b>lives</span><span><b>${mean.toFixed(1)}</b>s on average</span><span><b>${best.toFixed(1)}</b>s longest</span><span><b>${fd.toFixed(2)}</b>food per life</span><span><b>${top[0]==='cap'?'old age':top[0]}</b>most often ends it</span>`}
+  else $('lstats').innerHTML='<span>The first life is still going.</span>'}
+
+/* ---------- one moment ---------- */
+let lastFear=0,lastWbs=null,lastRender=0;
+function show(f){
+  const res=f.res,e=b64(f.eyes);drawRGB(eyeL,e,res,0,6);drawRGB(eyeR,e,res,3,6);$('resTag').textContent=res+' px · stereo';
+  const s=f.state,wbNow=(s.energy+s.health)/2;
+  if(f.dream){lastFear=f.fear;lastWbs=f.wb;f.dream.forEach((d,i)=>drawRGB(dreamEls[i],b64(d),res,0,3));
+    $('fearV').textContent=(lastFear*100).toFixed(lastFear<.1?1:0);drawWb(wbNow,lastWbs)}
+  // vitals and the sky
+  $('vLife').textContent=f.life;$('vT').textContent=(f.t/10).toFixed(1);$('vFood').textContent=f.food;
+  document.documentElement.style.setProperty('--wb',wbNow.toFixed(3));document.documentElement.style.setProperty('--fear',clamp(lastFear*1.5).toFixed(3));
+  bpm=58+lastFear*120+(1-s.energy)*20;hp=s.health;$('vBpm').textContent=Math.round(bpm)+' bpm';
+  // feelings
+  setArc('aE',88,s.energy);setArc('aH',73,s.health);$('fearHalo').setAttribute('opacity',clamp(lastFear*3).toFixed(2));
+  $('wbV').textContent=Math.round(wbNow*100);const c=wbColor(wbNow);document.querySelector('.orb .core').style.setProperty('--orb',`rgb(${c})`);
+  $('enV').textContent=Math.round(s.energy*100)+'%';$('hpV').textContent=Math.round(s.health*100)+'%';
+  $('fTouch').classList.toggle('on',s.body[2]>.5);$('fGround').classList.toggle('on',s.body[3]>.5);$('fHold').classList.toggle('on',s.body[4]>.5);
+  // muscles
+  (f.act||[]).forEach((v,i)=>{const el=$('m'+i);const a=clamp(Math.abs(v));el.style.left=(v<0?50-a*50:50)+'%';el.style.width=a*50+'%';
+    el.style.background=`linear-gradient(90deg,${MUS[i][1]},${MUS[i][2]})`;$('mv'+i).textContent=(v>=0?'+':'−')+Math.abs(v).toFixed(2)});
+  // ears and intensity
+  const E=s.ears;['earL','earR'].forEach((id,side)=>[...$(id).children].forEach((el,b)=>el.style.height=Math.round(8+92*clamp(E[side*4+b]))+'%'));
+  const I=s.intensity;for(let k=0;k<4;k++)for(let b=0;b<4;b++){const v=clamp(I[k*4+b]/(b===0?3:1.5));const col=BCOL[b];$('h'+k+b).style.background=`rgba(${col},${.08+.85*v})`}
+  // where it has been, its lives
+  const dist=q=>Math.hypot(q[0]-s.pos[0],q[1]-s.pos[1]);const nf=s.food.length?Math.min(...s.food.map(dist)):null;
+  $('near').innerHTML=[['Nearest food',nf],['Predator',dist(s.pred)],['Strange being',dist(s.strange)]].map(([n,v])=>`<div><span class="caps">${n}</span><b>${v==null?'–':v.toFixed(1)}<small>m</small></b></div>`).join('');
+  trail.push([s.pos[0],s.pos[1]]);if(trail.length>240)trail.shift();lastState=s;
+  curLife={t:f.t,food:f.food};
+  if(f.end){const cause=f.end.startsWith('lived')?'cap':f.end.replace('died: ','');lives.push({n:f.life,t:f.t+1,food:f.food,cause});trail=[];curLife=null}
+  if(f.end||performance.now()-lastRender>1000){renderLives();lastRender=performance.now()}
+  $('status').textContent=f.end?(f.end.startsWith('lived')?'it lived the full 100 s':f.end.replace('died:','it died:')):`watching life ${f.life}`;
 }
+
+/* ---------- feed ---------- */
 async function poll(){
-  try{const r=await (await fetch('/api/frames?since='+since)).json();const key=JSON.stringify(r.cfg);if(key!==cfgKey){cfgKey=key;queue=[];lives=[];curLife=null}
+  try{const r=await (await fetch('/api/frames?since='+since)).json();
+    const key=JSON.stringify(r.cfg);if(key!==cfgKey){cfgKey=key;queue=[];lives=[];trail=[];curLife=null;renderLives()}
     for(const f of r.frames){queue.push(f);since=Math.max(since,f.seq)}}catch(e){}
-  setTimeout(poll,350)}
-setInterval(()=>{if(!started&&queue.length<20)return;started=true;if(queue.length){show(queue.shift());$('pulse').style.background=css('--energy')}else{started=false;$('pulse').style.background=css('--faint')}},100);
-async function loadMinds(){const r=await (await fetch('/api/minds')).json();const sel=$('mind');sel.innerHTML='';
-  r.minds.slice().reverse().forEach(m=>{const o=document.createElement('option');o.value=m.path;o.textContent=m.name;sel.append(o)});
-  if(r.cfg){sel.value=r.cfg.path;mode=r.cfg.mode;document.querySelectorAll('#modes button').forEach(b=>b.classList.toggle('on',b.dataset.m===mode))}
-  mindPath=sel.value;loadInfo()}
-async function select(){mindPath=$('mind').value;queue=[];started=false;lives=[];curLife=null;await fetch(`/api/select?mind=${encodeURIComponent(mindPath)}&mode=${mode}`);loadInfo()}
+  setTimeout(poll,400)}
+let started=false;
+setInterval(()=>{if(!started&&queue.length<30)return;started=true;if(queue.length){show(queue.shift())}else{started=false;$('status').textContent='thinking ahead…'}},100);
+
+/* ---------- controls ---------- */
+function setMode(m){mode=m;const seg=$('mode');[...seg.querySelectorAll('button')].forEach(b=>{const on=b.dataset.m===m;b.classList.toggle('on',on);b.setAttribute('aria-checked',on);
+  if(on){const k=seg.querySelector('.knob');k.style.left=b.offsetLeft+'px';k.style.width=b.offsetWidth+'px'}})}
+document.querySelectorAll('#mode button').forEach(b=>b.onclick=()=>{setMode(b.dataset.m);select()});
+addEventListener('resize',()=>setMode(mode));document.fonts&&document.fonts.ready.then(()=>setMode(mode));
+async function loadMinds(){
+  const r=await (await fetch('/api/minds')).json();const sel=$('mind');sel.innerHTML='';
+  r.minds.slice().reverse().forEach(m=>{const o=document.createElement('option');o.value=m.path;o.textContent=m.name.replace(' · ',' — ').replace(/(\d+)min$/,'$1 min');sel.appendChild(o)});
+  const listed=r.cfg&&r.minds.some(m=>m.path===r.cfg.path);if(r.cfg)mode=r.cfg.mode;setMode(mode);
+  if(listed){sel.value=r.cfg.path;mindPath=sel.value;loadInfo()}else if(sel.options.length){sel.selectedIndex=0;select()}}
+async function select(){mindPath=$('mind').value;queue=[];started=false;$('status').textContent='opening a new world…';
+  await fetch(`/api/select?mind=${encodeURIComponent(mindPath)}&mode=${mode}`);loadInfo()}
 $('mind').onchange=select;$('neww').onclick=select;
-document.querySelectorAll('#modes button').forEach(b=>b.onclick=()=>{mode=b.dataset.m;document.querySelectorAll('#modes button').forEach(x=>x.classList.toggle('on',x===b));select()});
-const CH=[['test_steps','Survival in unseen worlds','steps',0,'--energy'],['life_steps','Life length while learning','steps',0,'--energy'],['food','Meals per life while learning','',0,'--food'],['sen','Body-feeling prediction error','',1,'--health'],['cont','Death prediction error','',1,'--fear'],['kl','Surprise (KL)','nats',0,'--pred'],['wb','Imagined wellbeing','',0,'--energy'],['estd','Eye feature spread','std',0,'--food'],['rank','Eye effective rank','of 4096',0,'--food'],['me',"Mind's-eye picture error",'page only',1,'--faint']];
-function series(rows,key){return rows.map(r=>{let v=r[key];if(Array.isArray(v))v=v.reduce((a,b)=>a+b,0);return v==null?null:[r.min,v]}).filter(Boolean)}
-function spark(pts,log,col){const W=200,H=64;const xs=pts.map(p=>p[0]),vs=pts.map(p=>log?Math.log10(Math.max(p[1],1e-6)):p[1]);
-  const x0=Math.min(...xs),x1=Math.max(...xs),v0=Math.min(...vs),v1=Math.max(...vs);const P=pts.map((p,i)=>[((p[0]-x0)/(x1-x0||1))*(W-8)+2,H-6-((vs[i]-v0)/(v1-v0||1))*(H-14)]);
-  const d=P.map((q,i)=>`${i?'L':'M'}${q[0].toFixed(1)},${q[1].toFixed(1)}`).join(' ');const id='g'+Math.random().toString(36).slice(2,7);const last=P[P.length-1];
-  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${col}" stop-opacity=".22"/><stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient></defs><path d="${d} L${last[0].toFixed(1)},${H} L${P[0][0].toFixed(1)},${H}Z" fill="url(#${id})"/><path d="${d}" fill="none" stroke="${col}" stroke-width="1.6" stroke-linejoin="round"/><circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="2.6" fill="${col}"/></svg>`}
-function fmt(v){return Math.abs(v)>=100?Math.round(v).toLocaleString():Math.abs(v)>=1?v.toFixed(2):v.toPrecision(2)}
+
+/* ---------- learning curves ---------- */
+const CH=[['test_steps','Survival in new worlds','steps',0,'#5bb58a'],['life_steps','Life length while training','steps',0,'#4fb8c8'],['meals','Meals per life while training','',0,'#e9a23b'],['sen','Body feelings + ears error','',1,'#7d8de0'],
+  ['cont','Death prediction error','',1,'#c0506f'],['kl','Surprise (KL, guess vs look)','',0,'#8a63d2'],['estd','Eye feature spread','std',0,'#e9a23b'],
+  ['rank','Eye effective rank','of 4096',0,'#b98a5a'],['wb','Imagined wellbeing','',0,'#5bb58a'],['ent','Muscle randomness (entropy)','',0,'#7c84a8'],['me',"Mind's-eye picture error",'page only',1,'#9aa0b8']];
+function fmt(v){const a=Math.abs(v);return a>=100?v.toFixed(0):a>=10?v.toFixed(1):a>=1?v.toFixed(2):v.toPrecision(2)}
+function chart(rows,[key,name,unit,log,col]){
+  const pts=rows.filter(r=>r[key]!=null&&isFinite(r[key])).map(r=>[r.min,+r[key]]);if(pts.length<2)return null;
+  const W=300,H=84,tv=v=>log?Math.log10(Math.max(v,1e-6)):v,xs=pts.map(p=>p[0]),vs=pts.map(p=>tv(p[1]));
+  const x0=Math.min(...xs),x1=Math.max(...xs);let v0=Math.min(...vs),v1=Math.max(...vs);const pad=(v1-v0)*.08||.5;v0-=pad;v1+=pad;
+  const X=x=>(x-x0)/(x1-x0||1)*W,Y=v=>H-(v-v0)/(v1-v0)*H;
+  // light smoothing for the line, the real readings kept for hover
+  const sm=vs.map((v,i)=>{let a=0,n=0;for(let j=Math.max(0,i-2);j<=Math.min(vs.length-1,i+2);j++){a+=vs[j];n++}return i===vs.length-1?v:a/n});
+  const d=sm.map((v,i)=>(i?'L':'M')+X(xs[i]).toFixed(1)+','+Y(v).toFixed(1)).join('');const id='g'+key;
+  const last=pts[pts.length-1];
+  const el=document.createElement('div');el.className='ch';
+  el.innerHTML=`<div class="n">${name}</div><div class="v"><b>${fmt(last[1])}</b><span>${unit?unit+' · ':''}at ${last[0].toFixed(0)} min</span></div>
+   <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${col}" stop-opacity=".28"/><stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>
+   <path d="${d}L${W},${H}L0,${H}Z" fill="url(#${id})"/><path d="${d}" fill="none" stroke="${col}" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>
+   <line class="hl" x1="0" x2="0" y1="0" y2="${H}" stroke="rgba(27,33,71,.25)" stroke-dasharray="2 3" vector-effect="non-scaling-stroke" opacity="0"/></svg>
+   <div class="ax"><span>${x0.toFixed(0)} min</span><span>${log?'log':''}</span><span>${x1.toFixed(0)} min</span></div><div class="tip"></div>`;
+  const svg=el.querySelector('svg'),tip=el.querySelector('.tip'),hl=el.querySelector('.hl');
+  svg.addEventListener('pointermove',ev=>{const r=svg.getBoundingClientRect(),fx=(ev.clientX-r.left)/r.width,xm=x0+fx*(x1-x0);
+    let bi=0;xs.forEach((x,i)=>{if(Math.abs(x-xm)<Math.abs(xs[bi]-xm))bi=i});const px=X(xs[bi])/W;
+    hl.setAttribute('x1',X(xs[bi]));hl.setAttribute('x2',X(xs[bi]));hl.setAttribute('opacity',1);
+    tip.textContent=`${fmt(pts[bi][1])} · ${pts[bi][0].toFixed(1)} min`;tip.style.left=(16+px*r.width)+'px';tip.style.top=(r.top-el.getBoundingClientRect().top+Y(sm[bi])/H*r.height)+'px';el.classList.add('hover')});
+  svg.addEventListener('pointerleave',()=>{el.classList.remove('hover');hl.setAttribute('opacity',0)});
+  return el}
+const DC={hunger:'var(--amber)',lava:'#ef7a4e',predator:'var(--violet)',strange:'var(--sand)',blows:'#6b6f8c'};
 async function loadInfo(){
-  const c=await (await fetch('/api/curves?mind='+encodeURIComponent(mindPath))).json();const rows=c.rows||[];
-  $('charts').innerHTML=CH.map(([k,n,u,lg,cv])=>{const pts=series(rows,k);if(pts.length<2)return'';const col=cv.startsWith('--')?css(cv):cv;const last=pts[pts.length-1];
-    return `<div class="chart"><div class="n">${n}</div><div class="v">${fmt(last[1])}<small>${u?u+' · ':''}${last[0].toFixed(0)} min</small></div>${spark(pts,lg,col)}</div>`}).join('')||'<div class="note">Curves appear after the first minutes of training.</div>';
-  $('curvesub').textContent='Against minutes of training'+(rows.length?`, up to ${rows[rows.length-1].min.toFixed(0)} min`:'')+'. Error curves use a log scale.';
-  const a=await (await fetch('/api/about?mind='+encodeURIComponent(mindPath))).json();
-  const DC={hunger:'--food',lava:'--lava',predator:'--pred',strange:'--strange',blows:'#9aa'};
-  $('bench').innerHTML=a.bench?['test','hard','train'].filter(m=>a.bench[m]).map(m=>{const b=a.bench[m];const t={test:'Unseen worlds',hard:'Hard worlds',train:'Like training'}[m];
-    const bar=Object.entries(b.deaths_pct).map(([k2,v])=>`<i style="display:block;height:100%;width:${v}%;background:${(DC[k2]||'#999').startsWith('--')?css(DC[k2]):DC[k2]}" title="${k2} ${v}%"></i>`).join('');
-    return `<div class="bcard"><div class="t">${t}</div><div class="n">${(b.steps/10).toFixed(1)} s</div><div class="s">${b.food} meals · ${b.cap_pct}% live the full 100 s · ${b.lives} lives</div><div class="deathbar">${bar}</div></div>`}).join(''):'<div class="note">No bench yet for this mind.</div>';
-  const items=[['Eyes',`two, 8 cm apart, 120° each, ${a.res} × ${a.res} px`],['Ears','left and right, four bands; the outer ear dulls high sounds from behind'],['Intensity','four sensors (left, right, front, underfoot) × heat, pressure, hum, field'],['Body feelings','energy, health, touch, on ground, holding'],['Muscles','push, turn, jump, grip — raw, nothing scripted'],['Drive','wellbeing = (energy + health) / 2, and staying alive. Nothing else.'],['Seeing','its eye is kept rich (every feature varies, none repeats); no picture is ever redrawn'],['Memory','512 numbers carried through its whole life, plus 32 “moment” slots of 16 options'],['Imagination',`${a.horizon} steps (${(a.horizon/10).toFixed(1)} s) ahead, horizon γ = ${a.gamma}`],['Trained',`${a.minutes} min · ${a.frames?(a.frames/1e6).toFixed(0)+'M frames learned':''} · ${a.params}M parameters`],['Saved as',`<code>${a.path}</code>`]];
-  $('about').innerHTML=items.map(([k2,v])=>`<dt>${k2}</dt><dd>${v}</dd>`).join('')}
-loadMinds().then(poll);setInterval(()=>{if(mindPath)loadInfo()},60000);
+  try{const c=await (await fetch('/api/curves?mind='+encodeURIComponent(mindPath))).json();const rows=(c.rows||[]).map(r=>Array.isArray(r.food)?{...r,meals:r.food.reduce((x,y)=>x+y,0)}:r);
+    const box=$('charts');box.innerHTML='';CH.forEach(spec=>{const el=chart(rows,spec);if(el)box.appendChild(el)});
+    const lastMin=rows.length?rows[rows.length-1].min:0;$('curveTag').textContent=rows.length?`${lastMin.toFixed(0)} min · ${rows.length} readings`:'';
+    if(!box.children.length)box.innerHTML='<p class="note">Curves appear after the first few minutes of training.</p>'}catch(e){}
+  try{const a=await (await fetch('/api/about?mind='+encodeURIComponent(mindPath))).json();
+    $('aboutTag').textContent=a.name||'';
+    const rows=[['Eyes',`two, stereo, 120° each, ${a.res} px`],['Ears','two, 4 bands each; the outer ear dulls high sounds from behind'],['Touch & skin','4 sensors × 4 bands: heat, pressure, hum, field'],
+      ['Body feelings','energy, health, touch, on ground, holding'],['Muscles','push, turn, jump, grip. Raw, nothing scripted'],['Drive','wellbeing = (energy + health) / 2, and staying alive'],
+      ['Learning to see','eye kept rich by VICReg (vary, don\'t repeat). No picture is ever redrawn'],['Memory','512 numbers carried through life + 32 × 16 “moment” slots'],
+      ['Imagination',`${a.horizon} steps (${(a.horizon/10).toFixed(1)} s) ahead, horizon γ = ${a.gamma}`],
+      ['Trained',`${a.minutes} min${a.frames?`, ${(a.frames/1e6).toFixed(1)}M frames learned`:''}, ${a.params}M parameters`]];
+    const half=Math.ceil(rows.length/2),dl=rs=>'<dl>'+rs.map(r=>`<div class="row"><dt>${r[0]}</dt><dd>${r[1]}</dd></div>`).join('')+'</dl>';
+    $('about').innerHTML=dl(rows.slice(0,half))+dl(rows.slice(half));
+    const names={test:'New worlds',hard:'Hard worlds',train:'Like training'};
+    $('bench').innerHTML=a.bench?['test','hard','train'].filter(m=>a.bench[m]).map(m=>{const b=a.bench[m],dp=b.deaths_pct||{};
+      return `<div class="bt"><span class="caps">${names[m]} · ${b.lives} lives</span><b>${b.steps} <small style="font:300 14px var(--sans);color:var(--ink-3)">steps</small></b>
+        <p>${b.food} food a life · ${b.cap_pct}% reach 100 s</p><div class="dbar">${Object.entries(dp).map(([k,v])=>`<i title="${k} ${v}%" style="width:${v}%;background:${DC[k]||'#aaa'}"></i>`).join('')}</div>
+        <p style="margin-top:6px">${Object.entries(dp).filter(([,v])=>v>0).map(([k,v])=>`${k} ${v}%`).join(' · ')}</p></div>`}).join(''):''}catch(e){}
+}
+loadMinds().then(poll);
 </script>
 </body>
 </html>
