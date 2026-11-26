@@ -76,7 +76,11 @@ def _jit(g, shape, dev, a=0.05):
 class World:
     """B arenas stepped together. All state lives in tensors on `device`."""
 
-    def __init__(self, B: int, device="cuda", mode="train", seed=0, metabolism=True, compile=False):
+    def __init__(self, B: int, device="cuda", mode="train", seed=0, metabolism=True, compile=False,
+                 rooms=0, room_seed=0):
+        """rooms > 0: lives are drawn from a fixed list of `rooms` worlds made from room_seed, and
+        world slot e on its k-th life always gets the same one, in every run (whatever the mind
+        does, whenever it dies). Twins trained with different seeds then live in the same rooms."""
         self.compile, self._step_c = compile, None
         self.B, self.dev, self.metabolism = B, torch.device(device), metabolism
         self.g = torch.Generator(device=self.dev)
@@ -107,6 +111,12 @@ class World:
         # per-step outputs
         self.touch, self.pressure = z(B), z(B)
         self.senses = z(B, SENSES)
+        self.bank = None
+        if rooms:
+            self.bank = World(rooms, device, mode, seed=room_seed, metabolism=metabolism)
+            self.life = z(B, dt=torch.long)
+            self._copy = [k for k, v in vars(self).items() if isinstance(v, torch.Tensor) and k != "life"
+                          and v.dim() and v.shape[0] == B and getattr(self.bank, k).shape[0] == rooms]
         self.reset(torch.arange(B, device=self.dev))
 
     # ------------------------------------------------------------------ world generation
@@ -138,6 +148,13 @@ class World:
     def reset(self, idx):
         """New random worlds for the envs in idx (a fresh life in a fresh layout)."""
         if len(idx) == 0:
+            return
+        if self.bank is not None:
+            j = (idx * 7919 + self.life[idx] * 104729 + 1) % self.bank.B
+            for k in self._copy:
+                getattr(self, k)[idx] = getattr(self.bank, k)[j]
+            self.life[idx] += 1
+            self._sense(self.pos)
             return
         n, m, dev = len(idx), self.mode, self.dev
         g = self.g

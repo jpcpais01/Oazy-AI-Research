@@ -361,6 +361,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--minutes", type=float, default=300)
     ap.add_argument("--res", type=int, default=64)
+    ap.add_argument("--rooms", type=int, default=65536, help="fixed list of training rooms, same order in every run (0 = always new)")
     ap.add_argument("--fovea", type=float, default=0, help="0 = plain eye; k = centre k times sharper (same pixels)")
     ap.add_argument("--envs", type=int, default=512)
     ap.add_argument("--batch", type=int, default=256)
@@ -400,7 +401,7 @@ def main():
     mind = Mind(a.res).to(dev)
     mind.ent_squash = bool(a.ent_squash)
     print(f"mind: {sum(p.numel() for p in mind.parameters()) / 1e6:.1f}M parameters, eyes {a.res} px", flush=True)
-    world = World(a.envs, dev, mode="train", seed=a.seed, compile=bool(a.compile))
+    world = World(a.envs, dev, mode="train", seed=a.seed, compile=bool(a.compile), rooms=a.rooms)
     per = 6 * a.res * a.res + SENSES * 2 + ACT * 2 + 2 + H_DIM * 2
     cap = max(a.seq * 4, int(a.replay_gb * 1e9 / (per * a.envs)))
     print(f"replay: {cap} steps per world ({cap / 10:.0f} s), {cap * a.envs / 1e6:.2f}M moments", flush=True)
