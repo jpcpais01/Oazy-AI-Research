@@ -17,7 +17,7 @@ from .render import set_eyes
 from .model import load_mind, Mind
 from .train import Actor
 from . import world as _world
-from .world import DEATH_CAUSES, MAX_STEPS, World
+from .world import DEATH_CAUSES, World
 
 KINDS = ["cube", "stick", "tile"]
 
@@ -33,7 +33,7 @@ def bench_mode(mind, res, dev, mode, lives, chunk=256, seed=777, bf16=True):
         steps = torch.zeros(n, device=dev)
         food = torch.zeros(n, 3, device=dev)
         cause = torch.zeros(n, dtype=torch.long, device=dev)
-        for _ in range(MAX_STEPS + _world.LIGHT):
+        for _ in range(_world.MAX_STEPS + _world.LIGHT):
             a, _, _ = act.observe_act(bf16)
             act.advance(a)
             done, trunc, c, ate = w.step(a)
@@ -45,7 +45,7 @@ def bench_mode(mind, res, dev, mode, lives, chunk=256, seed=777, bf16=True):
             if not alive.any():
                 break
         steps_all.append(steps); food_all.append(food); cause_all.append(cause)
-        cap_all.append(steps >= MAX_STEPS)
+        cap_all.append(steps >= _world.MAX_STEPS)
     steps, food = torch.cat(steps_all), torch.cat(food_all)
     cause, cap = torch.cat(cause_all), torch.cat(cap_all)
     dead = cause > 0

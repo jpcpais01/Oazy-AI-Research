@@ -14,6 +14,7 @@ The creature has five muscles, each in [-1, 1]: push (forward/back), turn, jump,
 Its senses (all produced here, nothing privileged):
   - two eyes: 120 degree stereo pictures (render.py),
   - body feelings: energy, health, touch (pushing against something), on-ground, holding,
+    and (last of all senses) stamina: 1 unless set_body(stamina=True),
   - intensity: 4 sensors (left, right, front, bottom) x 4 bands (heat, pressure, hum, field),
   - ears: left and right x 4 bands; the outer ear dulls high bands coming from behind.
 Its life ends when energy or health reaches 0, or after 100 s (a time limit, not a death).
@@ -40,7 +41,7 @@ MAX_STEPS = 1000    # 100 s life cap
 NB = 24             # box slots (static boxes + crates)
 NL = 7              # lava slots
 NF = 8              # food slots
-SENSES = 29         # 5 body + 16 intensity + 8 ears
+SENSES = 30         # 5 body + 16 intensity + 8 ears + stamina
 BODY = 5
 ACT = 5            # push, turn, jump, grip, gaze (gaze is ignored unless set_gaze(deg) > 0)
 GAZE = 0.0         # radians the eyes can turn left/right of the body
@@ -59,6 +60,19 @@ def set_light(n):
     then the life ends. Lifetime (bench) counts only up to the moment of death."""
     global LIGHT
     LIGHT = int(n or 0)
+
+STAMINA = False     # a fast tiredness pool next to the slow food energy
+METAB = 1.0         # how fast the food energy drains (1 = a full tank lasts 30 s standing still)
+
+
+def set_body(stamina=0, metab=1.0, life_cap=100):
+    """Stamina: sprinting, turning hard and jumping drain it in seconds; easy moving refills it
+    in ~8 s. A tired body is weaker (top speed down to 35%, no jump below 15%); it never kills.
+    metab: food-energy drain (0.2 = a full tank lasts 150 s standing still). life_cap in s."""
+    global STAMINA, METAB, MAX_STEPS
+    STAMINA, METAB = bool(stamina), float(metab or 1.0)
+    MAX_STEPS = int(round(float(life_cap or 100) / DT))
+
 
 FOOD_HALF = torch.tensor([[0.15, 0.15, 0.15], [0.05, 0.05, 0.25], [0.22, 0.22, 0.05]])
 FOOD_COL = torch.tensor([[0.95, 0.35, 0.25], [0.95, 0.85, 0.20], [0.40, 0.95, 0.30]])
@@ -113,6 +127,7 @@ class World:
         self.gaze = z(B)
         self.on_ground = z(B, dt=torch.bool)
         self.energy, self.health = z(B), z(B)
+        self.stamina = z(B)
         self.t = z(B, dt=torch.long)
         self.dying, self.dcause = z(B, dt=torch.long), z(B, dt=torch.long)   # light steps seen; cause
         self.bmin, self.bmax, self.bcol = z(B, NB, 3), z(B, NB, 3), z(B, NB, 3)
@@ -216,6 +231,7 @@ class World:
         self.on_ground[idx] = True
         self.energy[idx] = 0.7 + self._rand(n) * 0.3
         self.health[idx] = 1.0
+        self.stamina[idx] = 1.0
         self.t[idx] = 0
         self.dying[idx], self.dcause[idx] = 0, 0
         self.held[idx] = -1
@@ -287,11 +303,13 @@ class World:
             a = torch.where(was_dying[:, None], torch.zeros_like(a), a)
         push, turn = a[:, 0], a[:, 1]
         jump = (a[:, 2] > 0.5) & self.on_ground
+        if STAMINA:
+            jump = jump & (self.stamina > 0.15)
         grip = a[:, 3] > 0
         self.gaze = a[:, 4] * GAZE
         self.head = (self.head + turn * 2.5 * DT) % (2 * math.pi)
         fwd = torch.stack([torch.cos(self.head), torch.sin(self.head)], -1)
-        want = fwd * (push * 2.5)[:, None]
+        want = fwd * (push * 2.5 * ((0.35 + 0.65 * self.stamina) if STAMINA else 1.0))[:, None]
         ctrl = torch.where(self.on_ground, 0.5, 0.1)[:, None]
         vxy = self.vel[:, :2] + ctrl * (want - self.vel[:, :2])
         vz = torch.where(jump, torch.full_like(self.vel[:, 2], 4.2), self.vel[:, 2]) - 9.8 * DT
@@ -394,7 +412,7 @@ class World:
             self.bmax[..., 2] = nz + hgt
 
         # --- metabolism
-        d0 = 1.0 / 300
+        d0 = METAB / 300
         speed2 = (self.vel[:, :2] ** 2).sum(-1)
         if self.metabolism:
             moving = ((push.abs() > 0.05) | (turn.abs() > 0.05)).float()
@@ -404,6 +422,10 @@ class World:
         else:
             cost = torch.full_like(push, d0)
         self.energy = self.energy - cost
+        if STAMINA:
+            effort = 0.015 * push * push + 0.004 * turn.abs() + 0.15 * jump.float()
+            rest = 0.012 * (1 - push.abs())
+            self.stamina = (self.stamina - effort + rest).clamp(0, 1)
 
         # --- food
         fc = self.fpos
@@ -603,7 +625,8 @@ class World:
         holding = (self.held >= 0).float()
         body = torch.stack([self.energy.clamp(0, 1), self.health.clamp(0, 1), self.touch,
                             self.on_ground.float(), holding], -1)
-        self.senses = torch.cat([body, torch.log1p(intensity.flatten(1)), torch.log1p(ears.flatten(1))], -1)
+        stam = self.stamina if STAMINA else torch.ones_like(self.energy)
+        self.senses = torch.cat([body, torch.log1p(intensity.flatten(1)), torch.log1p(ears.flatten(1)), stam[:, None]], -1)
 
     # ------------------------------------------------------------------ for the renderer
     def scene(self):

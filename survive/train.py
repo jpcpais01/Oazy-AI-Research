@@ -471,7 +471,7 @@ def quick_test(mind, res, dev, mode="test", n=64, seed=12345, bf16=True, compile
     steps = torch.zeros(n, device=dev)
     food = torch.zeros(n, device=dev)
     causes = torch.zeros(n, dtype=torch.long, device=dev)
-    for _ in range(1000 + _world.LIGHT):
+    for _ in range(_world.MAX_STEPS + _world.LIGHT):
         a, _, _ = act.observe_act(bf16)
         act.advance(a)
         done, trunc, cause, ate = w.step(a)
@@ -492,6 +492,9 @@ def main():
     ap.add_argument("--eye-sep", type=float, default=0.08, help="distance between the two eyes (m)")
     ap.add_argument("--gaze", type=float, default=0, help="degrees the eyes can turn left/right with the 5th muscle (0 = off)")
     ap.add_argument("--light", type=int, default=0, help="steps of white light the creature sees after dying, before the life ends (0 = off; 20 = 2 s)")
+    ap.add_argument("--stamina", type=int, default=0, help="1 = a fast tiredness pool (sprints/jumps drain it, rest refills it)")
+    ap.add_argument("--metab", type=float, default=1.0, help="food-energy drain (0.2 = a full tank lasts 150 s standing still)")
+    ap.add_argument("--life-cap", type=float, default=100, help="longest life in seconds (a time limit, not a death)")
     ap.add_argument("--fovea", type=float, default=0, help="0 = plain eye; k = centre k times sharper (same pixels)")
     ap.add_argument("--envs", type=int, default=512)
     ap.add_argument("--batch", type=int, default=256)

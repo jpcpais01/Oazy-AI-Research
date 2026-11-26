@@ -158,7 +158,7 @@ class Sim:
             food=[r(w.fpos[0, i]) + [int(w.fkind[0, i])] for i in range(w.fpos.shape[1]) if w.fup[0, i]],
             pred=r(w.pred[0]), wand=r(w.wand[0]), strange=r(w.strange[0]),
             dying=int(w.dying[0]), energy=round(w.energy[0].clamp(0, 1).item(), 3), health=round(w.health[0].clamp(0, 1).item(), 3),
-            body=r(s[:5]), intensity=r(s[5:21]), ears=r(s[21:29]))
+            body=r(s[:5]), intensity=r(s[5:21]), ears=r(s[21:29]), stamina=round(float(s[29]), 3))
 
     def take(self, since):
         with self.lock:
