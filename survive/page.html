@@ -60,22 +60,6 @@ p{margin:0;color:var(--ink-2)}
 
 .wrap{position:relative;z-index:2;max-width:1240px;margin:0 auto;padding:28px max(16px,env(safe-area-inset-left)) 56px}
 
-/* ---------- header ---------- */
-header{display:grid;grid-template-columns:1fr auto;gap:18px 28px;align-items:end;margin:6px 4px 22px}
-.brand{display:flex;align-items:center;gap:10px;margin-bottom:12px}
-.brand .mark{width:9px;height:9px;border-radius:50%;background:conic-gradient(from 200deg,#7d8de0,#c0506f,#e9a23b,#4fb8c8,#7d8de0);box-shadow:0 0 0 3px rgba(255,255,255,.6)}
-h1.gt{font-size:clamp(64px,10vw,128px);padding-bottom:.06em}
-.lede{font:italic 400 clamp(19px,2.1vw,24px)/1.3 var(--serif);color:var(--ink-2);max-width:34ch;margin-top:8px;text-wrap:balance}
-.vitals{display:flex;align-items:stretch;gap:0;padding:6px;border-radius:24px}
-.vital{padding:10px 18px;min-width:92px;display:flex;flex-direction:column;justify-content:center}
-.vital+.vital{border-left:1px solid var(--hair)}
-.vital b{font:400 30px/1 var(--serif);letter-spacing:-.01em;display:block;margin-top:4px;white-space:nowrap}
-.vital b small{font:300 13px var(--sans);color:var(--ink-3);margin-left:3px}
-.pulse{width:150px;padding:8px 12px 6px}
-.pulse canvas{width:100%;height:46px;display:block}
-.pulse .caps{display:flex;justify-content:space-between}
-.pulse .caps span:last-child{letter-spacing:.04em;text-transform:none;color:var(--ink-3)}
-
 /* ---------- controls ---------- */
 .bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:8px 8px 8px 18px;border-radius:999px;margin-bottom:22px}
 .bar .caps{margin-right:-4px}
@@ -105,47 +89,8 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--lilac);outline
 .panel .note{font-size:13px;color:var(--ink-3);margin:2px 0 16px;max-width:60ch}
 .colL{grid-column:span 7;display:flex;flex-direction:column;gap:18px;min-width:0}
 .colR{grid-column:span 5;display:flex;flex-direction:column;gap:18px;min-width:0}
-.colC{grid-column:1/-1;display:flex;flex-direction:column;gap:18px;min-width:0}
 .s-lives,.s-learn,.s-about{grid-column:1/-1}
-.rest{margin-top:18px}
 @media (max-width:980px){.colL,.colR{grid-column:1/-1}}
-/* wide screens: the live view (header, controls, the five live panels) fits one screen */
-@media (min-width:981px){
-  .wrap{max-width:1680px;padding-top:14px}
-  .livebox{height:100vh;height:100dvh;display:flex;flex-direction:column;margin-top:-14px;padding-top:14px;padding-bottom:14px;box-sizing:border-box}
-  header{margin:0 4px 10px;grid-template-columns:auto 1fr auto;align-items:center}
-  header .brand{margin-bottom:2px}
-  h1.gt{font-size:clamp(44px,5vh,64px)}
-  .lede{font-size:15px;max-width:44ch;margin:0 0 0 8px;align-self:end}
-  header>div:first-child{display:contents}
-  header>div:first-child>.brand{display:none}
-  .vital{padding:6px 14px}.vital b{font-size:24px}.pulse canvas{height:34px}
-  .bar{margin-bottom:12px;padding:5px 6px 5px 16px}
-  .livebox>.grid{flex:1;min-height:0;grid-template-columns:5fr 4fr 3.4fr;gap:14px}
-  .livebox .colL,.livebox .colR,.livebox .colC{grid-column:auto;min-height:0;overflow:auto;gap:14px;scrollbar-width:thin}
-  .livebox .panel{padding:12px 16px 14px}
-  .livebox .panel h2{font-size:22px}
-  .livebox .panel .note{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0 0 8px;font-size:12px}
-  .livebox .eyes{grid-template-columns:repeat(2,minmax(0,calc((100vh - 300px) * .46)));justify-content:center}
-  .livebox .strip{grid-template-columns:repeat(4,minmax(0,calc((100vh - 300px) * .19)));justify-content:center}
-  .livebox .future{margin-top:8px;grid-template-columns:1fr 130px}.livebox .future svg{height:52px}.livebox .fearbox b{font-size:30px}
-  .livebox .mapbox{max-width:calc(100vh - 300px);margin:0 auto}
-  .livebox .legend{margin-top:8px;font-size:11.5px;gap:4px 12px}
-  .livebox .near{margin-top:8px}.livebox .near div{padding:6px 10px}.livebox .near b{font-size:18px}
-  .livebox .feel{grid-template-columns:130px 1fr;gap:14px}.livebox .orb{width:130px;height:130px}.livebox .orb .core{inset:32px}.livebox .orb .core b{font-size:26px}
-  .livebox .body{grid-template-columns:1fr;gap:8px}.livebox .muscle{margin:6px 0}.livebox .heat{margin-top:8px}.livebox .heat i{height:15px}
-}
-@media (min-width:981px) and (max-height:860px){
-  .livebox .panel .note{display:none}
-  .livebox .vital{padding:4px 12px}.livebox .vital b{font-size:20px}.livebox .pulse canvas{height:26px}
-  h1.gt{font-size:40px}.lede{font-size:13.5px}
-  .livebox .bar{margin-bottom:10px}
-  .livebox .muscle{margin:3px 0}.livebox .eq{height:22px}.livebox .heat i{height:11px}.livebox .heat{margin-top:6px;gap:3px}
-  .livebox .feel{grid-template-columns:110px 1fr}.livebox .orb{width:110px;height:110px}.livebox .orb .core{inset:27px}
-  .livebox .eyes{grid-template-columns:repeat(2,minmax(0,calc((100vh - 230px) * .46)))}
-  .livebox .mapbox{max-width:calc(100vh - 250px)}
-  .livebox .future svg{height:40px}
-}
 .near{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
 .near div{padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.4);border:1px solid rgba(255,255,255,.65)}
 .near b{display:block;font:400 22px/1.1 var(--serif);margin-top:2px}.near b small{font:300 12px var(--sans);color:var(--ink-3);margin-left:2px}
@@ -258,12 +203,63 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--lilac);outline
 footer{margin-top:28px;text-align:center;font-size:12.5px;color:var(--ink-3)}
 footer .caps{color:var(--ink-3)}
 
+
+
+.barname{display:inline-flex;align-items:center;gap:9px;font:400 26px/1 var(--serif);color:var(--ink);margin-right:6px}
+.barname .mark{width:9px;height:9px;border-radius:50%;background:conic-gradient(from 200deg,#7d8de0,#c0506f,#e9a23b,#4fb8c8,#7d8de0);box-shadow:0 0 0 3px rgba(255,255,255,.6)}
+/* native scrollbars off; a floating glass pill instead */
+html{scrollbar-width:none}html::-webkit-scrollbar,body::-webkit-scrollbar,*::-webkit-scrollbar{display:none;width:0;height:0}
+*{scrollbar-width:none}
+.rail{position:fixed;top:12px;bottom:12px;right:max(5px,env(safe-area-inset-right,0px));width:12px;z-index:20;opacity:0;transition:opacity .5s ease;touch-action:none}
+.rail.on,.rail:hover,.rail.drag{opacity:1}
+.rail .thumb{position:absolute;left:3px;width:6px;border-radius:6px;cursor:grab;
+  background:linear-gradient(180deg,rgba(255,255,255,.95),rgba(190,198,245,.9));
+  box-shadow:0 0 0 1px rgba(255,255,255,.7),-1px 0 0 rgba(255,60,120,.22),1px 0 0 rgba(40,190,255,.25),0 4px 14px rgba(60,70,150,.3);transition:left .25s,width .25s}
+.rail:hover .thumb,.rail.drag .thumb{left:2px;width:8px}.rail.drag .thumb{cursor:grabbing}
+.rail[hidden]{display:none}
+/* ---------- live cockpit: on a laptop/desktop screen the five live panels fill exactly one screen ---------- */
+.cockpit{display:flex;flex-direction:column;gap:18px;margin-bottom:18px}
+.cockpit>div{display:flex;flex-direction:column;gap:18px;min-width:0}
+.mapwrap{min-width:0}
+@media (min-width:1100px) and (min-height:620px){
+  .wrap{max-width:1880px;padding-top:14px}
+  .bar{margin-bottom:12px;padding:6px 6px 6px 16px}
+  .cockpit{display:grid;grid-template-columns:minmax(0,1.12fr) minmax(0,1fr) minmax(0,.8fr);gap:14px;height:calc(100vh - var(--top,200px) - 14px);min-height:480px}
+  .cockpit>div{gap:14px;min-height:0}
+  .cockpit .panel{display:flex;flex-direction:column;min-height:0;padding:14px 16px}
+  .cockpit .panel h2{font-size:22px}
+  .cockpit .ph{margin-bottom:0}
+  .cockpit .panel .note{margin:0 0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;max-width:none}
+  .s-eyes{flex:0 1 auto}.s-dream{flex:1 1 0}
+  .eyes{flex:0 1 auto;min-height:0;container-type:inline-size;display:flex;justify-content:center;gap:10px}
+  .lens{width:calc(50cqw - 5px);aspect-ratio:1;max-height:calc(100vh - var(--top,200px) - 300px);height:auto;flex:none}
+  .lens canvas{width:100%;height:100%}
+  .strip{flex:1;min-height:0;container-type:size;display:flex;justify-content:center;align-items:center;gap:8px}
+  .frame{width:min(calc(25cqw - 6px),calc(100cqh - 24px));flex:none}
+  .frame .t{margin-top:4px}
+  .future{margin-top:8px;grid-template-columns:1fr 150px}.future svg{height:52px}.fearbox b{font-size:32px}.fearbox p{display:none}
+  .s-map{flex:1}
+  .mapwrap{flex:1;min-height:0;container-type:size;display:flex;justify-content:center;align-items:center}
+  .mapbox{width:min(100cqw,100cqh);height:min(100cqw,100cqh);flex:none}
+  #map{width:100%;height:100%}
+  .legend{margin-top:8px;gap:4px 12px;font-size:11.5px}
+  .near{margin-top:8px}.near div{padding:6px 10px}.near b{font-size:18px}
+  .s-feel{flex:none}
+  .feel{grid-template-columns:150px 1fr;gap:16px}.orb{width:150px;height:150px}.orb .core{inset:38px}.orb .core b{font-size:28px}
+  .s-body{flex:1}
+  .s-body .body{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:space-evenly;gap:8px}
+  #muscles{flex:none}.muscle{margin:3px 0;font-size:13px}.muscle .track{height:8px}
+  .sense{flex:none;display:flex;flex-direction:column}
+  .sense h3{margin:2px 0 6px}
+  .ears{flex:none}.eq{height:20px}
+  .heat{margin-top:6px}
+  .heat i{height:clamp(8px,1.6vh,16px)}
+}
+@media (min-width:1100px) and (min-height:620px) and (max-height:860px){
+  .cockpit{min-height:420px}.cockpit .panel .note{display:none}
+}
 @media (max-width:980px){.about{grid-template-columns:1fr}}
 @media (max-width:720px){
-  header{grid-template-columns:1fr}
-  .vitals{flex-wrap:wrap;border-radius:20px}
-  .vital{min-width:0;flex:1 1 30%;padding:8px 12px}.vital b{font-size:24px}
-  .pulse{flex:1 1 100%;width:auto;border-left:0!important;border-top:1px solid var(--hair)}
   .bar{border-radius:22px;padding:12px}
   .chip{margin-left:0}
   .panel{padding:16px}
@@ -278,24 +274,12 @@ footer .caps{color:var(--ink-3)}
 </style>
 </head>
 <body>
+<div class="rail" id="rail" aria-hidden="true"><div class="thumb" id="thumb"></div></div>
 <div class="sky" aria-hidden="true"><i class="a"></i><i class="b"></i><i class="c"></i><div class="warm"></div><div class="fear"></div><div class="grain"></div></div>
 <div class="wrap">
-  <div class="livebox">
-  <header>
-    <div>
-      <div class="brand"><span class="mark"></span><span class="caps">Oazy · Survive</span></div>
-      <h1 class="gt">Creature</h1>
-      <p class="lede">A mind that learned to stay alive from its own eyes, ears and body. Nobody told it what anything is.</p>
-    </div>
-    <div class="vitals glass">
-      <div class="vital"><span class="caps">Life</span><b id="vLife">–</b></div>
-      <div class="vital"><span class="caps">Alive</span><b><span id="vT">–</span><small>s</small></b></div>
-      <div class="vital"><span class="caps">Eaten</span><b id="vFood">–</b></div>
-      <div class="vital pulse"><div class="caps"><span>Pulse</span><span id="vBpm"></span></div><canvas id="ecg"></canvas></div>
-    </div>
-  </header>
 
   <div class="bar glass">
+    <span class="barname"><span class="mark"></span>Creature</span>
     <span class="caps">Mind</span>
     <div class="sel"><select id="mind" aria-label="Mind"></select></div>
     <span class="caps">World</span>
@@ -307,8 +291,8 @@ footer .caps{color:var(--ink-3)}
     <button class="chip" id="neww"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg>New world</button>
   </div>
 
-  <div class="grid">
-    <div class="colL">
+  <div class="cockpit">
+    <div class="c1">
     <section class="panel glass s-eyes">
       <div class="ph"><h2>What it <em>sees</em></h2><span class="caps" id="resTag"></span></div>
       <p class="note">Its two eyes, the real pixels it gets, 120° each. This is all the light it ever has.</p>
@@ -317,7 +301,6 @@ footer .caps{color:var(--ink-3)}
         <div class="lens"><canvas id="eyeR"></canvas><span class="tagl">Right</span></div>
       </div>
     </section>
-
     <section class="panel glass s-dream">
       <div class="ph"><h2>What it <em>imagines</em></h2><span class="caps">next 1.2 s</span></div>
       <p class="note">Its inner state run forward with no new light, drawn by a decoder that only watches. The mind never uses these pictures.</p>
@@ -327,13 +310,12 @@ footer .caps{color:var(--ink-3)}
         <div class="fearbox"><span class="caps">Fear</span><b><span id="fearV">–</span><small>%</small></b><p>its imagined chance of dying within 1.2 s</p></div>
       </div>
     </section>
-
     </div>
-    <div class="colR">
+    <div class="c2">
     <section class="panel glass s-map">
       <div class="ph"><h2>From <em>above</em></h2><span class="caps">11.3 m</span></div>
       <p class="note">Our view of its world. It never sees this. The faint line is where it has been this life.</p>
-      <div class="mapbox"><canvas id="map"></canvas><span class="compass">N</span></div>
+      <div class="mapwrap"><div class="mapbox"><canvas id="map"></canvas><span class="compass">N</span></div></div>
       <div class="legend">
         <span><i style="background:#2c3577"></i>creature</span>
         <span><i style="background:#e8593e"></i><i style="background:#e9c92f;margin-left:-4px"></i><i style="background:#5fcf4a;margin-left:-4px"></i>food</span>
@@ -346,9 +328,8 @@ footer .caps{color:var(--ink-3)}
       </div>
       <div class="near" id="near"></div>
     </section>
-
     </div>
-    <div class="colC">
+    <div class="c3">
     <section class="panel glass s-feel">
       <div class="ph"><h2>How it <em>feels</em></h2></div>
       <p class="note">Its body feelings. Wellbeing, the only thing it cares about, is their mean.</p>
@@ -361,7 +342,6 @@ footer .caps{color:var(--ink-3)}
         </div>
       </div>
     </section>
-
     <section class="panel glass s-body">
       <div class="ph"><h2>Muscles <em>and</em> senses</h2></div>
       <p class="note">What it does right now (raw muscle signals, −1 to 1), and what reaches it besides light.</p>
@@ -374,11 +354,9 @@ footer .caps{color:var(--ink-3)}
         </div>
       </div>
     </section>
-
     </div>
   </div>
-  </div>
-  <div class="grid rest">
+  <div class="grid">
     <section class="panel glass s-lives">
       <div class="ph"><h2>Its <em>lives</em> in this world</h2>
         <div class="lkey"><span><i style="background:var(--amber)"></i>hunger</span><span><i style="background:#ef7a4e"></i>lava</span><span><i style="background:var(--violet)"></i>predator</span><span><i style="background:var(--sand)"></i>strange being</span><span><i style="background:#6b6f8c"></i>blows</span><span><i style="background:linear-gradient(135deg,var(--aqua),var(--leaf))"></i>lived 100 s</span></div></div>
@@ -432,24 +410,6 @@ function mix(a,b,t){return a.map((v,i)=>Math.round(v+(b[i]-v)*t))}
 function wbColor(w){/* coral at 0.3 or lower, amber mid, lilac-aqua when well */
   const t=clamp((w-.3)/.6);return t<.5?mix([239,128,120],[242,196,120],t*2):mix([242,196,120],[150,170,240],(t-.5)*2)}
 
-/* ---------- pulse (ECG): rate rises with fear, beat shrinks with health ---------- */
-const ecg=$('ecg'),ex=ecg.getContext('2d');let ecgBuf=[],phase=0,bpm=60,hp=1,lastT=performance.now();
-function beatShape(p){/* p in [0,1) of one beat */
-  if(p<.08)return Math.sin(p/.08*Math.PI)*.12;if(p<.14)return 0;if(p<.16)return -.15*(p-.14)/.02;
-  if(p<.19)return -.15+1.15*(p-.16)/.03;if(p<.22)return 1-1.3*(p-.19)/.03;if(p<.25)return -.3+.3*(p-.22)/.03;
-  if(p<.38)return 0;if(p<.5)return Math.sin((p-.38)/.12*Math.PI)*.22;return 0}
-function drawEcg(now){
-  const dpr=devicePixelRatio||1,W=ecg.clientWidth,H=ecg.clientHeight;if(ecg.width!==W*dpr){ecg.width=W*dpr;ecg.height=H*dpr}
-  const dt=Math.min(.1,(now-lastT)/1000);lastT=now;const n=Math.max(1,Math.round(dt*60));
-  for(let i=0;i<n;i++){phase=(phase+bpm/60/60)%1;ecgBuf.push(beatShape(phase)*(.45+.55*hp))}
-  const N=Math.floor(W*1.2);while(ecgBuf.length>N)ecgBuf.shift();
-  ex.setTransform(dpr,0,0,dpr,0,0);ex.clearRect(0,0,W,H);
-  const g=ex.createLinearGradient(0,0,W,0);g.addColorStop(0,'rgba(192,80,111,0)');g.addColorStop(.6,'rgba(192,80,111,.55)');g.addColorStop(1,'#c0506f');
-  ex.strokeStyle=g;ex.lineWidth=1.6;ex.lineJoin='round';ex.beginPath();
-  ecgBuf.forEach((v,i)=>{const x=W-(ecgBuf.length-1-i)/1.2,y=H*.62-v*H*.5;i?ex.lineTo(x,y):ex.moveTo(x,y)});ex.stroke();
-  const v=ecgBuf[ecgBuf.length-1]||0;ex.fillStyle='#c0506f';ex.beginPath();ex.arc(W-1,H*.62-v*H*.5,2.4,0,7);ex.fill();
-  requestAnimationFrame(drawEcg)}
-requestAnimationFrame(drawEcg);
 
 /* ---------- drawing helpers ---------- */
 function b64(s){const b=atob(s),a=new Uint8Array(b.length);for(let i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a}
@@ -541,16 +501,14 @@ function show(f){
   if(f.dream){lastFear=f.fear;lastWbs=f.wb;f.dream.forEach((d,i)=>drawRGB(dreamEls[i],b64(d),res,0,3));
     $('fearV').textContent=(lastFear*100).toFixed(lastFear<.1?1:0);drawWb(wbNow,lastWbs)}
   // vitals and the sky
-  $('vLife').textContent=f.life;$('vT').textContent=(f.t/10).toFixed(1);$('vFood').textContent=f.food;
   document.documentElement.style.setProperty('--wb',wbNow.toFixed(3));document.documentElement.style.setProperty('--fear',clamp(lastFear*1.5).toFixed(3));
-  bpm=58+lastFear*120+(1-s.energy)*20;hp=s.health;$('vBpm').textContent=Math.round(bpm)+' bpm';
   // feelings
   setArc('aE',88,s.energy);setArc('aH',73,s.health);$('fearHalo').setAttribute('opacity',clamp(lastFear*3).toFixed(2));
   $('wbV').textContent=Math.round(wbNow*100);const c=wbColor(wbNow);document.querySelector('.orb .core').style.setProperty('--orb',`rgb(${c})`);
   $('enV').textContent=Math.round(s.energy*100)+'%';$('hpV').textContent=Math.round(s.health*100)+'%';
   $('fTouch').classList.toggle('on',s.body[2]>.5);$('fGround').classList.toggle('on',s.body[3]>.5);$('fHold').classList.toggle('on',s.body[4]>.5);
   // muscles
-  (f.act||[]).forEach((v,i)=>{const el=$('m'+i);if(!el)return;const a=clamp(Math.abs(v));el.style.left=(v<0?50-a*50:50)+'%';el.style.width=a*50+'%';
+  (f.act||[]).slice(0,MUS.length).forEach((v,i)=>{const el=$('m'+i);if(!el)return;const a=clamp(Math.abs(v));el.style.left=(v<0?50-a*50:50)+'%';el.style.width=a*50+'%';
     el.style.background=`linear-gradient(90deg,${MUS[i][1]},${MUS[i][2]})`;$('mv'+i).textContent=(v>=0?'+':'−')+Math.abs(v).toFixed(2)});
   // ears and intensity
   const E=s.ears;['earL','earR'].forEach((id,side)=>[...$(id).children].forEach((el,b)=>el.style.height=Math.round(8+92*clamp(E[side*4+b]))+'%'));
@@ -562,7 +520,7 @@ function show(f){
   curLife={t:f.t,food:f.food};
   if(f.end){const cause=f.end.startsWith('lived')?'cap':f.end.replace('died: ','');lives.push({n:f.life,t:f.t+1,food:f.food,cause});trail=[];curLife=null}
   if(f.end||performance.now()-lastRender>1000){renderLives();lastRender=performance.now()}
-  $('status').textContent=f.end?(f.end.startsWith('lived')?'it lived the full 100 s':f.end.replace('died:','it died:')):`watching life ${f.life}`;
+  $('status').textContent=f.end?(f.end.startsWith('lived')?'it lived the full 100 s':f.end.replace('died:','it died:')):`life ${f.life} · ${(f.t/10).toFixed(1)} s · ${f.food} eaten`;
 }
 
 /* ---------- feed ---------- */
@@ -636,6 +594,21 @@ async function loadInfo(){
         <p>${b.food} food a life · ${b.cap_pct}% reach 100 s</p><div class="dbar">${Object.entries(dp).map(([k,v])=>`<i title="${k} ${v}%" style="width:${v}%;background:${DC[k]||'#aaa'}"></i>`).join('')}</div>
         <p style="margin-top:6px">${Object.entries(dp).filter(([,v])=>v>0).map(([k,v])=>`${k} ${v}%`).join(' · ')}</p></div>`}).join(''):''}catch(e){}
 }
+
+/* ---------- floating scrollbar ---------- */
+(function(){const rail=$('rail'),th=$('thumb');let hideT=0,drag=null;
+  function place(){const de=document.documentElement,H=de.scrollHeight,V=innerHeight,R=rail.clientHeight;
+    rail.hidden=H<=V+2;if(rail.hidden)return;const h=Math.max(36,R*V/H);th.style.height=h+'px';th.style.top=((R-h)*scrollY/(H-V))+'px'}
+  function wake(){rail.classList.add('on');clearTimeout(hideT);hideT=setTimeout(()=>rail.classList.remove('on'),1100)}
+  addEventListener('scroll',()=>{place();wake()},{passive:true});addEventListener('resize',place);new ResizeObserver(place).observe(document.body);
+  th.addEventListener('pointerdown',e=>{drag={y:e.clientY,s:scrollY};rail.classList.add('drag');th.setPointerCapture(e.pointerId);e.preventDefault()});
+  th.addEventListener('pointermove',e=>{if(!drag)return;const de=document.documentElement,R=rail.clientHeight,h=th.offsetHeight;
+    scrollTo(0,drag.s+(e.clientY-drag.y)*(de.scrollHeight-innerHeight)/Math.max(1,R-h))});
+  const end=()=>{drag=null;rail.classList.remove('drag')};th.addEventListener('pointerup',end);th.addEventListener('pointercancel',end);
+  rail.addEventListener('pointerdown',e=>{if(e.target!==rail)return;const de=document.documentElement,f=(e.clientY-rail.getBoundingClientRect().top)/rail.clientHeight;scrollTo({top:f*(de.scrollHeight-innerHeight),behavior:'smooth'})});
+  place()})();
+function fitLive(){const b=document.querySelector('.bar');if(b)document.documentElement.style.setProperty('--top',Math.round(b.getBoundingClientRect().bottom+scrollY)+12+'px');sizeMap()}
+addEventListener('resize',fitLive);document.fonts&&document.fonts.ready.then(fitLive);fitLive();
 loadMinds().then(poll);
 </script>
 </body>
