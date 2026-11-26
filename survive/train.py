@@ -210,7 +210,9 @@ class Learner:
         start_alive = cont0.flatten()[None]                                # don't imagine from a dead moment
         w = (torch.cumprod(torch.cat([torch.ones_like(c[:1]), c[:-1]], 0), 0) * start_alive).detach()
         # return normalisation (Dreamer v3): divide by the 5-95% range, at least 1
-        qs = torch.quantile(ret.detach().flatten()[:65536], torch.tensor([0.05, 0.95], device=ret.device))
+        flat = ret.detach().flatten()
+        flat = flat[:: max(1, flat.numel() // 65536)]                    # every imagined step, evenly
+        qs = torch.quantile(flat[:65536], torch.tensor([0.05, 0.95], device=ret.device))
         lo = torch.where(init, qs[0], 0.99 * ret_lo + 0.01 * qs[0])
         hi = torch.where(init, qs[1], 0.99 * ret_hi + 0.01 * qs[1])
         S = torch.clamp(hi - lo, min=1.0)
@@ -410,6 +412,7 @@ def main():
                     food=torch.zeros(3, device=dev), cause=torch.zeros(6, device=dev))
     lives = fresh_lives()
     stats_acc = torch.zeros(len(METRICS), device=dev)
+    t_rate = time.time()
     while True:
         el = (time.time() - t0) / 60
         a_, rec, _ = actor.observe_act(a.bf16)
@@ -435,7 +438,8 @@ def main():
                 stats_acc.zero_()
                 row.update(min=round(el, 2), updates=updates, steps=steps, frames=updates * a.batch * a.seq,
                            rank=round(eff_rank(emb.flatten(0, 1)[:2048]), 1),
-                           fps=round(updates * a.batch * a.seq / max(1.0, time.time() - t0)))
+                           fps=round(100 * a.batch * a.seq / max(1e-3, time.time() - t_rate)))
+                t_rate = time.time()
                 n = lives["n"].item()
                 if n:
                     row.update(lives=int(n), life_steps=round(lives["t"].item() / n, 1),
