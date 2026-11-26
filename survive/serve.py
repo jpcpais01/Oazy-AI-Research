@@ -124,6 +124,15 @@ class Sim:
                 fr["dream"], fr["fear"], fr["wb"], fr["fear10"] = self.imagine(m, act)
             fr["state"] = self.state(world)
             fr["act"] = [round(x, 2) for x in a[0].tolist()]
+            if m.intent:                                   # the will's current intention (the slow level)
+                code = act.code[:1]
+                fr["intent"] = dict(slots=code.view(8, 8).argmax(-1).tolist(), age=int(act.ctr[0]), every=int(m.intent))
+                if t_life % 3 == 0:                        # the wanted memory, drawn by the mind's eye
+                    with torch.no_grad():
+                        g = m.goal_dec(code)
+                        ft = torch.cat([g, m.sample(m.imagine_z(g))], -1)
+                        pic = m.minds_eye(ft).clamp(0, 1)[0]
+                    fr["intent"]["pic"] = base64.b64encode((pic * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy().tobytes()).decode()
             act.advance(a)
             done, trunc, cause, ate = world.step(a)
             t_life += 1
@@ -142,7 +151,7 @@ class Sim:
         r = lambda x: [round(v, 2) for v in x.tolist()]
         s = w.senses[0]
         return dict(
-            pos=r(w.pos[0]), head=round(w.head[0].item(), 3), L=L,
+            pos=r(w.pos[0]), head=round(w.head[0].item(), 3), gaze=round(float(w.gaze[0]), 3), L=L,
             boxes=[r(torch.cat([w.bmin[0, i], w.bmax[0, i], w.bcol[0, i]])) + [int(w.bmov[0, i]), int(w.held[0] == i)]
                    for i in range(w.bmin.shape[1]) if w.bact[0, i]],
             lava=[r(torch.cat([w.lmin[0, i], w.lmax[0, i]])) for i in range(w.lmin.shape[1]) if w.lact[0, i]],

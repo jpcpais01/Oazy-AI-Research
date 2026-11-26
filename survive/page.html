@@ -106,6 +106,13 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--lilac);outline
   background:linear-gradient(160deg,rgba(255,255,255,.28),rgba(255,255,255,0) 28%),radial-gradient(130% 130% at 50% 50%,transparent 62%,rgba(20,24,60,.28));
   box-shadow:inset 0 1px 0 rgba(255,255,255,.7),inset 0 0 0 1px rgba(255,255,255,.25)}
 .lens .tagl{position:absolute;z-index:2;left:12px;bottom:10px;font:500 10.5px var(--sans);letter-spacing:.24em;text-transform:uppercase;color:rgba(255,255,255,.92);text-shadow:0 1px 8px rgba(0,0,30,.45)}
+.intent{display:grid;grid-template-columns:72px 1fr;gap:12px;align-items:center;margin-top:12px;padding-top:12px;border-top:1px solid var(--hair)}
+.intent .iimg{width:72px;height:72px;border-radius:12px;overflow:hidden;box-shadow:0 8px 20px -12px rgba(30,40,100,.6),0 0 0 1px rgba(255,255,255,.7)}
+.intent canvas{display:block;width:100%;height:100%;image-rendering:pixelated}
+.intent .glyph{display:grid;grid-template-columns:repeat(8,10px);gap:3px;margin:6px 0 4px}
+.intent .glyph i{width:10px;height:10px;border-radius:3px;display:block}
+.intent .iage{font-size:12px;color:var(--ink-3)}
+.s-eyes.light .lens{box-shadow:0 0 0 1px rgba(255,255,255,.9),0 0 40px 8px rgba(255,255,255,.85),0 0 90px 20px rgba(255,244,214,.6);transition:box-shadow .6s ease}
 .eyes .fov{display:flex;justify-content:space-between;margin-top:12px;font-size:12.5px;color:var(--ink-3)}
 
 /* map */
@@ -257,6 +264,8 @@ html{scrollbar-width:none}html::-webkit-scrollbar,body::-webkit-scrollbar,*::-we
 }
 @media (min-width:1100px) and (min-height:620px) and (max-height:860px){
   .cockpit{min-height:420px}.cockpit .panel .note{display:none}
+  .intent{grid-template-columns:44px 1fr;margin-top:6px;padding-top:6px;gap:10px}.intent .iimg{width:44px;height:44px}.intent .glyph{margin:3px 0 0}.intent .iage{display:none}
+  .feel{grid-template-columns:120px 1fr}.orb{width:120px;height:120px}.orb .core{inset:30px}.orb .core b{font-size:24px}
 }
 @media (max-width:980px){.about{grid-template-columns:1fr}}
 @media (max-width:720px){
@@ -340,6 +349,10 @@ html{scrollbar-width:none}html::-webkit-scrollbar,body::-webkit-scrollbar,*::-we
           <div class="fl"><i style="background:linear-gradient(135deg,#7fd6c9,#4fb8c8)"></i><span>Health</span><span class="v" id="hpV">–</span></div>
           <div class="flags"><span class="flag" id="fTouch">touch</span><span class="flag" id="fGround">on ground</span><span class="flag" id="fHold">holding</span></div>
         </div>
+      </div>
+      <div class="intent" id="intent" hidden>
+        <div class="iimg"><canvas id="intentPic"></canvas></div>
+        <div class="itext"><span class="caps">It wants</span><div class="glyph" id="glyph"></div><span class="iage" id="iage"></span></div>
       </div>
     </section>
     <section class="panel glass s-body">
@@ -521,7 +534,12 @@ function show(f){
   curLife={t:f.t,food:f.food};
   if(f.end){const cause=f.end.startsWith('lived')?'cap':f.end.replace('died: ','');lives.push({n:f.life,t:f.t+1,food:f.food,cause});trail=[];curLife=null}
   if(f.end||performance.now()-lastRender>1000){renderLives();lastRender=performance.now()}
-  $('status').textContent=f.end?(f.end.startsWith('lived')?'it lived the full 100 s':f.end.replace('died:','it died:')):`life ${f.life} · ${(f.t/10).toFixed(1)} s · ${f.food} eaten`;
+  if(f.intent){$('intent').hidden=false;const it=f.intent;
+    $('glyph').innerHTML=it.slots.map((c,i)=>`<i title="slot ${i+1}: option ${c+1}" style="background:hsl(${c*45} 62% 64%)"></i>`).join('');
+    $('iage').textContent=`chosen ${(it.age/10).toFixed(1)} s ago · a new one every ${(it.every/10).toFixed(1)} s`;
+    if(it.pic)drawRGB($('intentPic'),b64(it.pic),res,0,3)}else $('intent').hidden=true;
+  const dying=s.dying||0;document.querySelector('.s-eyes').classList.toggle('light',dying>0);
+  $('status').textContent=f.end?(f.end.startsWith('lived')?'it lived the full 100 s':f.end.replace('died:','it died:')):dying>0?`the light… (${(dying/10).toFixed(1)} s)`:`life ${f.life} · ${(f.t/10).toFixed(1)} s · ${f.food} eaten`;
 }
 
 /* ---------- feed ---------- */
