@@ -19,3 +19,19 @@ picture-redrawing mind): a whole-state JEPA anchored by the body.
 - a detached mind's-eye decoder draws what the inner state holds, for people only.
 
 Run: `bash runpod/survive.sh` (MIN, RES, OUT, BATCH...). Score: `python3 -m survive.bench <mind.pt>`.
+
+## The reference recipe (Nov 26 2026, run `ref`): every later idea changes exactly one thing
+
+| part | setting |
+|---|---|
+| eyes | 64 px, 2 x 120°, VICReg var 1 + cov 1 on 2048 random moments per update |
+| memory / moment | GRU 512, 32 x 16 categorical, KL 0.5 dyn + 0.1 rep, free bits 1 |
+| heads | 29 senses (MSE, summed), alive (BCE) |
+| imagination | 15 steps, γ 0.997 (~33 s), λ 0.95, Dreamer-v3 return scaling (5-95% of all imagined steps), slow critic 0.02 |
+| actor | tanh-Gaussian, entropy 3e-4, dynamics backprop, lr 8e-5 |
+| world model | lr 3e-4, clip 1000 |
+| life | 512 worlds, train mix; batch 256 clips x 32 moments, 1 update per step (16 studies per moment) |
+| speed | torch.compile, bf16, ~50k frames learned/s on an RTX 4090 |
+| yardstick | `survive.bench`, 1024 fresh lives each in test / hard / train worlds |
+
+Sleep test: `python3 -m survive.sleep <mind.pt> --mode hard` (days of frozen living, nights of replay).
