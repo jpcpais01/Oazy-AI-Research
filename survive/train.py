@@ -20,7 +20,7 @@ import torch
 import torch.nn.functional as F
 
 from .model import FEAT, H_DIM, Z_DIM, Mind, eff_rank, kl_cat, vicreg, wellbeing
-from .render import render
+from .render import render, set_fovea
 from .world import ACT, NF, SENSES, World
 
 
@@ -361,6 +361,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--minutes", type=float, default=300)
     ap.add_argument("--res", type=int, default=64)
+    ap.add_argument("--fovea", type=float, default=0, help="0 = plain eye; k = centre k times sharper (same pixels)")
     ap.add_argument("--envs", type=int, default=512)
     ap.add_argument("--batch", type=int, default=256)
     ap.add_argument("--seq", type=int, default=32)
@@ -394,6 +395,7 @@ def main():
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     (out / "args.json").write_text(json.dumps(vars(a), indent=1))
+    set_fovea(a.fovea)
     mind = Mind(a.res).to(dev)
     print(f"mind: {sum(p.numel() for p in mind.parameters()) / 1e6:.1f}M parameters, eyes {a.res} px", flush=True)
     world = World(a.envs, dev, mode="train", seed=a.seed, compile=bool(a.compile))

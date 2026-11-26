@@ -13,6 +13,7 @@ from pathlib import Path
 
 import torch
 
+from .render import set_fovea
 from .model import Mind
 from .train import Actor
 from .world import DEATH_CAUSES, MAX_STEPS, World
@@ -63,6 +64,7 @@ def main():
     a = ap.parse_args()
     dev = torch.device(a.device if torch.cuda.is_available() else "cpu")
     ck = torch.load(a.mind, map_location=dev)
+    set_fovea(ck["args"].get("fovea", 0))
     res = ck["args"]["res"]
     mind = Mind(res).to(dev)
     mind.load_state_dict(ck["mind"])

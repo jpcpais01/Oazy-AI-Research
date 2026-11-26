@@ -32,6 +32,7 @@ from types import SimpleNamespace
 import torch
 
 from .bench import bench_mode
+from .render import set_fovea
 from .model import ACT, H_DIM, SENSES, Mind
 from .train import METRICS, Actor, Learner, Replay
 from .world import DEATH_CAUSES, World
@@ -166,6 +167,7 @@ def main():
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
     ck = torch.load(a.mind, map_location=dev)
+    set_fovea(ck["args"].get("fovea", 0))
     out = dict(mind=a.mind, mode=a.mode, days=a.days, day=a.day, night=a.night, envs=a.envs)
     for arm in a.arms.split(","):
         out[arm] = run_arm(arm, ck, a, dev)

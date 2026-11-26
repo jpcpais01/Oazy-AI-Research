@@ -6,6 +6,12 @@ lava patches), the arena walls (sky above them), boxes/crates/food/the strange b
 (axis-aligned boxes) and the predator/wanderer (spheres). Faces are shaded by a fixed
 light, and everything fades into haze with distance: colour * exp(-d/12 m) (food glows,
 so it fades half as fast). Output: uint8 (B, 6, H, W) = left RGB, right RGB.
+
+Fovea (optional, set_fovea(k)): the same H x H rays, but packed densely near the centre of view
+and spread out towards the edges, like a retina. Pixel position s in [-1, 1] maps to the angle
+60 deg * (s / k + (1 - 1/k) s^3): the centre is k times sharper than the plain eye, the edge
+coarser, the field of view the same 120 deg. With k = 3 a 64 px eye sees the centre as sharply
+as a plain 192 px eye, at the cost of a 64 px one.
 """
 from __future__ import annotations
 
@@ -23,13 +29,24 @@ SKY = torch.tensor([0.70, 0.80, 0.95])
 LAVA = torch.tensor([0.92, 0.45, 0.18])
 
 _dirs_cache: dict = {}
+FOVEA = 0.0          # 0 = plain eye; k > 1 = centre k times sharper
+
+
+def set_fovea(k):
+    global FOVEA
+    FOVEA = float(k or 0)
 
 
 def _pixel_dirs(H, dev):
-    key = (H, str(dev))
+    key = (H, str(dev), FOVEA)
     if key not in _dirs_cache:
         s = (torch.arange(H, device=dev, dtype=torch.float32) + 0.5) / H * 2 - 1
-        py, px = torch.meshgrid(-s * TAN, s * TAN, indexing="ij")              # up, right
+        if FOVEA > 1:
+            ang = math.radians(60) * (s / FOVEA + (1 - 1 / FOVEA) * s ** 3)
+            t = torch.tan(ang)
+        else:
+            t = s * TAN
+        py, px = torch.meshgrid(-t, t, indexing="ij")                          # up, right
         _dirs_cache[key] = (px.reshape(-1), py.reshape(-1))
     return _dirs_cache[key]
 
