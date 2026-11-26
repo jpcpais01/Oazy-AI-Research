@@ -37,6 +37,13 @@ def set_fovea(k):
     FOVEA = float(k or 0)
 
 
+def set_eyes(args):
+    """Fovea and gaze from a run's args (dict)."""
+    from .world import set_gaze
+    set_fovea(args.get("fovea", 0))
+    set_gaze(args.get("gaze", 0))
+
+
 def _pixel_dirs(H, dev):
     key = (H, str(dev), FOVEA)
     if key not in _dirs_cache:

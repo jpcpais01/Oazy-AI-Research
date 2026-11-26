@@ -32,8 +32,8 @@ from types import SimpleNamespace
 import torch
 
 from .bench import bench_mode
-from .render import set_fovea
-from .model import ACT, H_DIM, SENSES, Mind
+from .render import set_eyes
+from .model import load_mind, ACT, H_DIM, SENSES, Mind
 from .train import METRICS, Actor, Learner, Replay
 from .world import DEATH_CAUSES, World
 
@@ -95,7 +95,7 @@ def run_arm(arm, ck, a, dev):
     torch.manual_seed(a.seed)
     res = ck["args"]["res"]
     mind = Mind(res).to(dev)
-    mind.load_state_dict(ck["mind"])
+    load_mind(mind, ck["mind"])
     mind.ent_squash = bool(a.ent_squash)
     args = SimpleNamespace(**{**ck["args"], "compile": a.compile, "compile_mode": "default"})
     args.vic_rows = getattr(args, "vic_rows", 2048)
@@ -169,7 +169,7 @@ def main():
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
     ck = torch.load(a.mind, map_location=dev)
-    set_fovea(ck["args"].get("fovea", 0))
+    set_eyes(ck["args"])
     out = dict(mind=a.mind, mode=a.mode, days=a.days, day=a.day, night=a.night, envs=a.envs)
     for arm in a.arms.split(","):
         out[arm] = run_arm(arm, ck, a, dev)

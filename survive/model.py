@@ -180,3 +180,22 @@ def eff_rank(e):
     s = torch.linalg.svdvals(e)
     p = s / s.sum()
     return torch.exp(-(p * torch.log(p + 1e-12)).sum()).item()
+
+
+def load_mind(mind, sd):
+    """Load a state dict, also from minds saved with fewer muscles (4 before gaze): the new
+    muscle's weights start at zero (its input to memory has no effect; its actor output is a
+    zero mean with the usual starting spread)."""
+    own = mind.state_dict()
+    for k, v in sd.items():
+        t = own[k]
+        if t.shape == v.shape:
+            t.copy_(v)
+        elif k.startswith("actor") and t.dim() >= 1 and t.shape[0] == 2 * ACT and v.shape[0] < t.shape[0]:
+            a0 = v.shape[0] // 2                              # [means, stds] halves
+            t.zero_()
+            t[:a0].copy_(v[:a0] if t.dim() == 1 else v[:a0, :t.shape[1]])
+            t[ACT:ACT + a0].copy_(v[a0:] if t.dim() == 1 else v[a0:, :t.shape[1]])
+        else:                                                 # inputs appended at the end (z, muscles)
+            t.zero_()
+            t[tuple(slice(0, n) for n in v.shape)].copy_(v)

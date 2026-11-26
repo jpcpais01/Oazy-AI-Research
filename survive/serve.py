@@ -23,8 +23,8 @@ from urllib.parse import parse_qs, urlparse
 
 import torch
 
-from .model import Mind, wellbeing
-from .render import render, set_fovea
+from .model import load_mind, Mind, wellbeing
+from .render import render, set_eyes
 from .train import Actor
 from .world import DEATH_CAUSES, L, World
 
@@ -59,9 +59,9 @@ class Sim:
     def _load(self, w):
         ck = torch.load(w["path"], map_location=self.dev)
         res = ck["args"]["res"]
-        set_fovea(ck["args"].get("fovea", 0))
+        set_eyes(ck["args"])
         m = Mind(res).to(self.dev)
-        m.load_state_dict(ck["mind"])
+        load_mind(m, ck["mind"])
         m.eval()
         world = World(1, self.dev, mode=w["mode"], seed=w["seed"])
         act = Actor(m, world, res, self.dev, deterministic=True)

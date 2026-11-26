@@ -9,7 +9,8 @@ Each arena (one per "env") holds:
   - three beings: a predator that chases and bites, a harmless wanderer, and a strange
     being that is harmless at first but drains health if the creature stays near it.
 
-The creature has four muscles, each in [-1, 1]: push (forward/back), turn, jump, grip.
+The creature has five muscles, each in [-1, 1]: push (forward/back), turn, jump, grip, and gaze
+(turns both eyes left/right of the body by up to GAZE; off by default, then the muscle does nothing).
 Its senses (all produced here, nothing privileged):
   - two eyes: 120 degree stereo pictures (render.py),
   - body feelings: energy, health, touch (pushing against something), on-ground, holding,
@@ -41,7 +42,13 @@ NL = 7              # lava slots
 NF = 8              # food slots
 SENSES = 29         # 5 body + 16 intensity + 8 ears
 BODY = 5
-ACT = 4
+ACT = 5            # push, turn, jump, grip, gaze (gaze is ignored unless set_gaze(deg) > 0)
+GAZE = 0.0         # radians the eyes can turn left/right of the body
+
+
+def set_gaze(deg):
+    global GAZE
+    GAZE = math.radians(float(deg or 0))
 
 FOOD_HALF = torch.tensor([[0.15, 0.15, 0.15], [0.05, 0.05, 0.25], [0.22, 0.22, 0.05]])
 FOOD_COL = torch.tensor([[0.95, 0.35, 0.25], [0.95, 0.85, 0.20], [0.40, 0.95, 0.30]])
@@ -93,6 +100,7 @@ class World:
         z = lambda *s, dt=torch.float32: torch.zeros(*s, device=self.dev, dtype=dt)
         self.pos, self.vel = z(B, 3), z(B, 3)
         self.head = z(B)
+        self.gaze = z(B)
         self.on_ground = z(B, dt=torch.bool)
         self.energy, self.health = z(B), z(B)
         self.t = z(B, dt=torch.long)
@@ -264,6 +272,7 @@ class World:
         push, turn = a[:, 0], a[:, 1]
         jump = (a[:, 2] > 0.5) & self.on_ground
         grip = a[:, 3] > 0
+        self.gaze = a[:, 4] * GAZE
         self.head = (self.head + turn * 2.5 * DT) % (2 * math.pi)
         fwd = torch.stack([torch.cos(self.head), torch.sin(self.head)], -1)
         want = fwd * (push * 2.5)[:, None]
@@ -595,6 +604,6 @@ class World:
         sph_col = torch.stack([self.pred_col, self.wand_col], 1)
         lava = torch.cat([self.lmin, self.lmax], -1)
         lava = torch.where(self.lact[..., None], lava, torch.full_like(lava, -100.0))
-        return dict(pos=self.pos, head=self.head, amin=amin, amax=amax, acol=acol, glow=glow,
+        return dict(pos=self.pos, head=self.head + self.gaze, amin=amin, amax=amax, acol=acol, glow=glow,
                     sph=sph, sph_r=sph_r, sph_col=sph_col, lava=lava,
                     floor_col=self.floor_col, wall_col=self.wall_col)
