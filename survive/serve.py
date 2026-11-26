@@ -23,7 +23,7 @@ from urllib.parse import parse_qs, urlparse
 
 import torch
 
-from .model import gdist, gsample, load_mind, Mind, wellbeing
+from .model import gdist, gsample, load_mind, make_mind, wellbeing
 from .render import render, set_eyes
 from .train import Actor
 from .world import DEATH_CAUSES, L, World
@@ -60,7 +60,7 @@ class Sim:
         ck = torch.load(w["path"], map_location=self.dev)
         res = ck["args"]["res"]
         set_eyes(ck["args"])
-        m = Mind(res, ck["args"].get("intent", 0)).to(self.dev)
+        m = make_mind(ck["args"]).to(self.dev)
         load_mind(m, ck["mind"])
         m.eval()
         world = World(1, self.dev, mode=w["mode"], seed=w["seed"])
@@ -78,7 +78,7 @@ class Sim:
             x = torch.cat([h, z], -1)
             if m.intent:                            # the will keeps choosing inside the dream too
                 if ctr >= m.intent:
-                    code, ctr = gsample(gdist(m.will(x)), True).float(), 0
+                    code, ctr = gsample(gdist(m.will(x), m.g_cls), True).float(), 0
                 ctr += 1
                 x = torch.cat([x, code], -1)
             a, _ = m.act(x, deterministic=True)
@@ -126,7 +126,7 @@ class Sim:
             fr["act"] = [round(x, 2) for x in a[0].tolist()]
             if m.intent:                                   # the will's current intention (the slow level)
                 code = act.code[:1]
-                fr["intent"] = dict(slots=code.view(8, 8).argmax(-1).tolist(), age=int(act.ctr[0]), every=int(m.intent))
+                fr["intent"] = dict(slots=code.view(-1, m.g_cls).argmax(-1).tolist(), age=int(act.ctr[0]), every=int(m.intent))
                 if t_life % 3 == 0:                        # the wanted memory, drawn by the mind's eye
                     with torch.no_grad():
                         g = m.goal_dec(code)

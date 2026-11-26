@@ -19,7 +19,7 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 
-from .model import FEAT, G_CLS, G_DIM, H_DIM, Z_DIM, Mind, eff_rank, gdist, gsample, kl_cat, maxcos, vicreg, wellbeing
+from .model import FEAT, H_DIM, Z_DIM, Mind, eff_rank, gdist, gsample, kl_cat, maxcos, vicreg, wellbeing
 from .render import render, set_eyes
 from . import world as _world
 from .world import ACT, NF, SENSES, World
@@ -165,7 +165,7 @@ class Learner:
         self.opt_me = torch.optim.Adam(mind.minds_eye.parameters(), lr=3e-4, **fused)
         if mind.intent:
             self.opt_goal = torch.optim.Adam(list(mind.goal_enc.parameters()) + list(mind.goal_dec.parameters()),
-                                             lr=3e-4, **fused)
+                                             lr=getattr(args, "lr_goal", 3e-4), **fused)
             self.opt_will = torch.optim.Adam(list(mind.will.parameters()) + list(mind.will_critic.parameters()),
                                              lr=getattr(args, "lr_will", 3e-4), eps=1e-5, **fused)
         self.ret_lo = torch.zeros((), device=dev)
@@ -240,11 +240,11 @@ class Learner:
         every intention the will can pick decodes to a memory the creature has really had."""
         m = self.m
         with self._autocast():
-            q = gdist(m.goal_enc(h))
+            q = gdist(m.goal_enc(h), m.g_cls)
             rec = m.goal_dec(gsample(q).to(h.dtype)).float()
         hf = h.float()
         l_rec = (rec - hf).pow(2).sum(-1).mean()
-        l_kl = (q * torch.log(q * G_CLS)).sum((-1, -2)).mean()            # toward using every option
+        l_kl = (q * torch.log(q * m.g_cls)).sum((-1, -2)).mean()            # toward using every option
         unexpl = l_rec.detach() / hf.var(0).sum().clamp(min=1e-6)          # logged: share of memory the code misses
         return l_rec + l_kl, unexpl
 
@@ -260,7 +260,7 @@ class Learner:
         for k in range(a.horizon):
             if K and k % K == 0:                       # the will picks an intention (not differentiated)
                 with self._autocast():
-                    q = gdist(m.will(fts[-1].detach()))
+                    q = gdist(m.will(fts[-1].detach()), m.g_cls)
                 hard = gsample(q.detach()).detach()
                 logps.append((hard.view_as(q) * torch.log(q)).sum((-1, -2)))
                 wents.append(-(q * torch.log(q)).sum((-1, -2)))
@@ -398,7 +398,7 @@ def _policy_step(m, h, z, prev_a, first, img, sen, code, ctr, det: bool, amp: bo
     if m.intent:
         renew = first | (ctr >= m.intent)
         with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
-            new = gsample(gdist(m.will(ft)), det).float()
+            new = gsample(gdist(m.will(ft), m.g_cls), det).float()
         code = torch.where(renew[:, None], new, code)
         ctr = torch.where(renew, torch.ones_like(ctr), ctr + 1)
         ft = torch.cat([ft, code.to(ft.dtype)], -1)
@@ -422,7 +422,7 @@ class Actor:
         self.cont = torch.ones(B, dtype=torch.bool, device=dev)
         self.life_t = torch.zeros(B, dtype=torch.long, device=dev)
         self.life_food = torch.zeros(B, 3, device=dev)
-        self.code = torch.zeros(B, G_DIM, device=dev)
+        self.code = torch.zeros(B, max(1, mind.g_dim), device=dev)
         self.ctr = torch.zeros(B, dtype=torch.long, device=dev)
         global _policy_compiled
         if compile and _policy_compiled is None:
@@ -516,6 +516,9 @@ def main():
     ap.add_argument("--intent", type=int, default=0, help="a will picks an intention every K steps (0 = off; 10 = every 1 s)")
     ap.add_argument("--intent-w", type=float, default=0.3, help="pay to the muscles for reaching the intended memory (wellbeing pays 1)")
     ap.add_argument("--lr-will", type=float, default=3e-4)
+    ap.add_argument("--g-slots", type=int, default=1, help="intention code: slots x options (1 x 16 = 16 intentions; willn_s1 used 8 x 8)")
+    ap.add_argument("--g-cls", type=int, default=16)
+    ap.add_argument("--lr-goal", type=float, default=3e-5, help="how fast intentions change meaning (willn_s1: 3e-4, they drifted)")
     ap.add_argument("--will-norm", type=int, default=1, help="standardise the will's advantage (0 = divide by the return range, as in will_s1)")
     ap.add_argument("--will-ent", type=float, default=1e-3, help="how much the will is paid to keep its choices varied")
     ap.add_argument("--start-stride", type=int, default=1, help="dream from every k-th remembered moment (2 halves the dream cost)")
@@ -549,7 +552,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     (out / "args.json").write_text(json.dumps(vars(a), indent=1))
     set_eyes(vars(a))
-    mind = Mind(a.res, a.intent).to(dev)
+    mind = Mind(a.res, a.intent, a.g_slots, a.g_cls).to(dev)
     mind.ent_squash = bool(a.ent_squash)
     print(f"mind: {sum(p.numel() for p in mind.parameters()) / 1e6:.1f}M parameters, eyes {a.res} px", flush=True)
     world = World(a.envs, dev, mode="train", seed=a.seed, compile=bool(a.compile), rooms=a.rooms)

@@ -38,7 +38,7 @@ H_DIM, Z_SLOTS, Z_CLS = 512, 32, 16
 Z_DIM = Z_SLOTS * Z_CLS
 FEAT = H_DIM + Z_DIM
 EMB = 4096
-G_SLOTS, G_CLS = 8, 8
+G_SLOTS, G_CLS = 8, 8      # the first intention code (will_s1, willn_s1); new runs choose with --g-slots/--g-cls
 G_DIM = G_SLOTS * G_CLS
 
 
@@ -95,10 +95,10 @@ class MindsEye(nn.Module):
         return self.net(self.fc(feat).view(-1, 256, 4, 4)) + 0.5
 
 
-def gdist(logits):
-    """Intention code: (..., 8, 8) probabilities with a 1% uniform mix."""
-    p = F.softmax(logits.view(*logits.shape[:-1], G_SLOTS, G_CLS).float(), -1)
-    return 0.99 * p + 0.01 / G_CLS
+def gdist(logits, cls=G_CLS):
+    """Intention code: (..., slots, cls) probabilities with a 1% uniform mix."""
+    p = F.softmax(logits.view(*logits.shape[:-1], logits.shape[-1] // cls, cls).float(), -1)
+    return 0.99 * p + 0.01 / cls
 
 
 def gsample(probs, deterministic=False):
@@ -107,7 +107,7 @@ def gsample(probs, deterministic=False):
     else:
         u = torch.rand_like(probs).clamp_(1e-10, 1.0)
         idx = (torch.log(probs) - torch.log(-torch.log(u))).argmax(-1)
-    hard = F.one_hot(idx, G_CLS).to(probs.dtype)
+    hard = F.one_hot(idx, probs.shape[-1]).to(probs.dtype)
     return (hard + probs - probs.detach()).flatten(-2)
 
 
@@ -118,11 +118,12 @@ def maxcos(a, b):
 
 
 class Mind(nn.Module):
-    def __init__(self, res=64, intent=0):
+    def __init__(self, res=64, intent=0, g_slots=G_SLOTS, g_cls=G_CLS):
         super().__init__()
         self.res = res
         self.intent = int(intent or 0)
-        gin = G_DIM if self.intent else 0
+        self.g_cls, self.g_dim = int(g_cls), int(g_slots) * int(g_cls)
+        gin = self.g_dim if self.intent else 0
         self.eye = Eye(res)
         self.eye_in = nn.Sequential(nn.Linear(EMB, 512), nn.LayerNorm(512), nn.SiLU())
         self.img_in = nn.Sequential(nn.Linear(Z_DIM + ACT, 512), nn.LayerNorm(512), nn.SiLU())
@@ -138,9 +139,9 @@ class Mind(nn.Module):
         for p in self.slow_critic.parameters():
             p.requires_grad_(False)
         if self.intent:
-            self.goal_enc = mlp(H_DIM, G_DIM)                # real memory -> intention code
-            self.goal_dec = mlp(G_DIM, H_DIM)                # intention code -> wanted memory
-            self.will = mlp(FEAT, G_DIM)                    # picks the intention
+            self.goal_enc = mlp(H_DIM, self.g_dim)           # real memory -> intention code
+            self.goal_dec = mlp(self.g_dim, H_DIM)           # intention code -> wanted memory
+            self.will = mlp(FEAT, self.g_dim)               # picks the intention
             self.will_critic = mlp(FEAT, 1)
             self.will_slow = mlp(FEAT, 1)
             self.will_slow.load_state_dict(self.will_critic.state_dict())
@@ -222,6 +223,11 @@ def eff_rank(e):
     s = torch.linalg.svdvals(e)
     p = s / s.sum()
     return torch.exp(-(p * torch.log(p + 1e-12)).sum()).item()
+
+
+def make_mind(args, res=None):
+    """A Mind shaped as the run's args say (args: dict)."""
+    return Mind(res or args["res"], args.get("intent", 0), args.get("g_slots", G_SLOTS), args.get("g_cls", G_CLS))
 
 
 def load_mind(mind, sd):

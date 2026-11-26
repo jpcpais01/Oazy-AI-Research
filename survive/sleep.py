@@ -33,7 +33,7 @@ import torch
 
 from .bench import bench_mode
 from .render import set_eyes
-from .model import load_mind, ACT, H_DIM, SENSES, Mind
+from .model import load_mind, ACT, H_DIM, SENSES, Mind, make_mind
 from .train import METRICS, Actor, Learner, Replay
 from .world import DEATH_CAUSES, World
 
@@ -94,7 +94,7 @@ class Keepsakes:
 def run_arm(arm, ck, a, dev):
     torch.manual_seed(a.seed)
     res = ck["args"]["res"]
-    mind = Mind(res, ck["args"].get("intent", 0)).to(dev)
+    mind = make_mind(ck["args"]).to(dev)
     load_mind(mind, ck["mind"])
     mind.ent_squash = bool(a.ent_squash)
     args = SimpleNamespace(**{**ck["args"], "compile": a.compile, "compile_mode": "default"})

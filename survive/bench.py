@@ -14,7 +14,7 @@ from pathlib import Path
 import torch
 
 from .render import set_eyes
-from .model import load_mind, Mind
+from .model import load_mind, Mind, make_mind
 from .train import Actor
 from . import world as _world
 from .world import DEATH_CAUSES, World
@@ -67,7 +67,7 @@ def main():
     ck = torch.load(a.mind, map_location=dev)
     set_eyes(ck["args"])
     res = ck["args"]["res"]
-    mind = Mind(res, ck["args"].get("intent", 0)).to(dev)
+    mind = make_mind(ck["args"]).to(dev)
     load_mind(mind, ck["mind"])
     mind.eval()
     out = dict(mind=a.mind, minutes=round(ck.get("minutes", 0), 1), frames=ck.get("frames"))
