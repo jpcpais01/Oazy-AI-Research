@@ -118,7 +118,7 @@ def maxcos(a, b):
 
 
 class Mind(nn.Module):
-    def __init__(self, res=64, intent=0, g_slots=G_SLOTS, g_cls=G_CLS, matter=False):
+    def __init__(self, res=64, intent=0, g_slots=G_SLOTS, g_cls=G_CLS, matter=False, jumps=""):
         super().__init__()
         self.res = res
         self.intent = int(intent or 0)
@@ -148,6 +148,12 @@ class Mind(nn.Module):
             for p in self.will_slow.parameters():
                 p.requires_grad_(False)
         self.minds_eye = MindsEye(res)
+        # jumpy forecasts: from a memory h, where will the memory be k steps later, how much
+        # wellbeing comes on the way (discounted sum / k) and will it still be alive. One head per
+        # jump size; learned from what really happened (replay), used to look past the dream.
+        self.jump_chain = [int(x) for x in str(jumps or "").split(",") if x.strip()]
+        self.jump_sizes = sorted(set(self.jump_chain))
+        self.jump = nn.ModuleDict({str(k): mlp(H_DIM, H_DIM + 2) for k in self.jump_sizes})
         if matter:      # what in this picture matters to the body: will I eat / get hurt within 1 s?
             self.matter = nn.Sequential(nn.Linear(EMB, 256), nn.LayerNorm(256), nn.SiLU(), nn.Linear(256, 2))
 
@@ -164,6 +170,11 @@ class Mind(nn.Module):
         idx = (torch.log(probs) - torch.log(-torch.log(u))).argmax(-1)
         hard = F.one_hot(idx, Z_CLS).to(probs.dtype)
         return (hard + probs - probs.detach()).flatten(-2)              # straight-through
+
+    def jump_step(self, h, k):
+        """Jump k steps ahead from memory h: (next memory, mean discounted wellbeing on the way, alive logit)."""
+        out = self.jump[str(k)](h).float()
+        return torch.tanh(h.float() + out[:, :H_DIM]), out[:, H_DIM], out[:, H_DIM + 1]
 
     def initial(self, n, dev):
         return torch.zeros(n, H_DIM, device=dev), torch.zeros(n, Z_DIM, device=dev)
@@ -243,7 +254,7 @@ def eff_rank(e):
 def make_mind(args, res=None):
     """A Mind shaped as the run's args say (args: dict)."""
     return Mind(res or args["res"], args.get("intent", 0), args.get("g_slots", G_SLOTS), args.get("g_cls", G_CLS),
-                bool(args.get("matter", 0)))
+                bool(args.get("matter", 0)), args.get("jumps", ""))
 
 
 def load_mind(mind, sd):
@@ -252,6 +263,8 @@ def load_mind(mind, sd):
     zero mean with the usual starting spread)."""
     own = mind.state_dict()
     for k, v in sd.items():
+        if k not in own:          # e.g. jump heads of a mind loaded into one without them
+            continue
         t = own[k]
         if t.shape == v.shape:
             t.copy_(v)

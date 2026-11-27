@@ -86,6 +86,26 @@ class Replay:
         return dict(img=self.img[t, ee], sen=self.sen[t, ee].float(), act=self.act[t, ee].float(),
                     first=self.first[t, ee], cont=self.cont[t, ee].float(), h0=self.h[t[:, 0], e].float())
 
+    def sample_jump(self, bs, k, gamma):
+        """Real (h_t, h_t+k, discounted wellbeing on the way, alive at t+k) pairs, for the jump heads.
+        A life cut by the time limit inside the window is left out (it did not die, it was stopped)."""
+        if self.n < k + 2:
+            return None
+        base = (self.ptr - self.n) % self.cap
+        s = torch.randint(0, self.n - k - 1, (bs,), device=self.dev)
+        e = torch.randint(0, self.B, (bs,), device=self.dev)
+        t = (base + s[:, None] + torch.arange(k + 1, device=self.dev)[None]) % self.cap   # bs, k+1
+        ee = e[:, None].expand(bs, k + 1)
+        wb = wellbeing(self.sen[t[:, 1:], ee[:, 1:]].float())                               # arrival rewards
+        c = self.cont[t[:, 1:], ee[:, 1:]].float()
+        alive = torch.cumprod(c, 1)
+        before = torch.cat([torch.ones_like(alive[:, :1]), alive[:, :-1]], 1)            # alive before step j
+        disc = gamma ** torch.arange(k, device=self.dev, dtype=torch.float32)
+        R = (wb * before * disc).sum(1) / k
+        cut = (self.first[t[:, 1:], ee[:, 1:]].float() * before).sum(1) > 0               # new life while alive = time cap
+        return dict(h0=self.h[t[:, 0], e].float(), h1=self.h[t[:, -1], e].float(), R=R, C=alive[:, -1],
+                    ok=(~cut).float())
+
     def feel(self, kl):
         """After studying a batch: remember how surprising each of its moments was."""
         t, ee = self.last_idx
@@ -149,7 +169,7 @@ def lambda_returns(r, c, v, gamma, lam):
 
 
 METRICS = ["sen", "cont", "kl", "var", "cov", "estd", "me", "actor", "critic", "wb", "ret", "ent", "rgoal", "went", "goal", "entw", "gn",
-           "e_push", "e_turn", "e_jump", "e_grip", "e_gaze"]
+           "e_push", "e_turn", "e_jump", "e_grip", "e_gaze", "jv", "jr2"]
 
 
 class Learner:
@@ -166,12 +186,15 @@ class Learner:
         dev = next(mind.parameters()).device
         fused = dict(fused=True) if dev.type == "cuda" else {}
         wm = [p for n, p in mind.named_parameters()
-              if not n.startswith(("actor", "critic", "slow_critic", "minds_eye", "goal_", "will"))]
+              if not n.startswith(("actor", "critic", "slow_critic", "minds_eye", "goal_", "will", "jump"))]
         self.wm_params = wm
         self.opt_wm = torch.optim.Adam(wm, lr=args.lr_wm, eps=1e-8, **fused)
         self.opt_actor = torch.optim.Adam(mind.actor.parameters(), lr=args.lr_ac, eps=1e-5, **fused)
         self.opt_critic = torch.optim.Adam(mind.critic.parameters(), lr=args.lr_ac, eps=1e-5, **fused)
         self.opt_me = torch.optim.Adam(mind.minds_eye.parameters(), lr=3e-4, **fused)
+        self.jump_params = list(mind.jump.parameters())
+        if self.jump_params:
+            self.opt_jump = torch.optim.Adam(self.jump_params, lr=3e-4, **fused)
         if mind.intent:
             self.opt_goal = torch.optim.Adam(list(mind.goal_enc.parameters()) + list(mind.goal_dec.parameters()),
                                              lr=getattr(args, "lr_goal", 3e-4), **fused)
@@ -340,7 +363,31 @@ class Learner:
         r = r_ext + getattr(a, "intent_w", 0.3) * torch.stack(rgoal) if K else r_ext
         c = cont[1:]
         scale = 1.0 / (1 - a.gamma)
-        ret = lambda_returns(r, c, v_slow * scale, a.gamma, a.lam)         # H, N
+        vb = v_slow * scale
+        jw = float(getattr(a, "jump_w", 0.0))
+        jv = torch.zeros((), device=vb.device)
+        if m.jump_chain and jw > 0:
+            # look past the dream in a few big jumps (e.g. +1.5, +2, +2, +8 s): the value at the dream's
+            # end is blended with what the jumps forecast (wellbeing on the way, survival, then the
+            # gut feeling at the far end). Gradient flows through the jumps back into the dream.
+            hj = h if getattr(a, "jump_grad", 1) else h.detach()
+            g_disc, alive, acc = 1.0, torch.ones_like(vb[-1]), torch.zeros_like(vb[-1])
+            for k in m.jump_chain:
+                with self._autocast():
+                    hj, Rk, Ck = m.jump_step(hj, k)
+                acc = acc + g_disc * alive * Rk * k
+                alive = alive * torch.sigmoid(Ck)
+                g_disc = g_disc * a.gamma ** k
+            with self._autocast():
+                zj = m.sample(m.imagine_z(hj.to(z.dtype)))
+                xj = torch.cat([hj.to(zj.dtype), zj], -1)
+                if K:
+                    xj = torch.cat([xj, code.to(xj.dtype)], -1)
+                vj = m.slow_critic(xj).float().squeeze(-1) * scale
+            G = acc + g_disc * alive * vj
+            vb = torch.cat([vb[:-1], ((1 - jw) * vb[-1] + jw * G)[None]], 0)
+            jv = (G - v_slow[-1] * scale).detach().mean() / scale          # logged: how the jumps change the end value
+        ret = lambda_returns(r, c, vb, a.gamma, a.lam)                     # H, N
         start_alive = cont0.flatten()[::st][None]                          # don't imagine from a dead moment
         w = (torch.cumprod(torch.cat([torch.ones_like(c[:1]), c[:-1]], 0), 0) * start_alive).detach()
         # return normalisation (Dreamer v3): divide by the 5-95% range, at least 1
@@ -384,11 +431,39 @@ class Learner:
             l_critic = l_critic + l_wcrit
             rg, went = torch.stack(rgoal).mean(), we.mean()
         met = torch.cat([torch.stack([l_actor, l_critic, r_ext.mean(), ret.mean() / scale, ent.mean(), rg, went]),
-                         ent_m.mean((0, 1))]).detach()
+                         ent_m.mean((0, 1)), jv[None]]).detach()
         return l_actor, l_critic, lo.detach(), hi.detach(), met
 
-    def update(self, batch):
+    # ------------------------------------------------ jumps: learned from real memories
+    def _jump(self, jb):
+        m = self.m
+        loss = torch.zeros((), device=next(m.parameters()).device)
+        mets = []
+        for k in m.jump_sizes:
+            b = jb[k]
+            with self._autocast():
+                h1, R, Cl = m.jump_step(b["h0"], k)
+            ok = b["ok"]
+            n = ok.sum().clamp(min=1)
+            l_h = ((h1 - b["h1"]).pow(2).sum(-1) * ok * b["C"]).sum() / (ok * b["C"]).sum().clamp(min=1)
+            l_r = ((R - b["R"]).pow(2) * ok).sum() / n * 100.0
+            l_c = (F.binary_cross_entropy_with_logits(Cl, b["C"], reduction="none") * ok).sum() / n
+            # logged: share of the memory's change the jump explains (1 = perfect, 0 = "nothing moves")
+            d_true = ((b["h1"] - b["h0"]).pow(2).sum(-1) * ok * b["C"]).sum()
+            r2 = 1 - (l_h.detach() * (ok * b["C"]).sum().clamp(min=1)) / d_true.clamp(min=1e-6)
+            loss = loss + l_h + l_r + l_c
+            mets.append(r2)
+        return loss, torch.stack(mets).mean()
+
+    def update(self, batch, jb=None):
         m, a = self.m, self.a
+        jr2 = torch.zeros((), device=batch["first"].device)
+        if self.jump_params and jb is not None:
+            l_j, jr2 = self._jump(jb)
+            self.opt_jump.zero_grad(set_to_none=True)
+            l_j.backward()
+            torch.nn.utils.clip_grad_norm_(self.jump_params, 100.0, foreach=True)
+            self.opt_jump.step()
         T = batch["first"].shape[1]
         loss, hs, zs, met_wm, emb, kl = self.wm_fn(batch["img"], batch["sen"], batch["act"], batch["first"],
                                                batch["cont"], batch["h0"])
@@ -403,7 +478,7 @@ class Learner:
         l_me.backward()
         self.opt_me.step()
 
-        for p_ in self.wm_params:
+        for p_ in self.wm_params + self.jump_params:
             p_.requires_grad_(False)
         l_goal = g_un = torch.zeros((), device=hs.device)
         if m.intent:
@@ -432,7 +507,7 @@ class Learner:
         if m.intent:
             self.opt_will.zero_grad(set_to_none=True)
         (l_actor + l_critic).backward()          # critic sees detached states; actor never touches the critic
-        for p_ in self.wm_params:
+        for p_ in self.wm_params + self.jump_params:
             p_.requires_grad_(True)
         torch.nn.utils.clip_grad_norm_(m.actor.parameters(), 100.0, foreach=True)
         torch.nn.utils.clip_grad_norm_(m.critic.parameters(), 100.0, foreach=True)
@@ -446,7 +521,7 @@ class Learner:
             if m.intent:
                 torch._foreach_lerp_(list(m.will_slow.parameters()), list(m.will_critic.parameters()), 0.02)
         met = torch.cat([met_wm, l_me.detach()[None], met_ac[:7], g_un[None], ent_w.detach().float().mean().reshape(1),
-                         gn.detach().float()[None], met_ac[7:]])
+                         gn.detach().float()[None], met_ac[7:], jr2.detach()[None]])
         return met, emb, kl
 
 
@@ -599,6 +674,10 @@ def main():
     ap.add_argument("--long-offer", type=int, default=64, help="clips offered to the long memory every 10 updates")
     ap.add_argument("--every", type=int, default=1, help="env steps per learning update")
     ap.add_argument("--horizon", type=int, default=15)
+    ap.add_argument("--jumps", default="", help="jumpy forecasts past the dream, in steps, chained (e.g. 15,20,20,80 = +1.5,+2,+2,+8 s; '' = off)")
+    ap.add_argument("--jump-w", type=float, default=0.5, help="weight of the jump forecast in the value at the dream's end (0 = learn the jumps, don't use them)")
+    ap.add_argument("--jump-grad", type=int, default=1, help="1 = the muscles feel the jump forecast's gradient")
+    ap.add_argument("--jump-batch", type=int, default=1024)
     ap.add_argument("--intent", type=int, default=0, help="a will picks an intention every K steps (0 = off; 10 = every 1 s)")
     ap.add_argument("--intent-w", type=float, default=0.3, help="pay to the muscles for reaching the intended memory (wellbeing pays 1)")
     ap.add_argument("--lr-will", type=float, default=3e-4)
@@ -638,7 +717,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     (out / "args.json").write_text(json.dumps(vars(a), indent=1))
     set_eyes(vars(a))
-    mind = Mind(a.res, a.intent, a.g_slots, a.g_cls, matter=a.matter > 0).to(dev)
+    mind = Mind(a.res, a.intent, a.g_slots, a.g_cls, matter=a.matter > 0, jumps=a.jumps).to(dev)
     if a.init:     # carry on from a saved mind (fresh replay and optimisers; the mind keeps what it learned)
         from .model import load_mind
         load_mind(mind, torch.load(a.init, map_location=dev)["mind"])
@@ -665,6 +744,12 @@ def main():
         return dict(n=torch.zeros((), device=dev), t=torch.zeros((), device=dev),
                     food=torch.zeros(3, device=dev), cause=torch.zeros(6, device=dev))
     lives = fresh_lives()
+
+    def jumps_batch():
+        if not mind.jump_sizes:
+            return None
+        jb = {k: rb.sample_jump(a.jump_batch, k, a.gamma) for k in mind.jump_sizes}
+        return None if any(v is None for v in jb.values()) else jb
     stats_acc = torch.zeros(len(METRICS), device=dev)
     t_rate = time.time()
     while True:
@@ -685,11 +770,11 @@ def main():
             if lm is not None and lm.n >= a.batch:
                 h = a.batch // 2
                 b1, b2 = rb.sample(a.batch - h, a.seq), lm.sample(h)
-                met, emb, kl = learner.update({k: torch.cat([b1[k], b2[k].to(b1[k].dtype)]) for k in b1})
+                met, emb, kl = learner.update({k: torch.cat([b1[k], b2[k].to(b1[k].dtype)]) for k in b1}, jumps_batch())
                 if a.emotion > 0:
                     rb.feel(kl[:a.batch - h])
             else:
-                met, emb, kl = learner.update(rb.sample(a.batch, a.seq))
+                met, emb, kl = learner.update(rb.sample(a.batch, a.seq), jumps_batch())
                 if a.emotion > 0:
                     rb.feel(kl)
             if lm is not None and updates % 10 == 0:
