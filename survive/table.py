@@ -7,8 +7,8 @@ the ball pushed by the claw plates, a friction grasp when both inner faces squee
 The robot: a fixed base at the near edge, two eyes on a head above it looking down at the table
 (the same ray caster as creature one, pitched down), and one arm:
     shoulder yaw, shoulder pitch, elbow, wrist pitch, and a claw of two flat plates.
-Muscles (5, in -1..1) are targets for the joint angles / claw opening, reached at a limited speed
-(like creature one's arm). Body feelings (senses): energy, health, 4 touch sensors (inner and
+Muscles (5, in -1..1): the four joints are speeds (relaxed = the arm holds still); the claw is a
+spring that is open when relaxed and closes as its muscle pulls (pulling past the ball = squeezing). Body feelings (senses): energy, health, 4 touch sensors (inner and
 outer face of each plate), the 4 joint angles and the claw opening it feels.
 
 Its only drive is the same as creature one's: wellbeing = (energy + health) / 2. Energy drains
@@ -61,8 +61,8 @@ BALL_E = 0.4                 # energy from a ball in the basket
 DRAIN = 1 / 450              # per step (45 s from full, resting)
 EFFORT = 0.0015              # extra drain at full joint speed (all joints)
 GRAV, REST, ROLL = 9.81, 0.35, 2.5
-P_HELD_OVER, P_HELD = 0.2, 0.2              # life starts: ball in the claw above the basket / anywhere
-P_UNDER = 0.3                # a new ball appears just under the claw
+P_HELD_OVER, P_HELD = 0.25, 0.25             # life starts: ball in the claw above the basket / anywhere
+P_UNDER = 0.4                # a new ball appears just under the claw
 
 
 def set_gaze(deg):
@@ -301,7 +301,10 @@ class World:
         B, dev = self.B, self.dev
         a = a.clamp(-1, 1)
         alive = ~self.dead
-        target = self.lo + (a + 1) / 2 * (self.hi - self.lo)
+        # muscles: the 4 joints are speeds (relaxed = the arm holds its pose); the claw is a spring that
+        # stays open when relaxed (a <= 0) and closes as the muscle pulls (a = 1: fully shut, a firm squeeze)
+        target = (self.q + a * self.rate).clamp(self.lo, self.hi)
+        target[:, 4] = G_MAX * (1 - a[:, 4].clamp(min=0))
         dq = (target - self.q).clamp(-self.rate, self.rate) * alive[:, None]
         # the ball blocks the claw from closing while it is between the plates
         q_new = self.q + dq
