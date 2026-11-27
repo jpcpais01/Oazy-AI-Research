@@ -385,7 +385,7 @@ class Learner:
         if self.ent_target is not None:
             # a thermostat on randomness: the entropy weight rises when the muscles get too sure
             # (bang-bang habits, circling) and falls when they are too random (thrashing)
-            l_e = -(self.log_ent * (met_ac[4] - self.ent_target))
+            l_e = self.log_ent * (met_ac[4] - self.ent_target)          # below target -> weight rises
             self.opt_ent.zero_grad(set_to_none=True)
             l_e.backward()
             self.opt_ent.step()
