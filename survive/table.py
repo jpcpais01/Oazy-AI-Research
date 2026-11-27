@@ -39,9 +39,9 @@ L = 1.0                      # the table (the renderer's "room")
 WALL_H = 0.04                # the rim
 EYE_H = 0.0                  # the camera height lives in pos[:, 2]
 EYE_SEP = 0.03               # half the distance between the eyes
-CAM = (0.5, -0.04, 0.50)     # head above the base, behind the near edge
-CAM_PITCH = math.radians(42)
-FOV_DEG = 80                 # narrower eyes than creature one: it looks at a table, not a room
+CAM = (0.5, -0.22, 0.82)     # a tall head behind the base: the arm can't reach up in front of its eyes (t2 parked the claw there)
+CAM_PITCH = math.radians(47)
+FOV_DEG = 70                 # narrower eyes than creature one: it looks at a table, not a room
 TILE = 0.1                   # the table top: 10 cm tiles (depth cues)
 OUTSIDE = (0.30, 0.30, 0.34) # the floor far below, beyond the table
 
@@ -52,10 +52,10 @@ L1, L2, L3, LF = 0.30, 0.28, 0.05, 0.07     # upper arm, forearm, hand, finger p
 PT, PW = 0.010, 0.040        # plate thickness, plate width
 G_MAX = 0.11                 # widest claw opening (gap between inner faces)
 LO = torch.tensor([-1.75, -0.35, 0.0, -1.9, 0.0])
-HI = torch.tensor([1.75, 1.45, 2.7, 1.9, G_MAX])
+HI = torch.tensor([1.75, 1.0, 2.7, 1.9, G_MAX])      # shoulder lifts to 57 deg (arm top ~0.6 m, eyes at 0.82 m)
 RATE = torch.tensor([0.22, 0.22, 0.25, 0.3, 0.025])   # per step
 # ---- things ---------------------------------------------------------------------------------------
-BALL_R = 0.03
+BALL_R = 0.035
 B_IN, B_WALL, B_H = 0.07, 0.01, 0.05        # basket inner half size, wall thickness, height
 BALL_E = 0.4                 # energy from a ball in the basket
 DRAIN = 1 / 450              # per step (45 s from full, resting)
