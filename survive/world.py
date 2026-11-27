@@ -145,6 +145,7 @@ class World:
         self.wand_dir, self.strange_goal = z(B), z(B, 2)
         self.bite_cd, self.near_strange = z(B, dt=torch.long), z(B, dt=torch.long)
         self.pred_speed = z(B)
+        self.pred_stam = z(B)          # the predator tires too (only with STAMINA): a chase is a sprint
         self.pred_mem, self.pred_mem_t = z(B, 2), z(B, dt=torch.long)   # where/when it last noticed the creature
         self.pred_dir, self.pred_side = z(B), z(B)                         # patrol heading; which way it goes around
         self.held = torch.full((B,), -1, device=self.dev, dtype=torch.long)
@@ -262,6 +263,7 @@ class World:
         self.bite_cd[idx] = 0
         self.near_strange[idx] = 0
         self.pred_speed[idx] = m.pred_speed
+        self.pred_stam[idx] = 1.0
         self.pred_mem[idx] = self.pred[idx]
         self.pred_mem_t[idx] = PRED_FORGET
         self.pred_dir[idx] = self._rand(n) * 2 * math.pi
@@ -430,7 +432,7 @@ class World:
         self.energy = self.energy - cost
         if STAMINA:
             effort = 0.015 * push * push + 0.004 * turn.abs() + 0.15 * jump.float()
-            rest = 0.012 * (1 - push.abs())
+            rest = 0.012 * (1 - push.abs()) + 0.002     # walking calmly still recovers a little
             self.stamina = (self.stamina - effort + rest).clamp(0, 1)
 
         # --- food
@@ -547,7 +549,11 @@ class World:
         self.pred_mem_t = torch.where(~hunting & (gd <= 0.3), torch.full_like(self.pred_mem_t, PRED_FORGET), self.pred_mem_t)
         self.pred_dir = self.pred_dir + (torch.rand(B, device=self.dev) - 0.5) * 0.5
         want = torch.where(hunting, torch.atan2(goal[:, 1], goal[:, 0]), self.pred_dir)
-        speed = torch.where(hunting, self.pred_speed, self.pred_speed * 0.4) * DT
+        if STAMINA:     # it can sprint ~6 s at full speed, then slows to 40%; rests back while patrolling
+            self.pred_stam = (self.pred_stam + torch.where(hunting, -0.016, 0.008)).clamp(0, 1)
+            speed = torch.where(hunting, self.pred_speed * (0.4 + 0.6 * self.pred_stam), self.pred_speed * 0.4) * DT
+        else:
+            speed = torch.where(hunting, self.pred_speed, self.pred_speed * 0.4) * DT
         # try headings: straight, then 30..150 deg to the current side, then to the other side
         offs = torch.tensor([0, 30, 60, 90, 120, 150, -30, -60, -90, -120, -150], device=self.dev) * (math.pi / 180)
         ang = want[:, None] + offs[None] * self.pred_side[:, None]                       # B,K
