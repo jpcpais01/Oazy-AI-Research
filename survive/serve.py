@@ -58,6 +58,7 @@ class Sim:
         self.runs, self.dev, self.gdev = runs, dev, gdev
         self.lock = threading.Lock()
         self.frames, self.seq = [], 0
+        self.reader = 0           # the furthest frame any page has asked past: the world runs ~12 s ahead of it
         self.cfg = None
         self.want = None
         threading.Thread(target=self.loop, daemon=True).start()
@@ -287,7 +288,7 @@ class Sim:
         while True:
             with self.lock:
                 w, self.want = self.want, None
-                nbuf = len(self.frames)
+                nbuf = (self.seq - self.reader) if self.frames else 0
             if w is not None:
                 try:
                     m, world, act, res = self._load(w)
@@ -295,6 +296,7 @@ class Sim:
                     with self.lock:
                         self.frames, self.cfg = [], w
                         self.seq += 1000
+                        self.reader = self.seq
                     life, t_life, food = 1, 0, 0
                     self._pending = []
                     self._errs = {k: [] for k in self._errs}
@@ -345,6 +347,8 @@ class Sim:
             with self.lock:
                 self.seq += 1
                 self.frames.append(fr)
+                if len(self.frames) > 400:          # a ring of the last 40 s: every open page reads it, none removes
+                    del self.frames[:len(self.frames) - 400]
 
     def state(self, w):
         """The world for the page, copied to the CPU in one go (one GPU sync instead of a hundred)."""
@@ -381,10 +385,11 @@ class Sim:
 
     def take(self, since, most=150):
         with self.lock:
-            fr = [f for f in self.frames if f["seq"] > since]
-            # drop what the page has already taken
-            self.frames = [f for f in self.frames if f["seq"] > since]
-            return fr[:max(0, most)]
+            # frames are shared, not consumed: two open tabs each see every frame (before, each took half)
+            fr = [f for f in self.frames if f["seq"] > since][:max(0, most)]
+            if fr:
+                self.reader = max(self.reader, fr[-1]["seq"])
+            return fr
 
 
 def about(path):
