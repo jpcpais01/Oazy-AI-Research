@@ -14,6 +14,7 @@ import argparse
 import base64
 import glob
 import json
+import math
 import os
 import threading
 import time
@@ -49,8 +50,44 @@ class Sim:
     def minds(self):
         out = []
         for f in sorted(glob.glob(os.path.join(self.runs, "*", "mind_*min.pt")), key=os.path.getmtime):
-            out.append(dict(path=f, name=mind_name(f)))
+            d = dict(path=f, name=mind_name(f))
+            b = Path(f).with_suffix(".bench.json")       # survival in new worlds (test bench), seconds alive
+            if b.exists():
+                try:
+                    t = json.loads(b.read_text()).get("test")
+                    if t:
+                        d["score_s"] = round(t["steps"] / 10)
+                        d["score_lives"] = t.get("lives")
+                except Exception:  # noqa
+                    pass
+            if "score_s" not in d:                            # else the 64-life quick test logged at that minute
+                q = self._quick(Path(f))
+                if q is not None:
+                    d["score_s"], d["score_lives"] = round(q / 10), 64
+            out.append(d)
         return out
+
+    _qcache = {}
+
+    def _quick(self, f):
+        log = f.parent / "log.jsonl"
+        try:
+            mins = float(f.stem.replace("mind_", "").replace("min", ""))
+        except ValueError:
+            return None
+        if not log.exists():
+            return None
+        key = (str(log), log.stat().st_mtime)
+        if key not in self._qcache:
+            rows = {}
+            for line in log.read_text().splitlines():
+                if '"test_steps"' in line:
+                    try:
+                        r = json.loads(line); rows[round(r["min"])] = r["test_steps"]
+                    except Exception:  # noqa
+                        pass
+            self._qcache[key] = rows
+        return self._qcache[key].get(round(mins))
 
     def select(self, path, mode, seed, det=True):
         with self.lock:
@@ -65,7 +102,48 @@ class Sim:
         m.eval()
         world = World(1, self.dev, mode=w["mode"], seed=w["seed"])
         act = Actor(m, world, res, self.dev, deterministic=w.get("det", True))   # habit, or with its training wobble
+        self.motion = self._motion_probe(m, res, w["path"])
         return m, world, act, res
+
+    _probes = {}
+
+    @torch.no_grad()
+    def _motion_probe(self, m, res, path, n=64, steps=300):
+        """How does the body move, read from the inner state? A ridge map from (memory h, moment z, chosen
+        muscles a) to the body-frame motion of the next step (forward m, sideways m, turn rad), fitted on
+        real lives with this mind and scored on held-out lives. Used to turn each dream into a path."""
+        if path in self._probes:
+            return self._probes[path]
+        w = World(n, self.dev, mode="train", seed=777)
+        act = Actor(m, w, res, self.dev, deterministic=True)
+        X, Y = [], []
+        for _ in range(steps):
+            a, _, _ = act.observe_act(bf16=self.dev.type == "cuda")
+            x = torch.cat([act.h.float(), act.z.float().reshape(n, -1), a.float()], -1)
+            p0, h0 = w.pos[:, :2].clone(), w.head.clone()
+            act.advance(a)
+            done, trunc, *_ = w.step(a)
+            dp = w.pos[:, :2] - p0
+            c, s_ = torch.cos(h0), torch.sin(h0)
+            fwd, side = c * dp[:, 0] + s_ * dp[:, 1], -s_ * dp[:, 0] + c * dp[:, 1]
+            dh = torch.remainder(w.head - h0 + math.pi, 2 * math.pi) - math.pi
+            ok = ~(done | trunc) & (w.dying == 0)
+            X.append(x[ok]); Y.append(torch.stack([fwd, side, dh], -1)[ok])
+            if (done | trunc).any():
+                w.reset(torch.nonzero(done | trunc).squeeze(-1)); act.first[done | trunc] = True
+        X, Y = torch.cat(X), torch.cat(Y)
+        perm = torch.randperm(len(X), generator=torch.Generator().manual_seed(0)).to(X.device)
+        X, Y = X[perm], Y[perm]
+        k = len(X) * 3 // 4
+        mu, sd = X[:k].mean(0), X[:k].std(0) + 1e-3
+        A = torch.cat([(X - mu) / sd, torch.ones(len(X), 1, device=X.device)], 1)
+        Wt = torch.linalg.solve(A[:k].T @ A[:k] + 30.0 * torch.eye(A.shape[1], device=X.device), A[:k].T @ Y[:k])
+        P = A[k:] @ Wt
+        r2 = (1 - ((P - Y[k:]) ** 2).mean(0) / Y[k:].var(0).clamp(min=1e-9)).tolist()
+        pr = dict(mu=mu, sd=sd, W=Wt, r2=[round(v, 3) for v in r2])
+        print("motion probe", path, "R2 fwd/side/turn", pr["r2"], flush=True)
+        self._probes[path] = pr
+        return pr
 
     DREAM_AT = (2, 5, 10, 20, 50, 100)          # imagined pictures at +0.2, 0.5, 1, 2, 5, 10 s
 
@@ -76,7 +154,8 @@ class Sim:
         what it expects rather than one random dream."""
         h, z = act.h.expand(n, -1).clone(), act.z.expand(n, -1).clone()
         code, ctr = act.code.expand(n, -1).clone(), int(act.ctr[0])
-        pics, conts, wbs = [], [], []
+        pics, conts, wbs, mot = [], [], [], []
+        pr = getattr(self, "motion", None)
         for k in range(1, steps + 1):
             x = torch.cat([h, z], -1)
             if m.intent:                            # the will keeps choosing inside the dream too
@@ -85,6 +164,9 @@ class Sim:
                 ctr += 1
                 x = torch.cat([x, code], -1)
             a, _ = m.act(x, deterministic=True)
+            if pr is not None:                      # how this dreamed step would move the body
+                xa = torch.cat([h.float(), z.float().reshape(n, -1), a.float()], -1)
+                mot.append(torch.cat([(xa - pr["mu"]) / pr["sd"], torch.ones(n, 1, device=xa.device)], 1) @ pr["W"])
             h = m.step_h(h, z, a)
             z = m.sample(m.imagine_z(h))
             ft = torch.cat([h, z], -1)
@@ -98,10 +180,44 @@ class Sim:
         q = torch.quantile(W, torch.tensor([0.1, 0.9], device=W.device), dim=1)
         self.wb_band = [[round(v, 3) for v in q[0].tolist()], [round(v, 3) for v in q[1].tolist()]]
         wb = [round(v, 3) for v in W.mean(1).tolist()]
+        self.paths = None
+        if mot and pr is not None and pr["r2"][0] > 0.5 and pr["r2"][2] > 0.5:   # forward and turn carry the path; sideways slip is tiny
+            M = torch.stack(mot)                                          # steps, n, (fwd, side, turn)
+            pos = act.w.pos[0, :2].clone().expand(n, -1).clone(); hd = act.w.head[0].clone().expand(n).clone()
+            pts = [pos.clone()]
+            for t in range(M.shape[0]):
+                c, s_ = torch.cos(hd), torch.sin(hd)
+                pos = (pos + torch.stack([c * M[t, :, 0] - s_ * M[t, :, 1], s_ * M[t, :, 0] + c * M[t, :, 1]], -1)).clamp(0.25, L - 0.25)
+                hd = hd + M[t, :, 2]
+                pts.append(pos.clone())
+            P = torch.stack(pts, 1)[:, ::2]                               # n, 51 points (every 0.2 s, 10 s)
+            alive_n = torch.cumprod(torch.stack(conts), 0)                # steps, n
+            die = [int(v) if v < steps else None for v in ((alive_n < 0.5).float().argmax(0) + (alive_n.min(0).values >= 0.5).long() * steps).tolist()]
+            self.paths = dict(pts=[[[round(v, 2) for v in q] for q in P[i].tolist()] for i in range(n)],
+                              wb=[round(v, 3) for v in W.mean(0).tolist()], die=die, r2=pr["r2"])
+            # honesty check: where the dreams put it at +1.6 s and +4 s vs where it really is then (live, this life)
+            self._pending.append((self._t, P[:, 8].cpu(), P[:, 20].cpu()))
+            self.paths["err"] = {k: (round(sorted(v)[len(v) // 2], 2) if v else None) for k, v in self._errs.items()}
         return pics, 1 - alive[11].item(), wb, 1 - alive[-1].item()
+
+    def _check_paths(self, world, t_life):
+        """Score past dream paths against the real position now (median over the last 300 checks)."""
+        p = world.pos[0, :2].cpu()
+        keep = []
+        for (t0, p16, p40) in self._pending:
+            for dt, pp, key in ((16, p16, "mean_1.6s"), (40, p40, "mean_4s")):
+                if t_life - t0 == dt:
+                    self._errs[key].append((pp.mean(0) - p).norm().item())
+                    self._errs[key.replace("mean", "best")].append((pp - p).norm(dim=-1).min().item())
+                    self._errs[key] = self._errs[key][-300:]; self._errs[key.replace("mean", "best")] = self._errs[key.replace("mean", "best")][-300:]
+            if t_life - t0 < 40:
+                keep.append((t0, p16, p40))
+        self._pending = keep
 
     def loop(self):
         m = world = act = None
+        self._pending, self._t = [], 0
+        self._errs = {"mean_1.6s": [], "best_1.6s": [], "mean_4s": [], "best_4s": []}
         life, t_life, food = 0, 0, 0
         while True:
             with self.lock:
@@ -115,12 +231,16 @@ class Sim:
                         self.frames, self.cfg = [], w
                         self.seq += 1000
                     life, t_life, food = 1, 0, 0
+                    self._pending = []
+                    self._errs = {k: [] for k in self._errs}
                 except Exception as e:  # noqa
                     print("load failed", e, flush=True)
                 continue
             if m is None or nbuf >= 120:
                 time.sleep(0.05)
                 continue
+            self._t = t_life
+            self._check_paths(world, t_life)
             a, rec, _ = act.observe_act(bf16=self.dev.type == "cuda")
             img = rec[0][0]
             fr = dict(seq=self.seq, life=life, t=t_life, food=food)
@@ -129,6 +249,8 @@ class Sim:
             if t_life % 3 == 0:
                 fr["dream"], fr["fear"], fr["wb"], fr["fear10"] = self.imagine(m, act)
                 fr["wb_band"] = self.wb_band
+                if self.paths is not None:
+                    fr["paths"] = self.paths
             fr["state"] = self.state(world)
             fr["act"] = [round(x, 2) for x in a[0].tolist()]
             if m.intent:                                   # the will's current intention (the slow level)
@@ -149,6 +271,7 @@ class Sim:
                 fr["end"] = "lived 100 s" if trunc[0] else f"died: {DEATH_CAUSES[int(cause[0])]}"
                 world.reset(torch.arange(1, device=self.dev))
                 act.first[:] = True
+                self._pending = []
                 life, t_life, food = life + 1, 0, 0
             with self.lock:
                 self.seq += 1
