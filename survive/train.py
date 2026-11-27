@@ -217,6 +217,7 @@ class Learner:
         self.ret_lo = torch.zeros((), device=dev)
         self.ret_hi = torch.zeros((), device=dev)
         self.first_call = True
+        self.n_upd = 0
         self.amp = bool(dev.type == "cuda" and args.bf16)
         mode = getattr(args, "compile_mode", "default")
         comp = (lambda f: torch.compile(f, mode=None if mode == "default" else mode)) if getattr(args, "compile", 0) else (lambda f: f)
@@ -322,7 +323,7 @@ class Learner:
         return l_rec + l_kl, unexpl
 
     # ------------------------------------------------ imagination: actor and critic
-    def _ac(self, hs, zs, cont0, ret_lo, ret_hi, init, ent_w):
+    def _ac(self, hs, zs, cont0, ret_lo, ret_hi, init, ent_w, jw):
         m, a = self.m, self.a
         st = max(1, int(getattr(a, "start_stride", 1)))
         h, z = hs.flatten(0, 1)[::st], zs.flatten(0, 1)[::st]
@@ -364,9 +365,8 @@ class Learner:
         c = cont[1:]
         scale = 1.0 / (1 - a.gamma)
         vb = v_slow * scale
-        jw = float(getattr(a, "jump_w", 0.0))
         jv = torch.zeros((), device=vb.device)
-        if m.jump_chain and jw > 0:
+        if m.jump_chain and float(getattr(a, "jump_w", 0.0)) > 0:
             # look past the dream in a few big jumps (e.g. +1.5, +2, +2, +8 s): the value at the dream's
             # end is blended with what the jumps forecast (wellbeing on the way, survival, then the
             # gut feeling at the far end). Gradient flows through the jumps back into the dream.
@@ -489,8 +489,14 @@ class Learner:
             self.opt_goal.step()
         init = torch.tensor(self.first_call, device=hs.device)
         ent_w = self.log_ent.exp().detach() if self.ent_target is not None else torch.tensor(a.ent, device=hs.device)
+        # the jump forecast is trusted gradually: off while the jump heads learn (--jump-warm updates),
+        # then ramped up to --jump-w over as many updates again
+        wu = float(getattr(a, "jump_warm", 0))
+        ramp = 1.0 if wu <= 0 else min(1.0, max(0.0, (self.n_upd - wu) / wu))
+        jw = torch.tensor(float(getattr(a, "jump_w", 0.0)) * ramp, device=hs.device)
+        self.n_upd += 1
         l_actor, l_critic, self.ret_lo, self.ret_hi, met_ac = self.ac_fn(hs, zs, batch["cont"], self.ret_lo, self.ret_hi,
-                                                                         init, ent_w)
+                                                                         init, ent_w, jw)
         if self.ent_target is not None:
             # a thermostat on randomness: the entropy weight rises when the muscles get too sure
             # (bang-bang habits, circling) and falls when they are too random (thrashing)
@@ -676,6 +682,7 @@ def main():
     ap.add_argument("--horizon", type=int, default=15)
     ap.add_argument("--jumps", default="", help="jumpy forecasts past the dream, in steps, chained (e.g. 15,20,20,80 = +1.5,+2,+2,+8 s; '' = off)")
     ap.add_argument("--jump-w", type=float, default=0.5, help="weight of the jump forecast in the value at the dream's end (0 = learn the jumps, don't use them)")
+    ap.add_argument("--jump-warm", type=int, default=2000, help="updates with the jumps learning but unused; then ramped in over as many")
     ap.add_argument("--jump-grad", type=int, default=1, help="1 = the muscles feel the jump forecast's gradient")
     ap.add_argument("--jump-batch", type=int, default=1024)
     ap.add_argument("--intent", type=int, default=0, help="a will picks an intention every K steps (0 = off; 10 = every 1 s)")
