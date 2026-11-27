@@ -592,6 +592,7 @@ def main():
     ap.add_argument("--recon", type=float, default=0.0, help="weight of redrawing the left eye from the inner state (0 = off; 1 = Dreamer scale)")
     ap.add_argument("--recon-stride", type=int, default=2)
     ap.add_argument("--smell", type=int, default=0, help="1 = two nostrils smell food")
+    ap.add_argument("--init", default="", help="start from this saved mind (to continue a run longer)")
     ap.add_argument("--long-fresh", type=int, default=0, help="1 = long-memory clips start from an empty memory, not the hours-old stored one")
     ap.add_argument("--world-v", type=int, default=1, help="2 = audit fixes: crates spawn free, z-aware crate overlap, failed carry drops, "
                     "back pressure sensor, blows/stamina from the real drive, dying body stops; 3 = also the predator lunges when close, rooms half as cluttered")
@@ -638,6 +639,10 @@ def main():
     (out / "args.json").write_text(json.dumps(vars(a), indent=1))
     set_eyes(vars(a))
     mind = Mind(a.res, a.intent, a.g_slots, a.g_cls, matter=a.matter > 0).to(dev)
+    if a.init:     # carry on from a saved mind (fresh replay and optimisers; the mind keeps what it learned)
+        from .model import load_mind
+        load_mind(mind, torch.load(a.init, map_location=dev)["mind"])
+        print("init from", a.init, flush=True)
     mind.ent_squash = bool(a.ent_squash)
     print(f"mind: {sum(p.numel() for p in mind.parameters()) / 1e6:.1f}M parameters, eyes {a.res} px", flush=True)
     world = World(a.envs, dev, mode="train", seed=a.seed, compile=bool(a.compile), rooms=a.rooms)
