@@ -14,7 +14,9 @@ The creature has five muscles, each in [-1, 1]: push (forward/back), turn, jump,
 Its senses (all produced here, nothing privileged):
   - two eyes: 120 degree stereo pictures (render.py),
   - body feelings: energy, health, touch (pushing against something), on-ground, holding,
-    and (last of all senses) stamina: 1 unless set_body(stamina=True),
+    and (last of all senses) stamina: 1 unless set_body(stamina=True), and hunger: a feeling that
+    grows louder as energy nears 0 (log scale: 0.1 -> 0.43, 0.03 -> 0.66, 0.01 -> 0.87), so
+    "almost empty" and "empty" feel very different (energy itself barely differs there),
   - intensity: 4 sensors (left, right, front, bottom) x 4 bands (heat, pressure, hum, field),
   - ears: left and right x 4 bands; the outer ear dulls high bands coming from behind.
 Its life ends when energy or health reaches 0, or after 100 s (a time limit, not a death).
@@ -41,7 +43,7 @@ MAX_STEPS = 1000    # 100 s life cap
 NB = 24             # box slots (static boxes + crates)
 NL = 7              # lava slots
 NF = 8              # food slots
-SENSES = 30         # 5 body + 16 intensity + 8 ears + stamina
+SENSES = 31         # 5 body + 16 intensity + 8 ears + stamina + hunger
 BODY = 5
 ACT = 5            # push, turn, jump, grip, gaze (gaze is ignored unless set_gaze(deg) > 0)
 GAZE = 0.0         # radians the eyes can turn left/right of the body
@@ -626,7 +628,9 @@ class World:
         body = torch.stack([self.energy.clamp(0, 1), self.health.clamp(0, 1), self.touch,
                             self.on_ground.float(), holding], -1)
         stam = self.stamina if STAMINA else torch.ones_like(self.energy)
-        self.senses = torch.cat([body, torch.log1p(intensity.flatten(1)), torch.log1p(ears.flatten(1)), stam[:, None]], -1)
+        hunger = (-torch.log(self.energy.clamp(0.005, 1.0)) / 5.3).clamp(0, 1)          # 0 full ... 1 at energy 0.005
+        self.senses = torch.cat([body, torch.log1p(intensity.flatten(1)), torch.log1p(ears.flatten(1)),
+                                 stam[:, None], hunger[:, None]], -1)
 
     # ------------------------------------------------------------------ for the renderer
     def scene(self):
