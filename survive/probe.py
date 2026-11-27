@@ -21,6 +21,7 @@ m = make_mind(args).to(dev); load_mind(m, ck["mind"]); m.eval()
 w = W.World(a.n, dev, mode=a.mode, seed=999)
 act = Actor(m, w, args["res"], dev, deterministic=True)
 H, Z, Y, LIVE = [], [], [], []
+PY, PM = [], []          # world 5: the nearest live prey and the nearest carcass (direction, distance, in view)
 alive = torch.ones(a.n, dtype=torch.bool, device=dev)
 
 
@@ -45,6 +46,16 @@ with torch.no_grad():
         y = torch.stack([fe[:, 0], fe[:, 1], torch.log(nd.clamp(0.1, 15)), (fe[:, 0] > 0.707).float(),
                          pe[:, 0], pe[:, 1], torch.log(pdist.clamp(0.1, 15)), w.energy, vis], -1)
         H.append(act.h.float().clone()); Z.append(act.z.float().reshape(a.n, -1).clone()); Y.append(y); LIVE.append(alive & (w.dying == 0))
+        look = (w.head + w.gaze)
+        cols, msk = [], []
+        for has in (w.prey_alive, w.prey_dead):
+            v = w.prey - p[:, None]; d = torch.where(has, v.norm(dim=-1), torch.full_like(v[..., 0], 99.0))
+            j = d.argmin(-1); nv = v[torch.arange(a.n, device=dev), j]; ndist = nv.norm(dim=-1)
+            e = ego(nv, w.head) / ndist.clamp(min=1e-3)[:, None]
+            an = torch.atan2(*(ego(v, look[:, None].expand_as(d)).unbind(-1))[::-1])
+            inv = (has & (d < 3.0) & (an.abs() < 0.7)).any(-1).float()           # within 3 m and 40 deg of where the eyes look
+            cols += [e[:, 0], e[:, 1], torch.log(ndist.clamp(0.1, 15)), inv]; msk.append(has.any(-1))
+        PY.append(torch.stack(cols, -1)); PM.append(torch.stack(msk, -1))
         done, trunc, *_ = w.step(x); alive &= ~(done | trunc)
         if not alive.any(): break
 H, Z, Y, L = (torch.stack(v, 1) for v in (H, Z, Y, LIVE))   # n,T,...
@@ -105,9 +116,33 @@ def auc(X):
     j = torch.randint(0, len(pos), (200000,), device=dev); k = torch.randint(0, len(neg), (200000,), device=dev)
     return dict(auc=round((pos[j] > neg[k]).float().mean().item(), 3), pos_share=round(yte.mean().item(), 3))
 res["food_in_view_auc_h+z"] = auc(torch.cat([H, Z], -1)); res["food_in_view_auc_z"] = auc(Z)
+PYt, PMt = torch.stack(PY, 1), torch.stack(PM, 1)
+if PMt[..., 0].any():
+    X = torch.cat([H, Z], -1)
+    tr = torch.zeros(a.n, dtype=torch.bool, device=dev); tr[: a.n // 2] = True
+    for gi, nm in enumerate(["prey", "carcass"]):
+        ok = L & PMt[..., gi]
+        if ok[tr].sum() < 200 or ok[~tr].sum() < 200:
+            res[nm] = "too few moments"; continue
+        Yg = PYt[..., 4 * gi:4 * gi + 4]
+        Xtr, Ytr, Xte, Yte = X[tr][ok[tr]], Yg[tr][ok[tr]], X[~tr][ok[~tr]], Yg[~tr][ok[~tr]]
+        mu, sd = Xtr.mean(0), Xtr.std(0) + 1e-3
+        A = torch.cat([(Xtr - mu) / sd, torch.ones(len(Xtr), 1, device=dev)], 1); B = torch.cat([(Xte - mu) / sd, torch.ones(len(Xte), 1, device=dev)], 1)
+        Wt = torch.linalg.solve(A.T @ A + 10 * torch.eye(A.shape[1], device=dev), A.T @ Ytr); P = B @ Wt
+        r2 = 1 - ((P - Yte) ** 2).mean(0) / Yte.var(0).clamp(min=1e-6)
+        err = torch.rad2deg(torch.remainder(torch.atan2(P[:, 1], P[:, 0]) - torch.atan2(Yte[:, 1], Yte[:, 0]) + math.pi, 2 * math.pi) - math.pi).abs().median()
+        yv, sv = Yte[:, 3], P[:, 3]; pos, neg = sv[yv > .5], sv[yv < .5]
+        au = None
+        if len(pos) > 20 and len(neg) > 20:
+            jj = torch.randint(0, len(pos), (200000,), device=dev); kk = torch.randint(0, len(neg), (200000,), device=dev)
+            au = round((pos[jj] > neg[kk]).float().mean().item(), 3)
+        res[nm] = dict(logdist_r2=round(r2[2].item(), 3), angle_err_deg=round(err.item(), 1), in_view_auc=au,
+                       in_view_share=round(yv.mean().item(), 3), samples=int(len(Yte)))
 print(json.dumps(res, indent=1))
 r = res["h+z"]
 print(f"probe: food dir angle err {r['food_angle_err_deg']} deg (chance 90), food logdist R2 {r['food_logdist']}, "
       f"food-in-view AUC {res['food_in_view_auc_h+z']['auc']} (0.5 blind) | predator logdist R2 {r['pred_logdist']}, "
-      f"angle err {r['pred_angle_err_deg']} | energy R2 {r['energy']}")
+      f"angle err {r['pred_angle_err_deg']} | energy R2 {r['energy']}"
+      + "".join(f" | {k}: logdist R2 {res[k]['logdist_r2']}, angle err {res[k]['angle_err_deg']}, in-view AUC {res[k]['in_view_auc']} (in view {res[k]['in_view_share']})"
+                for k in ("prey", "carcass") if isinstance(res.get(k), dict)))
 json.dump(res, open(a.mind.replace(".pt", ".probe.json"), "w"), indent=1)
