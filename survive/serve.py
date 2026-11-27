@@ -13,11 +13,14 @@ from __future__ import annotations
 import argparse
 import base64
 import glob
+import gzip
 import json
 import math
 import os
+import struct
 import threading
 import time
+import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -30,6 +33,16 @@ from .train import Actor
 from .world import DEATH_CAUSES, L, World
 
 PAGE = (Path(__file__).parent / "page.html")
+
+
+def png64(a):
+    """H,W,3 uint8 numpy -> base64 lossless PNG (stdlib only). The raw pixels were ~70 KB a frame, ~0.7 MB/s
+    over the pod proxy, which a phone connection could not keep up with."""
+    h, w = a.shape[:2]
+    raw = b"".join(b"\x00" + a[y].tobytes() for y in range(h))
+    ch = lambda t, d: struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+    png = b"\x89PNG\r\n\x1a\n" + ch(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)) + ch(b"IDAT", zlib.compress(raw, 6)) + ch(b"IEND", b"")
+    return base64.b64encode(png).decode()
 
 
 def mind_name(path):
@@ -222,7 +235,7 @@ class Sim:
             pack += [P.reshape(-1), W.mean(0).float(), die.float()]
         flat = torch.cat(pack).cpu()
         pic_bytes = (torch.stack(pics) * 255).byte().permute(0, 2, 3, 1).contiguous().cpu().numpy() if pics else []
-        pics = [base64.b64encode(b.tobytes()).decode() for b in pic_bytes]
+        pics = [png64(b) for b in pic_bytes]
         k = 0
         def take(cnt):
             nonlocal k
@@ -285,7 +298,8 @@ class Sim:
             a, rec, _ = act.observe_act(bf16=self.dev.type == "cuda")
             img = rec[0][0]
             fr = dict(seq=self.seq, life=life, t=t_life, food=food)
-            fr["eyes"] = base64.b64encode(img.permute(1, 2, 0).contiguous().cpu().numpy().tobytes()).decode()
+            e = img.permute(1, 2, 0).contiguous().cpu().numpy()          # H, W, 6: left rgb, right rgb
+            fr["eyeL"], fr["eyeR"], fr["png"] = png64(e[..., :3].copy()), png64(e[..., 3:].copy()), 1
             fr["res"] = img.shape[-1]
             if t_life % 3 == 0:
                 fr["dream"], fr["fear"], fr["wb"], fr["fear10"] = self.imagine(m, act)
@@ -302,7 +316,7 @@ class Sim:
                         g = m.goal_dec(code)
                         ft = torch.cat([g, m.sample(m.imagine_z(g))], -1)
                         pic = m.minds_eye(ft).clamp(0, 1)[0]
-                    fr["intent"]["pic"] = base64.b64encode((pic * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy().tobytes()).decode()
+                    fr["intent"]["pic"] = png64((pic * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
             act.advance(a)
             done, trunc, cause, ate = world.step(a)
             t_life += 1
@@ -356,7 +370,7 @@ class Sim:
             fr = [f for f in self.frames if f["seq"] > since]
             # drop what the page has already taken
             self.frames = [f for f in self.frames if f["seq"] > since]
-            return fr[:30]
+            return fr[:150]
 
 
 def about(path):
@@ -408,9 +422,14 @@ def main():
             pass
 
         def send(self, obj, ctype="application/json"):
-            body = obj if isinstance(obj, bytes) else json.dumps(obj).encode()
+            body = obj if isinstance(obj, bytes) else json.dumps(obj, separators=(",", ":")).encode()
+            gz = len(body) > 2048 and "gzip" in self.headers.get("Accept-Encoding", "")
+            if gz:
+                body = gzip.compress(body, 5)
             self.send_response(200)
             self.send_header("Content-Type", ctype)
+            if gz:
+                self.send_header("Content-Encoding", "gzip")
             self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()

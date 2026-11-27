@@ -17,7 +17,7 @@
   --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
   --ink:#1b2147;--ink-2:#4b5480;--ink-3:#7c84a8;--line:rgba(27,33,71,.12);--hair:rgba(27,33,71,.07);
   --rose:#c0506f;--lilac:#7d8de0;--coral:#e2646b;--amber:#e9a23b;--aqua:#4fb8c8;--leaf:#5bb58a;--violet:#8a63d2;--sand:#cdbf8e;--wood:#b98a5a;
-  --glass-bg:linear-gradient(140deg,rgba(255,255,255,.55),rgba(255,255,255,.20));
+  --glass-bg:linear-gradient(140deg,rgba(255,255,255,.72),rgba(255,255,255,.46));
   --glass-line:rgba(255,255,255,.66);
   --glass-shadow:inset 0 1px 0 rgba(255,255,255,.9),0 24px 60px -30px rgba(40,50,120,.38);
   --wb:.7;--fear:0;
@@ -31,14 +31,14 @@ body{margin:0;color:var(--ink);font:300 15px/1.55 var(--sans);background:#d5dff6
 /* ---------- the living sky ---------- */
 .sky{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;
   background:linear-gradient(180deg,#c3d2f4 0%,#dcd9f3 38%,#f3dfe5 68%,#fbe8dc 100%)}
-.sky i{position:absolute;border-radius:50%;filter:blur(70px);opacity:.75;will-change:transform}
-.sky .a{width:62vw;height:62vw;left:-14vw;top:-22vw;background:radial-gradient(circle,#aab8f5,transparent 66%);animation:drift1 38s ease-in-out infinite alternate}
-.sky .b{width:54vw;height:54vw;right:-16vw;top:8vh;background:radial-gradient(circle,#f6c3cf,transparent 66%);animation:drift2 46s ease-in-out infinite alternate}
-.sky .c{width:70vw;height:50vw;left:18vw;bottom:-26vw;background:radial-gradient(circle,#ffd9bf,transparent 64%);animation:drift3 52s ease-in-out infinite alternate}
+.sky i{position:absolute;border-radius:50%;opacity:.7}
+.sky .a{width:62vw;height:62vw;left:-14vw;top:-22vw;background:radial-gradient(circle,#aab8f5,transparent 66%)}
+.sky .b{width:54vw;height:54vw;right:-16vw;top:8vh;background:radial-gradient(circle,#f6c3cf,transparent 66%)}
+.sky .c{width:70vw;height:50vw;left:18vw;bottom:-26vw;background:radial-gradient(circle,#ffd9bf,transparent 64%)}
 /* mood layers: warmth rises as wellbeing falls, a rose flush with fear */
 .sky .warm{position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,190,150,.0),rgba(255,160,120,.55));opacity:calc((.75 - var(--wb)) * 2.2);transition:opacity 1.2s ease}
 .sky .fear{position:absolute;inset:0;background:radial-gradient(120% 80% at 50% 0%,rgba(226,80,120,.42),transparent 60%);opacity:calc(var(--fear) * 3);transition:opacity .6s ease}
-.sky .grain{position:absolute;inset:-50%;opacity:.07;mix-blend-mode:multiply;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+.sky .grain{position:absolute;inset:-50%;opacity:.05;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
 @keyframes drift1{to{transform:translate(12vw,8vh) scale(1.12)}}
 @keyframes drift2{to{transform:translate(-10vw,14vh) scale(.92)}}
 @keyframes drift3{to{transform:translate(-14vw,-6vh) scale(1.08)}}
@@ -55,7 +55,7 @@ p{margin:0;color:var(--ink-2)}
 
 /* ---------- glass ---------- */
 .glass{position:relative;background:var(--glass-bg);border:1px solid var(--glass-line);border-radius:22px;box-shadow:var(--glass-shadow);
-  -webkit-backdrop-filter:blur(18px) saturate(1.35);backdrop-filter:blur(18px) saturate(1.35)}
+}
 .glass::after{content:"";position:absolute;inset:-1px;border-radius:inherit;pointer-events:none;box-shadow:-1px 0 0 rgba(255,60,120,.14),1px 0 0 rgba(40,190,255,.16)}
 
 .wrap{position:relative;z-index:2;max-width:1240px;margin:0 auto;padding:28px max(16px,env(safe-area-inset-left)) 56px}
@@ -462,6 +462,10 @@ function wbColor(w){/* coral at 0.3 or lower, amber mid, lilac-aqua when well */
 
 /* ---------- drawing helpers ---------- */
 function b64(s){const b=atob(s),a=new Uint8Array(b.length);for(let i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a}
+/* pictures arrive as lossless PNGs (about 5x smaller than raw pixels); the newest one wins if two decode out of order */
+function drawPNG(cv,src,res){const n=(cv._n||0)+1;cv._n=n;const im=new Image();im.onload=()=>{if(cv._n!==n)return;if(cv.width!==res){cv.width=res;cv.height=res}
+  const ctx=cv.getContext('2d');ctx.imageSmoothingEnabled=false;ctx.drawImage(im,0,0,res,res)};im.src='data:image/png;base64,'+src}
+function pic(cv,f,src,res){if(f.png)drawPNG(cv,src,res);else drawRGB(cv,b64(src),res,0,3)}
 function drawRGB(cv,data,res,off,stride){if(cv.width!==res){cv.width=res;cv.height=res}const ctx=cv.getContext('2d'),im=ctx.createImageData(res,res);
   for(let p=0;p<res*res;p++){for(let k=0;k<3;k++)im.data[p*4+k]=data[p*stride+off+k];im.data[p*4+3]=255}ctx.putImageData(im,0,0)}
 
@@ -541,7 +545,7 @@ function drawMap(s,tnow){
   // vignette
   const vv=map.createRadialGradient(W/2,W/2,W*.45,W/2,W/2,W*.78);vv.addColorStop(0,'rgba(27,33,71,0)');vv.addColorStop(1,'rgba(27,33,71,.10)');map.fillStyle=vv;map.fillRect(0,0,W,W)}
 function rr(x,y,w,h,r){r=Math.min(r,w/2,h/2);map.beginPath();map.moveTo(x+r,y);map.arcTo(x+w,y,x+w,y+h,r);map.arcTo(x+w,y+h,x,y+h,r);map.arcTo(x,y+h,x,y,r);map.arcTo(x,y,x+w,y,r);map.closePath()}
-function mapLoop(t){if(lastState)drawMap(lastState,t);requestAnimationFrame(mapLoop)}requestAnimationFrame(mapLoop);
+let mapT=0;function mapLoop(t){if(lastState&&t-mapT>32){mapT=t;drawMap(lastState,t)}requestAnimationFrame(mapLoop)}requestAnimationFrame(mapLoop);
 addEventListener('resize',()=>{sizeMap()});
 
 /* ---------- imagined wellbeing curve ---------- */
@@ -571,17 +575,19 @@ function renderLives(){
 
 /* ---------- one moment ---------- */
 let lastFear=0,lastWbs=null,lastRender=0;
+const SKY=document.querySelector('.sky');let moodW=-1,moodF=-1;
+function setMood(w,f){if(Math.abs(w-moodW)>.02){moodW=w;SKY.style.setProperty('--wb',w.toFixed(2))}if(Math.abs(f-moodF)>.02){moodF=f;SKY.style.setProperty('--fear',f.toFixed(2))}}
 function show(f){
-  const res=f.res,e=b64(f.eyes);drawRGB(eyeL,e,res,0,6);drawRGB(eyeR,e,res,3,6);$('resTag').textContent=res+' px · stereo';
+  const res=f.res;if(f.png){drawPNG(eyeL,f.eyeL,res);drawPNG(eyeR,f.eyeR,res)}else{const e=b64(f.eyes);drawRGB(eyeL,e,res,0,6);drawRGB(eyeR,e,res,3,6)}$('resTag').textContent=res+' px · stereo';
   const s=f.state,wbNow=(drive==='homeo'&&s.hunger!=null)?(s.health+1-s.hunger)/2:(s.energy+s.health)/2;
   document.querySelectorAll('.legend .v5').forEach(e=>e.hidden=!s.v5);
   $('flStam').hidden=s.stamina==null;if(s.stamina!=null)$('stV').textContent=Math.round(s.stamina*100)+'%';
   $('flHung').hidden=s.hunger==null;if(s.hunger!=null)$('huV').textContent=Math.round(s.hunger*100)+'%';
   if(f.paths){dreamPaths=f.paths;const e=f.paths.err||{};if(e['mean_1.6s']!=null)$('pathErr').textContent=`Checked against what really happened: 1.6 s ahead the dreams are off by ${e['mean_1.6s']} m on average (closest dream ${e['best_1.6s']} m)${e['mean_4s']!=null?`, 4 s ahead ${e['mean_4s']} m (closest ${e['best_4s']} m)`:''}.`}
-  if(f.dream){lastFear=f.fear;lastWbs=f.wb;f.dream.forEach((d,i)=>drawRGB(dreamEls[i],b64(d),res,0,3));
+  if(f.dream){lastFear=f.fear;lastWbs=f.wb;f.dream.forEach((d,i)=>pic(dreamEls[i],f,d,res));
     $('fearV').textContent=(lastFear*100).toFixed(lastFear<.1?1:0);if(f.fear10!=null)$('fear10').textContent=(f.fear10*100).toFixed(f.fear10<.1?1:0);drawWb(wbNow,lastWbs,f.wb_band)}
   // vitals and the sky
-  document.documentElement.style.setProperty('--wb',wbNow.toFixed(3));document.documentElement.style.setProperty('--fear',clamp(lastFear*1.5).toFixed(3));
+  setMood(wbNow,clamp(lastFear*1.5));
   // feelings
   setArc('aE',91,s.energy);setArc('aH',80,s.health);$('ringS').style.display=s.stamina==null?'none':'';$('ringU').style.display=s.hunger==null?'none':'';if(s.stamina!=null)setArc('aS',69,s.stamina);if(s.hunger!=null)setArc('aU',58,s.hunger);$('fearHalo').setAttribute('opacity',clamp(lastFear*3).toFixed(2));
   $('wbV').textContent=Math.round(wbNow*100);const c=wbColor(wbNow);document.querySelector('.orb .core').style.setProperty('--orb',`rgb(${c})`);
@@ -604,13 +610,14 @@ function show(f){
   if(f.intent){$('intent').hidden=false;const it=f.intent;
     $('glyph').innerHTML=it.slots.map((c,i)=>`<i title="slot ${i+1}: option ${c+1}" style="background:hsl(${c*45} 62% 64%)"></i>`).join('');
     $('iage').textContent=`chosen ${(it.age/10).toFixed(1)} s ago · a new one every ${(it.every/10).toFixed(1)} s`;
-    if(it.pic)drawRGB($('intentPic'),b64(it.pic),res,0,3)}else $('intent').hidden=true;
+    if(it.pic)pic($('intentPic'),f,it.pic,res)}else $('intent').hidden=true;
   const dying=s.dying||0;document.querySelector('.s-eyes').classList.toggle('light',dying>0);
   $('status').textContent=f.end?(f.end.startsWith('lived')?'it lived the full 100 s':f.end.replace('died:','it died:')):dying>0?`the light… (${(dying/10).toFixed(1)} s)`:`life ${f.life} · ${(f.t/10).toFixed(1)} s · ${f.food} eaten`;
 }
 
 /* ---------- feed ---------- */
 async function poll(){
+  if(document.hidden){setTimeout(poll,1000);return}
   try{const r=await (await fetch('/api/frames?since='+since)).json();
     const key=JSON.stringify(r.cfg);if(key!==cfgKey){cfgKey=key;queue=[];lives=[];trail=[];curLife=null;renderLives()}
     for(const f of r.frames){queue.push(f);since=Math.max(since,f.seq)}}catch(e){}
@@ -618,9 +625,17 @@ async function poll(){
 let started=false;
 /* playback: 10 frames a second when the buffer is healthy; when the creature's world runs slower than real time
    (a busy GPU), play a little slower instead of stopping, so it never freezes */
-(function play(){let dt=100;if(!started&&queue.length>=12)started=true;
-  if(started){if(queue.length){show(queue.shift());const q=queue.length;dt=q>40?90:q>20?100:q>10?130:q>4?170:230}else{started=false;$('status').textContent='thinking ahead…'}}
+/* frames we skip still count: lives that ended, where it walked, its latest dreamed paths */
+function skim(f){if(f.paths)dreamPaths=f.paths;if(f.state)trail.push([f.state.pos[0],f.state.pos[1]]);if(trail.length>240)trail.shift();
+  if(f.end){const cause=f.end.startsWith('lived')?'cap':f.end.replace('died: ','');lives.push({n:f.life,t:f.t+1,food:f.food,cause});trail=[];curLife=null;renderLives()}}
+/* playback: a steady 10 frames a second. More than 4 s behind (a hidden tab, a slow moment) = jump to near live, never crawl behind */
+(function play(){let dt=100;
+  if(document.hidden){setTimeout(play,300);return}
+  if(!started&&queue.length>=15)started=true;
+  if(started){if(queue.length>40){while(queue.length>12)skim(queue.shift())}
+    if(queue.length){show(queue.shift());const q=queue.length;dt=q>20?92:q>6?100:q>2?120:150}else{started=false;$('status').textContent='thinking ahead…'}}
   setTimeout(play,dt)})();
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)started=false});
 
 /* ---------- controls ---------- */
 function setMode(m){mode=m;const seg=$('mode');[...seg.querySelectorAll('button')].forEach(b=>{const on=b.dataset.m===m;b.classList.toggle('on',on);b.setAttribute('aria-checked',on);
