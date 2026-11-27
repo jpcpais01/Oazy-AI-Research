@@ -47,7 +47,7 @@ SENSES = 36         # 5 body + 16 intensity + 8 ears + stamina + hunger + 2 nost
                     # + arm aim, arm reach, arm tip touch (0 unless world_v >= 5)
 BODY = 5
 ACT = 7            # push, turn, jump, grip, gaze (ignored unless set_gaze(deg) > 0), arm aim, arm reach (world_v >= 5)
-NP = 2             # small prey per world (world_v >= 5)
+NP = 4             # small prey per world (world_v >= 5)
 ARM_MAX, ARM_H, TIP_R = 1.0, 0.25, 0.07     # arm: reach (m) beyond the shoulder, height above the feet, tip radius
 PREY_R, DASH_R = 0.14, 0.30
 GAZE = 0.0         # radians the eyes can turn left/right of the body
@@ -297,7 +297,7 @@ class World:
         self.fup[idx] = self.fslot[idx]
         self._place_food(idx, torch.ones(n, NF, dtype=torch.bool, device=dev))
         # beings: start away from the creature
-        cand = self._free_points(idx, 9, avoid_lava=False)                      # n,9,2
+        cand = self._free_points(idx, 7 + NP, avoid_lava=False)                 # n,7+NP,2
         d = (cand[:, :6] - self.pos[idx, None, :2]).norm(dim=-1)
         far = d.argmax(-1)
         self.pred[idx] = cand[torch.arange(n, device=dev), far]
@@ -506,7 +506,7 @@ class World:
         tip_hit = torch.zeros_like(push, dtype=torch.bool)
         if WORLD_V >= 5:
             aim_t = a[:, 5] * (math.pi / 2)
-            reach_t = a[:, 6].clamp(min=0) * ARM_MAX
+            reach_t = (a[:, 6] + 1) / 2 * ARM_MAX                                       # muscle at rest = half out
             self.arm_a = self.arm_a + (aim_t - self.arm_a).clamp(-0.4, 0.4)
             r_want = self.arm_r + (reach_t - self.arm_r).clamp(-0.35, 0.35)
             ang = self.head + self.arm_a
@@ -549,16 +549,17 @@ class World:
             self.tip = sh + adir * self.arm_r[:, None]
             tip_v = (self.tip - old_tip).norm(dim=-1) / DT
             self.tip_touch = blocked0.float()
-            # hitting the prey: the tip (arm out > 15 cm, not the bare shoulder) moving faster than 1.2 m/s through it
+            # hitting the prey: the tip (arm out > 15 cm, not the bare shoulder) moving faster than 1 m/s through it
             dpt = (self.prey - self.tip[:, None]).norm(dim=-1)
-            hitp = self.prey_alive & (dpt < PREY_R + TIP_R) & (tip_v[:, None] > 1.2) & (self.arm_r[:, None] > 0.15) & (self.prey_cd == 0) & ~was_dying[:, None]
-            self.prey_hp = self.prey_hp - 0.4 * hitp.float()
+            hitp = self.prey_alive & (dpt < PREY_R + TIP_R) & (tip_v[:, None] > 1.0) & (self.arm_r[:, None] > 0.15) & (self.prey_cd == 0) & ~was_dying[:, None]
+            self.prey_hp = self.prey_hp - 0.55 * hitp.float()                                # two hits kill
             self.prey_cd = torch.where(hitp, torch.full_like(self.prey_cd, 5), (self.prey_cd - 1).clamp(min=0))
             knock = (self.prey - self.tip[:, None]) / dpt[..., None].clamp(min=1e-3)
             self.prey = torch.where(hitp[..., None], self.prey + knock * 0.25, self.prey)
             tip_hit = hitp.any(-1)
             self.tip_touch = torch.maximum(self.tip_touch, tip_hit.float())
-            died = self.prey_alive & (self.prey_hp <= 0)
+            # prey also die of old age now and then (~1 in 600 steps each): carcasses that teach what a prey body is worth
+            died = self.prey_alive & ((self.prey_hp <= 0) | (torch.rand_like(self.prey_hp) < 1 / 600))
             self.prey_alive &= ~died
             self.prey_dead |= died
         else:
@@ -592,11 +593,11 @@ class World:
         reach = (dxy < R_BODY + 0.25) & (fz > p[:, None, 2] - 0.2) & (fz < p[:, None, 2] + 0.9) & self.fup
         first = reach.float().argmax(-1)
         ate = reach.any(-1) & ~was_dying
-        if WORLD_V >= 5:     # a fruit is eaten after 1 s on it, and gives a third of what it did
+        if WORLD_V >= 5:     # a fruit is eaten after 1 s on it, and gives half of what it did
             self.eat_f = torch.where(ate, self.eat_f + 1, torch.zeros_like(self.eat_f))
             ate = ate & (self.eat_f >= 10)
             self.eat_f = torch.where(ate, torch.zeros_like(self.eat_f), self.eat_f)
-            gain_e, gain_h = 0.1, 0.03
+            gain_e, gain_h = 0.15, 0.03
         else:
             gain_e, gain_h = 0.3, 0.05
         ate_kind = torch.where(ate, self.fkind[ar, first], torch.full_like(first, -1))
