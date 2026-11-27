@@ -480,7 +480,7 @@ class World:
             pe = drive if WORLD_V >= 2 else push                 # reversing slowly is easy
             if WORLD_V >= 4:   # ~15 s of full sprint; walking (push < ~0.7) refills
                 effort = 0.0075 * pe * pe + 0.003 * turn.abs() + 0.08 * jump.float()
-                rest = 0.02 * (1 - pe.abs()) + 0.003
+                rest = 0.02 * (1 - pe.abs()) ** 2 + 0.003   # standing: full in ~4 s; half walk ~16 s; ~0.7 push breaks even
             else:
                 effort = 0.015 * pe * pe + 0.004 * turn.abs() + 0.15 * jump.float()
                 rest = 0.012 * (1 - pe.abs()) + 0.002     # walking calmly still recovers a little
