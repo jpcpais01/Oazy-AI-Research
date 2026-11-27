@@ -72,9 +72,13 @@ p{margin:0;color:var(--ink-2)}
 .dds:empty{display:none}
 .ddc{width:6px;height:6px;border-right:1.5px solid var(--ink-2);border-bottom:1.5px solid var(--ink-2);transform:translateY(-2px) rotate(45deg);transition:transform .25s;flex:none}
 .ddb[aria-expanded="true"] .ddc{transform:translateY(1px) rotate(225deg)}
-.ddl{position:absolute;z-index:40;top:calc(100% + 8px);left:0;width:min(360px,calc(100vw - 32px));max-height:min(62vh,520px);overflow:auto;padding:6px;border-radius:18px;
+.ddl{position:absolute;z-index:40;top:calc(100% + 8px);left:0;width:min(360px,calc(100vw - 32px));max-height:min(62vh,520px);overflow-x:hidden;overflow-y:auto;padding:6px 14px 6px 6px;border-radius:18px;
   background:rgba(250,250,255,.97);box-shadow:0 24px 60px -24px rgba(27,33,71,.45),inset 0 0 0 1px rgba(255,255,255,.9);
-  scrollbar-width:thin;overscroll-behavior:contain;animation:ddin .18s ease}
+  scrollbar-width:none;overscroll-behavior:contain;animation:ddin .18s ease}
+.ddl::-webkit-scrollbar{display:none}
+/* a slim glass thumb instead of the native scrollbar */
+.ddt{position:absolute;right:5px;width:4px;border-radius:4px;background:rgba(27,33,71,.16);pointer-events:none;transition:background .2s}
+.ddl:hover .ddt{background:rgba(27,33,71,.3)}
 @keyframes ddin{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
 .ddg{font:500 10px var(--sans);letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3);padding:10px 10px 4px}
 .ddo{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 10px;border-radius:12px;cursor:pointer;font:400 14px var(--sans);color:var(--ink-2)}
@@ -608,7 +612,11 @@ addEventListener('resize',()=>{setMode(mode);setActs(acts)});document.fonts&&doc
 let MINDS=[],ddAct=-1;
 const fmtMind=m=>m.name.split(' · ')[1].replace(/(\d+)min$/,'$1 min');
 const scoreTxt=m=>m.score_s==null?'—':(m.score_lives===64?'≈ ':'')+m.score_s+' s';
-function ddOpen(on){const L=$('mindList');L.hidden=!on;$('mindBtn').setAttribute('aria-expanded',on);if(on){L.style.left='0px';const r=L.getBoundingClientRect(),over=r.right-(innerWidth-16);if(over>0)L.style.left=-Math.min(over,r.left-16)+'px';const o=L.querySelector('[aria-selected="true"]');ddAct=[...L.querySelectorAll('.ddo')].indexOf(o);hl();o&&o.scrollIntoView({block:'center'});L.focus()}}
+function ddThumb(){const L=$('mindList');if(L.hidden)return;let t=L.querySelector('.ddt');if(!t){t=document.createElement('i');t.className='ddt';L.appendChild(t)}
+  const h=L.clientHeight,H=L.scrollHeight;if(H<=h+1){t.style.display='none';return}t.style.display='';
+  const th=Math.max(28,(h-12)*h/H);t.style.height=th+'px';t.style.top=(L.scrollTop+6+(h-12-th)*L.scrollTop/(H-h))+'px'}
+$('mindList').addEventListener('scroll',ddThumb,{passive:true});
+function ddOpen(on){const L=$('mindList');L.hidden=!on;$('mindBtn').setAttribute('aria-expanded',on);if(on){L.style.left='0px';const r=L.getBoundingClientRect(),over=r.right-(innerWidth-16);if(over>0)L.style.left=-Math.min(over,r.left-16)+'px';const o=L.querySelector('[aria-selected="true"]');ddAct=[...L.querySelectorAll('.ddo')].indexOf(o);hl();o&&o.scrollIntoView({block:'center'});L.focus();ddThumb()}}
 function hl(){[...$('mindList').querySelectorAll('.ddo')].forEach((o,i)=>o.classList.toggle('act',i===ddAct))}
 function renderDD(){const L=$('mindList');let html='',run=null;
   MINDS.forEach((m,i)=>{const r=m.name.split(' · ')[0];if(r!==run){run=r;html+=`<div class="ddg">${r}</div>`}
