@@ -180,7 +180,7 @@ class Mind(nn.Module):
 
     ent_squash = False
 
-    def act(self, feat, deterministic=False):
+    def act(self, feat, deterministic=False, per=False):
         out = self.actor(feat).float()
         mean, std = out.chunk(2, -1)
         std = 2 * torch.sigmoid(std / 2) + 0.05
@@ -188,14 +188,14 @@ class Mind(nn.Module):
             return torch.tanh(mean), None
         eps = torch.randn_like(mean)
         pre = mean + std * eps
-        ent = (torch.log(std) + 0.5 * (1 + 1.8378770664093453)).sum(-1)  # Gaussian entropy (pre-tanh)
+        ent = torch.log(std) + 0.5 * (1 + 1.8378770664093453)            # Gaussian entropy (pre-tanh), per muscle
         if self.ent_squash:
             # entropy of the muscles as they really are (after tanh): add log|d tanh/dx|.
             # Without this, "be random" is rewarded by pushing the muscles into saturation
             # (bang-bang, where tanh has no gradient), which also starves the actor of its
             # return gradient: a runaway that ends in thrashing.
-            ent = ent + (2 * (0.6931471805599453 - pre - F.softplus(-2 * pre))).sum(-1)
-        return torch.tanh(pre), ent
+            ent = ent + 2 * (0.6931471805599453 - pre - F.softplus(-2 * pre))
+        return torch.tanh(pre), (ent if per else ent.sum(-1))
 
 
 def kl_cat(p, q):

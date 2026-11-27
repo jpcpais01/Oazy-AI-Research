@@ -612,7 +612,6 @@ class World:
         gain_p = 0.5 + 0.5 * (nrm * u_p[:, None]).sum(-1).clamp(min=0)                # B,3
         bite = (self.pressure >= 10).float()
         press = torch.zeros(B, 4, device=dev)
-        press[:, 2] = self.touch * 6 * 0  # filled below
         blow = self.pressure - bite * 10
         press[:, :3] = bite[:, None] * 10 * gain_p
         press[:, 2] += blow

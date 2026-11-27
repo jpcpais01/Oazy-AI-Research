@@ -140,7 +140,8 @@ def lambda_returns(r, c, v, gamma, lam):
     return torch.stack(out)
 
 
-METRICS = ["sen", "cont", "kl", "var", "cov", "estd", "me", "actor", "critic", "wb", "ret", "ent", "rgoal", "went", "goal", "entw", "gn"]
+METRICS = ["sen", "cont", "kl", "var", "cov", "estd", "me", "actor", "critic", "wb", "ret", "ent", "rgoal", "went", "goal", "entw", "gn",
+           "e_push", "e_turn", "e_jump", "e_grip", "e_gaze"]
 
 
 class Learner:
@@ -169,9 +170,19 @@ class Learner:
             self.opt_will = torch.optim.Adam(list(mind.will.parameters()) + list(mind.will_critic.parameters()),
                                              lr=getattr(args, "lr_will", 3e-4), eps=1e-5, **fused)
         et = getattr(args, "ent_target", None)
-        self.ent_target = None if et is None or et != et else float(et) * 5   # per muscle -> all 5
-        self.log_ent = torch.tensor(math.log(args.ent), device=dev, requires_grad=True)
+        self.ent_per = bool(getattr(args, "ent_per", 0))
+        # one thermostat for the sum of all muscles (v3), or one per muscle (--ent-per 1): with a
+        # single sum the cheap muscles (jump, grip, gaze) can stay random and meet the target
+        # while push and turn slam to their limits
+        self.ent_target = None if et is None or et != et else float(et) * (1 if self.ent_per else ACT)
+        shape = (ACT,) if self.ent_per else ()
+        self.log_ent = torch.full(shape, math.log(args.ent), device=dev, requires_grad=True)
         self.opt_ent = torch.optim.Adam([self.log_ent], lr=1e-2)
+        # how much the world model cares to get each feeling right: the drive is read from
+        # energy, health and hunger (3 of 31 numbers, changing by ~0.001 a step), so in the plain sum
+        # the loud intensity/ear numbers drown them (--body-w > 1 weights those three up)
+        self.sen_w = torch.ones(SENSES, device=dev)
+        self.sen_w[[0, 1, SENSES - 1]] = float(getattr(args, "body_w", 1.0))
         self.ret_lo = torch.zeros((), device=dev)
         self.ret_hi = torch.zeros((), device=dev)
         self.first_call = True
@@ -214,7 +225,7 @@ class Learner:
             prior = m.imagine_z(hs)
             sen_pred = m.sense_head(feat).float()
             cont_logit = m.cont_head(feat).float().squeeze(-1)
-        l_sen = F.mse_loss(sen_pred, sen, reduction="none").sum(-1).mean()
+        l_sen = (F.mse_loss(sen_pred, sen, reduction="none") * self.sen_w).sum(-1).mean()
         l_cont = F.binary_cross_entropy_with_logits(cont_logit, cont)
         dyn = kl_cat(post.detach(), prior)
         rep = kl_cat(post, prior.detach())
@@ -289,7 +300,7 @@ class Learner:
             x = torch.cat([fts[-1], code.to(fts[-1].dtype)], -1) if K else fts[-1]
             xs.append(x)
             with self._autocast():
-                act, ent = m.act(x)
+                act, ent = m.act(x, per=True)                             # N, ACT
                 h = m.step_h(h, z, act)
                 z = m.sample(m.imagine_z(h))
             fts.append(torch.cat([h, z], -1))
@@ -318,8 +329,9 @@ class Learner:
         lo = torch.where(init, qs[0], 0.99 * ret_lo + 0.01 * qs[0])
         hi = torch.where(init, qs[1], 0.99 * ret_hi + 0.01 * qs[1])
         S = torch.clamp(hi - lo, min=1.0)
-        ent = torch.stack(ents)
-        l_actor = -(w * ret / S).mean() - ent_w * (w * ent).mean()
+        ent_m = torch.stack(ents)                                          # H, N, ACT
+        ent = ent_m.sum(-1)
+        l_actor = -(w * ret / S).mean() - (w[..., None] * ent_m * ent_w).sum(-1).mean()
         with self._autocast():
             v = m.critic(x[:-1].detach()).float().squeeze(-1)
         target = ret.detach() / scale
@@ -350,7 +362,8 @@ class Learner:
             l_actor = l_actor + l_will
             l_critic = l_critic + l_wcrit
             rg, went = torch.stack(rgoal).mean(), we.mean()
-        met = torch.stack([l_actor, l_critic, r_ext.mean(), ret.mean() / scale, ent.mean(), rg, went]).detach()
+        met = torch.cat([torch.stack([l_actor, l_critic, r_ext.mean(), ret.mean() / scale, ent.mean(), rg, went]),
+                         ent_m.mean((0, 1))]).detach()
         return l_actor, l_critic, lo.detach(), hi.detach(), met
 
     def update(self, batch):
@@ -385,7 +398,8 @@ class Learner:
         if self.ent_target is not None:
             # a thermostat on randomness: the entropy weight rises when the muscles get too sure
             # (bang-bang habits, circling) and falls when they are too random (thrashing)
-            l_e = self.log_ent * (met_ac[4] - self.ent_target)          # below target -> weight rises
+            e_now = met_ac[7:7 + ACT] if self.ent_per else met_ac[4]
+            l_e = (self.log_ent * (e_now - self.ent_target)).sum()      # below target -> weight rises
             self.opt_ent.zero_grad(set_to_none=True)
             l_e.backward()
             self.opt_ent.step()
@@ -410,8 +424,8 @@ class Learner:
             torch._foreach_lerp_(list(m.slow_critic.parameters()), list(m.critic.parameters()), 0.02)
             if m.intent:
                 torch._foreach_lerp_(list(m.will_slow.parameters()), list(m.will_critic.parameters()), 0.02)
-        met = torch.cat([met_wm, l_me.detach()[None], met_ac, g_un[None], ent_w.detach().float().reshape(1),
-                         gn.detach().float()[None]])
+        met = torch.cat([met_wm, l_me.detach()[None], met_ac[:7], g_un[None], ent_w.detach().float().mean().reshape(1),
+                         gn.detach().float()[None], met_ac[7:]])
         return met, emb, kl
 
 
@@ -539,6 +553,8 @@ def main():
     ap.add_argument("--drive", default="linear", help="linear (energy+health)/2, or homeo (health + 1 - hunger)/2")
     ap.add_argument("--matter", type=float, default=0, help="weight of the eye's 'will I eat / get hurt within 1 s' guess (0 = off)")
     ap.add_argument("--ent-target", type=float, default=float("nan"), help="per-muscle entropy the thermostat holds (nan = fixed --ent)")
+    ap.add_argument("--ent-per", type=int, default=0, help="1 = one entropy thermostat per muscle (target per muscle)")
+    ap.add_argument("--body-w", type=float, default=1.0, help="weight of energy/health/hunger in the senses loss (1 = plain sum)")
     ap.add_argument("--fovea", type=float, default=0, help="0 = plain eye; k = centre k times sharper (same pixels)")
     ap.add_argument("--envs", type=int, default=512)
     ap.add_argument("--batch", type=int, default=256)
