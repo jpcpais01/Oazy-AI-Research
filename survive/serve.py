@@ -145,6 +145,22 @@ class Sim:
         self._probes[path] = pr
         return pr
 
+    def _dream_step(self, m):
+        """The dream step (act, remember, imagine the next moment, its feelings), compiled once per mind."""
+        if getattr(self, "_step_for", None) is not m:
+            def f(h, z):
+                a, _ = m.act(torch.cat([h, z], -1), deterministic=True)
+                h2 = m.step_h(h, z, a)
+                z2 = m.sample(m.imagine_z(h2))
+                ft = torch.cat([h2, z2], -1)
+                return a, h2, z2, torch.sigmoid(m.cont_head(ft)).reshape(-1), wellbeing(m.sense_head(ft)).reshape(-1)
+            try:
+                self._step = torch.compile(f, mode="reduce-overhead", dynamic=False)
+            except Exception:  # noqa
+                self._step = f
+            self._step_for = m
+        return self._step
+
     DREAM_AT = (2, 5, 10, 20, 50, 100)          # imagined pictures at +0.2, 0.5, 1, 2, 5, 10 s
 
     @torch.no_grad()
@@ -156,7 +172,17 @@ class Sim:
         code, ctr = act.code.expand(n, -1).clone(), int(act.ctr[0])
         pics, conts, wbs, mot = [], [], [], []
         pr = getattr(self, "motion", None)
+        step = None if m.intent else self._dream_step(m)
         for k in range(1, steps + 1):
+            if step is not None:                    # one compiled, graph-captured dream step (far fewer kernel launches)
+                a, h2, z2, ct, wbt = step(h, z)
+                if pr is not None:
+                    mot.append((h, z, a.clone()))
+                h, z = h2.clone(), z2.clone()
+                conts.append(ct.clone()); wbs.append(wbt.clone())
+                if k in self.DREAM_AT:
+                    pics.append(m.minds_eye(torch.cat([h[:1], z[:1]], -1)).clamp(0, 1)[0])
+                continue
             x = torch.cat([h, z], -1)
             if m.intent:                            # the will keeps choosing inside the dream too
                 if ctr >= m.intent:
@@ -164,40 +190,54 @@ class Sim:
                 ctr += 1
                 x = torch.cat([x, code], -1)
             a, _ = m.act(x, deterministic=True)
-            if pr is not None:                      # how this dreamed step would move the body
-                xa = torch.cat([h.float(), z.float().reshape(n, -1), a.float()], -1)
-                mot.append(torch.cat([(xa - pr["mu"]) / pr["sd"], torch.ones(n, 1, device=xa.device)], 1) @ pr["W"])
+            if pr is not None:                      # how this dreamed step would move the body (decoded after the loop)
+                mot.append((h, z, a))
             h = m.step_h(h, z, a)
             z = m.sample(m.imagine_z(h))
             ft = torch.cat([h, z], -1)
             conts.append(torch.sigmoid(m.cont_head(ft)).reshape(n))
             wbs.append(wellbeing(m.sense_head(ft)).reshape(n))
             if k in self.DREAM_AT:
-                pic = m.minds_eye(ft[:1]).clamp(0, 1)[0]
-                pics.append(base64.b64encode((pic * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy().tobytes()).decode())
-        alive = torch.cumprod(torch.stack(conts), 0).mean(1)           # chance of still being alive, averaged over dreams
+                pics.append(m.minds_eye(ft[:1]).clamp(0, 1)[0])         # copied to the CPU after the loop, all at once
+        # everything the page needs is gathered on the GPU and copied to the CPU in ONE transfer: each copy
+        # waits for the GPU, which is shared with training, so a dozen small copies made the viewer stall
+        C = torch.cumprod(torch.stack(conts), 0)                         # steps, n: chance each dream is still alive
+        alive = C.mean(1)
         W = torch.stack(wbs)                                             # steps, n
-        q = torch.quantile(W, torch.tensor([0.1, 0.9], device=W.device), dim=1)
-        self.wb_band = [[round(v, 3) for v in q[0].tolist()], [round(v, 3) for v in q[1].tolist()]]
-        wb = [round(v, 3) for v in W.mean(1).tolist()]
+        q = torch.quantile(W.float(), torch.tensor([0.1, 0.9], device=W.device), dim=1)
+        pack = [alive.float(), W.mean(1).float(), q.reshape(-1)]
+        use_paths = bool(mot) and pr is not None and pr["r2"][0] > 0.5 and pr["r2"][2] > 0.5   # forward and turn carry the path; sideways slip is tiny
+        if use_paths:
+            xa = torch.cat([torch.stack([q_[0] for q_ in mot]), torch.stack([q_[1] for q_ in mot]).reshape(len(mot), n, -1),
+                            torch.stack([q_[2] for q_ in mot])], -1).float()   # steps, n, features
+            M = torch.cat([(xa - pr["mu"]) / pr["sd"], torch.ones(*xa.shape[:2], 1, device=xa.device)], -1) @ pr["W"]   # steps, n, (fwd, side, turn)
+            pos = act.w.pos[0, :2].float().expand(n, -1); hd = act.w.head[0].float().expand(n)
+            # integrate all steps at once: heading before each step, then rotate the body-frame steps into the world
+            hds = hd[None] + torch.cat([torch.zeros_like(M[:1, :, 2]), M[:-1, :, 2]], 0).cumsum(0)      # steps, n
+            c, s_ = torch.cos(hds), torch.sin(hds)
+            d = torch.stack([c * M[..., 0] - s_ * M[..., 1], s_ * M[..., 0] + c * M[..., 1]], -1)       # steps, n, 2
+            P = torch.cat([pos[None], pos[None] + d.cumsum(0)], 0).clamp(0.25, L - 0.25).transpose(0, 1)[:, ::2]   # n, 51 (every 0.2 s)
+            die = (C < 0.5).float().argmax(0) + (C.min(0).values >= 0.5).long() * steps
+            pack += [P.reshape(-1), W.mean(0).float(), die.float()]
+        flat = torch.cat(pack).cpu()
+        pic_bytes = (torch.stack(pics) * 255).byte().permute(0, 2, 3, 1).contiguous().cpu().numpy() if pics else []
+        pics = [base64.b64encode(b.tobytes()).decode() for b in pic_bytes]
+        k = 0
+        def take(cnt):
+            nonlocal k
+            out = flat[k:k + cnt]; k += cnt
+            return out
+        alive = take(steps); wbm = take(steps); qq = take(2 * steps).reshape(2, steps)
+        self.wb_band = [[round(v, 3) for v in qq[0].tolist()], [round(v, 3) for v in qq[1].tolist()]]
+        wb = [round(v, 3) for v in wbm.tolist()]
         self.paths = None
-        if mot and pr is not None and pr["r2"][0] > 0.5 and pr["r2"][2] > 0.5:   # forward and turn carry the path; sideways slip is tiny
-            M = torch.stack(mot)                                          # steps, n, (fwd, side, turn)
-            pos = act.w.pos[0, :2].clone().expand(n, -1).clone(); hd = act.w.head[0].clone().expand(n).clone()
-            pts = [pos.clone()]
-            for t in range(M.shape[0]):
-                c, s_ = torch.cos(hd), torch.sin(hd)
-                pos = (pos + torch.stack([c * M[t, :, 0] - s_ * M[t, :, 1], s_ * M[t, :, 0] + c * M[t, :, 1]], -1)).clamp(0.25, L - 0.25)
-                hd = hd + M[t, :, 2]
-                pts.append(pos.clone())
-            P = torch.stack(pts, 1)[:, ::2]                               # n, 51 points (every 0.2 s, 10 s)
-            alive_n = torch.cumprod(torch.stack(conts), 0)                # steps, n
-            die = [int(v) if v < steps else None for v in ((alive_n < 0.5).float().argmax(0) + (alive_n.min(0).values >= 0.5).long() * steps).tolist()]
-            self.paths = dict(pts=[[[round(v, 2) for v in q] for q in P[i].tolist()] for i in range(n)],
-                              wb=[round(v, 3) for v in W.mean(0).tolist()], die=die, r2=pr["r2"])
+        if use_paths:
+            Pc = take(n * P.shape[1] * 2).reshape(n, -1, 2); wbd = take(n); dd = take(n)
+            self.paths = dict(pts=[[[round(v, 2) for v in q_] for q_ in Pc[i].tolist()] for i in range(n)],
+                              wb=[round(v, 3) for v in wbd.tolist()], die=[int(v) if v < steps else None for v in dd.tolist()], r2=pr["r2"])
             # honesty check: where the dreams put it at +1.6 s and +4 s vs where it really is then (live, this life)
-            self._pending.append((self._t, P[:, 8].cpu(), P[:, 20].cpu()))
-            self.paths["err"] = {k: (round(sorted(v)[len(v) // 2], 2) if v else None) for k, v in self._errs.items()}
+            self._pending.append((self._t, Pc[:, 8].clone(), Pc[:, 20].clone()))
+            self.paths["err"] = {k_: (round(sorted(v)[len(v) // 2], 2) if v else None) for k_, v in self._errs.items()}
         return pics, 1 - alive[11].item(), wb, 1 - alive[-1].item()
 
     def _check_paths(self, world, t_life):
@@ -278,17 +318,29 @@ class Sim:
                 self.frames.append(fr)
 
     def state(self, w):
-        r = lambda x: [round(v, 2) for v in x.tolist()]
-        s = w.senses[0]
+        """The world for the page, copied to the CPU in one go (one GPU sync instead of a hundred)."""
+        g = lambda x: x[0].detach().float().reshape(-1)
+        parts = dict(pos=g(w.pos), head=g(w.head), gaze=g(torch.as_tensor(w.gaze, device=w.pos.device).reshape(1, -1)),
+                     bmin=g(w.bmin), bmax=g(w.bmax), bcol=g(w.bcol), bmov=g(w.bmov), bact=g(w.bact), held=g(w.held),
+                     lmin=g(w.lmin), lmax=g(w.lmax), lact=g(w.lact), fpos=g(w.fpos), fkind=g(w.fkind), fup=g(w.fup),
+                     pred=g(w.pred), wand=g(w.wand), strange=g(w.strange), dying=g(w.dying), energy=g(w.energy), health=g(w.health), sen=g(w.senses))
+        flat = torch.cat(list(parts.values())).cpu().tolist()
+        c, k = {}, 0
+        for name, t in parts.items():
+            c[name] = flat[k:k + t.numel()]; k += t.numel()
+        r = lambda xs: [round(v, 2) for v in xs]
+        NB, NL, NF = w.bmin.shape[1], w.lmin.shape[1], w.fpos.shape[1]
+        bmin, bmax, bcol = (c[n] for n in ("bmin", "bmax", "bcol"))
+        sen = c["sen"]
         return dict(
-            pos=r(w.pos[0]), head=round(w.head[0].item(), 3), gaze=round(float(w.gaze[0]), 3), L=L,
-            boxes=[r(torch.cat([w.bmin[0, i], w.bmax[0, i], w.bcol[0, i]])) + [int(w.bmov[0, i]), int(w.held[0] == i)]
-                   for i in range(w.bmin.shape[1]) if w.bact[0, i]],
-            lava=[r(torch.cat([w.lmin[0, i], w.lmax[0, i]])) for i in range(w.lmin.shape[1]) if w.lact[0, i]],
-            food=[r(w.fpos[0, i]) + [int(w.fkind[0, i])] for i in range(w.fpos.shape[1]) if w.fup[0, i]],
-            pred=r(w.pred[0]), wand=r(w.wand[0]), strange=r(w.strange[0]),
-            dying=int(w.dying[0]), energy=round(w.energy[0].clamp(0, 1).item(), 3), health=round(w.health[0].clamp(0, 1).item(), 3),
-            body=r(s[:5]), intensity=r(s[5:21]), ears=r(s[21:29]), stamina=round(float(s[29]), 3), hunger=round(float(s[30]), 3))
+            pos=r(c["pos"]), head=round(c["head"][0], 3), gaze=round(c["gaze"][0], 3), L=L,
+            boxes=[r(bmin[3 * i:3 * i + 3] + bmax[3 * i:3 * i + 3] + bcol[3 * i:3 * i + 3]) + [int(c["bmov"][i]), int(c["held"][0] == i)]
+                   for i in range(NB) if c["bact"][i]],
+            lava=[r(c["lmin"][2 * i:2 * i + 2] + c["lmax"][2 * i:2 * i + 2]) for i in range(NL) if c["lact"][i]],
+            food=[r(c["fpos"][3 * i:3 * i + 3]) + [int(c["fkind"][i])] for i in range(NF) if c["fup"][i]],
+            pred=r(c["pred"]), wand=r(c["wand"]), strange=r(c["strange"]),
+            dying=int(c["dying"][0]), energy=round(min(max(c["energy"][0], 0), 1), 3), health=round(min(max(c["health"][0], 0), 1), 3),
+            body=r(sen[:5]), intensity=r(sen[5:21]), ears=r(sen[21:29]), stamina=round(sen[29], 3), hunger=round(sen[30], 3))
 
     def take(self, since):
         with self.lock:

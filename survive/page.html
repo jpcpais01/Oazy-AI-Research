@@ -591,7 +591,11 @@ async function poll(){
     for(const f of r.frames){queue.push(f);since=Math.max(since,f.seq)}}catch(e){}
   setTimeout(poll,400)}
 let started=false;
-setInterval(()=>{if(!started&&queue.length<30)return;started=true;if(queue.length){show(queue.shift())}else{started=false;$('status').textContent='thinking ahead…'}},100);
+/* playback: 10 frames a second when the buffer is healthy; when the creature's world runs slower than real time
+   (a busy GPU), play a little slower instead of stopping, so it never freezes */
+(function play(){let dt=100;if(!started&&queue.length>=12)started=true;
+  if(started){if(queue.length){show(queue.shift());const q=queue.length;dt=q>40?90:q>20?100:q>10?130:q>4?170:230}else{started=false;$('status').textContent='thinking ahead…'}}
+  setTimeout(play,dt)})();
 
 /* ---------- controls ---------- */
 function setMode(m){mode=m;const seg=$('mode');[...seg.querySelectorAll('button')].forEach(b=>{const on=b.dataset.m===m;b.classList.toggle('on',on);b.setAttribute('aria-checked',on);
