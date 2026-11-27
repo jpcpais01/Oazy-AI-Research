@@ -67,12 +67,15 @@ STAMINA = False     # a fast tiredness pool next to the slow food energy
 METAB = 1.0         # how fast the food energy drains (1 = a full tank lasts 30 s standing still)
 
 
-def set_body(stamina=0, metab=1.0, life_cap=100):
+BACK = 1.0          # top speed walking backward, relative to forward
+
+
+def set_body(stamina=0, metab=1.0, life_cap=100, back_speed=1.0):
     """Stamina: sprinting, turning hard and jumping drain it in seconds; easy moving refills it
     in ~8 s. A tired body is weaker (top speed down to 35%, no jump below 15%); it never kills.
     metab: food-energy drain (0.2 = a full tank lasts 150 s standing still). life_cap in s."""
-    global STAMINA, METAB, MAX_STEPS
-    STAMINA, METAB = bool(stamina), float(metab or 1.0)
+    global STAMINA, METAB, MAX_STEPS, BACK
+    STAMINA, METAB, BACK = bool(stamina), float(metab or 1.0), float(back_speed if back_speed is not None else 1.0)
     MAX_STEPS = int(round(float(life_cap or 100) / DT))
 
 
@@ -311,7 +314,8 @@ class World:
         self.gaze = a[:, 4] * GAZE
         self.head = (self.head + turn * 2.5 * DT) % (2 * math.pi)
         fwd = torch.stack([torch.cos(self.head), torch.sin(self.head)], -1)
-        want = fwd * (push * 2.5 * ((0.35 + 0.65 * self.stamina) if STAMINA else 1.0))[:, None]
+        drive = torch.where(push < 0, push * BACK, push) if BACK != 1.0 else push   # a body built to walk forward
+        want = fwd * (drive * 2.5 * ((0.35 + 0.65 * self.stamina) if STAMINA else 1.0))[:, None]
         ctrl = torch.where(self.on_ground, 0.5, 0.1)[:, None]
         vxy = self.vel[:, :2] + ctrl * (want - self.vel[:, :2])
         vz = torch.where(jump, torch.full_like(self.vel[:, 2], 4.2), self.vel[:, 2]) - 9.8 * DT

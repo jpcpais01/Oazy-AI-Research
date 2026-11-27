@@ -25,6 +25,7 @@ KINDS = ["cube", "stick", "tile"]
 @torch.no_grad()
 def bench_mode(mind, res, dev, mode, lives, chunk=256, seed=777, bf16=True):
     steps_all, food_all, cause_all, cap_all = [], [], [], []
+    mus = torch.zeros(4, device=dev)          # alive steps, |turn| > 0.9, push > 0.05, push < -0.05
     for s in range(0, lives, chunk):
         n = min(chunk, lives - s)
         w = World(n, dev, mode=mode, seed=seed + s)
@@ -37,7 +38,11 @@ def bench_mode(mind, res, dev, mode, lives, chunk=256, seed=777, bf16=True):
             a, _, _ = act.observe_act(bf16)
             act.advance(a)
             done, trunc, c, ate = w.step(a)
-            steps += (alive & (w.dying == 0)).float()   # the light after death is not lifetime
+            live = alive & (w.dying == 0)
+            steps += live.float()   # the light after death is not lifetime
+            lf = live.float()
+            mus += torch.stack([lf.sum(), (lf * (a[:, 1].abs() > 0.9)).sum(), (lf * (a[:, 0] > 0.05)).sum(),
+                                (lf * (a[:, 0] < -0.05)).sum()])
             got = alive & (ate >= 0)
             food[got, ate[got]] += 1
             cause = torch.where(alive & done, c, cause)
@@ -53,6 +58,8 @@ def bench_mode(mind, res, dev, mode, lives, chunk=256, seed=777, bf16=True):
     return dict(lives=lives, steps=round(steps.mean().item(), 1), food=round(food.sum(1).mean().item(), 2),
                 food_by_kind={k: round(v, 2) for k, v in zip(KINDS, food.mean(0).tolist())},
                 cap_pct=round(100 * cap.float().mean().item(), 1),
+                muscles_pct=dict(turn_slammed=round(100 * (mus[1] / mus[0]).item(), 1),
+                                 forward=round(100 * (mus[2] / mus[0]).item(), 1), backward=round(100 * (mus[3] / mus[0]).item(), 1)),
                 deaths_pct={DEATH_CAUSES[i]: round(100 * (cause == i).sum().item() / nd, 1) for i in range(1, len(DEATH_CAUSES))})
 
 

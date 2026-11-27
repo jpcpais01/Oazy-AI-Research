@@ -118,7 +118,7 @@ def maxcos(a, b):
 
 
 class Mind(nn.Module):
-    def __init__(self, res=64, intent=0, g_slots=G_SLOTS, g_cls=G_CLS):
+    def __init__(self, res=64, intent=0, g_slots=G_SLOTS, g_cls=G_CLS, matter=False):
         super().__init__()
         self.res = res
         self.intent = int(intent or 0)
@@ -148,6 +148,8 @@ class Mind(nn.Module):
             for p in self.will_slow.parameters():
                 p.requires_grad_(False)
         self.minds_eye = MindsEye(res)
+        if matter:      # what in this picture matters to the body: will I eat / get hurt within 1 s?
+            self.matter = nn.Sequential(nn.Linear(EMB, 256), nn.LayerNorm(256), nn.SiLU(), nn.Linear(256, 2))
 
     # --- the moment as 32 categorical slots
     @staticmethod
@@ -201,8 +203,21 @@ def kl_cat(p, q):
     return (p * (torch.log(p) - torch.log(q))).sum((-1, -2))
 
 
+DRIVE = "linear"
+
+
+def set_drive(name):
+    """linear: wellbeing = (energy + health) / 2 (all runs before v3).
+    homeo: wellbeing = (health + 1 - hunger) / 2, hunger being the felt -log(energy) sense: a
+    half-full stomach is fine, an almost empty one hurts more and more (like real hunger)."""
+    global DRIVE
+    DRIVE = name or "linear"
+
+
 def wellbeing(senses):
-    """The built-in drive: (energy + health) / 2 from (predicted) body feelings."""
+    """The built-in drive, from (predicted) body feelings."""
+    if DRIVE == "homeo" and senses.shape[-1] > 30:
+        return 0.5 * (senses[..., 1].clamp(0, 1) + 1 - senses[..., 30].clamp(0, 1))
     return 0.5 * (senses[..., 0].clamp(0, 1) + senses[..., 1].clamp(0, 1))
 
 
@@ -227,7 +242,8 @@ def eff_rank(e):
 
 def make_mind(args, res=None):
     """A Mind shaped as the run's args say (args: dict)."""
-    return Mind(res or args["res"], args.get("intent", 0), args.get("g_slots", G_SLOTS), args.get("g_cls", G_CLS))
+    return Mind(res or args["res"], args.get("intent", 0), args.get("g_slots", G_SLOTS), args.get("g_cls", G_CLS),
+                bool(args.get("matter", 0)))
 
 
 def load_mind(mind, sd):

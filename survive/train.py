@@ -19,7 +19,7 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 
-from .model import FEAT, H_DIM, Z_DIM, Mind, eff_rank, gdist, gsample, kl_cat, maxcos, vicreg, wellbeing
+from .model import FEAT, H_DIM, set_drive, Z_DIM, Mind, eff_rank, gdist, gsample, kl_cat, maxcos, vicreg, wellbeing
 from .render import render, set_eyes
 from . import world as _world
 from .world import ACT, NF, SENSES, World
@@ -140,7 +140,7 @@ def lambda_returns(r, c, v, gamma, lam):
     return torch.stack(out)
 
 
-METRICS = ["sen", "cont", "kl", "var", "cov", "estd", "me", "actor", "critic", "wb", "ret", "ent", "rgoal", "went", "goal", "gn"]
+METRICS = ["sen", "cont", "kl", "var", "cov", "estd", "me", "actor", "critic", "wb", "ret", "ent", "rgoal", "went", "goal", "entw", "gn"]
 
 
 class Learner:
@@ -168,6 +168,10 @@ class Learner:
                                              lr=getattr(args, "lr_goal", 3e-4), **fused)
             self.opt_will = torch.optim.Adam(list(mind.will.parameters()) + list(mind.will_critic.parameters()),
                                              lr=getattr(args, "lr_will", 3e-4), eps=1e-5, **fused)
+        et = getattr(args, "ent_target", None)
+        self.ent_target = None if et is None or et != et else float(et) * 5   # per muscle -> all 5
+        self.log_ent = torch.tensor(math.log(args.ent), device=dev, requires_grad=True)
+        self.opt_ent = torch.optim.Adam([self.log_ent], lr=3e-3)
         self.ret_lo = torch.zeros((), device=dev)
         self.ret_hi = torch.zeros((), device=dev)
         self.first_call = True
@@ -225,6 +229,20 @@ class Learner:
             e_all = e_all[torch.randperm(e_all.shape[0], device=e_all.device)[:rows]]
         var, cov, estd = vicreg(e_all)
         loss = l_sen + l_cont + l_kl + a.vic_var * var + a.vic_cov * cov
+        if getattr(m, "matter", None) is not None:
+            # the eye alone guesses what its body will feel within the next second: food eaten
+            # (energy rises only by eating) and harm (health falls). Its own feelings are the
+            # teacher; nothing is named. Pulls food and danger into the eye's features.
+            K = 10
+            e0, e1 = sen[:, :-K, 0], sen[:, K:, 0]
+            h0_, h1 = sen[:, :-K, 1], sen[:, K:, 1]
+            cf = torch.cumsum(first.float(), 1)
+            ok = (cf[:, K:] == cf[:, :-K]).float()                       # same life all the way
+            tgt = torch.stack([(e1 - e0).clamp(min=0) * 3, (h0_ - h1).clamp(min=0) * 3], -1)
+            with self._autocast():
+                pm = m.matter(emb[:, :-K]).float()
+            l_mat = ((pm - tgt) ** 2).sum(-1).mul(ok).sum() / ok.sum().clamp(min=1)
+            loss = loss + getattr(a, "matter", 0.1) * l_mat
         met = torch.stack([l_sen, l_cont, dyn.mean(), var, cov, estd]).detach()
         return loss, hs.detach(), zs.detach(), met, emb.detach(), dyn.detach()
 
@@ -249,7 +267,7 @@ class Learner:
         return l_rec + l_kl, unexpl
 
     # ------------------------------------------------ imagination: actor and critic
-    def _ac(self, hs, zs, cont0, ret_lo, ret_hi, init):
+    def _ac(self, hs, zs, cont0, ret_lo, ret_hi, init, ent_w):
         m, a = self.m, self.a
         st = max(1, int(getattr(a, "start_stride", 1)))
         h, z = hs.flatten(0, 1)[::st], zs.flatten(0, 1)[::st]
@@ -301,7 +319,7 @@ class Learner:
         hi = torch.where(init, qs[1], 0.99 * ret_hi + 0.01 * qs[1])
         S = torch.clamp(hi - lo, min=1.0)
         ent = torch.stack(ents)
-        l_actor = -(w * ret / S).mean() - a.ent * (w * ent).mean()
+        l_actor = -(w * ret / S).mean() - ent_w * (w * ent).mean()
         with self._autocast():
             v = m.critic(x[:-1].detach()).float().squeeze(-1)
         target = ret.detach() / scale
@@ -361,7 +379,18 @@ class Learner:
             l_goal.backward()
             self.opt_goal.step()
         init = torch.tensor(self.first_call, device=hs.device)
-        l_actor, l_critic, self.ret_lo, self.ret_hi, met_ac = self.ac_fn(hs, zs, batch["cont"], self.ret_lo, self.ret_hi, init)
+        ent_w = self.log_ent.exp().detach() if self.ent_target is not None else torch.tensor(a.ent, device=hs.device)
+        l_actor, l_critic, self.ret_lo, self.ret_hi, met_ac = self.ac_fn(hs, zs, batch["cont"], self.ret_lo, self.ret_hi,
+                                                                         init, ent_w)
+        if self.ent_target is not None:
+            # a thermostat on randomness: the entropy weight rises when the muscles get too sure
+            # (bang-bang habits, circling) and falls when they are too random (thrashing)
+            l_e = -(self.log_ent * (met_ac[4] - self.ent_target))
+            self.opt_ent.zero_grad(set_to_none=True)
+            l_e.backward()
+            self.opt_ent.step()
+            with torch.no_grad():
+                self.log_ent.clamp_(math.log(1e-5), math.log(3e-2))
         self.first_call = False
         self.opt_actor.zero_grad(set_to_none=True)
         self.opt_critic.zero_grad(set_to_none=True)
@@ -381,7 +410,8 @@ class Learner:
             torch._foreach_lerp_(list(m.slow_critic.parameters()), list(m.critic.parameters()), 0.02)
             if m.intent:
                 torch._foreach_lerp_(list(m.will_slow.parameters()), list(m.will_critic.parameters()), 0.02)
-        met = torch.cat([met_wm, l_me.detach()[None], met_ac, g_un[None], gn.detach().float()[None]])
+        met = torch.cat([met_wm, l_me.detach()[None], met_ac, g_un[None], ent_w.detach().float().reshape(1),
+                         gn.detach().float()[None]])
         return met, emb, kl
 
 
@@ -504,6 +534,10 @@ def main():
     ap.add_argument("--stamina", type=int, default=0, help="1 = a fast tiredness pool (sprints/jumps drain it, rest refills it)")
     ap.add_argument("--metab", type=float, default=1.0, help="food-energy drain (0.2 = a full tank lasts 150 s standing still)")
     ap.add_argument("--life-cap", type=float, default=100, help="longest life in seconds (a time limit, not a death)")
+    ap.add_argument("--back-speed", type=float, default=1.0, help="top speed walking backward relative to forward (v3: 0.5)")
+    ap.add_argument("--drive", default="linear", help="linear (energy+health)/2, or homeo (health + 1 - hunger)/2")
+    ap.add_argument("--matter", type=float, default=0, help="weight of the eye's 'will I eat / get hurt within 1 s' guess (0 = off)")
+    ap.add_argument("--ent-target", type=float, default=float("nan"), help="per-muscle entropy the thermostat holds (nan = fixed --ent)")
     ap.add_argument("--fovea", type=float, default=0, help="0 = plain eye; k = centre k times sharper (same pixels)")
     ap.add_argument("--envs", type=int, default=512)
     ap.add_argument("--batch", type=int, default=256)
@@ -552,7 +586,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     (out / "args.json").write_text(json.dumps(vars(a), indent=1))
     set_eyes(vars(a))
-    mind = Mind(a.res, a.intent, a.g_slots, a.g_cls).to(dev)
+    mind = Mind(a.res, a.intent, a.g_slots, a.g_cls, matter=a.matter > 0).to(dev)
     mind.ent_squash = bool(a.ent_squash)
     print(f"mind: {sum(p.numel() for p in mind.parameters()) / 1e6:.1f}M parameters, eyes {a.res} px", flush=True)
     world = World(a.envs, dev, mode="train", seed=a.seed, compile=bool(a.compile), rooms=a.rooms)
