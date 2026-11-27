@@ -53,6 +53,14 @@ PREY_R, DASH_R = 0.14, 0.30
 GAZE = 0.0         # radians the eyes can turn left/right of the body
 
 
+ARM_SEEN = True     # False: the arm is not drawn in its eyes (it still feels aim, reach and touch)
+
+
+def set_arm_seen(on):
+    global ARM_SEEN
+    ARM_SEEN = bool(on)
+
+
 def set_gaze(deg):
     global GAZE
     GAZE = math.radians(float(deg or 0))
@@ -970,7 +978,7 @@ class World:
         prey_xy = torch.where(self.prey_alive[..., None], self.prey, hid[:, None])
         fwd = torch.stack([torch.cos(self.head), torch.sin(self.head)], -1)
         sh = self.pos[:, :2] + fwd * R_BODY
-        arm_on = WORLD_V >= 5
+        arm_on = WORLD_V >= 5 and ARM_SEEN
         joints = [sh + (self.tip - sh) * f if arm_on else hid for f in (0.35, 0.7, 1.0)]
         xy = torch.stack([self.pred, self.wand, self.dash, *prey_xy.unbind(1), *joints], 1)          # B,S,2
         rr = [PRED_R, WAND_R, DASH_R] + [PREY_R] * NP + [0.06, 0.06, TIP_R + 0.01]

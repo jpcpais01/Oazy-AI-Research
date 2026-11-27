@@ -45,6 +45,8 @@ def set_eyes(args):
     set_fovea(args.get("fovea", 0))
     set_gaze(args.get("gaze", 0))
     world.set_light(args.get("light", 0))
+    if hasattr(world, "set_arm_seen"):
+        world.set_arm_seen(args.get("arm_seen", 1))
     world.set_body(args.get("stamina", 0), args.get("metab", 1.0), args.get("life_cap", 100), args.get("back_speed", 1.0),
                    args.get("heat", 1), args.get("world_v", 1), args.get("smell", 0))
     from .model import set_drive

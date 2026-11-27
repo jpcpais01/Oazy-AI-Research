@@ -675,6 +675,7 @@ def main():
     ap.add_argument("--smell", type=int, default=0, help="1 = two nostrils smell food")
     ap.add_argument("--init", default="", help="start from this saved mind (to continue a run longer)")
     ap.add_argument("--long-fresh", type=int, default=0, help="1 = long-memory clips start from an empty memory, not the hours-old stored one")
+    ap.add_argument("--arm-seen", type=int, default=1, help="0 = its own arm is invisible to its eyes (still felt)")
     ap.add_argument("--world-v", type=int, default=1, help="4 = v3 + stamina: ~15 s sprint tank, walking refills, full speed until 30%%, tired predator gives up and rests; 2 = audit fixes: crates spawn free, z-aware crate overlap, failed carry drops, "
                     "back pressure sensor, blows/stamina from the real drive, dying body stops; 3 = also the predator lunges when close, rooms half as cluttered")
     ap.add_argument("--long-offer", type=int, default=64, help="clips offered to the long memory every 10 updates")
