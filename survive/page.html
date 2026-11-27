@@ -618,7 +618,8 @@ function show(f){
 /* ---------- feed ---------- */
 async function poll(){
   if(document.hidden){setTimeout(poll,1000);return}
-  try{const r=await (await fetch('/api/frames?since='+since)).json();
+  const want=45-queue.length;if(want<5){setTimeout(poll,400);return}   /* take only what playback needs: the world waits on the server, so play is always real time */
+  try{const r=await (await fetch('/api/frames?since='+since+'&max='+want)).json();
     const key=JSON.stringify(r.cfg);if(key!==cfgKey){cfgKey=key;queue=[];lives=[];trail=[];curLife=null;renderLives()}
     for(const f of r.frames){queue.push(f);since=Math.max(since,f.seq)}}catch(e){}
   setTimeout(poll,400)}
@@ -628,12 +629,12 @@ let started=false;
 /* frames we skip still count: lives that ended, where it walked, its latest dreamed paths */
 function skim(f){if(f.paths)dreamPaths=f.paths;if(f.state)trail.push([f.state.pos[0],f.state.pos[1]]);if(trail.length>240)trail.shift();
   if(f.end){const cause=f.end.startsWith('lived')?'cap':f.end.replace('died: ','');lives.push({n:f.life,t:f.t+1,food:f.food,cause});trail=[];curLife=null;renderLives()}}
-/* playback: a steady 10 frames a second. More than 4 s behind (a hidden tab, a slow moment) = jump to near live, never crawl behind */
+/* playback: a steady 10 frames a second (real time), from a ~4 s cushion the page tops up */
 (function play(){let dt=100;
   if(document.hidden){setTimeout(play,300);return}
   if(!started&&queue.length>=15)started=true;
-  if(started){if(queue.length>40){while(queue.length>12)skim(queue.shift())}
-    if(queue.length){show(queue.shift());const q=queue.length;dt=q>20?92:q>6?100:q>2?120:150}else{started=false;$('status').textContent='thinking ahead…'}}
+  if(started){if(queue.length>150){while(queue.length>30)skim(queue.shift())}
+    if(queue.length){show(queue.shift());const q=queue.length;dt=q>6?100:q>2?115:140}else{started=false;$('status').textContent='thinking ahead…'}}
   setTimeout(play,dt)})();
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)started=false});
 

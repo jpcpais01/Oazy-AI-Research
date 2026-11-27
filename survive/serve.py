@@ -52,8 +52,10 @@ def mind_name(path):
 
 
 class Sim:
-    def __init__(self, runs, dev):
-        self.runs, self.dev = runs, dev
+    def __init__(self, runs, dev, gdev=None):
+        # the little world, the eyes and the creature's moment-to-moment acting run on the CPU (many cores,
+        # no fight with training for the GPU); only the 16 dreams run on the GPU, on a second copy of the mind
+        self.runs, self.dev, self.gdev = runs, dev, gdev
         self.lock = threading.Lock()
         self.frames, self.seq = [], 0
         self.cfg = None
@@ -107,32 +109,40 @@ class Sim:
             self.want = dict(path=path, mode=mode, seed=seed, det=bool(det))
 
     def _load(self, w):
-        ck = torch.load(w["path"], map_location=self.dev)
+        ck = torch.load(w["path"], map_location="cpu")
         res = ck["args"]["res"]
         set_eyes(ck["args"])
         self.world_v = int(ck["args"].get("world_v", 1))
         m = make_mind(ck["args"]).to(self.dev)
         load_mind(m, ck["mind"])
         m.eval()
+        if self.gdev is not None:                 # the dreaming copy
+            mg = make_mind(ck["args"]).to(self.gdev)
+            load_mind(mg, ck["mind"])
+            mg.eval()
+        else:
+            mg = m
+        self.mg = mg
         world = World(1, self.dev, mode=w["mode"], seed=w["seed"])
         act = Actor(m, world, res, self.dev, deterministic=w.get("det", True))   # habit, or with its training wobble
-        self.motion = self._motion_probe(m, res, w["path"])
+        self.motion = self._motion_probe(mg, res, w["path"])
         return m, world, act, res
 
     _probes = {}
 
     @torch.no_grad()
-    def _motion_probe(self, m, res, path, n=64, steps=300):
+    def _motion_probe(self, m, res, path, n=64, steps=150):
         """How does the body move, read from the inner state? A ridge map from (memory h, moment z, chosen
         muscles a) to the body-frame motion of the next step (forward m, sideways m, turn rad), fitted on
         real lives with this mind and scored on held-out lives. Used to turn each dream into a path."""
         if path in self._probes:
             return self._probes[path]
-        w = World(n, self.dev, mode="train", seed=777)
-        act = Actor(m, w, res, self.dev, deterministic=True)
+        pdev = next(m.parameters()).device
+        w = World(n, pdev, mode="train", seed=777)
+        act = Actor(m, w, res, pdev, deterministic=True)
         X, Y = [], []
         for _ in range(steps):
-            a, _, _ = act.observe_act(bf16=self.dev.type == "cuda")
+            a, _, _ = act.observe_act(bf16=pdev.type == "cuda")
             x = torch.cat([act.h.float(), act.z.float().reshape(n, -1), a.float()], -1)
             p0, h0 = w.pos[:, :2].clone(), w.head.clone()
             act.advance(a)
@@ -182,8 +192,9 @@ class Sim:
         """n dreams from the same moment (the moment slots are sampled, so each dream differs). Pictures come
         from the first dream; expected wellbeing and the death chance are averaged over all n, so they show
         what it expects rather than one random dream."""
-        h, z = act.h.expand(n, -1).clone(), act.z.expand(n, -1).clone()
-        code, ctr = act.code.expand(n, -1).clone(), int(act.ctr[0])
+        dd_ = next(m.parameters()).device
+        h, z = act.h.to(dd_).expand(n, -1).clone(), act.z.to(dd_).expand(n, -1).clone()
+        code, ctr = act.code.to(dd_).expand(n, -1).clone(), int(act.ctr[0])
         pics, conts, wbs, mot = [], [], [], []
         pr = getattr(self, "motion", None)
         step = None if m.intent else self._dream_step(m)
@@ -225,7 +236,7 @@ class Sim:
             xa = torch.cat([torch.stack([q_[0] for q_ in mot]), torch.stack([q_[1] for q_ in mot]).reshape(len(mot), n, -1),
                             torch.stack([q_[2] for q_ in mot])], -1).float()   # steps, n, features
             M = torch.cat([(xa - pr["mu"]) / pr["sd"], torch.ones(*xa.shape[:2], 1, device=xa.device)], -1) @ pr["W"]   # steps, n, (fwd, side, turn)
-            pos = act.w.pos[0, :2].float().expand(n, -1); hd = act.w.head[0].float().expand(n)
+            pos = act.w.pos[0, :2].float().to(dd_).expand(n, -1); hd = act.w.head[0].float().to(dd_).expand(n)
             # integrate all steps at once: heading before each step, then rotate the body-frame steps into the world
             hds = hd[None] + torch.cat([torch.zeros_like(M[:1, :, 2]), M[:-1, :, 2]], 0).cumsum(0)      # steps, n
             c, s_ = torch.cos(hds), torch.sin(hds)
@@ -247,7 +258,7 @@ class Sim:
         self.paths = None
         if use_paths:
             Pc = take(n * P.shape[1] * 2).reshape(n, -1, 2); wbd = take(n); dd = take(n)
-            self.paths = dict(pts=[[[round(v, 2) for v in q_] for q_ in Pc[i].tolist()] for i in range(n)],
+            self.paths = dict(pts=[[[round(v, 1) for v in q_] for q_ in Pc[i].tolist()] for i in range(n)],
                               wb=[round(v, 3) for v in wbd.tolist()], die=[int(v) if v < steps else None for v in dd.tolist()], r2=pr["r2"])
             # honesty check: where the dreams put it at +1.6 s and +4 s vs where it really is then (live, this life)
             self._pending.append((self._t, Pc[:, 8].clone(), Pc[:, 20].clone()))
@@ -302,7 +313,10 @@ class Sim:
             fr["eyeL"], fr["eyeR"], fr["png"] = png64(e[..., :3].copy()), png64(e[..., 3:].copy()), 1
             fr["res"] = img.shape[-1]
             if t_life % 3 == 0:
-                fr["dream"], fr["fear"], fr["wb"], fr["fear10"] = self.imagine(m, act)
+                if self.gdev is not None:
+                    fr["dream"], fr["fear"], fr["wb"], fr["fear10"] = self.imagine(self.mg, act)
+                else:                                     # no GPU: fewer, shorter dreams keep the CPU viewer live
+                    fr["dream"], fr["fear"], fr["wb"], fr["fear10"] = self.imagine(m, act, steps=50, n=8)
                 fr["wb_band"] = self.wb_band
                 if self.paths is not None:
                     fr["paths"] = self.paths
@@ -365,12 +379,12 @@ class Sim:
                   if c["prey_alive"][i] or c["prey_dead"][i]],
             arm=dict(a=round(c["arm_a"][0], 3), r=round(c["arm_r"][0], 3), tip=r(c["tip"])))
 
-    def take(self, since):
+    def take(self, since, most=150):
         with self.lock:
             fr = [f for f in self.frames if f["seq"] > since]
             # drop what the page has already taken
             self.frames = [f for f in self.frames if f["seq"] > since]
-            return fr[:150]
+            return fr[:max(0, most)]
 
 
 def about(path):
@@ -411,8 +425,9 @@ def main():
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--device", default="cuda")
     a = ap.parse_args()
-    dev = torch.device(a.device if torch.cuda.is_available() else "cpu")
-    sim = Sim(a.runs, dev)
+    torch.set_num_threads(8)
+    gdev = torch.device(a.device) if (a.device != "cpu" and torch.cuda.is_available()) else None
+    sim = Sim(a.runs, torch.device("cpu"), gdev)
     ms = sim.minds()
     if ms:
         sim.select(ms[-1]["path"], "test", 1)
@@ -444,7 +459,7 @@ def main():
                 elif u.path == "/api/minds":
                     self.send(dict(minds=sim.minds(), cfg=sim.cfg))
                 elif u.path == "/api/frames":
-                    self.send(dict(frames=sim.take(int(q.get("since", -1))), cfg=sim.cfg))
+                    self.send(dict(frames=sim.take(int(q.get("since", -1)), int(q.get("max", 150))), cfg=sim.cfg))
                 elif u.path == "/api/select":
                     sim.select(q["mind"], q.get("mode", "test"), int(q.get("seed", int(time.time()) % 100000)),
                                det=q.get("act", "habit") != "wobble")
