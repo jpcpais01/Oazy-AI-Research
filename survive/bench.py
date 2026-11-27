@@ -19,7 +19,7 @@ from .train import Actor
 from . import world as _world
 from .world import DEATH_CAUSES, World
 
-KINDS = ["cube", "stick", "tile"]
+KINDS = ["cube", "stick", "tile", "prey"]
 
 
 @torch.no_grad()
@@ -32,7 +32,7 @@ def bench_mode(mind, res, dev, mode, lives, chunk=256, seed=777, bf16=True):
         act = Actor(mind, w, res, dev, deterministic=True)
         alive = torch.ones(n, dtype=torch.bool, device=dev)
         steps = torch.zeros(n, device=dev)
-        food = torch.zeros(n, 3, device=dev)
+        food = torch.zeros(n, 4, device=dev)
         cause = torch.zeros(n, dtype=torch.long, device=dev)
         for _ in range(_world.MAX_STEPS + _world.LIGHT):
             a, _, _ = act.observe_act(bf16)

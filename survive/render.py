@@ -105,7 +105,7 @@ def _render_chunk(sc, H):
     t_box, bi = tb.min(-1)                                                             # B,R
     b_axis = axis.gather(-1, bi[..., None]).squeeze(-1)
     # spheres
-    c = torch.cat([sc["sph"][..., :2], sc["sph_r"][..., None]], -1)[:, None]          # B,1,S,3
+    c = torch.cat([sc["sph"][..., :2], sc.get("sph_z", sc["sph_r"])[..., None]], -1)[:, None]          # B,1,S,3
     oc = o[:, :, None] - c
     bq = (oc * d[:, :, None]).sum(-1)
     cq = (oc * oc).sum(-1) - sc["sph_r"][:, None] ** 2

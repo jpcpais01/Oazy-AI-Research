@@ -43,9 +43,13 @@ MAX_STEPS = 1000    # 100 s life cap
 NB = 24             # box slots (static boxes + crates)
 NL = 7              # lava slots
 NF = 8              # food slots
-SENSES = 33         # 5 body + 16 intensity + 8 ears + stamina + hunger + 2 nostrils (smell; 0 unless set_body(smell=1))
+SENSES = 36         # 5 body + 16 intensity + 8 ears + stamina + hunger + 2 nostrils (smell; 0 unless set_body(smell=1))
+                    # + arm aim, arm reach, arm tip touch (0 unless world_v >= 5)
 BODY = 5
-ACT = 5            # push, turn, jump, grip, gaze (gaze is ignored unless set_gaze(deg) > 0)
+ACT = 7            # push, turn, jump, grip, gaze (ignored unless set_gaze(deg) > 0), arm aim, arm reach (world_v >= 5)
+NP = 2             # small prey per world (world_v >= 5)
+ARM_MAX, ARM_H, TIP_R = 1.0, 0.25, 0.07     # arm: reach (m) beyond the shoulder, height above the feet, tip radius
+PREY_R, DASH_R = 0.14, 0.30
 GAZE = 0.0         # radians the eyes can turn left/right of the body
 
 
@@ -98,7 +102,7 @@ FOOD_COL = torch.tensor([[0.95, 0.35, 0.25], [0.95, 0.85, 0.20], [0.40, 0.95, 0.
 PRED_R, WAND_R, STRANGE_HALF = 0.35, 0.30, 0.30
 PRED_SEE, PRED_HEAR, PRED_FORGET = 6.0, 2.0, 50    # sight range (m, needs a clear line), hearing range, memory (steps)
 
-DEATH_CAUSES = ["alive", "hunger", "lava", "predator", "strange", "blows"]
+DEATH_CAUSES = ["alive", "hunger", "lava", "predator", "strange", "blows", "dasher"]
 
 
 @dataclass
@@ -164,8 +168,17 @@ class World:
         self.pred_mem, self.pred_mem_t = z(B, 2), z(B, dt=torch.long)   # where/when it last noticed the creature
         self.pred_dir, self.pred_side = z(B), z(B)                         # patrol heading; which way it goes around
         self.held = torch.full((B,), -1, device=self.dev, dtype=torch.long)
+        # world_v 5: the arm, the small prey (alive -> carcass), the dasher, slow eating
+        self.arm_a, self.arm_r, self.tip, self.tip_touch = z(B), z(B), z(B, 2), z(B)
+        self.prey, self.prey_dir, self.prey_hp = z(B, NP, 2), z(B, NP), z(B, NP)
+        self.prey_alive, self.prey_dead = z(B, NP, dt=torch.bool), z(B, NP, dt=torch.bool)
+        self.prey_timer, self.prey_cd, self.prey_stam = z(B, NP, dt=torch.long), z(B, NP, dt=torch.long), z(B, NP)
+        self.eat_f, self.eat_p = z(B, dt=torch.long), z(B, dt=torch.long)
+        self.dash, self.dash_dir, self.dash_stam = z(B, 2), z(B), z(B)
+        self.dash_on, self.dash_cd = z(B, dt=torch.bool), z(B, dt=torch.long)
         self.floor_col, self.wall_col = z(B, 2, 3), z(B, 4, 3)
         self.pred_col, self.wand_col, self.strange_col = z(B, 3), z(B, 3), z(B, 3)
+        self.dash_col, self.prey_col = z(B, 3), z(B, 3)
         # per-step outputs
         self.touch, self.pressure = z(B), z(B)
         self.bump_back = z(B, dt=torch.bool)
@@ -283,8 +296,8 @@ class World:
         self.fup[idx] = self.fslot[idx]
         self._place_food(idx, torch.ones(n, NF, dtype=torch.bool, device=dev))
         # beings: start away from the creature
-        cand = self._free_points(idx, 6, avoid_lava=False)                      # n,6,2
-        d = (cand - self.pos[idx, None, :2]).norm(dim=-1)
+        cand = self._free_points(idx, 9, avoid_lava=False)                      # n,9,2
+        d = (cand[:, :6] - self.pos[idx, None, :2]).norm(dim=-1)
         far = d.argmax(-1)
         self.pred[idx] = cand[torch.arange(n, device=dev), far]
         self.wand[idx] = cand[:, 0]
@@ -302,6 +315,26 @@ class World:
         self.pred_side[idx] = torch.where(self._rand(n) < 0.5, -1.0, 1.0)
         self.touch[idx] = 0
         self.pressure[idx] = 0
+        # world_v 5 beings (elsewhere they wait far outside the room, unseen and unheard)
+        self.dash_col[idx] = torch.tensor([0.80, 0.22, 0.16], device=dev) * _jit(g, (n, 3), dev)
+        self.prey_col[idx] = torch.tensor([0.92, 0.76, 0.52], device=dev) * _jit(g, (n, 3), dev)
+        self.arm_a[idx], self.arm_r[idx], self.tip_touch[idx] = 0, 0, 0
+        self.tip[idx] = self.pos[idx, :2]
+        self.eat_f[idx], self.eat_p[idx] = 0, 0
+        on5 = WORLD_V >= 5
+        far2 = torch.full((n, 2), -50.0, device=dev)
+        self.dash[idx] = cand[:, 6] if on5 else far2
+        self.dash_dir[idx] = self._rand(n) * 2 * math.pi
+        self.dash_stam[idx] = 1.0
+        self.dash_on[idx] = False
+        self.dash_cd[idx] = 0
+        self.prey[idx] = cand[:, 7:7 + NP] if on5 else far2[:, None].expand(n, NP, 2).clone()
+        self.prey_dir[idx] = self._rand(n, NP) * 2 * math.pi
+        self.prey_hp[idx] = 1.0
+        self.prey_alive[idx] = on5
+        self.prey_dead[idx] = False
+        self.prey_timer[idx], self.prey_cd[idx] = 0, 0
+        self.prey_stam[idx] = 1.0
         self._sense(self.pos)
 
     def _place_food(self, idx, which, gen=True):
@@ -465,6 +498,70 @@ class World:
             self.bmin[..., 2] = nz
             self.bmax[..., 2] = nz + hgt
 
+        # --- the arm (world_v 5): aim within +-90 deg of the body, reach 0..1 m; the tip pushes crates
+        # like the body does, is stopped by walls and fixed blocks, and hurts the small prey when it hits fast
+        reach_cost = torch.zeros_like(push)
+        tip_hit = torch.zeros_like(push, dtype=torch.bool)
+        if WORLD_V >= 5:
+            aim_t = a[:, 5] * (math.pi / 2)
+            reach_t = a[:, 6].clamp(min=0) * ARM_MAX
+            self.arm_a = self.arm_a + (aim_t - self.arm_a).clamp(-0.4, 0.4)
+            r_want = self.arm_r + (reach_t - self.arm_r).clamp(-0.35, 0.35)
+            ang = self.head + self.arm_a
+            adir = torch.stack([torch.cos(ang), torch.sin(ang)], -1)
+            sh = p[:, :2] + fwd * R_BODY                                                   # shoulder
+            zt = p[:, 2] + ARM_H
+            tall = self.bact & (self.bmax[..., 2] > zt[:, None]) & (self.bmin[..., 2] < zt[:, None])
+            r_new = torch.zeros_like(r_want)
+            done_ = torch.zeros_like(r_want, dtype=torch.bool)
+            blocked0 = torch.zeros_like(done_)
+            for j_, rc in enumerate([r_want, torch.minimum(r_want, self.arm_r), torch.minimum(r_want, self.arm_r) * 0.5, torch.zeros_like(r_want)]):
+                tp = sh + adir * rc[:, None]
+                inb = ((tp[:, None] > self.bmin[..., :2] - TIP_R) & (tp[:, None] < self.bmax[..., :2] + TIP_R)).all(-1) & tall
+                # a crate in the way moves (if nothing stops it); anything else stops the tip
+                lo, hi = self.bmin[..., :2] - TIP_R, self.bmax[..., :2] + TIP_R
+                pen = torch.cat([tp[:, None] - lo, hi - tp[:, None]], -1)
+                kk = pen.argmin(-1)
+                amt = pen.gather(-1, kk[..., None]).squeeze(-1)
+                dirs = torch.tensor([[-1., 0], [0, -1.], [1., 0], [0, 1.]], device=dev)
+                cm = -dirs[kk] * amt[..., None] * (inb & self.bmov)[..., None]               # crate shift
+                nmin, nmax = self.bmin[..., :2] + cm, self.bmax[..., :2] + cm
+                cb = (nmin < 0.02).any(-1) | (nmax > L - 0.02).any(-1)
+                ov = ((nmin[:, :, None] < self.bmax[:, None, :, :2]) & (nmax[:, :, None] > self.bmin[:, None, :, :2])).all(-1)
+                ov &= (self.bmin[:, :, None, 2] < self.bmax[:, None, :, 2] - 1e-3) & (self.bmax[:, :, None, 2] > self.bmin[:, None, :, 2] + 1e-3)
+                ov &= self.bact[:, None, :] & ~torch.eye(NB, dtype=torch.bool, device=dev)[None]
+                cb |= ov.any(-1)
+                stop = (inb & (~self.bmov | cb)).any(-1) | (tp < TIP_R).any(-1) | (tp > L - TIP_R).any(-1)
+                take = ~done_ & ~stop
+                if j_ == 0:
+                    blocked0 = stop
+                    mv = take[:, None] & inb & self.bmov
+                    self.bmin[..., :2] = torch.where(mv[..., None], nmin, self.bmin[..., :2])
+                    self.bmax[..., :2] = torch.where(mv[..., None], nmax, self.bmax[..., :2])
+                    blocked0 = blocked0 | mv.any(-1)
+                r_new = torch.where(take, rc, r_new)
+                done_ |= take
+            old_tip = self.tip
+            reach_cost = (r_new - self.arm_r).abs()
+            self.arm_r = r_new
+            self.tip = sh + adir * self.arm_r[:, None]
+            tip_v = (self.tip - old_tip).norm(dim=-1) / DT
+            self.tip_touch = blocked0.float()
+            # hitting the prey: the tip moving faster than 1.2 m/s through it
+            dpt = (self.prey - self.tip[:, None]).norm(dim=-1)
+            hitp = self.prey_alive & (dpt < PREY_R + TIP_R) & (tip_v[:, None] > 1.2) & (self.prey_cd == 0) & ~was_dying[:, None]
+            self.prey_hp = self.prey_hp - 0.4 * hitp.float()
+            self.prey_cd = torch.where(hitp, torch.full_like(self.prey_cd, 5), (self.prey_cd - 1).clamp(min=0))
+            knock = (self.prey - self.tip[:, None]) / dpt[..., None].clamp(min=1e-3)
+            self.prey = torch.where(hitp[..., None], self.prey + knock * 0.25, self.prey)
+            tip_hit = hitp.any(-1)
+            self.tip_touch = torch.maximum(self.tip_touch, tip_hit.float())
+            died = self.prey_alive & (self.prey_hp <= 0)
+            self.prey_alive &= ~died
+            self.prey_dead |= died
+        else:
+            self.tip = p[:, :2]
+
         # --- metabolism
         d0 = METAB / 300
         speed2 = (self.vel[:, :2] ** 2).sum(-1)
@@ -472,14 +569,14 @@ class World:
             moving = ((push.abs() > 0.05) | (turn.abs() > 0.05)).float()
             move = 0.2 * moving + 0.15 * push.abs() + 0.05 * turn.abs() + 0.0375 * speed2
             move = torch.where(holding, 2 * move + 0.1, move)
-            cost = d0 * (1 + move) + 12 * d0 * jump.float()
+            cost = d0 * (1 + move) + 12 * d0 * jump.float() + 3 * d0 * reach_cost
         else:
             cost = torch.full_like(push, d0)
         self.energy = self.energy - cost
         if STAMINA:
             pe = drive if WORLD_V >= 2 else push                 # reversing slowly is easy
             if WORLD_V >= 4:   # ~15 s of full sprint; walking (push < ~0.7) refills
-                effort = 0.0075 * pe * pe + 0.003 * turn.abs() + 0.08 * jump.float()
+                effort = 0.0075 * pe * pe + 0.003 * turn.abs() + 0.08 * jump.float() + 0.02 * reach_cost
                 rest = 0.02 * (1 - pe.abs()) ** 2 + 0.003   # standing: full in ~4 s; half walk ~16 s; ~0.7 push breaks even
             else:
                 effort = 0.015 * pe * pe + 0.004 * turn.abs() + 0.15 * jump.float()
@@ -493,9 +590,16 @@ class World:
         reach = (dxy < R_BODY + 0.25) & (fz > p[:, None, 2] - 0.2) & (fz < p[:, None, 2] + 0.9) & self.fup
         first = reach.float().argmax(-1)
         ate = reach.any(-1) & ~was_dying
+        if WORLD_V >= 5:     # a fruit is eaten after 1 s on it, and gives a third of what it did
+            self.eat_f = torch.where(ate, self.eat_f + 1, torch.zeros_like(self.eat_f))
+            ate = ate & (self.eat_f >= 10)
+            self.eat_f = torch.where(ate, torch.zeros_like(self.eat_f), self.eat_f)
+            gain_e, gain_h = 0.1, 0.03
+        else:
+            gain_e, gain_h = 0.3, 0.05
         ate_kind = torch.where(ate, self.fkind[ar, first], torch.full_like(first, -1))
-        self.energy = torch.where(ate, (self.energy + 0.3).clamp(max=1.0), self.energy)
-        self.health = torch.where(ate, (self.health + 0.05).clamp(max=1.0), self.health)
+        self.energy = torch.where(ate, (self.energy + gain_e).clamp(max=1.0), self.energy)
+        self.health = torch.where(ate, (self.health + gain_h).clamp(max=1.0), self.health)
         eaten = torch.zeros_like(self.fup)
         eaten[ar, first] = ate
         self.fup &= ~eaten
@@ -503,6 +607,27 @@ class World:
         respawn = self.fslot & ~self.fup & (self.ftimer == 0)
         self._place_food(None, respawn, gen=False)      # all envs, only the slots due (no sync)
         self.fup |= respawn
+        if WORLD_V >= 5:     # a carcass is eaten after 3 s on it: 5 fruits' worth
+            dc = (self.prey - p[:, None, :2]).norm(dim=-1)
+            atc = self.prey_dead & (dc < R_BODY + 0.3) & (p[:, None, 2] < 0.3)
+            on_c = atc.any(-1) & ~was_dying
+            self.eat_p = torch.where(on_c, self.eat_p + 1, torch.zeros_like(self.eat_p))
+            ate_p = on_c & (self.eat_p >= 30)
+            self.eat_p = torch.where(ate_p, torch.zeros_like(self.eat_p), self.eat_p)
+            cj = torch.where(atc, dc, torch.full_like(dc, 1e9)).argmin(-1)
+            gone = torch.zeros_like(self.prey_dead)
+            gone[ar, cj] = ate_p
+            self.energy = torch.where(ate_p, (self.energy + 0.5).clamp(max=1.0), self.energy)
+            self.health = torch.where(ate_p, (self.health + 0.15).clamp(max=1.0), self.health)
+            ate_kind = torch.where(ate_p, torch.full_like(ate_kind, 3), ate_kind)
+            self.prey_dead &= ~gone
+            self.prey_timer = torch.where(gone, torch.full_like(self.prey_timer, 300), (self.prey_timer - 1).clamp(min=0))
+            back = ~self.prey_alive & ~self.prey_dead & (self.prey_timer == 0)
+            newp = self._free_points(None, NP, gen=False)
+            self.prey = torch.where(back[..., None], newp, self.prey)
+            self.prey_hp = torch.where(back, torch.ones_like(self.prey_hp), self.prey_hp)
+            self.prey_stam = torch.where(back, torch.ones_like(self.prey_stam), self.prey_stam)
+            self.prey_alive |= back
 
         # --- beings
         self._move_beings(p)
@@ -516,6 +641,14 @@ class World:
         bite = (dpred < R_BODY + PRED_R + 0.05) & (p[:, 2] < 0.6) & (self.bite_cd == 0)
         self.bite_cd = torch.where(bite, torch.full_like(self.bite_cd, 10), (self.bite_cd - 1).clamp(min=0))
         dmg_bite = bite.float() * 0.34
+        dmg_dash = torch.zeros_like(dmg_bite)
+        dbite = torch.zeros_like(bite)
+        if WORLD_V >= 5:     # the dasher bites once and runs off
+            ddash = (self.dash - p[:, :2]).norm(dim=-1)
+            dbite = self.dash_on & (ddash < R_BODY + DASH_R + 0.05) & (p[:, 2] < 0.6) & (self.dash_cd == 0)
+            self.dash_cd = torch.where(dbite, torch.full_like(self.dash_cd, 10), (self.dash_cd - 1).clamp(min=0))
+            self.dash_on &= ~dbite
+            dmg_dash = dbite.float() * 0.3
         # strange being: harmless at first, then drains while the creature stays near
         dstr = (self.strange - p[:, :2]).norm(dim=-1)
         near = (dstr < 1.5) & (p[:, 2] < 1.0)
@@ -523,10 +656,10 @@ class World:
         dmg_str = (self.near_strange > 30).float() * 0.02
         # blows: pressure above a threshold hurts
         pf = drive.abs() if WORLD_V >= 2 else push.abs()          # a bump hurts as hard as the body really pushed
-        self.pressure = self.touch * 6 * pf + bite.float() * 10
+        self.pressure = self.touch * 6 * pf + (bite | dbite).float() * 10
         self.bump_back = (push < 0) & (WORLD_V >= 2)
         dmg_blow = (self.touch * 6 * pf - 5).clamp(min=0) * 0.01
-        dmg = dmg_lava + dmg_bite + dmg_str + dmg_blow
+        dmg = dmg_lava + dmg_bite + dmg_str + dmg_blow + dmg_dash
         self.health = (self.health - dmg + 0.001).clamp(max=1.0)
 
         if LIGHT:                                # the dying keep the body they died with
@@ -537,7 +670,7 @@ class World:
         killed = self.health <= 0
         done = starve | killed
         # cause of death: the biggest harm this step if killed, else hunger
-        harms = torch.stack([dmg_lava, dmg_bite, dmg_str, dmg_blow], -1)
+        harms = torch.stack([dmg_lava, dmg_bite, dmg_str, dmg_blow, dmg_dash], -1)
         cause = torch.where(killed, harms.argmax(-1) + 2, cause)
         cause = torch.where(starve & ~killed, torch.ones_like(cause), cause)
         if LIGHT:                                # death starts the light; the life ends after it
@@ -629,6 +762,8 @@ class World:
         step = torch.stack([torch.cos(head), torch.sin(head)], -1) * speed[:, None]
         step = torch.where((hunting & (d <= 0.55))[:, None], torch.zeros_like(step), step)
         self.pred = self._slide(self.pred + step, PRED_R)
+        if WORLD_V >= 5:
+            self._move_dasher_prey(p)
         # wanderer: a slow random walk
         self.wand_dir = self.wand_dir + (torch.rand(B, device=self.dev) - 0.5) * 0.8
         w = torch.stack([torch.cos(self.wand_dir), torch.sin(self.wand_dir)], -1) * 0.8 * DT
@@ -643,6 +778,53 @@ class World:
         arrived = d.squeeze(-1) < 0.5
         new_goal = self._free_points(None, 1, avoid_lava=False, gen=False)[:, 0]
         self.strange_goal = torch.where(arrived[:, None], new_goal, self.strange_goal)
+
+    def _move_dasher_prey(self, p):
+        B, dev = self.B, self.dev
+        # dasher: roams fast and erratically and mostly ignores the creature; now and then, when it is
+        # within 4 m in sight and the dasher is rested, it locks on and sprints (3.4 m/s, faster than
+        # the creature's best) for up to ~3 s, then gives up (tired, by chance, or after one bite)
+        to = p[:, :2] - self.dash
+        d = to.norm(dim=-1).clamp(min=1e-4)
+        seen = (d < 4.0) & self._clear(self.dash, p[:, :2]) & (p[:, 2] < 1.0)
+        start = ~self.dash_on & seen & (self.dash_stam > 0.8) & (torch.rand(B, device=dev) < 0.03)
+        self.dash_on |= start
+        quit_ = (self.dash_stam < 0.05) | (torch.rand(B, device=dev) < 0.015)
+        self.dash_on &= ~quit_
+        self.dash_stam = (self.dash_stam + torch.where(self.dash_on, -0.03, 0.006)).clamp(0, 1)
+        self.dash_dir = self.dash_dir + (torch.rand(B, device=dev) - 0.5) * 1.2
+        head = torch.where(self.dash_on, torch.atan2(to[:, 1], to[:, 0]), self.dash_dir)
+        sp = torch.where(self.dash_on, 3.4, 1.4) * DT
+        step = torch.stack([torch.cos(head), torch.sin(head)], -1) * sp[:, None]
+        step = torch.where((self.dash_on & (d <= 0.6))[:, None], torch.zeros_like(step), step)
+        nd = self._slide(self.dash + step, DASH_R)
+        stuck = (nd - (self.dash + step)).norm(dim=-1) > 1e-3
+        self.dash_dir = torch.where(stuck & ~self.dash_on, self.dash_dir + math.pi * 0.7, self.dash_dir)
+        self.dash = nd
+        # small prey: wanders; flees when the creature is within 2 m (2.2 m/s while its stamina lasts,
+        # ~4 s); a carcass stays where it fell
+        for j in range(NP):
+            q = self.prey[:, j]
+            away = q - p[:, :2]
+            da = away.norm(dim=-1).clamp(min=1e-4)
+            flee = self.prey_alive[:, j] & (da < 2.0)
+            self.prey_dir[:, j] = self.prey_dir[:, j] + (torch.rand(B, device=dev) - 0.5) * 0.9
+            fh = torch.atan2(away[:, 1], away[:, 0]) + (torch.rand(B, device=dev) - 0.5) * 0.8
+            hd = torch.where(flee, fh, self.prey_dir[:, j])
+            st = self.prey_stam[:, j]
+            sp = torch.where(flee, 2.2 * (0.35 + 0.65 * st), torch.full_like(st, 0.6)) * DT
+            self.prey_stam[:, j] = (st + torch.where(flee, -0.025, 0.008)).clamp(0, 1)
+            step = torch.stack([torch.cos(hd), torch.sin(hd)], -1) * sp[:, None]
+            nq = self._slide(q + step, PREY_R)
+            # the creature's body pushes it aside
+            off = nq - p[:, :2]
+            do = off.norm(dim=-1).clamp(min=1e-4)
+            push_out = do < R_BODY + PREY_R
+            nq = torch.where(push_out[:, None], p[:, :2] + off / do[:, None] * (R_BODY + PREY_R), nq)
+            nq = self._slide(nq, PREY_R)
+            stuck = (nq - (q + step)).norm(dim=-1) > 1e-3
+            self.prey_dir[:, j] = torch.where(stuck & ~flee, self.prey_dir[:, j] + math.pi * 0.7, self.prey_dir[:, j])
+            self.prey[:, j] = torch.where(self.prey_alive[:, j, None], nq, q)
 
     # ------------------------------------------------------------------ senses
     def _sense(self, p):
@@ -683,6 +865,11 @@ class World:
         hum = torch.zeros(B, 4, device=dev)
         hum[:, :3] = 2.0 / (1 + dp[:, None] ** 2) * gain_p
         hum[:, 3] = 2.0 / (1 + dp ** 2 + p[:, 2] ** 2) * 0.5
+        if WORLD_V >= 5:     # the dasher hums too, more softly
+            to_d = self.dash - p[:, :2]
+            dd_ = to_d.norm(dim=-1).clamp(min=1e-3)
+            gain_d = 0.5 + 0.5 * (nrm * (to_d / dd_[:, None])[:, None]).sum(-1).clamp(min=0)
+            hum[:, :3] += 1.2 / (1 + dd_[:, None] ** 2) * gain_d
         to_s = self.strange - p[:, :2]
         ds = to_s.norm(dim=-1).clamp(min=1e-3)
         gain_s = 0.5 + 0.5 * (nrm * (to_s / ds[:, None])[:, None]).sum(-1).clamp(min=0)
@@ -695,6 +882,11 @@ class World:
         srcs = [(self.pred, torch.tensor([1.0, 0.6, 0.1, 0.0], device=dev) * 3),
                 (self.wand, torch.tensor([0.0, 0.5, 0.8, 0.2], device=dev) * 2),
                 (self.strange, torch.tensor([0.0, 0.0, 0.3, 1.0], device=dev) * 2)]
+        if WORLD_V >= 5:     # the dasher: low and high together; the prey: a faint mid-high squeak while alive
+            srcs.append((self.dash, torch.tensor([0.8, 0.0, 0.0, 0.8], device=dev) * 2.5))
+            for j in range(NP):
+                srcs.append((torch.where(self.prey_alive[:, j, None], self.prey[:, j], torch.full_like(self.prey[:, j], -50.0)),
+                             torch.tensor([0.0, 0.0, 1.0, 0.0], device=dev) * 0.6))
         ear_pos = torch.stack([p[:, :2] + left * 0.15, p[:, :2] - left * 0.15], 1)
         ear_n = torch.stack([left, -left], 1)
         for src, spec in srcs:
@@ -720,8 +912,16 @@ class World:
             side = torch.stack([left, -left], 1)[:, :, None]                                 # B,2,1,2
             gain = 0.5 + 0.5 * (u * side).sum(-1).clamp(min=0) + 0.25 * (u * fwd[:, None, None]).sum(-1).clamp(min=0)
             nose = (2.0 * gain / (1 + d ** 2) * self.fup[:, None].float()).sum(-1)
+            if WORLD_V >= 5:   # prey smells too; a carcass twice as strong
+                to = self.prey[:, None, :, :2] - sn[:, :, None]
+                d = to.norm(dim=-1).clamp(min=0.05)
+                u = to / d[..., None]
+                gain = 0.5 + 0.5 * (u * side).sum(-1).clamp(min=0) + 0.25 * (u * fwd[:, None, None]).sum(-1).clamp(min=0)
+                w_ = (self.prey_alive.float() + 2 * self.prey_dead.float())[:, None]
+                nose = nose + (2.0 * gain / (1 + d ** 2) * w_).sum(-1)
         self.senses = torch.cat([body, torch.log1p(intensity.flatten(1)), torch.log1p(ears.flatten(1)),
-                                 stam[:, None], hunger[:, None], torch.log1p(nose)], -1)
+                                 stam[:, None], hunger[:, None], torch.log1p(nose),
+                                 (self.arm_a / (math.pi / 2))[:, None], (self.arm_r / ARM_MAX)[:, None], self.tip_touch[:, None]], -1)
 
     # ------------------------------------------------------------------ for the renderer
     def scene(self):
@@ -737,16 +937,35 @@ class World:
         smax = torch.cat([self.strange + STRANGE_HALF, torch.full((B, 1), 2 * STRANGE_HALF, device=dev)], -1)
         bmin = torch.where(self.bact[..., None], self.bmin, torch.full_like(self.bmin, -100.0))
         bmax = torch.where(self.bact[..., None], self.bmax, torch.full_like(self.bmax, -100.0))
-        amin = torch.cat([bmin, fmin, smin[:, None]], 1)
-        amax = torch.cat([bmax, fmax, smax[:, None]], 1)
-        acol = torch.cat([self.bcol, self.fcol, self.strange_col[:, None]], 1)
-        glow = torch.cat([torch.zeros(B, NB, device=dev), torch.ones(B, NF, device=dev), torch.zeros(B, 1, device=dev)], 1)
-        sph = torch.stack([torch.cat([self.pred, torch.full((B, 1), PRED_R, device=dev)], -1),
-                           torch.cat([self.wand, torch.full((B, 1), WAND_R, device=dev)], -1)], 1)   # centre xy, z=r
-        sph_r = torch.tensor([PRED_R, WAND_R], device=dev).expand(B, 2)
-        sph_col = torch.stack([self.pred_col, self.wand_col], 1)
+        # carcasses: flat boxes where the prey fell
+        cz = torch.tensor([0.16, 0.10, 0.07], device=dev)
+        cpos = torch.cat([self.prey, torch.full((B, NP, 1), 0.07, device=dev)], -1)
+        cmin = torch.where(self.prey_dead[..., None], cpos - cz, torch.full_like(cpos, -100.0))
+        cmax = torch.where(self.prey_dead[..., None], cpos + cz, torch.full_like(cpos, -100.0))
+        amin = torch.cat([bmin, fmin, smin[:, None], cmin], 1)
+        amax = torch.cat([bmax, fmax, smax[:, None], cmax], 1)
+        ccol = (self.prey_col * 0.55)[:, None].expand(B, NP, 3)
+        acol = torch.cat([self.bcol, self.fcol, self.strange_col[:, None], ccol], 1)
+        glow = torch.cat([torch.zeros(B, NB, device=dev), torch.ones(B, NF, device=dev), torch.zeros(B, 1, device=dev),
+                          torch.ones(B, NP, device=dev)], 1)
+        # spheres: predator, wanderer, dasher, live prey, and the arm (two joints and the tip, which the eyes see)
+        hid = torch.full((B, 2), -50.0, device=dev)
+        prey_xy = torch.where(self.prey_alive[..., None], self.prey, hid[:, None])
+        fwd = torch.stack([torch.cos(self.head), torch.sin(self.head)], -1)
+        sh = self.pos[:, :2] + fwd * R_BODY
+        arm_on = WORLD_V >= 5
+        joints = [sh + (self.tip - sh) * f if arm_on else hid for f in (0.35, 0.7, 1.0)]
+        xy = torch.stack([self.pred, self.wand, self.dash, *prey_xy.unbind(1), *joints], 1)          # B,S,2
+        rr = [PRED_R, WAND_R, DASH_R] + [PREY_R] * NP + [0.06, 0.06, TIP_R + 0.01]
+        sph_r = torch.tensor(rr, device=dev).expand(B, len(rr))
+        za = (self.pos[:, 2] + ARM_H)[:, None].expand(B, 3)
+        sph_z = torch.cat([sph_r[:, :3 + NP], za], 1)
+        sph = torch.cat([xy, sph_z[..., None]], -1)
+        arm_col = torch.tensor([0.86, 0.80, 0.70], device=dev).expand(B, 3)
+        tip_col = torch.tensor([0.96, 0.62, 0.68], device=dev).expand(B, 3)
+        sph_col = torch.stack([self.pred_col, self.wand_col, self.dash_col, *([self.prey_col] * NP), arm_col, arm_col, tip_col], 1)
         lava = torch.cat([self.lmin, self.lmax], -1)
         lava = torch.where(self.lact[..., None], lava, torch.full_like(lava, -100.0))
         return dict(pos=self.pos, head=self.head + self.gaze, amin=amin, amax=amax, acol=acol, glow=glow,
-                    sph=sph, sph_r=sph_r, sph_col=sph_col, lava=lava,
+                    sph=sph, sph_r=sph_r, sph_z=sph_z, sph_col=sph_col, lava=lava,
                     floor_col=self.floor_col, wall_col=self.wall_col)

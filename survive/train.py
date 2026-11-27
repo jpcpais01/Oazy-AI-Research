@@ -22,7 +22,7 @@ import torch.nn.functional as F
 from .model import FEAT, H_DIM, set_drive, Z_DIM, Mind, eff_rank, gdist, gsample, kl_cat, maxcos, vicreg, wellbeing
 from .render import render, set_eyes
 from . import world as _world
-from .world import ACT, NF, SENSES, World
+from .world import ACT, DEATH_CAUSES, NF, SENSES, World
 
 
 class Replay:
@@ -169,7 +169,7 @@ def lambda_returns(r, c, v, gamma, lam):
 
 
 METRICS = ["sen", "cont", "kl", "var", "cov", "estd", "me", "actor", "critic", "wb", "ret", "ent", "rgoal", "went", "goal", "entw", "gn",
-           "e_push", "e_turn", "e_jump", "e_grip", "e_gaze", "jv", "jr2"]
+           "e_push", "e_turn", "e_jump", "e_grip", "e_gaze", "e_aim", "e_reach", "jv", "jr2"]
 
 
 class Learner:
@@ -568,7 +568,7 @@ class Actor:
         self.cont = torch.ones(B, dtype=torch.bool, device=dev)
         self.ended = torch.zeros(B, dtype=torch.bool, device=dev)     # the life ended at the last step
         self.life_t = torch.zeros(B, dtype=torch.long, device=dev)
-        self.life_food = torch.zeros(B, 3, device=dev)
+        self.life_food = torch.zeros(B, 4, device=dev)
         self.code = torch.zeros(B, max(1, mind.g_dim), device=dev)
         self.ctr = torch.zeros(B, dtype=torch.long, device=dev)
         global _policy_compiled
@@ -749,7 +749,7 @@ def main():
     steps = updates = 0
     def fresh_lives():
         return dict(n=torch.zeros((), device=dev), t=torch.zeros((), device=dev),
-                    food=torch.zeros(3, device=dev), cause=torch.zeros(6, device=dev))
+                    food=torch.zeros(4, device=dev), cause=torch.zeros(len(DEATH_CAUSES), device=dev))
     lives = fresh_lives()
 
     def jumps_batch():
@@ -772,7 +772,7 @@ def main():
         lives["t"] += (st["t"].float() * fin).sum()
         lives["food"] += (st["food"] * fin[:, None]).sum(0)
         cc = torch.where(st["dead"], st["cause"], torch.zeros_like(st["cause"]))
-        lives["cause"] += torch.zeros(6, device=dev).index_add_(0, cc.clamp(0, 5), fin)
+        lives["cause"] += torch.zeros(len(DEATH_CAUSES), device=dev).index_add_(0, cc.clamp(0, len(DEATH_CAUSES) - 1), fin)
         if rb.n >= a.seq + 1 and steps >= a.prefill and steps % a.every == 0:
             if lm is not None and lm.n >= a.batch:
                 h = a.batch // 2
@@ -799,7 +799,7 @@ def main():
                 if n:
                     row.update(lives=int(n), life_steps=round(lives["t"].item() / n, 1),
                                food=[round(x / n, 2) for x in lives["food"].tolist()],
-                               deaths={k: int(v) for k, v in zip(["cap", "hunger", "lava", "predator", "strange", "blows"], lives["cause"].tolist())})
+                               deaths={k: int(v) for k, v in zip(["cap"] + DEATH_CAUSES[1:], lives["cause"].tolist())})
                     lives = fresh_lives()
                 log.write(json.dumps(row) + "\n"); log.flush()
                 print(json.dumps(row), flush=True)
