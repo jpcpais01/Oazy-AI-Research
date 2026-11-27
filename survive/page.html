@@ -353,6 +353,8 @@ html{scrollbar-width:none}html::-webkit-scrollbar,body::-webkit-scrollbar,*::-we
         <div class="flist">
           <div class="fl"><i style="background:linear-gradient(135deg,#f3c56b,#e9a23b)"></i><span>Energy</span><span class="v" id="enV">–</span></div>
           <div class="fl"><i style="background:linear-gradient(135deg,#7fd6c9,#4fb8c8)"></i><span>Health</span><span class="v" id="hpV">–</span></div>
+          <div class="fl" id="flStam" hidden><i style="background:linear-gradient(135deg,#b2a3f2,#7d8de0)"></i><span>Stamina</span><span class="v" id="stV">–</span></div>
+          <div class="fl" id="flHung" hidden><i style="background:linear-gradient(135deg,#f0a3a3,#c0506f)"></i><span>Hunger</span><span class="v" id="huV">–</span></div>
           <div class="flags"><span class="flag" id="fTouch">touch</span><span class="flag" id="fGround">on ground</span><span class="flag" id="fHold">holding</span></div>
         </div>
       </div>
@@ -401,7 +403,7 @@ html{scrollbar-width:none}html::-webkit-scrollbar,body::-webkit-scrollbar,*::-we
 <script>
 const $=id=>document.getElementById(id);
 const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
-let since=-1,queue=[],mindPath=null,cfgKey=null,mode='test',acts='habit';
+let since=-1,queue=[],mindPath=null,cfgKey=null,mode='test',acts='habit';let drive='linear';
 const eyeL=$('eyeL'),eyeR=$('eyeR');
 
 /* ---------- imagination strip ---------- */
@@ -521,7 +523,9 @@ function renderLives(){
 let lastFear=0,lastWbs=null,lastRender=0;
 function show(f){
   const res=f.res,e=b64(f.eyes);drawRGB(eyeL,e,res,0,6);drawRGB(eyeR,e,res,3,6);$('resTag').textContent=res+' px · stereo';
-  const s=f.state,wbNow=(s.energy+s.health)/2;
+  const s=f.state,wbNow=(drive==='homeo'&&s.hunger!=null)?(s.health+1-s.hunger)/2:(s.energy+s.health)/2;
+  $('flStam').hidden=s.stamina==null;if(s.stamina!=null)$('stV').textContent=Math.round(s.stamina*100)+'%';
+  $('flHung').hidden=s.hunger==null;if(s.hunger!=null)$('huV').textContent=Math.round(s.hunger*100)+'%';
   if(f.dream){lastFear=f.fear;lastWbs=f.wb;f.dream.forEach((d,i)=>drawRGB(dreamEls[i],b64(d),res,0,3));
     $('fearV').textContent=(lastFear*100).toFixed(lastFear<.1?1:0);if(f.fear10!=null)$('fear10').textContent=(f.fear10*100).toFixed(f.fear10<.1?1:0);drawWb(wbNow,lastWbs,f.wb_band)}
   // vitals and the sky
@@ -612,7 +616,7 @@ async function loadInfo(){
     const lastMin=rows.length?rows[rows.length-1].min:0;$('curveTag').textContent=rows.length?`${lastMin.toFixed(0)} min · ${rows.length} readings`:'';
     if(!box.children.length)box.innerHTML='<p class="note">Curves appear after the first few minutes of training.</p>'}catch(e){}
   try{const a=await (await fetch('/api/about?mind='+encodeURIComponent(mindPath))).json();
-    $('aboutTag').textContent=a.name||'';
+    $('aboutTag').textContent=a.name||'';drive=a.drive||'linear';
     const rows=[['Eyes',`two, stereo, 120° each, ${a.res} px`],['Ears','two, 4 bands each; the outer ear dulls high sounds from behind'],['Touch & skin','4 sensors × 4 bands: heat, pressure, hum, field'],
       ['Body feelings','energy, health, touch, on ground, holding'],['Muscles','push, turn, jump, grip. Raw, nothing scripted'],['Drive','wellbeing = (energy + health) / 2, and staying alive'],
       ['Learning to see','eye kept rich by VICReg (vary, don\'t repeat). No picture is ever redrawn'],['Memory','512 numbers carried through life + 32 × 16 “moment” slots'],

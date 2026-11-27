@@ -181,7 +181,7 @@ def about(path):
     d = Path(path)
     out = dict(name=mind_name(path), path=path, minutes=round(ck.get("minutes", 0), 1), frames=ck.get("frames"),
                updates=ck.get("updates"), res=a["res"], gamma=a["gamma"], horizon=a["horizon"],
-               params=round(sum(v.numel() for v in ck["mind"].values()) / 1e6, 1))
+               params=round(sum(v.numel() for v in ck["mind"].values()) / 1e6, 1), drive=a.get("drive", "linear"))
     b = d.with_suffix(".bench.json")
     if b.exists():
         out["bench"] = json.loads(b.read_text())
