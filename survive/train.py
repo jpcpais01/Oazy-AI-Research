@@ -578,7 +578,7 @@ def main():
     ap.add_argument("--long", type=float, default=0.5, help="share of replay memory kept as clips from the whole life (0 = off)")
     ap.add_argument("--long-fresh", type=int, default=0, help="1 = long-memory clips start from an empty memory, not the hours-old stored one")
     ap.add_argument("--world-v", type=int, default=1, help="2 = audit fixes: crates spawn free, z-aware crate overlap, failed carry drops, "
-                    "back pressure sensor, blows/stamina from the real drive, dying body stops; 3 = also the predator lunges when close")
+                    "back pressure sensor, blows/stamina from the real drive, dying body stops; 3 = also the predator lunges when close, rooms half as cluttered")
     ap.add_argument("--long-offer", type=int, default=64, help="clips offered to the long memory every 10 updates")
     ap.add_argument("--every", type=int, default=1, help="env steps per learning update")
     ap.add_argument("--horizon", type=int, default=15)

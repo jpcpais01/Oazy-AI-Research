@@ -79,7 +79,8 @@ def set_body(stamina=0, metab=1.0, life_cap=100, back_speed=1.0, heat=1, world_v
     """Stamina: sprinting, turning hard and jumping drain it in seconds; easy moving refills it
     in ~8 s. A tired body is weaker (top speed down to 35%, no jump below 15%); it never kills.
     metab: food-energy drain (0.2 = a full tank lasts 150 s standing still). life_cap in s.
-    world_v 3: also the predator lunges straight when close (corners and walls were safe spots).
+    world_v 3: also the predator lunges straight when close (corners and walls were safe spots),
+    and the rooms are more open (half the fixed blocks; crates and ledges as before).
     world_v 2: crates spawn clear of other boxes and their overlap tests see height; a carry that
     can't move the crate lets go; the back sensor feels bumps when reversing; blows and stamina
     follow the real drive (slow reversing is gentle); the dying body stops sliding."""
@@ -218,7 +219,9 @@ class World:
         hgt = 0.35 + self._rand(n, NB) * 0.65
         j = torch.arange(NB, device=dev)
         is_ledge = j < m.n_ledge
-        is_crate = (j >= m.n_static) & (j < m.n_static + m.n_crate)
+        # world_v 3: a more open room (about half the blocks): long sight lines, food in view
+        ns = m.n_static if WORLD_V < 3 else max(m.n_ledge + 2, round(m.n_static * 0.5))
+        is_crate = (j >= ns) & (j < ns + m.n_crate)
         hgt = torch.where(is_ledge, torch.full_like(hgt, 1.4), hgt)
         hgt = torch.where(is_crate, torch.full_like(hgt, 0.6), hgt)
         half = torch.where(is_crate[:, None], torch.full_like(half, 0.3), half)
@@ -226,8 +229,8 @@ class World:
         if WORLD_V >= 2:      # each crate takes the first of 16 candidate spots clear of every other box
             C = 16
             cc = 1.0 + self._rand(n, NB, C, 2) * (L - 2.0)
-            act = (j < m.n_static + m.n_crate)
-            for c_ in range(m.n_static, m.n_static + m.n_crate):
+            act = (j < ns + m.n_crate)
+            for c_ in range(ns, ns + m.n_crate):
                 lo_o, hi_o = ctr - half, ctr + half                                   # n,NB,2 (crates already moved)
                 other = act & (j != c_)
                 lo_c = cc[:, c_] - half[:, c_, None]                                 # n,C,2
@@ -238,7 +241,7 @@ class World:
                 ctr[:, c_] = cc[torch.arange(n, device=dev), c_, best]
         self.bmin[idx] = torch.cat([ctr - half, torch.zeros(n, NB, 1, device=dev)], -1)
         self.bmax[idx] = torch.cat([ctr + half, hgt[..., None]], -1)
-        self.bact[idx] = (j < m.n_static + m.n_crate).expand(n, NB)
+        self.bact[idx] = (j < ns + m.n_crate).expand(n, NB)
         self.bmov[idx] = is_crate.expand(n, NB)
         base = torch.where(is_crate[:, None], torch.tensor([0.78, 0.62, 0.42], device=dev),
                            torch.where(is_ledge[:, None], torch.tensor([0.42, 0.40, 0.48], device=dev),
