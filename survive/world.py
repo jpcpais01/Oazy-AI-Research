@@ -79,6 +79,7 @@ def set_body(stamina=0, metab=1.0, life_cap=100, back_speed=1.0, heat=1, world_v
     """Stamina: sprinting, turning hard and jumping drain it in seconds; easy moving refills it
     in ~8 s. A tired body is weaker (top speed down to 35%, no jump below 15%); it never kills.
     metab: food-energy drain (0.2 = a full tank lasts 150 s standing still). life_cap in s.
+    world_v 3: also the predator lunges straight when close (corners and walls were safe spots).
     world_v 2: crates spawn clear of other boxes and their overlap tests see height; a carry that
     can't move the crate lets go; the back sensor feels bumps when reversing; blows and stamina
     follow the real drive (slow reversing is gentle); the dying body stops sliding."""
@@ -577,7 +578,8 @@ class World:
         # one side (keeping that side while blocked, like following a wall).
         to = p[:, :2] - self.pred
         d = to.norm(dim=-1).clamp(min=1e-4)
-        notice = ((d < PRED_SEE) & self._clear(self.pred, p[:, :2])) | (d < PRED_HEAR)
+        clear = self._clear(self.pred, p[:, :2])
+        notice = ((d < PRED_SEE) & clear) | (d < PRED_HEAR)
         self.pred_mem = torch.where(notice[:, None], p[:, :2], self.pred_mem)
         self.pred_mem_t = torch.where(notice, torch.zeros_like(self.pred_mem_t), self.pred_mem_t + 1)
         goal = self.pred_mem - self.pred
@@ -600,6 +602,10 @@ class World:
         k = torch.where(free.any(-1), free.float().argmax(-1), torch.zeros_like(free[:, 0], dtype=torch.long))
         self.pred_side = torch.where(k >= 6, -self.pred_side, self.pred_side)          # went the other way: remember it
         head = ang.gather(1, k[:, None]).squeeze(1)
+        if WORLD_V >= 3:      # close and in sight: lunge straight at it (walls/boxes still stop it via _slide);
+            # the 0.6 m look-ahead saw the wall behind a creature as "blocked" and swerved: corners were safe
+            lunge = hunting & (d < 1.5) & clear
+            head = torch.where(lunge, want, head)
         self.pred_dir = torch.where(hunting, self.pred_dir, head)                       # patrol keeps its new heading
         step = torch.stack([torch.cos(head), torch.sin(head)], -1) * speed[:, None]
         step = torch.where((hunting & (d <= 0.55))[:, None], torch.zeros_like(step), step)
