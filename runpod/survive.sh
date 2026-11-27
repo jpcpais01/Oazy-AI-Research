@@ -10,4 +10,4 @@ python3 -m survive.train --minutes "${MIN:-300}" --res "${RES:-64}" --fovea "${F
   --seq "${SEQ:-32}" --replay-gb "${REPLAY_GB:-8}" --every "${EVERY:-1}" --emotion "${EMOTION:-0}" --gamma "${GAMMA:-0.997}" --compile "${COMPILE:-1}" --seed "${SEED:-0}" --out "$RUNS" 2>&1 | tee -a "$RUNS/train.log"
 # the yardstick: 1024 fresh lives in unseen, hard and training-like worlds, saved next to the mind
 LAST=$(ls -t "$RUNS"/mind_*min.pt | head -1)
-python3 -m survive.bench "$LAST" --lives "${LIVES:-1024}" 2>&1 | tee -a "$RUNS/train.log"
+[ "${SKIP_BENCH:-0}" = 1 ] || python3 -m survive.bench "$LAST" --lives "${LIVES:-1024}" 2>&1 | tee -a "$RUNS/train.log"

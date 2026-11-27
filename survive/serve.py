@@ -55,7 +55,7 @@ class Sim:
             if b.exists():
                 try:
                     t = json.loads(b.read_text()).get("test")
-                    if t:
+                    if t and t.get("lives", 0) >= 32:              # a 1-life smoke bench is not a score
                         d["score_s"] = round(t["steps"] / 10)
                         d["score_lives"] = t.get("lives")
                 except Exception:  # noqa
@@ -357,9 +357,15 @@ def about(path):
     out = dict(name=mind_name(path), path=path, minutes=round(ck.get("minutes", 0), 1), frames=ck.get("frames"),
                updates=ck.get("updates"), res=a["res"], gamma=a["gamma"], horizon=a["horizon"],
                params=round(sum(v.numel() for v in ck["mind"].values()) / 1e6, 1), drive=a.get("drive", "linear"))
+    # how this mind was built (what the About card describes); missing keys = the old default
+    keys = dict(recon=0, smell=0, stamina=0, metab=1, world_v=1, jumps="", jump_w=0, init="", gaze=0, fovea=0, eye_sep=0.08,
+                life_cap=100, light=0, matter=0, intent=0, heat=1, back_speed=1, ent_per=0, long_fresh=0, seed=0)
+    out["cfg"] = {k: a.get(k, v) for k, v in keys.items()}
     b = d.with_suffix(".bench.json")
     if b.exists():
-        out["bench"] = json.loads(b.read_text())
+        bb = {k: v for k, v in json.loads(b.read_text()).items() if isinstance(v, dict) and v.get("lives", 0) >= 32}
+        if bb:
+            out["bench"] = bb
     return out
 
 

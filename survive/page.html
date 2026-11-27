@@ -666,17 +666,27 @@ async function loadInfo(){
     if(!box.children.length)box.innerHTML='<p class="note">Curves appear after the first few minutes of training.</p>'}catch(e){}
   try{const a=await (await fetch('/api/about?mind='+encodeURIComponent(mindPath))).json();
     $('aboutTag').textContent=a.name||'';drive=a.drive||'linear';
-    const rows=[['Eyes',`two, stereo, 120° each, ${a.res} px`],['Ears','two, 4 bands each; the outer ear dulls high sounds from behind'],['Touch & skin','4 sensors × 4 bands: heat, pressure, hum, field'],
-      ['Body feelings','energy, health, touch, on ground, holding'],['Muscles','push, turn, jump, grip. Raw, nothing scripted'],['Drive','wellbeing = (energy + health) / 2, and staying alive'],
-      ['Learning to see','eye kept rich by VICReg (vary, don\'t repeat). No picture is ever redrawn'],['Memory','512 numbers carried through life + 32 × 16 “moment” slots'],
-      ['Imagination',`${a.horizon} steps (${(a.horizon/10).toFixed(1)} s) ahead, horizon γ = ${a.gamma}`],
-      ['Trained',`${a.minutes} min${a.frames?`, ${(a.frames/1e6).toFixed(1)}M frames learned`:''}, ${a.params}M parameters`]];
+    const g=a.cfg||{},sec=v=>(v/10).toFixed(v%10?1:0)+' s',cont=g.init?g.init.split('/survive/').pop().replace('/mind_',' · ').replace('min.pt',' min'):'';
+    const feel=['energy','health'].concat(g.stamina?['stamina (sprint tank)']:[],g.drive==='homeo'||a.drive==='homeo'?['hunger']:[],['touch','on ground','holding']);
+    const rows=[
+      ['Eyes',`two, stereo, 120° each, ${a.res} px${g.fovea>1?`, sharp centre ×${g.fovea}`:''}${g.gaze?`, can look ±${g.gaze}° without turning`:''}`],
+      ['Ears','two, 4 bands each; the outer ear dulls high sounds from behind'],
+      ['Touch & skin','4 sensors × 4 bands: heat, pressure, hum, field'],
+      ...(g.smell?[['Nose','two nostrils, 12 cm apart: food smell, stronger when close and on that side']]:[]),
+      ['Body feelings',feel.join(', ')],
+      ['Muscles',`push, turn, jump, grip${g.gaze?', gaze':''}. Raw, nothing scripted`],
+      ['Drive',(a.drive==='homeo'?'wellbeing = (health + 1 − hunger) / 2: a half-full stomach is fine, an empty one hurts':'wellbeing = (energy + health) / 2')+', and staying alive'],
+      ['Learning to see',g.recon>0?`eye kept rich by VICReg, and the inner state must also redraw what the left eye saw (weight ${g.recon}), so small things like food are kept`:'eye kept rich by VICReg (vary, don\'t repeat). No picture is ever redrawn'],
+      ['Memory','512 numbers carried through life + 32 × 16 “moment” slots'],
+      ['Imagination',`${a.horizon} steps (${(a.horizon/10).toFixed(1)} s) ahead, horizon γ = ${a.gamma}${g.jumps?`; then jumps of ${g.jumps.split(',').map(x=>sec(+x)).join(' + ')} forecast further (weight ${g.jump_w})`:''}`],
+      ['World',`version ${g.world_v}${g.world_v>=4?' (bigger stamina tank, walking refills it, a tired predator gives up)':g.world_v>=3?' (predator lunges, open rooms)':''}; lives up to ${g.life_cap} s${g.light?`; ${sec(g.light)} of white light at death`:''}`],
+      ['Trained',`${a.minutes} min${a.frames?`, ${(a.frames/1e6).toFixed(1)}M frames learned`:''}, ${a.params}M parameters${cont?`, continued from ${cont}`:''}`]];
     const half=Math.ceil(rows.length/2),dl=rs=>'<dl>'+rs.map(r=>`<div class="row"><dt>${r[0]}</dt><dd>${r[1]}</dd></div>`).join('')+'</dl>';
     $('about').innerHTML=dl(rows.slice(0,half))+dl(rows.slice(half));
     const names={test:'New worlds',hard:'Hard worlds',train:'Like training'};
     $('bench').innerHTML=a.bench?['test','hard','train'].filter(m=>a.bench[m]).map(m=>{const b=a.bench[m],dp=b.deaths_pct||{};
       return `<div class="bt"><span class="caps">${names[m]} · ${b.lives} lives</span><b>${b.steps} <small style="font:300 14px var(--sans);color:var(--ink-3)">steps</small></b>
-        <p>${b.food} food a life · ${b.cap_pct}% reach 100 s</p><div class="dbar">${Object.entries(dp).map(([k,v])=>`<i title="${k} ${v}%" style="width:${v}%;background:${DC[k]||'#aaa'}"></i>`).join('')}</div>
+        <p>${b.food} food a life · ${b.cap_pct}% live the full ${(a.cfg&&a.cfg.life_cap)||100} s</p><div class="dbar">${Object.entries(dp).map(([k,v])=>`<i title="${k} ${v}%" style="width:${v}%;background:${DC[k]||'#aaa'}"></i>`).join('')}</div>
         <p style="margin-top:6px">${Object.entries(dp).filter(([,v])=>v>0).map(([k,v])=>`${k} ${v}%`).join(' · ')}</p></div>`}).join(''):''}catch(e){}
 }
 
