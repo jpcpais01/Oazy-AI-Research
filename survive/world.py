@@ -89,8 +89,11 @@ def set_body(stamina=0, metab=1.0, life_cap=100, back_speed=1.0, heat=1, world_v
     world_v 2: crates spawn clear of other boxes and their overlap tests see height; a carry that
     can't move the crate lets go; the back sensor feels bumps when reversing; blows and stamina
     follow the real drive (slow reversing is gentle); the dying body stops sliding."""
-    global STAMINA, METAB, MAX_STEPS, BACK, HEAT, WORLD_V, SMELL
+    global STAMINA, METAB, MAX_STEPS, BACK, HEAT, WORLD_V, SMELL, NP, PREY_R
     WORLD_V = int(world_v or 1)
+    # world_v 6: prey easier to notice and to reach: bigger (0.22 m), saturated blue, a rustle that is
+    # loudest when they run, they flee only within 1.3 m at 1.3 m/s, and there are 6 of them
+    NP, PREY_R = (6, 0.22) if WORLD_V >= 6 else (4, 0.14)
     SMELL = bool(smell)
     HEAT = int(heat or 1)
     STAMINA, METAB, BACK = bool(stamina), float(metab or 1.0), float(back_speed if back_speed is not None else 1.0)
@@ -173,6 +176,7 @@ class World:
         self.prey, self.prey_dir, self.prey_hp = z(B, NP, 2), z(B, NP), z(B, NP)
         self.prey_alive, self.prey_dead = z(B, NP, dt=torch.bool), z(B, NP, dt=torch.bool)
         self.prey_timer, self.prey_cd, self.prey_stam = z(B, NP, dt=torch.long), z(B, NP, dt=torch.long), z(B, NP)
+        self.prey_spd = z(B, NP)          # how fast each prey moved last step (m/s): its rustle (world_v 6)
         self.eat_f, self.eat_p = z(B, dt=torch.long), z(B, dt=torch.long)
         self.dash, self.dash_dir, self.dash_stam = z(B, 2), z(B), z(B)
         self.dash_on, self.dash_cd = z(B, dt=torch.bool), z(B, dt=torch.long)
@@ -318,7 +322,7 @@ class World:
         self.pressure[idx] = 0
         # world_v 5 beings (elsewhere they wait far outside the room, unseen and unheard)
         self.dash_col[idx] = torch.tensor([0.80, 0.22, 0.16], device=dev) * _jit(g, (n, 3), dev)
-        self.prey_col[idx] = torch.tensor([0.92, 0.76, 0.52], device=dev) * _jit(g, (n, 3), dev)
+        self.prey_col[idx] = torch.tensor([0.25, 0.45, 1.0] if WORLD_V >= 6 else [0.92, 0.76, 0.52], device=dev) * _jit(g, (n, 3), dev)
         self.arm_a[idx], self.arm_r[idx], self.tip_touch[idx] = 0, 0, 0
         self.tip[idx] = self.pos[idx, :2]
         self.eat_f[idx], self.eat_p[idx] = 0, 0
@@ -337,6 +341,7 @@ class World:
         self.prey_dead[idx] = False
         self.prey_timer[idx], self.prey_cd[idx] = 0, 0
         self.prey_stam[idx] = 1.0
+        self.prey_spd[idx] = 0.0
         self._sense(self.pos)
 
     def _place_food(self, idx, which, gen=True):
@@ -813,12 +818,12 @@ class World:
             q = self.prey[:, j]
             away = q - p[:, :2]
             da = away.norm(dim=-1).clamp(min=1e-4)
-            flee = self.prey_alive[:, j] & (da < 2.0)
+            flee = self.prey_alive[:, j] & (da < (1.3 if WORLD_V >= 6 else 2.0))
             self.prey_dir[:, j] = self.prey_dir[:, j] + (torch.rand(B, device=dev) - 0.5) * 0.9
             fh = torch.atan2(away[:, 1], away[:, 0]) + (torch.rand(B, device=dev) - 0.5) * 0.8
             hd = torch.where(flee, fh, self.prey_dir[:, j])
             st = self.prey_stam[:, j]
-            sp = torch.where(flee, 2.2 * (0.35 + 0.65 * st), torch.full_like(st, 0.6)) * DT
+            sp = torch.where(flee, (1.3 if WORLD_V >= 6 else 2.2) * (0.35 + 0.65 * st), torch.full_like(st, 0.6)) * DT
             self.prey_stam[:, j] = (st + torch.where(flee, -0.025, 0.008)).clamp(0, 1)
             step = torch.stack([torch.cos(hd), torch.sin(hd)], -1) * sp[:, None]
             nq = self._slide(q + step, PREY_R)
@@ -830,6 +835,7 @@ class World:
             nq = self._slide(nq, PREY_R)
             stuck = (nq - (q + step)).norm(dim=-1) > 1e-3
             self.prey_dir[:, j] = torch.where(stuck & ~flee, self.prey_dir[:, j] + math.pi * 0.7, self.prey_dir[:, j])
+            self.prey_spd[:, j] = torch.where(self.prey_alive[:, j], (nq - q).norm(dim=-1) / DT, torch.zeros_like(st))
             self.prey[:, j] = torch.where(self.prey_alive[:, j, None], nq, q)
 
     # ------------------------------------------------------------------ senses
@@ -892,8 +898,12 @@ class World:
             loud = (1 + 1.5 * self.dash_on.float())[:, None]              # louder from the crouch on
             srcs.append((self.dash, torch.tensor([0.8, 0.0, 0.0, 0.8], device=dev) * 2.5 * loud))
             for j in range(NP):
-                srcs.append((torch.where(self.prey_alive[:, j, None], self.prey[:, j], torch.full_like(self.prey[:, j], -50.0)),
-                             torch.tensor([0.0, 0.0, 1.0, 0.0], device=dev) * 0.6))
+                where = torch.where(self.prey_alive[:, j, None], self.prey[:, j], torch.full_like(self.prey[:, j], -50.0))
+                if WORLD_V >= 6:   # a rustle, loudest when it runs (its own band shape, unlike the wanderer's)
+                    loud_p = 0.8 + 1.2 * self.prey_spd[:, j] / 1.3
+                    srcs.append((where, torch.tensor([0.0, 0.3, 1.0, 0.0], device=dev)[None] * loud_p[:, None]))
+                else:
+                    srcs.append((where, torch.tensor([0.0, 0.0, 1.0, 0.0], device=dev) * 0.6))
         ear_pos = torch.stack([p[:, :2] + left * 0.15, p[:, :2] - left * 0.15], 1)
         ear_n = torch.stack([left, -left], 1)
         for src, spec in srcs:

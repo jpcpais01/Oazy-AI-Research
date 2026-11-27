@@ -31,6 +31,7 @@ from .model import gdist, gsample, load_mind, make_mind, wellbeing
 from .render import render, set_eyes
 from .train import Actor
 from .world import DEATH_CAUSES, L, World
+from . import world as _wmod
 
 PAGE = (Path(__file__).parent / "page.html")
 
@@ -377,7 +378,7 @@ class Sim:
             dying=int(c["dying"][0]), energy=round(min(max(c["energy"][0], 0), 1), 3), health=round(min(max(c["health"][0], 0), 1), 3),
             body=r(sen[:5]), intensity=r(sen[5:21]), ears=r(sen[21:29]), stamina=round(sen[29], 3), hunger=round(sen[30], 3),
             # world 5 (empty / zero in older worlds): the dasher, the small prey and carcasses, the arm
-            v5=bool(getattr(self, "world_v", 1) >= 5),
+            v5=bool(getattr(self, "world_v", 1) >= 5), prey_r=_wmod.PREY_R, v6=bool(getattr(self, "world_v", 1) >= 6),
             dash=r(c["dash"]), dash_on=bool(c["dash_on"][0]), dash_crouch=bool(c["dash_on"][0] and c["dash_wind"][0] <= 10),
             prey=[r(c["prey"][2 * i:2 * i + 2]) + [1 if c["prey_alive"][i] else 0] for i in range(len(c["prey_alive"]))
                   if c["prey_alive"][i] or c["prey_dead"][i]],

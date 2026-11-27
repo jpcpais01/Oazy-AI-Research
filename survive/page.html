@@ -363,7 +363,7 @@ html{scrollbar-width:none}html::-webkit-scrollbar,body::-webkit-scrollbar,*::-we
         <span><i class="sq" style="background:var(--wood)"></i>crate</span>
         <span><i class="sq" style="background:#8f8aa6"></i>ledge / block</span>
         <span class="v5" hidden><i style="background:#d2452f"></i>dasher</span>
-        <span class="v5" hidden><i style="background:#e9c48a"></i>small prey</span>
+        <span class="v5" hidden><i id="lgPrey" style="background:#e9c48a"></i>small prey</span>
         <span class="v5" hidden><i class="sq" style="background:#7a5a3c"></i>carcass</span>
       </div>
       <div class="near" id="near"></div>
@@ -510,8 +510,8 @@ function drawMap(s,tnow){
   being(s.wand,.3,'#4fb8c8',false);being(s.pred,.35,'#8a63d2',true);
   if(s.v5){
     // small prey (alive: a little warm ball) and carcasses (dark flat squares where they fell)
-    (s.prey||[]).forEach(q=>{const x=X(q[0]),y=Y(q[1]);if(q[2]){map.save();map.shadowColor='rgba(150,100,40,.5)';map.shadowBlur=6;map.fillStyle='#e9c48a';map.beginPath();map.arc(x,y,.14*k,0,7);map.fill();
-        map.restore();map.strokeStyle='rgba(120,80,30,.7)';map.lineWidth=1;map.beginPath();map.arc(x,y,.14*k,0,7);map.stroke()}
+    (s.prey||[]).forEach(q=>{const x=X(q[0]),y=Y(q[1]);if(q[2]){map.save();map.shadowColor='rgba(150,100,40,.5)';map.shadowBlur=6;map.fillStyle=s.v6?'#4673ff':'#e9c48a';map.beginPath();map.arc(x,y,(s.prey_r||.14)*k,0,7);map.fill();
+        map.restore();map.strokeStyle=s.v6?'rgba(30,50,160,.8)':'rgba(120,80,30,.7)';map.lineWidth=1;map.beginPath();map.arc(x,y,(s.prey_r||.14)*k,0,7);map.stroke()}
       else{map.fillStyle='#7a5a3c';rr(x-.13*k,y-.13*k,.26*k,.26*k,2);map.fill();map.strokeStyle='rgba(255,255,255,.7)';map.lineWidth=1.2;
         map.beginPath();map.moveTo(x-.07*k,y-.07*k);map.lineTo(x+.07*k,y+.07*k);map.moveTo(x+.07*k,y-.07*k);map.lineTo(x-.07*k,y+.07*k);map.stroke()}});
     // the dasher: red; while sprinting it glows and leaves a streak
@@ -580,7 +580,7 @@ function setMood(w,f){if(Math.abs(w-moodW)>.02){moodW=w;SKY.style.setProperty('-
 function show(f){
   const res=f.res;if(f.png){drawPNG(eyeL,f.eyeL,res);drawPNG(eyeR,f.eyeR,res)}else{const e=b64(f.eyes);drawRGB(eyeL,e,res,0,6);drawRGB(eyeR,e,res,3,6)}$('resTag').textContent=res+' px · stereo';
   const s=f.state,wbNow=(drive==='homeo'&&s.hunger!=null)?(s.health+1-s.hunger)/2:(s.energy+s.health)/2;
-  document.querySelectorAll('.legend .v5').forEach(e=>e.hidden=!s.v5);
+  document.querySelectorAll('.legend .v5').forEach(e=>e.hidden=!s.v5);if($('lgPrey'))$('lgPrey').style.background=s.v6?'#4673ff':'#e9c48a';
   $('flStam').hidden=s.stamina==null;if(s.stamina!=null)$('stV').textContent=Math.round(s.stamina*100)+'%';
   $('flHung').hidden=s.hunger==null;if(s.hunger!=null)$('huV').textContent=Math.round(s.hunger*100)+'%';
   if(f.paths){dreamPaths=f.paths;const e=f.paths.err||{};if(e['mean_1.6s']!=null)$('pathErr').textContent=`Checked against what really happened: 1.6 s ahead the dreams are off by ${e['mean_1.6s']} m on average (closest dream ${e['best_1.6s']} m)${e['mean_4s']!=null?`, 4 s ahead ${e['mean_4s']} m (closest ${e['best_4s']} m)`:''}.`}
@@ -724,7 +724,7 @@ async function loadInfo(){
       ['Learning to see',g.recon>0?`eye kept rich by VICReg, and the inner state must also redraw what the left eye saw (weight ${g.recon}), so small things like food are kept`:'eye kept rich by VICReg (vary, don\'t repeat). No picture is ever redrawn'],
       ['Memory','512 numbers carried through life + 32 × 16 “moment” slots'],
       ['Imagination',`${a.horizon} steps (${(a.horizon/10).toFixed(1)} s) ahead, horizon γ = ${a.gamma}${g.jumps?`; then jumps of ${g.jumps.split(',').map(x=>sec(+x)).join(' + ')} forecast further (weight ${g.jump_w})`:''}`],
-      ['World',`version ${g.world_v}${g.world_v>=5?' (an arm that hits; small prey that flee, die after 3 hits and are eaten in 3 s for 5 fruits; the dasher, a fast erratic second predator; fruit eaten in 1 s for a third of the energy; stamina as v4)':g.world_v>=4?' (bigger stamina tank, walking refills it, a tired predator gives up)':g.world_v>=3?' (predator lunges, open rooms)':''}; lives up to ${g.life_cap} s${g.light?`; ${sec(g.light)} of white light at death`:''}`],
+      ['World',`version ${g.world_v}${g.world_v>=6?' (as 5, with prey easier to notice: bigger, bright blue, a rustle loudest when they run, 6 of them, fleeing only within 1.3 m at 1.3 m/s)':''}${g.world_v>=5?' (an arm that hits; small prey that flee, die after 3 hits and are eaten in 3 s for 5 fruits; the dasher, a fast erratic second predator; fruit eaten in 1 s for a third of the energy; stamina as v4)':g.world_v>=4?' (bigger stamina tank, walking refills it, a tired predator gives up)':g.world_v>=3?' (predator lunges, open rooms)':''}; lives up to ${g.life_cap} s${g.light?`; ${sec(g.light)} of white light at death`:''}`],
       ['Trained',`${a.minutes} min${a.frames?`, ${(a.frames/1e6).toFixed(1)}M frames learned`:''}, ${a.params}M parameters${cont?`, continued from ${cont}`:''}`]];
     const half=Math.ceil(rows.length/2),dl=rs=>'<dl>'+rs.map(r=>`<div class="row"><dt>${r[0]}</dt><dd>${r[1]}</dd></div>`).join('')+'</dl>';
     $('about').innerHTML=dl(rows.slice(0,half))+dl(rows.slice(half));
