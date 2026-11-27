@@ -136,6 +136,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--lilac);outline
 .future{margin-top:16px;display:grid;grid-template-columns:1fr 170px;gap:18px;align-items:center}
 .future svg{width:100%;height:78px;display:block;overflow:visible}
 .fearbox .caps{display:block;margin-bottom:6px}
+.wbnums{font:400 12px var(--mono);color:var(--ink-2);margin-left:8px}
 .fearbox b{font:400 40px/1 var(--serif)}
 .fearbox b small{font:300 15px var(--sans);color:var(--ink-3)}
 .fearbox p{font-size:12.5px;color:var(--ink-3);margin-top:6px}
@@ -320,7 +321,7 @@ html{scrollbar-width:none}html::-webkit-scrollbar,body::-webkit-scrollbar,*::-we
       <p class="note">Its inner state run forward with no new light, drawn by a decoder that only watches. The mind never uses these pictures.</p>
       <div class="strip" id="strip"></div>
       <div class="future">
-        <div><span class="caps">Wellbeing it expects</span><svg id="wbCurve" viewBox="0 0 400 78" preserveAspectRatio="none"></svg></div>
+        <div><span class="caps">Wellbeing it expects</span> <span class="wbnums" id="wbNums"></span><svg id="wbCurve" viewBox="0 0 400 78" preserveAspectRatio="none" style="overflow:visible"></svg></div>
         <div class="fearbox"><span class="caps">Fear</span><b><span id="fearV">–</span><small>%</small></b><p>imagined chance of dying within 1.2 s · <span id="fear10">–</span>% within 10 s</p></div>
       </div>
     </section>
@@ -492,16 +493,17 @@ function mapLoop(t){if(lastState)drawMap(lastState,t);requestAnimationFrame(mapL
 addEventListener('resize',()=>{sizeMap()});
 
 /* ---------- imagined wellbeing curve ---------- */
-function drawWb(now,wb){const svg=$('wbCurve');if(!wb||!wb.length){svg.innerHTML='';return}
-  const vals=[now,...wb],n=vals.length,W=400,H=78,lo=0,hi=1;const xs=i=>i/(n-1)*W,ys=v=>H-4-(clamp(v)-lo)/(hi-lo)*(H-8);
+function drawWb(now,wb,band){const svg=$('wbCurve');if(!wb||!wb.length){svg.innerHTML='';$('wbNums').textContent='';return}
+  const pct=v=>Math.round(v*100);$('wbNums').textContent=`now ${pct(now)} · +1 s ${pct(wb[Math.min(9,wb.length-1)])} · +10 s ${pct(wb[wb.length-1])}`;
+  const vals=[now,...wb],n=vals.length,W=400,H=78,L0=22;const xs=i=>L0+i/(n-1)*(W-L0),ys=v=>H-4-clamp(v)*(H-8);
   let d='';vals.forEach((v,i)=>{d+=(i?'L':'M')+xs(i).toFixed(1)+','+ys(v).toFixed(1)});
+  let bandPath='';if(band&&band[0]&&band[0].length===wb.length){const lo=[now,...band[0]],hi=[now,...band[1]];
+    bandPath='M'+hi.map((v,i)=>xs(i).toFixed(1)+','+ys(v).toFixed(1)).join('L')+'L'+lo.map((v,i)=>[xs(i),ys(v)]).reverse().map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join('L')+'Z'}
   const c=wbColor(wb[wb.length-1]);
-  svg.innerHTML=`<defs><linearGradient id="wbA" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgb(${c})" stop-opacity=".35"/><stop offset="1" stop-color="rgb(${c})" stop-opacity="0"/></linearGradient>
-   <linearGradient id="wbS" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#2c3577"/><stop offset="1" stop-color="rgb(${c})"/></linearGradient></defs>
-   ${[.25,.5,.75].map(g=>`<line x1="0" x2="${W}" y1="${ys(g)}" y2="${ys(g)}" stroke="rgba(27,33,71,.07)" vector-effect="non-scaling-stroke"/>`).join('')}
+  svg.innerHTML=`${[0,.5,1].map(g=>`<line x1="${L0}" x2="${W}" y1="${ys(g)}" y2="${ys(g)}" stroke="rgba(27,33,71,.08)" vector-effect="non-scaling-stroke"/><text x="${L0-4}" y="${ys(g)+3}" text-anchor="end" style="font:9px var(--mono);fill:var(--ink-3)">${g}</text>`).join('')}
    ${[10,20,50,100].filter(i=>i<n).map(i=>`<line x1="${xs(i)}" x2="${xs(i)}" y1="0" y2="${H}" stroke="rgba(27,33,71,.1)" stroke-dasharray="2 3" vector-effect="non-scaling-stroke"/>`).join('')}
-   <path d="${d} L${W},${H} L0,${H} Z" fill="url(#wbA)"/>
-   <path d="${d}" fill="none" stroke="url(#wbS)" stroke-width="2.2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>`}
+   ${bandPath?`<path d="${bandPath}" fill="rgb(${c})" fill-opacity=".22"/>`:''}
+   <path d="${d}" fill="none" stroke="#2c3577" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>`}
 
 /* ---------- lives ---------- */
 const CAUSEC={hunger:'var(--amber)',lava:'#ef7a4e',predator:'var(--violet)',strange:'var(--sand)',blows:'#6b6f8c',cap:'linear-gradient(180deg,var(--aqua),var(--leaf))'};
@@ -521,7 +523,7 @@ function show(f){
   const res=f.res,e=b64(f.eyes);drawRGB(eyeL,e,res,0,6);drawRGB(eyeR,e,res,3,6);$('resTag').textContent=res+' px · stereo';
   const s=f.state,wbNow=(s.energy+s.health)/2;
   if(f.dream){lastFear=f.fear;lastWbs=f.wb;f.dream.forEach((d,i)=>drawRGB(dreamEls[i],b64(d),res,0,3));
-    $('fearV').textContent=(lastFear*100).toFixed(lastFear<.1?1:0);if(f.fear10!=null)$('fear10').textContent=(f.fear10*100).toFixed(f.fear10<.1?1:0);drawWb(wbNow,lastWbs)}
+    $('fearV').textContent=(lastFear*100).toFixed(lastFear<.1?1:0);if(f.fear10!=null)$('fear10').textContent=(f.fear10*100).toFixed(f.fear10<.1?1:0);drawWb(wbNow,lastWbs,f.wb_band)}
   // vitals and the sky
   document.documentElement.style.setProperty('--wb',wbNow.toFixed(3));document.documentElement.style.setProperty('--fear',clamp(lastFear*1.5).toFixed(3));
   // feelings

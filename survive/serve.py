@@ -70,9 +70,12 @@ class Sim:
     DREAM_AT = (2, 5, 10, 20, 50, 100)          # imagined pictures at +0.2, 0.5, 1, 2, 5, 10 s
 
     @torch.no_grad()
-    def imagine(self, m, act, steps=100):
-        h, z = act.h.clone(), act.z.clone()
-        code, ctr = act.code.clone(), int(act.ctr[0])
+    def imagine(self, m, act, steps=100, n=16):
+        """n dreams from the same moment (the moment slots are sampled, so each dream differs). Pictures come
+        from the first dream; expected wellbeing and the death chance are averaged over all n, so they show
+        what it expects rather than one random dream."""
+        h, z = act.h.expand(n, -1).clone(), act.z.expand(n, -1).clone()
+        code, ctr = act.code.expand(n, -1).clone(), int(act.ctr[0])
         pics, conts, wbs = [], [], []
         for k in range(1, steps + 1):
             x = torch.cat([h, z], -1)
@@ -85,13 +88,16 @@ class Sim:
             h = m.step_h(h, z, a)
             z = m.sample(m.imagine_z(h))
             ft = torch.cat([h, z], -1)
-            conts.append(torch.sigmoid(m.cont_head(ft)).reshape(()))
-            wbs.append(wellbeing(m.sense_head(ft)).reshape(()))
+            conts.append(torch.sigmoid(m.cont_head(ft)).reshape(n))
+            wbs.append(wellbeing(m.sense_head(ft)).reshape(n))
             if k in self.DREAM_AT:
-                pic = m.minds_eye(ft).clamp(0, 1)[0]
+                pic = m.minds_eye(ft[:1]).clamp(0, 1)[0]
                 pics.append(base64.b64encode((pic * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy().tobytes()).decode())
-        alive = torch.cumprod(torch.stack(conts), 0)
-        wb = [round(v, 3) for v in torch.stack(wbs).tolist()]
+        alive = torch.cumprod(torch.stack(conts), 0).mean(1)           # chance of still being alive, averaged over dreams
+        W = torch.stack(wbs)                                             # steps, n
+        q = torch.quantile(W, torch.tensor([0.1, 0.9], device=W.device), dim=1)
+        self.wb_band = [[round(v, 3) for v in q[0].tolist()], [round(v, 3) for v in q[1].tolist()]]
+        wb = [round(v, 3) for v in W.mean(1).tolist()]
         return pics, 1 - alive[11].item(), wb, 1 - alive[-1].item()
 
     def loop(self):
@@ -122,6 +128,7 @@ class Sim:
             fr["res"] = img.shape[-1]
             if t_life % 3 == 0:
                 fr["dream"], fr["fear"], fr["wb"], fr["fear10"] = self.imagine(m, act)
+                fr["wb_band"] = self.wb_band
             fr["state"] = self.state(world)
             fr["act"] = [round(x, 2) for x in a[0].tolist()]
             if m.intent:                                   # the will's current intention (the slow level)
