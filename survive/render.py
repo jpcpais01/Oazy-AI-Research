@@ -55,14 +55,15 @@ def set_eyes(args):
 
 
 def _pixel_dirs(H, dev):
-    key = (H, str(dev), FOVEA)
+    half = math.radians(getattr(_world, "FOV_DEG", 120) / 2)
+    key = (H, str(dev), FOVEA, half)
     if key not in _dirs_cache:
         s = (torch.arange(H, device=dev, dtype=torch.float32) + 0.5) / H * 2 - 1
         if FOVEA > 1:
-            ang = math.radians(60) * (s / FOVEA + (1 - 1 / FOVEA) * s ** 3)
+            ang = half * (s / FOVEA + (1 - 1 / FOVEA) * s ** 3)
             t = torch.tan(ang)
         else:
-            t = s * TAN
+            t = s * math.tan(half)
         py, px = torch.meshgrid(-t, t, indexing="ij")                          # up, right
         _dirs_cache[key] = (px.reshape(-1), py.reshape(-1))
     return _dirs_cache[key]
@@ -75,8 +76,11 @@ def _render_chunk(sc, H):
     P = px.shape[0]
     f = torch.stack([torch.cos(head), torch.sin(head), torch.zeros_like(head)], -1)   # B,3
     r = torch.stack([torch.sin(head), -torch.cos(head), torch.zeros_like(head)], -1)  # right
-    u = torch.tensor([0.0, 0.0, 1.0], device=dev)
-    d = f[:, None] + px[None, :, None] * r[:, None] + py[None, :, None] * u           # B,P,3
+    u = torch.tensor([0.0, 0.0, 1.0], device=dev).expand(B, 3)
+    if "pitch" in sc:                       # eyes tilted down (creature two looks at its table)
+        cp, sp = torch.cos(sc["pitch"])[:, None], torch.sin(sc["pitch"])[:, None]
+        f, u = cp * f - sp * u, sp * f + cp * u
+    d = f[:, None] + px[None, :, None] * r[:, None] + py[None, :, None] * u[:, None]           # B,P,3
     d = d / d.norm(dim=-1, keepdim=True)
     eye = pos + torch.tensor([0.0, 0.0, EYE_H], device=dev)
     o = torch.stack([eye - r * _world.EYE_SEP, eye + r * _world.EYE_SEP], 1)                         # B,2,3 (left, right)
@@ -122,13 +126,17 @@ def _render_chunk(sc, H):
     Ld = LIGHT.to(dev) / LIGHT.norm()
 
     # floor colour: checker, lava on top
-    cx = torch.floor(hitp[..., 0]).long() + torch.floor(hitp[..., 1]).long()
+    tile = getattr(_world, "TILE", 1.0)
+    cx = torch.floor(hitp[..., 0] / tile).long() + torch.floor(hitp[..., 1] / tile).long()
     fcol = sc["floor_col"].gather(1, (cx % 2).clamp(0, 1)[..., None].expand(-1, -1, 3))
     lava = sc["lava"][:, None]                                                         # B,1,NL,4
     inl = ((hitp[..., None, 0] > lava[..., 0]) & (hitp[..., None, 0] < lava[..., 2]) &
            (hitp[..., None, 1] > lava[..., 1]) & (hitp[..., None, 1] < lava[..., 3])).any(-1)
     fcol = torch.where(inl[..., None], LAVA.to(dev), fcol)
     fcol = fcol * (0.7 + 0.3 * Ld[2])
+    if hasattr(_world, "OUTSIDE"):          # creature two: the room's floor beyond the table edge
+        off = ((hitp[..., 0] < 0) | (hitp[..., 0] > L) | (hitp[..., 1] < 0) | (hitp[..., 1] > L))
+        fcol = torch.where(off[..., None], torch.tensor(_world.OUTSIDE, device=dev), fcol)
     # walls
     wcol = sc["wall_col"].gather(1, wall_id[..., None].expand(-1, -1, 3)) * (0.75 + 0.25 * (wz / WALL_H).clamp(0, 1))[..., None]
     # boxes: shade by the face that was hit

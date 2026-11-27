@@ -168,8 +168,10 @@ def lambda_returns(r, c, v, gamma, lam):
     return torch.stack(out)
 
 
+_MUS = ["e_push", "e_turn", "e_jump", "e_grip", "e_gaze", "e_aim", "e_reach"] if ACT == 7 else \
+    (["e_yaw", "e_shoulder", "e_elbow", "e_wrist", "e_claw"] if ACT == 5 else [f"e_m{i}" for i in range(ACT)])
 METRICS = ["sen", "cont", "kl", "var", "cov", "estd", "me", "actor", "critic", "wb", "ret", "ent", "rgoal", "went", "goal", "entw", "gn",
-           "e_push", "e_turn", "e_jump", "e_grip", "e_gaze", "e_aim", "e_reach", "jv", "jr2"]
+           *_MUS, "jv", "jr2"]
 
 
 class Learner:
@@ -213,7 +215,7 @@ class Learner:
         # energy, health and hunger (3 of 31 numbers, changing by ~0.001 a step), so in the plain sum
         # the loud intensity/ear numbers drown them (--body-w > 1 weights those three up)
         self.sen_w = torch.ones(SENSES, device=dev)
-        self.sen_w[[0, 1, 30]] = float(getattr(args, "body_w", 1.0))            # energy, health, hunger
+        self.sen_w[[0, 1, 30] if SENSES > 30 else [0, 1]] = float(getattr(args, "body_w", 1.0))   # energy, health, hunger
         self.ret_lo = torch.zeros((), device=dev)
         self.ret_hi = torch.zeros((), device=dev)
         self.first_call = True
