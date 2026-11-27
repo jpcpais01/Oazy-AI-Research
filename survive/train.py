@@ -171,7 +171,7 @@ class Learner:
         et = getattr(args, "ent_target", None)
         self.ent_target = None if et is None or et != et else float(et) * 5   # per muscle -> all 5
         self.log_ent = torch.tensor(math.log(args.ent), device=dev, requires_grad=True)
-        self.opt_ent = torch.optim.Adam([self.log_ent], lr=3e-3)
+        self.opt_ent = torch.optim.Adam([self.log_ent], lr=1e-2)
         self.ret_lo = torch.zeros((), device=dev)
         self.ret_hi = torch.zeros((), device=dev)
         self.first_call = True
