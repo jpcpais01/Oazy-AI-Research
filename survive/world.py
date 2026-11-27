@@ -176,6 +176,7 @@ class World:
         self.eat_f, self.eat_p = z(B, dt=torch.long), z(B, dt=torch.long)
         self.dash, self.dash_dir, self.dash_stam = z(B, 2), z(B), z(B)
         self.dash_on, self.dash_cd = z(B, dt=torch.bool), z(B, dt=torch.long)
+        self.dash_wind = z(B, dt=torch.long)     # steps since the sprint began (1 s crouch first: a tell)
         self.floor_col, self.wall_col = z(B, 2, 3), z(B, 4, 3)
         self.pred_col, self.wand_col, self.strange_col = z(B, 3), z(B, 3), z(B, 3)
         self.dash_col, self.prey_col = z(B, 3), z(B, 3)
@@ -328,6 +329,7 @@ class World:
         self.dash_stam[idx] = 1.0
         self.dash_on[idx] = False
         self.dash_cd[idx] = 0
+        self.dash_wind[idx] = 0
         self.prey[idx] = cand[:, 7:7 + NP] if on5 else far2[:, None].expand(n, NP, 2).clone()
         self.prey_dir[idx] = self._rand(n, NP) * 2 * math.pi
         self.prey_hp[idx] = 1.0
@@ -547,9 +549,9 @@ class World:
             self.tip = sh + adir * self.arm_r[:, None]
             tip_v = (self.tip - old_tip).norm(dim=-1) / DT
             self.tip_touch = blocked0.float()
-            # hitting the prey: the tip moving faster than 1.2 m/s through it
+            # hitting the prey: the tip (arm out > 15 cm, not the bare shoulder) moving faster than 1.2 m/s through it
             dpt = (self.prey - self.tip[:, None]).norm(dim=-1)
-            hitp = self.prey_alive & (dpt < PREY_R + TIP_R) & (tip_v[:, None] > 1.2) & (self.prey_cd == 0) & ~was_dying[:, None]
+            hitp = self.prey_alive & (dpt < PREY_R + TIP_R) & (tip_v[:, None] > 1.2) & (self.arm_r[:, None] > 0.15) & (self.prey_cd == 0) & ~was_dying[:, None]
             self.prey_hp = self.prey_hp - 0.4 * hitp.float()
             self.prey_cd = torch.where(hitp, torch.full_like(self.prey_cd, 5), (self.prey_cd - 1).clamp(min=0))
             knock = (self.prey - self.tip[:, None]) / dpt[..., None].clamp(min=1e-3)
@@ -648,7 +650,7 @@ class World:
             dbite = self.dash_on & (ddash < R_BODY + DASH_R + 0.05) & (p[:, 2] < 0.6) & (self.dash_cd == 0)
             self.dash_cd = torch.where(dbite, torch.full_like(self.dash_cd, 10), (self.dash_cd - 1).clamp(min=0))
             self.dash_on &= ~dbite
-            dmg_dash = dbite.float() * 0.3
+            dmg_dash = dbite.float() * 0.25
         # strange being: harmless at first, then drains while the creature stays near
         dstr = (self.strange - p[:, :2]).norm(dim=-1)
         near = (dstr < 1.5) & (p[:, 2] < 1.0)
@@ -781,20 +783,23 @@ class World:
 
     def _move_dasher_prey(self, p):
         B, dev = self.B, self.dev
-        # dasher: roams fast and erratically and mostly ignores the creature; now and then, when it is
-        # within 4 m in sight and the dasher is rested, it locks on and sprints (3.4 m/s, faster than
-        # the creature's best) for up to ~3 s, then gives up (tired, by chance, or after one bite)
+        # dasher: roams fast and erratically and mostly ignores the creature; now and then, when it sees
+        # it 2.5-5 m away and is rested, it crouches for 1 s (and gets loud: the tell), then sprints at
+        # 3 m/s (faster than the creature's best) for up to ~2 s, then gives up (tired, by chance, or
+        # after one bite)
         to = p[:, :2] - self.dash
         d = to.norm(dim=-1).clamp(min=1e-4)
-        seen = (d < 4.0) & self._clear(self.dash, p[:, :2]) & (p[:, 2] < 1.0)
+        seen = (d > 2.5) & (d < 5.0) & self._clear(self.dash, p[:, :2]) & (p[:, 2] < 1.0)
         start = ~self.dash_on & seen & (self.dash_stam > 0.8) & (torch.rand(B, device=dev) < 0.03)
         self.dash_on |= start
-        quit_ = (self.dash_stam < 0.05) | (torch.rand(B, device=dev) < 0.015)
-        self.dash_on &= ~quit_
-        self.dash_stam = (self.dash_stam + torch.where(self.dash_on, -0.03, 0.006)).clamp(0, 1)
+        self.dash_wind = torch.where(self.dash_on, self.dash_wind + 1, torch.zeros_like(self.dash_wind))
+        crouch = self.dash_on & (self.dash_wind <= 10)
+        quit_ = (self.dash_stam < 0.05) | (torch.rand(B, device=dev) < 0.02)
+        self.dash_on &= ~(quit_ & ~crouch)
+        self.dash_stam = (self.dash_stam + torch.where(self.dash_on & ~crouch, -0.05, 0.006)).clamp(0, 1)
         self.dash_dir = self.dash_dir + (torch.rand(B, device=dev) - 0.5) * 1.2
         head = torch.where(self.dash_on, torch.atan2(to[:, 1], to[:, 0]), self.dash_dir)
-        sp = torch.where(self.dash_on, 3.4, 1.4) * DT
+        sp = torch.where(crouch, 0.0, torch.where(self.dash_on, 3.0, 1.4)) * DT
         step = torch.stack([torch.cos(head), torch.sin(head)], -1) * sp[:, None]
         step = torch.where((self.dash_on & (d <= 0.6))[:, None], torch.zeros_like(step), step)
         nd = self._slide(self.dash + step, DASH_R)
@@ -883,7 +888,8 @@ class World:
                 (self.wand, torch.tensor([0.0, 0.5, 0.8, 0.2], device=dev) * 2),
                 (self.strange, torch.tensor([0.0, 0.0, 0.3, 1.0], device=dev) * 2)]
         if WORLD_V >= 5:     # the dasher: low and high together; the prey: a faint mid-high squeak while alive
-            srcs.append((self.dash, torch.tensor([0.8, 0.0, 0.0, 0.8], device=dev) * 2.5))
+            loud = (1 + 1.5 * self.dash_on.float())[:, None]              # louder from the crouch on
+            srcs.append((self.dash, torch.tensor([0.8, 0.0, 0.0, 0.8], device=dev) * 2.5 * loud))
             for j in range(NP):
                 srcs.append((torch.where(self.prey_alive[:, j, None], self.prey[:, j], torch.full_like(self.prey[:, j], -50.0)),
                              torch.tensor([0.0, 0.0, 1.0, 0.0], device=dev) * 0.6))
@@ -897,7 +903,7 @@ class World:
             behind = (u * fwd[:, None]).sum(-1) < 0
             pinna = torch.where(behind[..., None], torch.tensor([1.0, 1.0, 0.5, 0.5], device=dev),
                                 torch.ones(4, device=dev))
-            ears += spec * pinna * (gain / (1 + d ** 2))[..., None]
+            ears += (spec[:, None] if spec.dim() == 2 else spec) * pinna * (gain / (1 + d ** 2))[..., None]
         holding = (self.held >= 0).float()
         body = torch.stack([self.energy.clamp(0, 1), self.health.clamp(0, 1), self.touch,
                             self.on_ground.float(), holding], -1)
