@@ -377,7 +377,9 @@ class World:
         """action (B,4) in [-1,1]. Returns (done, trunc, cause, ate_kind) for this step."""
         if self.compile:
             if self._step_c is None:
-                self._step_c = torch.compile(self._step, dynamic=False)
+                # world_v 6 (more than 4 prey): smaller fused kernels, or Triton fails ("PassManager::run failed")
+                opts = {"max_fusion_size": 16} if WORLD_V >= 6 else None
+                self._step_c = torch.compile(self._step, dynamic=False, options=opts)
             return self._step_c(action)
         return self._step(action)
 
