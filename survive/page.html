@@ -439,6 +439,7 @@ for(let i=0;i<DREAM_T.length;i++){const f=document.createElement('div');f.classN
   $('strip').appendChild(f);dreamEls.push(f.querySelector('canvas'))}
 
 /* ---------- muscles, ears, intensity ---------- */
+const MUS_T=[['yaw','#7d8de0','#c0506f'],['shoulder','#4fb8c8','#8a63d2'],['elbow','#e9a23b','#b98a5a'],['wrist','#5bb58a','#7c84a8'],['claw','#c0506f','#e9a23b']];
 const MUS=[['push','#7d8de0','#c0506f'],['turn','#4fb8c8','#8a63d2'],['jump','#e9a23b','#b98a5a'],['grip','#5bb58a','#7c84a8'],['gaze','#8a63d2','#4fb8c8'],['arm aim','#e07b1a','#5bb58a'],['arm reach','#c0506f','#e9a23b']];
 $('muscles').innerHTML=MUS.map(([n],i)=>`<div class="muscle" id="mr${i}"${i>4?' hidden':''}><span>${n}</span><div class="track"><div class="fill" id="m${i}"></div></div><span class="v" id="mv${i}">–</span></div>`).join('');
 ['earL','earR'].forEach(id=>$(id).innerHTML='<i></i><i></i><i></i><i></i>');
@@ -474,6 +475,7 @@ const mapC=$('map'),map=mapC.getContext('2d');let trail=[],lastState=null,dreamP
 function sizeMap(){const dpr=devicePixelRatio||1,W=mapC.clientWidth;if(W&&mapC.width!==Math.round(W*dpr)){mapC.width=mapC.height=Math.round(W*dpr)}}
 const FOODC=['#e8593e','#e9c92f','#5fcf4a'];
 function drawMap(s,tnow){
+  if(s.table){drawTable(s,tnow);return}
   sizeMap();const dpr=devicePixelRatio||1,W=mapC.width/dpr;if(!W)return;map.setTransform(dpr,0,0,dpr,0,0);
   const k=W/s.L,X=v=>v*k,Y=v=>W-v*k;
   // floor: warm paper with a 1 m grid
@@ -544,6 +546,41 @@ function drawMap(s,tnow){
   map.strokeStyle='rgba(255,255,255,.9)';map.lineWidth=1.5;map.beginPath();map.arc(cx,cy,.26*k,0,7);map.stroke();
   // vignette
   const vv=map.createRadialGradient(W/2,W/2,W*.45,W/2,W/2,W*.78);vv.addColorStop(0,'rgba(27,33,71,0)');vv.addColorStop(1,'rgba(27,33,71,.10)');map.fillStyle=vv;map.fillRect(0,0,W,W)}
+/* creature two: its table from above (left) and from the side (right strip) */
+function drawTable(s,tnow){
+  sizeMap();const dpr=devicePixelRatio||1,W=mapC.width/dpr;if(!W)return;map.setTransform(dpr,0,0,dpr,0,0);
+  const T=s.table,S=W*.6,k=S/1.0,ox=(W-S)/2,X=v=>ox+v*k,Y=v=>8+S-v*k;
+  map.fillStyle='#ece7de';map.fillRect(0,0,W,W);
+  // the table: 10 cm tiles
+  for(let i=0;i<10;i++)for(let j=0;j<10;j++){map.fillStyle=(i+j)%2?'#e2cfaf':'#d9c4a2';map.fillRect(X(i/10),Y((j+1)/10),k/10+.5,k/10+.5)}
+  map.strokeStyle='#8a6d4c';map.lineWidth=3;map.strokeRect(X(0),Y(1),k,k);
+  // the basket
+  const b=T.basket,o=T.b_in+T.b_wall;map.fillStyle='rgba(70,100,210,.18)';map.fillRect(X(b[0]-T.b_in),Y(b[1]+T.b_in),2*T.b_in*k,2*T.b_in*k);
+  map.strokeStyle=T.scored?'#5bb58a':'#4664d2';map.lineWidth=Math.max(2,T.b_wall*k);map.strokeRect(X(b[0]-o+T.b_wall/2),Y(b[1]+o-T.b_wall/2),(2*o-T.b_wall)*k,(2*o-T.b_wall)*k);
+  if(T.scored){map.fillStyle='#2f8f62';map.font='600 12px var(--sans)';map.fillText('fed!',X(b[0])-12,Y(b[1]+o)-6)}
+  // the ball (its shadow on the table)
+  const bl=T.ball;map.fillStyle='rgba(40,30,20,.18)';map.beginPath();map.arc(X(bl[0])+2,Y(bl[1])+2,T.ball_r*k,0,7);map.fill();
+  map.save();map.shadowColor='#e2583f';map.shadowBlur=T.held?14:6;map.fillStyle='#e2583f';map.beginPath();map.arc(X(bl[0]),Y(bl[1]),T.ball_r*k,0,7);map.fill();map.restore();
+  // the arm from above
+  const A=T.arm;map.lineCap='round';map.lineJoin='round';
+  map.strokeStyle='rgba(44,53,119,.85)';map.lineWidth=6;map.beginPath();A.slice(0,4).forEach((p,i)=>i?map.lineTo(X(p[0]),Y(p[1])):map.moveTo(X(p[0]),Y(p[1])));map.stroke();
+  [[T.pl,0],[T.pr,2]].forEach(([c,ti])=>{const h=T.hand,on=Math.max(T.touch[ti],T.touch[ti+1]);map.strokeStyle=on>.2?'#c0506f':'#2c3577';map.lineWidth=4;
+    map.beginPath();map.moveTo(X(c[0]-h[0]*.035),Y(c[1]-h[1]*.035));map.lineTo(X(c[0]+h[0]*.035),Y(c[1]+h[1]*.035));map.stroke()});
+  A.slice(0,3).forEach(p=>{map.fillStyle='#fff';map.strokeStyle='#2c3577';map.lineWidth=1.5;map.beginPath();map.arc(X(p[0]),Y(p[1]),4,0,7);map.fill();map.stroke()});
+  map.fillStyle='#5c6380';map.font='10px var(--mono)';map.fillText('from above',ox,S+22);
+  // from the side: along the arm's direction (across) and height (up), true scale
+  const top=S+30,hgt=W-top-8,zk=Math.min(hgt/0.55,(W-16)/0.9),gx=8,gy=top+hgt-4,SX=v=>gx+v*zk,SZ=v=>gy-v*zk;
+  const B0=A[0],dir=[T.hand[0],T.hand[1]],dn=Math.hypot(dir[0],dir[1])||1,ux=dir[0]/dn,uy=dir[1]/dn;
+  const along=p=>(p[0]-B0[0])*ux+(p[1]-B0[1])*uy;
+  map.fillStyle='rgba(255,255,255,.55)';map.fillRect(4,top-4,W-8,hgt+4);
+  map.strokeStyle='#8a6d4c';map.lineWidth=3;map.beginPath();map.moveTo(SX(-0.05),SZ(0));map.lineTo(SX(0.85),SZ(0));map.stroke();
+  const ba=along([b[0],b[1]]);map.strokeStyle='rgba(70,100,210,.75)';map.lineWidth=2;map.beginPath();map.moveTo(SX(ba-o),SZ(T.b_h));map.lineTo(SX(ba-o),SZ(0));map.lineTo(SX(ba+o),SZ(0));map.lineTo(SX(ba+o),SZ(T.b_h));map.stroke();
+  map.fillStyle='rgba(120,120,140,.5)';map.fillRect(SX(-0.03),SZ(A[0][2]),0.06*zk,A[0][2]*zk);
+  map.strokeStyle='rgba(44,53,119,.85)';map.lineWidth=6;map.beginPath();A.slice(0,4).forEach((p,i)=>i?map.lineTo(SX(along(p)),SZ(p[2])):map.moveTo(SX(along(p)),SZ(p[2])));map.stroke();
+  map.strokeStyle=(T.touch[0]>.2||T.touch[2]>.2)?'#c0506f':'#2c3577';map.lineWidth=4;map.beginPath();map.moveTo(SX(along(A[3])),SZ(A[3][2]));map.lineTo(SX(along(A[4])),SZ(A[4][2]));map.stroke();
+  A.slice(0,3).forEach(p=>{map.fillStyle='#fff';map.strokeStyle='#2c3577';map.lineWidth=1.5;map.beginPath();map.arc(SX(along(p)),SZ(p[2]),4,0,7);map.fill();map.stroke()});
+  map.save();map.shadowColor='#e2583f';map.shadowBlur=T.held?14:4;map.fillStyle='#e2583f';map.beginPath();map.arc(SX(along(bl)),SZ(bl[2]),Math.max(3,T.ball_r*zk),0,7);map.fill();map.restore();
+  map.fillStyle='#5c6380';map.fillText(`from the side · claw ${Math.round(T.claw*100)}% open${T.held?' · holding the ball':''}`,10,top+10)}
 function rr(x,y,w,h,r){r=Math.min(r,w/2,h/2);map.beginPath();map.moveTo(x+r,y);map.arcTo(x+w,y,x+w,y+h,r);map.arcTo(x+w,y+h,x,y+h,r);map.arcTo(x,y+h,x,y,r);map.arcTo(x,y,x+w,y,r);map.closePath()}
 let mapT=0;function mapLoop(t){if(lastState&&t-mapT>32){mapT=t;drawMap(lastState,t)}requestAnimationFrame(mapLoop)}requestAnimationFrame(mapLoop);
 addEventListener('resize',()=>{sizeMap()});
@@ -574,7 +611,7 @@ function renderLives(){
   else $('lstats').innerHTML='<span>The first life is still going.</span>'}
 
 /* ---------- one moment ---------- */
-let lastFear=0,lastWbs=null,lastRender=0;
+let lastMU=null,lastFear=0,lastWbs=null,lastRender=0;
 const SKY=document.querySelector('.sky');let moodW=-1,moodF=-1;
 function setMood(w,f){if(Math.abs(w-moodW)>.02){moodW=w;SKY.style.setProperty('--wb',w.toFixed(2))}if(Math.abs(f-moodF)>.02){moodF=f;SKY.style.setProperty('--fear',f.toFixed(2))}}
 function show(f){
@@ -594,15 +631,19 @@ function show(f){
   $('enV').textContent=Math.round(s.energy*100)+'%';$('hpV').textContent=Math.round(s.health*100)+'%';
   $('fTouch').classList.toggle('on',s.body[2]>.5);$('fGround').classList.toggle('on',s.body[3]>.5);$('fHold').classList.toggle('on',s.body[4]>.5);
   // muscles
+  const MU=s.table?MUS_T:MUS;if(MU!==lastMU){lastMU=MU;MU.forEach(([n],i)=>{const r=$('mr'+i);if(r)r.querySelector('span').textContent=n})}
   MUS.forEach((_,i)=>{const r=$('mr'+i);if(r)r.hidden=i>=(f.act||[]).length});
   (f.act||[]).slice(0,MUS.length).forEach((v,i)=>{const el=$('m'+i);if(!el)return;const a=clamp(Math.abs(v));el.style.left=(v<0?50-a*50:50)+'%';el.style.width=a*50+'%';
-    el.style.background=`linear-gradient(90deg,${MUS[i][1]},${MUS[i][2]})`;$('mv'+i).textContent=(v>=0?'+':'−')+Math.abs(v).toFixed(2)});
+    el.style.background=`linear-gradient(90deg,${MU[i][1]},${MU[i][2]})`;$('mv'+i).textContent=(v>=0?'+':'−')+Math.abs(v).toFixed(2)});
   // ears and intensity
   const E=s.ears;['earL','earR'].forEach((id,side)=>[...$(id).children].forEach((el,b)=>el.style.height=Math.round(8+92*clamp(E[side*4+b]))+'%'));
   const I=s.intensity;for(let k=0;k<4;k++)for(let b=0;b<4;b++){const v=clamp(I[k*4+b]/(b===0?3:1.5));const col=BCOL[b];$('h'+k+b).style.background=`rgba(${col},${.08+.85*v})`}
   // where it has been, its lives
   const dist=q=>Math.hypot(q[0]-s.pos[0],q[1]-s.pos[1]);const nf=s.food.length?Math.min(...s.food.map(dist)):null;
-  $('near').innerHTML=[['Nearest food',nf],['Predator',dist(s.pred)],['Strange being',dist(s.strange)]].map(([n,v])=>`<div><span class="caps">${n}</span><b>${v==null?'–':v.toFixed(1)}<small>m</small></b></div>`).join('');
+  const T=s.table,d3=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1],(a[2]||0)-(b[2]||0));
+  const NEAR=T?[['Claw to ball',d3(T.ball,T.arm[4])*100,'cm'],['Ball to basket',Math.hypot(T.ball[0]-T.basket[0],T.ball[1]-T.basket[1])*100,'cm'],['Claw height',(T.pl[2]+T.pr[2])/2*100,'cm']]
+    :[['Nearest food',nf,'m'],['Predator',dist(s.pred),'m'],['Strange being',dist(s.strange),'m']];
+  $('near').innerHTML=NEAR.map(([n,v,u])=>`<div><span class="caps">${n}</span><b>${v==null?'–':v.toFixed(1)}<small>${u}</small></b></div>`).join('');
   trail.push([s.pos[0],s.pos[1]]);if(trail.length>240)trail.shift();lastState=s;
   curLife={t:f.t,food:f.food};
   if(f.end){const cause=f.end.startsWith('lived')?'cap':f.end.replace('died: ','');lives.push({n:f.life,t:f.t+1,food:f.food,cause});trail=[];curLife=null}

@@ -127,7 +127,7 @@ class Sim:
         self.mg = mg
         world = World(1, self.dev, mode=w["mode"], seed=w["seed"])
         act = Actor(m, world, res, self.dev, deterministic=w.get("det", True))   # habit, or with its training wobble
-        self.motion = self._motion_probe(mg, res, w["path"])
+        self.motion = None if hasattr(world, "basket") else self._motion_probe(mg, res, w["path"])   # the table robot doesn't walk
         return m, world, act, res
 
     _probes = {}
@@ -351,7 +351,27 @@ class Sim:
                 if len(self.frames) > 400:          # a ring of the last 40 s: every open page reads it, none removes
                     del self.frames[:len(self.frames) - 400]
 
+    def table_state(self, w):
+        """Creature two (the tabletop arm), in the same shape the page reads, plus a 'table' block."""
+        from .world import fk, BALL_R, B_IN, B_WALL, B_H, G_MAX
+        P = fk(w.q[:1])
+        pts = [P[k][0].tolist() for k in ("sh", "el", "wr", "root", "tip")]
+        r = lambda xs: [round(v, 3) for v in xs]
+        far = [-50.0, -50.0]
+        t = w.touch[0].tolist()
+        return dict(
+            pos=r(w.pos[0].tolist()), head=round(float(w.head[0]), 3), gaze=0, L=1.0, boxes=[], lava=[], food=[],
+            pred=far, wand=far, strange=far, dying=0, energy=round(float(w.energy[0].clamp(0, 1)), 3),
+            health=round(float(w.health[0].clamp(0, 1)), 3),
+            body=[0, 0, float(max(t) > 0.2), 0, float(w.held[0])], intensity=[0] * 16, ears=[0] * 8, stamina=None, hunger=None, v5=False,
+            table=dict(arm=[r(p) for p in pts], pl=r(P["pl"][0].tolist()), pr=r(P["pr"][0].tolist()), side=r(P["side"][0].tolist()),
+                       hand=r(P["hand"][0].tolist()), ball=r(w.ball[0].tolist()), ball_r=BALL_R, held=bool(w.held[0]),
+                       basket=r(w.basket[0].tolist()), b_in=B_IN, b_wall=B_WALL, b_h=B_H, touch=r(t),
+                       claw=round(float(w.q[0, 4]) / G_MAX, 3), scored=int(w.score_t[0]) > 0))
+
     def state(self, w):
+        if hasattr(w, "basket"):
+            return self.table_state(w)
         """The world for the page, copied to the CPU in one go (one GPU sync instead of a hundred)."""
         g = lambda x: x[0].detach().float().reshape(-1)
         parts = dict(pos=g(w.pos), head=g(w.head), gaze=g(torch.as_tensor(w.gaze, device=w.pos.device).reshape(1, -1)),
