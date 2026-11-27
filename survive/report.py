@@ -39,17 +39,46 @@ def record(mind, res, dev, mode, n, seed=4242, bf16=True):
     cause = torch.zeros(n, dtype=torch.long, device=dev)
     T = _world.MAX_STEPS + _world.LIGHT
     keys = ["pos", "head", "gaze", "act", "pred", "pred_hunt", "energy", "health", "stamina", "ate", "live", "wb",
-            "food_d", "bite", "lava_heat"]
+            "food_d", "bite", "lava_heat", "food_ang", "value", "dream_de", "dream_cont", "matter"]
     tr = {k: [] for k in keys}
-    for _ in range(T):
-        a, _, _ = act.observe_act(bf16)
+    amp = bool(dev.type == "cuda" and bf16)
+    for ti in range(T):
+        a, _, emb = act.observe_act(bf16)
+        # what the mind thinks of this moment: its critic's value, and a 1.5 s dream on its own habit
+        # (every 5th step): how much energy it expects to gain, and whether it expects to live
+        with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp):
+            ft = torch.cat([act.h, act.z], -1)
+            x = torch.cat([ft, act.code.to(ft.dtype)], -1) if mind.intent else ft
+            tr["value"].append(mind.critic(x).float().squeeze(-1))
+            tr["matter"].append(mind.matter(emb).float()[:, 0] if getattr(mind, "matter", None) is not None
+                                else torch.zeros(n, device=dev))
+            if ti % 5 == 0:
+                e_now = mind.sense_head(ft).float()[:, 0]
+                h, z = act.h, act.z
+                for _k in range(15):
+                    xx = torch.cat([h, z], -1)
+                    xx = torch.cat([xx, act.code.to(xx.dtype)], -1) if mind.intent else xx
+                    aa, _ = mind.act(xx, deterministic=True)
+                    h = mind.step_h(h, z, aa)
+                    z = mind.sample(mind.imagine_z(h))
+                se = mind.sense_head(torch.cat([h, z], -1)).float()
+                tr["dream_de"].append(se[:, 0] - e_now)
+                tr["dream_cont"].append(torch.sigmoid(mind.cont_head(torch.cat([h, z], -1)).float().squeeze(-1)))
+            else:
+                tr["dream_de"].append(torch.full((n,), float("nan"), device=dev))
+                tr["dream_cont"].append(torch.full((n,), float("nan"), device=dev))
         act.advance(a)
         hp0 = w.health.clone()
         done, trunc, c, ate = w.step(a)
         live = alive & (w.dying == 0)
         p = w.pos
         fd = (w.fpos[..., :2] - p[:, None, :2]).norm(dim=-1)
-        fd = torch.where(w.fup, fd, torch.full_like(fd, 99.0)).min(-1).values
+        fd = torch.where(w.fup, fd, torch.full_like(fd, 99.0))
+        fi = fd.argmin(-1)
+        fd = fd.min(-1).values
+        to_f = w.fpos[torch.arange(n, device=dev), fi, :2] - p[:, :2]
+        fang = torch.atan2(to_f[:, 1], to_f[:, 0]) - w.head
+        tr["food_ang"].append(torch.atan2(torch.sin(fang), torch.cos(fang)).abs())
         tr["pos"].append(p.clone()); tr["head"].append(w.head.clone()); tr["gaze"].append(w.gaze.clone())
         tr["act"].append(a.clone()); tr["pred"].append(w.pred.clone())
         tr["pred_hunt"].append(w.pred_mem_t < _world.PRED_FORGET)
@@ -125,9 +154,27 @@ def summarise(tr, room):
     dfood = tr["food_d"].clamp(max=20)
     dfd = torch.cat([dfood[:, 1:] - dfood[:, :-1], torch.zeros_like(dfood[:, :1])], 1) / _world.DT
     dfd = torch.where(dfd.abs() < 3, dfd, torch.zeros_like(dfd))          # ignore jumps when food is eaten/appears
+    # does it SEE food and EXPECT to eat? (food ahead = nearest food within 1.5 m, within 35 deg of the body's heading)
+    ahead = (dfood < 1.5) & (tr["food_ang"] < math.radians(35)) & (live > 0)
+    none_ = (dfood > 3.0) & (live > 0)
+    eat2 = torch.zeros_like(live)
+    ate_ = (tr["ate"] >= 0).float()
+    for d in range(1, 21):
+        eat2[:, :-d] = torch.maximum(eat2[:, :-d], ate_[:, d:])
+    def cm(x, m):
+        ok = m & ~torch.isnan(x)
+        return round((x[ok].float().mean().item() if ok.any() else float("nan")), 4)
+    probe = dict(
+        share_food_ahead=round(mean(ahead), 3),
+        eats_within_2s_if_food_ahead=cm(eat2, ahead), eats_within_2s_if_no_food_near=cm(eat2, none_),
+        value_food_ahead=cm(tr["value"], ahead), value_no_food=cm(tr["value"], none_),
+        dream_energy_gain_food_ahead=cm(tr["dream_de"], ahead), dream_energy_gain_no_food=cm(tr["dream_de"], none_),
+        dream_alive_food_ahead=cm(tr["dream_cont"], ahead), dream_alive_no_food=cm(tr["dream_cont"], none_),
+        eye_matter_eat_food_ahead=cm(tr["matter"], ahead), eye_matter_eat_no_food=cm(tr["matter"], none_),
+    )
     cause = tr["cause"]
     dead = cause > 0
-    out = dict(
+    out = dict(probe=probe,
         lives=n, steps=round(steps.mean().item(), 1), meals=round(meals.mean().item(), 2),
         deaths_pct={DEATH_CAUSES[i]: round(100 * (cause == i).float().mean().item(), 1) for i in range(1, len(DEATH_CAUSES))},
         first_meal_s=dict(median=round(fm.nanmedian().item(), 1) if (~fm.isnan()).any() else None,
@@ -170,6 +217,10 @@ def summarise(tr, room):
     s.append(f"hungry (energy < 0.3) {100 * hu['share_hungry']:.0f}% of the time; then nearest food distance changes "
              f"{hu['when_hungry_food_dist_change_ms']:+.2f} m/s (negative = heading to food), speed {hu['when_hungry_speed_ms']} m/s, "
              f"near a wall {100 * hu['when_hungry_near_wall']:.0f}%")
+    s.append(f"food within 1.5 m ahead {100 * probe['share_food_ahead']:.0f}% of the time; then it eats within 2 s "
+             f"{100 * probe['eats_within_2s_if_food_ahead']:.0f}% (vs {100 * probe['eats_within_2s_if_no_food_near']:.0f}% with no food near); "
+             f"its 1.5 s dream expects energy {probe['dream_energy_gain_food_ahead']:+.3f} (vs {probe['dream_energy_gain_no_food']:+.3f}); "
+             f"value {probe['value_food_ahead']:.3f} vs {probe['value_no_food']:.3f}; eye's 'I will eat' {probe['eye_matter_eat_food_ahead']:.3f} vs {probe['eye_matter_eat_no_food']:.3f}")
     out["story"] = s
     return out
 
