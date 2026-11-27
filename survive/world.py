@@ -68,13 +68,16 @@ METAB = 1.0         # how fast the food energy drains (1 = a full tank lasts 30 
 
 
 BACK = 1.0          # top speed walking backward, relative to forward
+HEAT = 1            # 1: heat felt from far (inverse square, bottom sensor x5 everywhere: always "on")
+                    # 2: heat fades within ~1.5 m, and the bottom sensor burns only over lava
 
 
-def set_body(stamina=0, metab=1.0, life_cap=100, back_speed=1.0):
+def set_body(stamina=0, metab=1.0, life_cap=100, back_speed=1.0, heat=1):
     """Stamina: sprinting, turning hard and jumping drain it in seconds; easy moving refills it
     in ~8 s. A tired body is weaker (top speed down to 35%, no jump below 15%); it never kills.
     metab: food-energy drain (0.2 = a full tank lasts 150 s standing still). life_cap in s."""
-    global STAMINA, METAB, MAX_STEPS, BACK
+    global STAMINA, METAB, MAX_STEPS, BACK, HEAT
+    HEAT = int(heat or 1)
     STAMINA, METAB, BACK = bool(stamina), float(metab or 1.0), float(back_speed if back_speed is not None else 1.0)
     MAX_STEPS = int(round(float(life_cap or 100) / DT))
 
@@ -593,9 +596,15 @@ class World:
         # band 0, heat from lava: falls off with distance to each patch
         q = pts[:, :, None]                                                            # B,4,1,2
         dx = torch.maximum(self.lmin[:, None] - q, q - self.lmax[:, None]).clamp(min=0).norm(dim=-1)  # B,4,NL
-        heat = (4.0 / (1 + (dx / 0.4) ** 2) * self.lact[:, None]).sum(-1)              # B,4
         lift = torch.exp(-p[:, 2] / 0.3)
-        heat = heat * torch.stack([lift, lift, lift, lift * 5], -1)
+        if HEAT == 2:
+            per = 4.0 / (1 + (dx / 0.4) ** 2) * torch.exp(-dx / 0.7)                   # 1 m: 0.13, 2 m: 0.01
+            bottom = (torch.arange(4, device=dev) == 3)[None, :, None]
+            under = torch.where(bottom, 5 * (dx == 0).float(), torch.ones_like(per))     # the feet burn only on lava
+            heat = (per * under * self.lact[:, None]).sum(-1) * lift[:, None]
+        else:
+            heat = (4.0 / (1 + (dx / 0.4) ** 2) * self.lact[:, None]).sum(-1)          # B,4
+            heat = heat * torch.stack([lift, lift, lift, lift * 5], -1)
         # band 1, pressure: blows on the front, bites on the side facing the predator
         to_p = self.pred - p[:, :2]
         dp = to_p.norm(dim=-1).clamp(min=1e-3)

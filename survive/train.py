@@ -534,6 +534,7 @@ def main():
     ap.add_argument("--stamina", type=int, default=0, help="1 = a fast tiredness pool (sprints/jumps drain it, rest refills it)")
     ap.add_argument("--metab", type=float, default=1.0, help="food-energy drain (0.2 = a full tank lasts 150 s standing still)")
     ap.add_argument("--life-cap", type=float, default=100, help="longest life in seconds (a time limit, not a death)")
+    ap.add_argument("--heat", type=int, default=1, help="1: heat felt from far (old); 2: fades within ~1.5 m, feet burn only on lava")
     ap.add_argument("--back-speed", type=float, default=1.0, help="top speed walking backward relative to forward (v3: 0.5)")
     ap.add_argument("--drive", default="linear", help="linear (energy+health)/2, or homeo (health + 1 - hunger)/2")
     ap.add_argument("--matter", type=float, default=0, help="weight of the eye's 'will I eat / get hurt within 1 s' guess (0 = off)")
