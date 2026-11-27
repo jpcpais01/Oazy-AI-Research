@@ -160,6 +160,7 @@ class World:
         self.bite_cd, self.near_strange = z(B, dt=torch.long), z(B, dt=torch.long)
         self.pred_speed = z(B)
         self.pred_stam = z(B)          # the predator tires too (only with STAMINA): a chase is a sprint
+        self.pred_tired = z(B, dt=torch.bool)   # world-v4: an exhausted predator gives up and rests
         self.pred_mem, self.pred_mem_t = z(B, 2), z(B, dt=torch.long)   # where/when it last noticed the creature
         self.pred_dir, self.pred_side = z(B), z(B)                         # patrol heading; which way it goes around
         self.held = torch.full((B,), -1, device=self.dev, dtype=torch.long)
@@ -294,6 +295,7 @@ class World:
         self.near_strange[idx] = 0
         self.pred_speed[idx] = m.pred_speed
         self.pred_stam[idx] = 1.0
+        self.pred_tired[idx] = False
         self.pred_mem[idx] = self.pred[idx]
         self.pred_mem_t[idx] = PRED_FORGET
         self.pred_dir[idx] = self._rand(n) * 2 * math.pi
@@ -347,7 +349,11 @@ class World:
         self.head = (self.head + turn * 2.5 * DT) % (2 * math.pi)
         fwd = torch.stack([torch.cos(self.head), torch.sin(self.head)], -1)
         drive = torch.where(push < 0, push * BACK, push) if BACK != 1.0 else push   # a body built to walk forward
-        want = fwd * (drive * 2.5 * ((0.35 + 0.65 * self.stamina) if STAMINA else 1.0))[:, None]
+        if STAMINA and WORLD_V >= 4:   # a tired body is slower, but only when the tank runs low
+            top = 0.45 + 0.55 * (self.stamina / 0.3).clamp(max=1)
+        else:
+            top = (0.35 + 0.65 * self.stamina) if STAMINA else 1.0
+        want = fwd * (drive * 2.5 * top)[:, None]
         ctrl = torch.where(self.on_ground, 0.5, 0.1)[:, None]
         vxy = self.vel[:, :2] + ctrl * (want - self.vel[:, :2])
         if LIGHT and WORLD_V >= 2:     # the dying body stops where it fell
@@ -472,8 +478,12 @@ class World:
         self.energy = self.energy - cost
         if STAMINA:
             pe = drive if WORLD_V >= 2 else push                 # reversing slowly is easy
-            effort = 0.015 * pe * pe + 0.004 * turn.abs() + 0.15 * jump.float()
-            rest = 0.012 * (1 - pe.abs()) + 0.002     # walking calmly still recovers a little
+            if WORLD_V >= 4:   # ~15 s of full sprint; walking (push < ~0.7) refills
+                effort = 0.0075 * pe * pe + 0.003 * turn.abs() + 0.08 * jump.float()
+                rest = 0.02 * (1 - pe.abs()) + 0.003
+            else:
+                effort = 0.015 * pe * pe + 0.004 * turn.abs() + 0.15 * jump.float()
+                rest = 0.012 * (1 - pe.abs()) + 0.002     # walking calmly still recovers a little
             self.stamina = (self.stamina - effort + rest).clamp(0, 1)
 
         # --- food
@@ -590,6 +600,10 @@ class World:
         goal = self.pred_mem - self.pred
         gd = goal.norm(dim=-1)
         hunting = (self.pred_mem_t < PRED_FORGET) & (gd > 0.3)
+        if STAMINA and WORLD_V >= 4:   # exhausted: it gives up the chase, forgets, and rests before hunting again
+            self.pred_tired = (self.pred_tired | (self.pred_stam < 0.05)) & (self.pred_stam < 0.6)
+            self.pred_mem_t = torch.where(self.pred_tired, torch.full_like(self.pred_mem_t, PRED_FORGET), self.pred_mem_t)
+            hunting = hunting & ~self.pred_tired
         self.pred_mem_t = torch.where(~hunting & (gd <= 0.3), torch.full_like(self.pred_mem_t, PRED_FORGET), self.pred_mem_t)
         self.pred_dir = self.pred_dir + (torch.rand(B, device=self.dev) - 0.5) * 0.5
         want = torch.where(hunting, torch.atan2(goal[:, 1], goal[:, 0]), self.pred_dir)
