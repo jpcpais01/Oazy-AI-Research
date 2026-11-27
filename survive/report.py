@@ -39,7 +39,8 @@ def record(mind, res, dev, mode, n, seed=4242, bf16=True):
     cause = torch.zeros(n, dtype=torch.long, device=dev)
     T = _world.MAX_STEPS + _world.LIGHT
     keys = ["pos", "head", "gaze", "act", "pred", "pred_hunt", "energy", "health", "stamina", "ate", "live", "wb",
-            "food_d", "bite", "lava_heat", "food_ang", "value", "dream_de", "dream_cont", "matter"]
+            "food_d", "bite", "lava_heat", "food_ang", "value", "dream_de", "dream_cont", "matter",
+            "dash", "dash_on", "dash_bite", "reach", "tip", "hits", "kills", "old_age", "prey_d"]
     tr = {k: [] for k in keys}
     amp = bool(dev.type == "cuda" and bf16)
     for ti in range(T):
@@ -69,7 +70,20 @@ def record(mind, res, dev, mode, n, seed=4242, bf16=True):
                 tr["dream_cont"].append(torch.full((n,), float("nan"), device=dev))
         act.advance(a)
         hp0 = w.health.clone()
+        php0, palive0 = w.prey_hp.clone(), w.prey_alive.clone()
+        don0 = w.dash_on.clone()
         done, trunc, c, ate = w.step(a)
+        # world 5: the arm, the small prey, the dasher (all zeros / never in older worlds)
+        tr["dash"].append(w.dash.clone()); tr["dash_on"].append(don0 | w.dash_on)
+        tr["dash_bite"].append(don0 & ((w.dash - w.pos[:, :2]).norm(dim=-1) < 0.8) & (w.health < hp0 - 0.2))
+        tr["reach"].append(w.arm_r.clone()); tr["tip"].append(w.tip.clone())
+        tr["hits"].append((w.prey_hp < php0 - 1e-4).sum(-1))
+        died = palive0 & w.prey_dead
+        hit_now = w.prey_hp < php0 - 1e-4
+        tr["kills"].append((died & hit_now).sum(-1))                   # killed by the arm
+        tr["old_age"].append((died & ~hit_now).sum(-1))               # died on its own
+        dpr = (w.prey - w.pos[:, None, :2]).norm(dim=-1)
+        tr["prey_d"].append(torch.where(w.prey_alive, dpr, torch.full_like(dpr, 99.0)).min(-1).values)
         live = alive & (w.dying == 0)
         p = w.pos
         fd = (w.fpos[..., :2] - p[:, None, :2]).norm(dim=-1)
@@ -86,7 +100,7 @@ def record(mind, res, dev, mode, n, seed=4242, bf16=True):
         tr["stamina"].append(w.stamina.clone()); tr["ate"].append(ate.clone()); tr["live"].append(live.clone())
         tr["wb"].append(wellbeing(w.senses))
         tr["food_d"].append(fd)
-        tr["bite"].append((w.health < hp0 - 0.2) & live)
+        tr["bite"].append((w.health < hp0 - 0.2) & live & ~tr["dash_bite"][-1])
         tr["lava_heat"].append(w.senses[:, 5 + 12])                 # heat felt under the feet (log1p)
         cause = torch.where(alive & done, c, cause)
         alive &= ~(done | trunc)
@@ -200,6 +214,23 @@ def summarise(tr, room):
                     food_dist_m=round(mean(dfood), 2)),
         wellbeing=round(mean(tr["wb"]), 3),
     )
+    # world 5: hunting with the arm, the dasher
+    lv = live > 0
+    ate_k = tr["ate"]
+    dd = (tr["dash"] - p).norm(dim=-1)
+    dash_close = tr["dash_on"] & (dd < 4.0) & lv
+    out["hunt"] = dict(
+        arm_out_share=round(mean(tr["reach"] > 0.3), 3), arm_reach_mean=round(mean(tr["reach"]), 3),
+        prey_within_2m_share=round(mean(tr["prey_d"] < 2.0), 3),
+        hits_per_life=round((tr["hits"].float() * live).sum(1).mean().item(), 2),
+        kills_per_life=round((tr["kills"].float() * live).sum(1).mean().item(), 2),
+        old_age_deaths_per_life=round((tr["old_age"].float() * live).sum(1).mean().item(), 2),
+        carcasses_eaten_per_life=round(((ate_k == 3).float() * live).sum(1).mean().item(), 2),
+        fruits_per_life=round((((ate_k >= 0) & (ate_k < 3)).float() * live).sum(1).mean().item(), 2),
+        arm_out_when_prey_near=round((((tr["reach"] > 0.3) & (tr["prey_d"] < 1.5) & lv).float().sum() /
+                                      ((tr["prey_d"] < 1.5) & lv).float().sum().clamp(min=1)).item(), 3),
+        dasher_sprints_near_share=round(mean(dash_close), 3),
+        dasher_bites_per_life=round(tr["dash_bite"].float().sum(1).mean().item(), 2))
     # a few plain sentences
     s = []
     pl, mv, pr, hu = out["place"], out["moving"], out["predator"], out["hunger"]
@@ -221,6 +252,12 @@ def summarise(tr, room):
              f"{100 * probe['eats_within_2s_if_food_ahead']:.0f}% (vs {100 * probe['eats_within_2s_if_no_food_near']:.0f}% with no food near); "
              f"its 1.5 s dream expects energy {probe['dream_energy_gain_food_ahead']:+.3f} (vs {probe['dream_energy_gain_no_food']:+.3f}); "
              f"value {probe['value_food_ahead']:.3f} vs {probe['value_no_food']:.3f}; eye's 'I will eat' {probe['eye_matter_eat_food_ahead']:.3f} vs {probe['eye_matter_eat_no_food']:.3f}")
+    hu5 = out["hunt"]
+    if hu5["prey_within_2m_share"] > 0 or hu5["dasher_sprints_near_share"] > 0:
+        s.append(f"hunting: arm out (> 0.3 m) {100 * hu5['arm_out_share']:.0f}% of the time ({100 * hu5['arm_out_when_prey_near']:.0f}% when prey is within 1.5 m); "
+                 f"prey within 2 m {100 * hu5['prey_within_2m_share']:.0f}%; {hu5['hits_per_life']} hits, {hu5['kills_per_life']} kills (+{hu5['old_age_deaths_per_life']} prey dying of age), "
+                 f"{hu5['carcasses_eaten_per_life']} carcasses eaten vs {hu5['fruits_per_life']} fruits a life; "
+                 f"dasher sprinting within 4 m {100 * hu5['dasher_sprints_near_share']:.0f}%, {hu5['dasher_bites_per_life']} dasher bites a life")
     out["story"] = s
     return out
 
@@ -264,8 +301,21 @@ def svg(tr, room, lives=6, cols=3):
             f = t / max(T - 1, 1)
             col = f"rgb({int(40 + 200 * f)},{int(90 - 40 * f)},{int(220 - 180 * f)})"
             o.append(f'<line x1="{X(p[t][0]):.1f}" y1="{Y(p[t][1]):.1f}" x2="{X(p[t + step][0]):.1f}" y2="{Y(p[t + step][1]):.1f}" stroke="{col}" stroke-width="1.6"/>')
+        if tr["dash_on"][i, :T].any() or tr["dash"][i, :T].abs().sum() > 0:
+            dq = tr["dash"][i, :T].tolist()
+            on = tr["dash_on"][i, :T].tolist()
+            for t in range(0, T - step, step):                        # the dasher: faint, bold red while it sprints
+                if dq[t][0] > -5:
+                    o.append(f'<line x1="{X(dq[t][0]):.1f}" y1="{Y(dq[t][1]):.1f}" x2="{X(dq[t + step][0]):.1f}" y2="{Y(dq[t + step][1]):.1f}" '
+                             f'stroke="#d2452f" stroke-width="{1.8 if on[t] else 0.6}" opacity="{0.8 if on[t] else 0.25}"/>')
         for t in (tr["ate"][i, :T] >= 0).nonzero().squeeze(-1).tolist():
-            o.append(f'<circle cx="{X(p[t][0]):.1f}" cy="{Y(p[t][1]):.1f}" r="5" fill="none" stroke="#2a9d3a" stroke-width="2"/>')
+            carc = tr["ate"][i, t].item() == 3
+            o.append(f'<circle cx="{X(p[t][0]):.1f}" cy="{Y(p[t][1]):.1f}" r="{7 if carc else 5}" fill="none" stroke="{"#e07b1a" if carc else "#2a9d3a"}" stroke-width="{3 if carc else 2}"/>')
+        for t in (tr["kills"][i, :T] > 0).nonzero().squeeze(-1).tolist():
+            q_ = tr["tip"][i, t].tolist()
+            o.append(f'<text x="{X(q_[0]) - 5:.1f}" y="{Y(q_[1]) + 5:.1f}" fill="#e07b1a" font-size="15" font-weight="bold">✶</text>')
+        for t in tr["dash_bite"][i, :T].nonzero().squeeze(-1).tolist():
+            o.append(f'<circle cx="{X(p[t][0]):.1f}" cy="{Y(p[t][1]):.1f}" r="3" fill="#d2452f"/>')
         for t in tr["bite"][i, :T].nonzero().squeeze(-1).tolist():
             o.append(f'<circle cx="{X(p[t][0]):.1f}" cy="{Y(p[t][1]):.1f}" r="3" fill="#7b55c7"/>')
         o.append(f'<circle cx="{X(p[0][0]):.1f}" cy="{Y(p[0][1]):.1f}" r="4" fill="#2850dc"/>')

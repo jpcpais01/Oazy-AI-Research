@@ -97,6 +97,7 @@ class Sim:
         ck = torch.load(w["path"], map_location=self.dev)
         res = ck["args"]["res"]
         set_eyes(ck["args"])
+        self.world_v = int(ck["args"].get("world_v", 1))
         m = make_mind(ck["args"]).to(self.dev)
         load_mind(m, ck["mind"])
         m.eval()
@@ -323,7 +324,9 @@ class Sim:
         parts = dict(pos=g(w.pos), head=g(w.head), gaze=g(torch.as_tensor(w.gaze, device=w.pos.device).reshape(1, -1)),
                      bmin=g(w.bmin), bmax=g(w.bmax), bcol=g(w.bcol), bmov=g(w.bmov), bact=g(w.bact), held=g(w.held),
                      lmin=g(w.lmin), lmax=g(w.lmax), lact=g(w.lact), fpos=g(w.fpos), fkind=g(w.fkind), fup=g(w.fup),
-                     pred=g(w.pred), wand=g(w.wand), strange=g(w.strange), dying=g(w.dying), energy=g(w.energy), health=g(w.health), sen=g(w.senses))
+                     pred=g(w.pred), wand=g(w.wand), strange=g(w.strange), dying=g(w.dying), energy=g(w.energy), health=g(w.health), sen=g(w.senses),
+                     dash=g(w.dash), dash_on=g(w.dash_on), dash_wind=g(w.dash_wind), prey=g(w.prey), prey_alive=g(w.prey_alive), prey_dead=g(w.prey_dead),
+                     arm_a=g(w.arm_a), arm_r=g(w.arm_r), tip=g(w.tip))
         flat = torch.cat(list(parts.values())).cpu().tolist()
         c, k = {}, 0
         for name, t in parts.items():
@@ -340,7 +343,13 @@ class Sim:
             food=[r(c["fpos"][3 * i:3 * i + 3]) + [int(c["fkind"][i])] for i in range(NF) if c["fup"][i]],
             pred=r(c["pred"]), wand=r(c["wand"]), strange=r(c["strange"]),
             dying=int(c["dying"][0]), energy=round(min(max(c["energy"][0], 0), 1), 3), health=round(min(max(c["health"][0], 0), 1), 3),
-            body=r(sen[:5]), intensity=r(sen[5:21]), ears=r(sen[21:29]), stamina=round(sen[29], 3), hunger=round(sen[30], 3))
+            body=r(sen[:5]), intensity=r(sen[5:21]), ears=r(sen[21:29]), stamina=round(sen[29], 3), hunger=round(sen[30], 3),
+            # world 5 (empty / zero in older worlds): the dasher, the small prey and carcasses, the arm
+            v5=bool(getattr(self, "world_v", 1) >= 5),
+            dash=r(c["dash"]), dash_on=bool(c["dash_on"][0]), dash_crouch=bool(c["dash_on"][0] and c["dash_wind"][0] <= 10),
+            prey=[r(c["prey"][2 * i:2 * i + 2]) + [1 if c["prey_alive"][i] else 0] for i in range(len(c["prey_alive"]))
+                  if c["prey_alive"][i] or c["prey_dead"][i]],
+            arm=dict(a=round(c["arm_a"][0], 3), r=round(c["arm_r"][0], 3), tip=r(c["tip"])))
 
     def take(self, since):
         with self.lock:

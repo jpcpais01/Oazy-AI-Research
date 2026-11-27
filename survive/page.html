@@ -362,6 +362,9 @@ html{scrollbar-width:none}html::-webkit-scrollbar,body::-webkit-scrollbar,*::-we
         <span><i class="sq" style="background:var(--sand);transform:rotate(45deg)"></i>strange being</span>
         <span><i class="sq" style="background:var(--wood)"></i>crate</span>
         <span><i class="sq" style="background:#8f8aa6"></i>ledge / block</span>
+        <span class="v5" hidden><i style="background:#d2452f"></i>dasher</span>
+        <span class="v5" hidden><i style="background:#e9c48a"></i>small prey</span>
+        <span class="v5" hidden><i class="sq" style="background:#7a5a3c"></i>carcass</span>
       </div>
       <div class="near" id="near"></div>
     </section>
@@ -436,8 +439,8 @@ for(let i=0;i<DREAM_T.length;i++){const f=document.createElement('div');f.classN
   $('strip').appendChild(f);dreamEls.push(f.querySelector('canvas'))}
 
 /* ---------- muscles, ears, intensity ---------- */
-const MUS=[['push','#7d8de0','#c0506f'],['turn','#4fb8c8','#8a63d2'],['jump','#e9a23b','#b98a5a'],['grip','#5bb58a','#7c84a8'],['gaze','#8a63d2','#4fb8c8']];
-$('muscles').innerHTML=MUS.map(([n],i)=>`<div class="muscle"><span>${n}</span><div class="track"><div class="fill" id="m${i}"></div></div><span class="v" id="mv${i}">–</span></div>`).join('');
+const MUS=[['push','#7d8de0','#c0506f'],['turn','#4fb8c8','#8a63d2'],['jump','#e9a23b','#b98a5a'],['grip','#5bb58a','#7c84a8'],['gaze','#8a63d2','#4fb8c8'],['arm aim','#e07b1a','#5bb58a'],['arm reach','#c0506f','#e9a23b']];
+$('muscles').innerHTML=MUS.map(([n],i)=>`<div class="muscle" id="mr${i}"${i>4?' hidden':''}><span>${n}</span><div class="track"><div class="fill" id="m${i}"></div></div><span class="v" id="mv${i}">–</span></div>`).join('');
 ['earL','earR'].forEach(id=>$(id).innerHTML='<i></i><i></i><i></i><i></i>');
 const BANDS=['heat','press','hum','field'],BCOL=[[239,122,78],[125,141,224],[79,184,200],[138,99,210]];
 $('heat').innerHTML='<span></span>'+BANDS.map(b=>`<span class="hd">${b}</span>`).join('')+[0,1,2,3].map(k=>`<span>s${k+1}</span>`+[0,1,2,3].map(b=>`<i id="h${k}${b}"></i>`).join('')).join('');
@@ -501,6 +504,18 @@ function drawMap(s,tnow){
     const g=map.createRadialGradient(x-r*k*.35,y-r*k*.35,0,x,y,r*k);g.addColorStop(0,'rgba(255,255,255,.55)');g.addColorStop(.6,'rgba(255,255,255,0)');map.fillStyle=g;map.beginPath();map.arc(x,y,r*k,0,7);map.fill();
     if(ring){const ph=(tnow%1600)/1600;map.strokeStyle=`rgba(138,99,210,${.5*(1-ph)})`;map.lineWidth=1.5;map.beginPath();map.arc(x,y,r*k*(1+ph*1.6),0,7);map.stroke()}};
   being(s.wand,.3,'#4fb8c8',false);being(s.pred,.35,'#8a63d2',true);
+  if(s.v5){
+    // small prey (alive: a little warm ball) and carcasses (dark flat squares where they fell)
+    (s.prey||[]).forEach(q=>{const x=X(q[0]),y=Y(q[1]);if(q[2]){map.save();map.shadowColor='rgba(150,100,40,.5)';map.shadowBlur=6;map.fillStyle='#e9c48a';map.beginPath();map.arc(x,y,.14*k,0,7);map.fill();
+        map.restore();map.strokeStyle='rgba(120,80,30,.7)';map.lineWidth=1;map.beginPath();map.arc(x,y,.14*k,0,7);map.stroke()}
+      else{map.fillStyle='#7a5a3c';rr(x-.13*k,y-.13*k,.26*k,.26*k,2);map.fill();map.strokeStyle='rgba(255,255,255,.7)';map.lineWidth=1.2;
+        map.beginPath();map.moveTo(x-.07*k,y-.07*k);map.lineTo(x+.07*k,y+.07*k);map.moveTo(x+.07*k,y-.07*k);map.lineTo(x-.07*k,y+.07*k);map.stroke()}});
+    // the dasher: red; while sprinting it glows and leaves a streak
+    if(s.dash){const x=X(s.dash[0]),y=Y(s.dash[1]);
+      if(s.dash_crouch){const ph=(tnow%500)/500;map.strokeStyle=`rgba(232,52,28,${.8*(1-ph)})`;map.lineWidth=2;map.beginPath();map.arc(x,y,.3*k*(1+ph*1.8),0,7);map.stroke()}   // the crouch: a loud pulsing warning
+      else if(s.dash_on){map.save();map.shadowColor='#ff4a2a';map.shadowBlur=18;map.fillStyle='rgba(255,90,50,.35)';map.beginPath();map.arc(x,y,.55*k,0,7);map.fill();map.restore()}
+      being(s.dash,.30,s.dash_on?'#e8341c':'#d2452f',false)}
+  }
   // its dreams: 16 imagined futures, decoded into paths (10 s; brightest over the first 1.5 s), coloured by how good each dream feels
   if(dreamPaths&&!(s.dying>0)){map.save();map.lineCap='round';map.lineJoin='round';
     dreamPaths.pts.forEach((P,i)=>{const w=dreamPaths.wb[i],dd=dreamPaths.die[i],c=dd!=null?[248,244,236]:wbColor(w);const end=dd!=null?Math.min(P.length,Math.ceil(dd/2)+1):P.length;
@@ -516,6 +531,10 @@ function drawMap(s,tnow){
   map.strokeStyle='rgba(125,141,224,.35)';map.lineWidth=1;map.setLineDash([2,4]);[1,-1].forEach(sg=>{map.beginPath();map.moveTo(cx,cy);map.lineTo(cx+Math.cos(lk+sg*Math.PI/3)*2.2*k,cy-Math.sin(lk+sg*Math.PI/3)*2.2*k);map.stroke()});map.setLineDash([]);
   if(Math.abs(gz)>.02){const fg=map.createLinearGradient(cx,cy,cx+Math.cos(lk)*6*k,cy-Math.sin(lk)*6*k);fg.addColorStop(0,'rgba(178,98,154,.55)');fg.addColorStop(1,'rgba(178,98,154,0)');
     map.strokeStyle=fg;map.lineWidth=2.5;map.beginPath();map.moveTo(cx,cy);map.lineTo(cx+Math.cos(lk)*6*k,cy-Math.sin(lk)*6*k);map.stroke()}
+  // the arm: from the shoulder (front of the body) to the tip, where the hand is
+  if(s.v5&&s.arm&&s.arm.r>0.02){const shx=cx+Math.cos(h)*.25*k,shy=cy-Math.sin(h)*.25*k,tx=X(s.arm.tip[0]),ty=Y(s.arm.tip[1]);
+    map.save();map.lineCap='round';map.strokeStyle='rgba(44,53,119,.85)';map.lineWidth=3.2;map.beginPath();map.moveTo(shx,shy);map.lineTo(tx,ty);map.stroke();
+    map.fillStyle='#fff';map.strokeStyle='#2c3577';map.lineWidth=1.5;map.beginPath();map.arc(tx,ty,.07*k+1.5,0,7);map.fill();map.stroke();map.restore()}
   map.save();map.shadowColor='rgba(27,33,71,.45)';map.shadowBlur=8;map.shadowOffsetY=2;map.fillStyle='#2c3577';map.beginPath();map.arc(cx,cy,.26*k,0,7);map.fill();map.restore();
   map.strokeStyle='#fff';map.lineWidth=2.4;map.lineCap='round';map.beginPath();map.moveTo(cx,cy);map.lineTo(cx+Math.cos(h)*.36*k,cy-Math.sin(h)*.36*k);map.stroke();
   map.strokeStyle='rgba(255,255,255,.9)';map.lineWidth=1.5;map.beginPath();map.arc(cx,cy,.26*k,0,7);map.stroke();
@@ -555,6 +574,7 @@ let lastFear=0,lastWbs=null,lastRender=0;
 function show(f){
   const res=f.res,e=b64(f.eyes);drawRGB(eyeL,e,res,0,6);drawRGB(eyeR,e,res,3,6);$('resTag').textContent=res+' px · stereo';
   const s=f.state,wbNow=(drive==='homeo'&&s.hunger!=null)?(s.health+1-s.hunger)/2:(s.energy+s.health)/2;
+  document.querySelectorAll('.legend .v5').forEach(e=>e.hidden=!s.v5);
   $('flStam').hidden=s.stamina==null;if(s.stamina!=null)$('stV').textContent=Math.round(s.stamina*100)+'%';
   $('flHung').hidden=s.hunger==null;if(s.hunger!=null)$('huV').textContent=Math.round(s.hunger*100)+'%';
   if(f.paths){dreamPaths=f.paths;const e=f.paths.err||{};if(e['mean_1.6s']!=null)$('pathErr').textContent=`Checked against what really happened: 1.6 s ahead the dreams are off by ${e['mean_1.6s']} m on average (closest dream ${e['best_1.6s']} m)${e['mean_4s']!=null?`, 4 s ahead ${e['mean_4s']} m (closest ${e['best_4s']} m)`:''}.`}
@@ -568,6 +588,7 @@ function show(f){
   $('enV').textContent=Math.round(s.energy*100)+'%';$('hpV').textContent=Math.round(s.health*100)+'%';
   $('fTouch').classList.toggle('on',s.body[2]>.5);$('fGround').classList.toggle('on',s.body[3]>.5);$('fHold').classList.toggle('on',s.body[4]>.5);
   // muscles
+  MUS.forEach((_,i)=>{const r=$('mr'+i);if(r)r.hidden=i>=(f.act||[]).length});
   (f.act||[]).slice(0,MUS.length).forEach((v,i)=>{const el=$('m'+i);if(!el)return;const a=clamp(Math.abs(v));el.style.left=(v<0?50-a*50:50)+'%';el.style.width=a*50+'%';
     el.style.background=`linear-gradient(90deg,${MUS[i][1]},${MUS[i][2]})`;$('mv'+i).textContent=(v>=0?'+':'−')+Math.abs(v).toFixed(2)});
   // ears and intensity
@@ -675,19 +696,19 @@ async function loadInfo(){
   try{const a=await (await fetch('/api/about?mind='+encodeURIComponent(mindPath))).json();
     $('aboutTag').textContent=a.name||'';drive=a.drive||'linear';
     const g=a.cfg||{},sec=v=>(v/10).toFixed(v%10?1:0)+' s',cont=g.init?g.init.split('/survive/').pop().replace('/mind_',' · ').replace('min.pt',' min'):'';
-    const feel=['energy','health'].concat(g.stamina?['stamina (sprint tank)']:[],g.drive==='homeo'||a.drive==='homeo'?['hunger']:[],['touch','on ground','holding']);
+    const feel=['energy','health'].concat(g.stamina?['stamina (sprint tank)']:[],g.drive==='homeo'||a.drive==='homeo'?['hunger']:[],['touch','on ground','holding'],g.world_v>=5?['where its arm points and how far it reaches','the arm tip touching something']:[]);
     const rows=[
       ['Eyes',`two, stereo, 120° each, ${a.res} px${g.fovea>1?`, sharp centre ×${g.fovea}`:''}${g.gaze?`, can look ±${g.gaze}° without turning`:''}`],
       ['Ears','two, 4 bands each; the outer ear dulls high sounds from behind'],
       ['Touch & skin','4 sensors × 4 bands: heat, pressure, hum, field'],
       ...(g.smell?[['Nose','two nostrils, 12 cm apart: food smell, stronger when close and on that side']]:[]),
       ['Body feelings',feel.join(', ')],
-      ['Muscles',`push, turn, jump, grip${g.gaze?', gaze':''}. Raw, nothing scripted`],
+      ['Muscles',`push, turn, jump, grip${g.gaze?', gaze':''}${g.world_v>=5?', arm aim (±90°) and arm reach (0–1 m)':''}. Raw, nothing scripted`],
       ['Drive',(a.drive==='homeo'?'wellbeing = (health + 1 − hunger) / 2: a half-full stomach is fine, an empty one hurts':'wellbeing = (energy + health) / 2')+', and staying alive'],
       ['Learning to see',g.recon>0?`eye kept rich by VICReg, and the inner state must also redraw what the left eye saw (weight ${g.recon}), so small things like food are kept`:'eye kept rich by VICReg (vary, don\'t repeat). No picture is ever redrawn'],
       ['Memory','512 numbers carried through life + 32 × 16 “moment” slots'],
       ['Imagination',`${a.horizon} steps (${(a.horizon/10).toFixed(1)} s) ahead, horizon γ = ${a.gamma}${g.jumps?`; then jumps of ${g.jumps.split(',').map(x=>sec(+x)).join(' + ')} forecast further (weight ${g.jump_w})`:''}`],
-      ['World',`version ${g.world_v}${g.world_v>=4?' (bigger stamina tank, walking refills it, a tired predator gives up)':g.world_v>=3?' (predator lunges, open rooms)':''}; lives up to ${g.life_cap} s${g.light?`; ${sec(g.light)} of white light at death`:''}`],
+      ['World',`version ${g.world_v}${g.world_v>=5?' (an arm that hits; small prey that flee, die after 3 hits and are eaten in 3 s for 5 fruits; the dasher, a fast erratic second predator; fruit eaten in 1 s for a third of the energy; stamina as v4)':g.world_v>=4?' (bigger stamina tank, walking refills it, a tired predator gives up)':g.world_v>=3?' (predator lunges, open rooms)':''}; lives up to ${g.life_cap} s${g.light?`; ${sec(g.light)} of white light at death`:''}`],
       ['Trained',`${a.minutes} min${a.frames?`, ${(a.frames/1e6).toFixed(1)}M frames learned`:''}, ${a.params}M parameters${cont?`, continued from ${cont}`:''}`]];
     const half=Math.ceil(rows.length/2),dl=rs=>'<dl>'+rs.map(r=>`<div class="row"><dt>${r[0]}</dt><dd>${r[1]}</dd></div>`).join('')+'</dl>';
     $('about').innerHTML=dl(rows.slice(0,half))+dl(rows.slice(half));

@@ -26,6 +26,8 @@ alive = torch.ones(n, dtype=torch.bool, device=dev)
 in_chase = torch.zeros(n, dtype=torch.bool, device=dev)
 acc = {k: torch.zeros(n, device=dev) for k in ["t", "d0", "st0", "hp0", "pst0", "speed", "push", "jump", "away", "behind", "stam_min"]}
 chases = []
+dash = dict(sprints=0, bites=0, escapes=0)              # world 5: the dasher's sprints that start within 4 m
+d_on = torch.zeros(n, dtype=torch.bool, device=dev); d_bit = torch.zeros(n, dtype=torch.bool, device=dev)
 
 
 def close(mask, outcome):
@@ -53,7 +55,15 @@ with torch.no_grad():
         acc["stam_min"] = torch.where(start, w.stamina, acc["stam_min"])
         in_chase |= start
         h0 = w.health.clone()
+        don0 = w.dash_on.clone()
         done, trunc, cause, _ = w.step(x)
+        dd = (w.dash - w.pos[:, :2]).norm(dim=-1)
+        newd = live & ~d_on & w.dash_on & (dd < 4.0)
+        dash["sprints"] += int(newd.sum()); d_on |= newd
+        bitd = d_on & don0 & (dd < 0.8) & (w.health < h0 - 0.2)
+        dash["bites"] += int(bitd.sum()); d_bit |= bitd
+        endd = d_on & ~w.dash_on
+        dash["escapes"] += int((endd & ~d_bit).sum()); d_on &= ~endd; d_bit &= ~endd
         v = (w.pos[:, :2] - p) / W.DT
         rel = w.pred - w.pos[:, :2]; dn = rel.norm(dim=-1).clamp(min=1e-3)
         ang = torch.remainder(torch.atan2(rel[:, 1], rel[:, 0]) - w.head + math.pi, 2 * math.pi) - math.pi
@@ -62,7 +72,7 @@ with torch.no_grad():
         acc["t"] += cf; acc["speed"] += cf * v.norm(dim=-1); acc["push"] += cf * x[:, 0].float()
         acc["jump"] += cf * (x[:, 2] > 0.5).float(); acc["away"] += cf * (-(rel * v).sum(-1) / dn)
         acc["behind"] += cf * (ang.abs() > 2.0).float(); acc["stam_min"] = torch.where(c, torch.minimum(acc["stam_min"], w.stamina), acc["stam_min"])
-        bit = c & (w.health < h0 - 0.2)
+        bit = c & (w.health < h0 - 0.2) & ~bitd
         over = (done | trunc) | (w.dying > 0)                        # the life ended this step (the light starts)
         killed = c & over & (w.dcause == W.DEATH_CAUSES.index("predator"))
         ended_other = c & over & ~killed
@@ -88,9 +98,12 @@ out["escape_by_stam0"] = {f"{lo:.1f}-{hi:.1f}": (lambda cs: dict(n=len(cs), esca
     [c for c in chases if lo <= c["stam0"] < hi]) for lo, hi in bins}
 out["escape_by_jumping"] = {nm: (lambda cs: dict(n=len(cs), escape=round(sum(c["outcome"] == "escape" for c in cs) / max(1, len(cs)), 2)))(
     [c for c in chases if f(c)]) for nm, f in [("jumps<10%", lambda c: c["jump"] < .1), ("jumps>=10%", lambda c: c["jump"] >= .1)]}
+out["dasher"] = dash
 print(json.dumps(out, indent=1))
 e, b, dd = (out["by_outcome"].get(o, {}) for o in ["escape", "bite", "death"])
 print(f"chases: {out['chases_per_life']} a life; escape {out['outcome_share']['escape']:.0%}, bite {out['outcome_share']['bite']:.0%}, death {out['outcome_share']['death']:.0%} | "
       f"stamina at start: escape {e.get('stam0', 0):.2f} vs bite {b.get('stam0', 0):.2f}; speed {e.get('speed', 0):.2f} vs {b.get('speed', 0):.2f} m/s; "
       f"push {e.get('push', 0):+.2f} vs {b.get('push', 0):+.2f}; jumping {e.get('jump', 0):.2f} vs {b.get('jump', 0):.2f}; faces away {e.get('behind', 0):.2f} vs {b.get('behind', 0):.2f}")
+if dash["sprints"]:
+    print(f"dasher: {dash['sprints'] / n:.2f} sprints within 4 m a life; {dash['bites']} bites, {dash['escapes']} sprints ended without a bite")
 json.dump(out, open(a.mind.replace(".pt", f".chases_{a.mode}.json"), "w"), indent=1)
