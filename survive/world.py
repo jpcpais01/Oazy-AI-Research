@@ -72,11 +72,18 @@ HEAT = 1            # 1: heat felt from far (inverse square, bottom sensor x5 ev
                     # 2: heat fades within ~1.5 m, and the bottom sensor burns only over lava
 
 
-def set_body(stamina=0, metab=1.0, life_cap=100, back_speed=1.0, heat=1):
+WORLD_V = 1         # 2: audit fixes (Nov 27), see set_body
+
+
+def set_body(stamina=0, metab=1.0, life_cap=100, back_speed=1.0, heat=1, world_v=1):
     """Stamina: sprinting, turning hard and jumping drain it in seconds; easy moving refills it
     in ~8 s. A tired body is weaker (top speed down to 35%, no jump below 15%); it never kills.
-    metab: food-energy drain (0.2 = a full tank lasts 150 s standing still). life_cap in s."""
-    global STAMINA, METAB, MAX_STEPS, BACK, HEAT
+    metab: food-energy drain (0.2 = a full tank lasts 150 s standing still). life_cap in s.
+    world_v 2: crates spawn clear of other boxes and their overlap tests see height; a carry that
+    can't move the crate lets go; the back sensor feels bumps when reversing; blows and stamina
+    follow the real drive (slow reversing is gentle); the dying body stops sliding."""
+    global STAMINA, METAB, MAX_STEPS, BACK, HEAT, WORLD_V
+    WORLD_V = int(world_v or 1)
     HEAT = int(heat or 1)
     STAMINA, METAB, BACK = bool(stamina), float(metab or 1.0), float(back_speed if back_speed is not None else 1.0)
     MAX_STEPS = int(round(float(life_cap or 100) / DT))
@@ -156,6 +163,7 @@ class World:
         self.pred_col, self.wand_col, self.strange_col = z(B, 3), z(B, 3), z(B, 3)
         # per-step outputs
         self.touch, self.pressure = z(B), z(B)
+        self.bump_back = z(B, dt=torch.bool)
         self.senses = z(B, SENSES)
         self.bank = None
         if rooms:
@@ -214,6 +222,19 @@ class World:
         hgt = torch.where(is_crate, torch.full_like(hgt, 0.6), hgt)
         half = torch.where(is_crate[:, None], torch.full_like(half, 0.3), half)
         ctr = 1.0 + self._rand(n, NB, 2) * (L - 2.0)
+        if WORLD_V >= 2:      # each crate takes the first of 16 candidate spots clear of every other box
+            C = 16
+            cc = 1.0 + self._rand(n, NB, C, 2) * (L - 2.0)
+            act = (j < m.n_static + m.n_crate)
+            for c_ in range(m.n_static, m.n_static + m.n_crate):
+                lo_o, hi_o = ctr - half, ctr + half                                   # n,NB,2 (crates already moved)
+                other = act & (j != c_)
+                lo_c = cc[:, c_] - half[:, c_, None]                                 # n,C,2
+                hi_c = cc[:, c_] + half[:, c_, None]
+                ov = ((lo_c[:, :, None] < hi_o[:, None] + 0.05) & (hi_c[:, :, None] > lo_o[:, None] - 0.05)).all(-1)
+                bad = (ov & other[None, None]).any(-1)                               # n,C
+                best = ((~bad).float() + self._rand(n, C) * 0.01).argmax(-1)
+                ctr[:, c_] = cc[torch.arange(n, device=dev), c_, best]
         self.bmin[idx] = torch.cat([ctr - half, torch.zeros(n, NB, 1, device=dev)], -1)
         self.bmax[idx] = torch.cat([ctr + half, hgt[..., None]], -1)
         self.bact[idx] = (j < m.n_static + m.n_crate).expand(n, NB)
@@ -323,6 +344,8 @@ class World:
         want = fwd * (drive * 2.5 * ((0.35 + 0.65 * self.stamina) if STAMINA else 1.0))[:, None]
         ctrl = torch.where(self.on_ground, 0.5, 0.1)[:, None]
         vxy = self.vel[:, :2] + ctrl * (want - self.vel[:, :2])
+        if LIGHT and WORLD_V >= 2:     # the dying body stops where it fell
+            vxy = torch.where(was_dying[:, None], torch.zeros_like(vxy), vxy)
         vz = torch.where(jump, torch.full_like(self.vel[:, 2], 4.2), self.vel[:, 2]) - 9.8 * DT
         old = self.pos.clone()
         p = self.pos + torch.cat([vxy, vz[:, None]], -1) * DT
@@ -353,6 +376,8 @@ class World:
         blocked_c = (nmin < 0.02).any(-1) | (nmax > L - 0.02).any(-1)
         # crate vs any other box (footprint overlap)
         ov = ((nmin[:, :, None] < bmax[:, None, :, :2]) & (nmax[:, :, None] > bmin[:, None, :, :2])).all(-1)
+        if WORLD_V >= 2:      # boxes at different heights (a crate on a ledge, one under a carried one) don't collide
+            ov &= (bmin[:, :, None, 2] < bmax[:, None, :, 2] - 1e-3) & (bmax[:, :, None, 2] > bmin[:, None, :, 2] + 1e-3)
         ov &= self.bact[:, None, :] & ~torch.eye(NB, dtype=torch.bool, device=dev)[None]
         blocked_c |= ov.any(-1)
         ok_c = crate & ~blocked_c
@@ -400,6 +425,9 @@ class World:
             nmax = target + size / 2
             okw = (nmin > 0.02).all(-1) & (nmax < L - 0.02).all(-1)
             ov = ((nmin[:, None] < self.bmax[..., :2]) & (nmax[:, None] > self.bmin[..., :2])).all(-1) & self.bact
+            if WORLD_V >= 2:  # only boxes reaching the carried crate's height (it rides at the feet's height) block it
+                hgt_c = self.bmax[ar, hi_, 2] - self.bmin[ar, hi_, 2]
+                ov &= (self.bmax[..., 2] > p[:, None, 2] + 1e-3) & (self.bmin[..., 2] < (p[:, 2] + hgt_c)[:, None] - 1e-3)
             ov[ar, hi_] = False
             okm = holding & okw & ~ov.any(-1)
             self.bmin[ar, hi_, :2] = torch.where(okm[:, None], nmin, self.bmin[ar, hi_, :2])
@@ -409,6 +437,9 @@ class World:
             hgt = self.bmax[ar, hi_, 2] - self.bmin[ar, hi_, 2]
             self.bmin[ar, hi_, 2] = zb
             self.bmax[ar, hi_, 2] = zb + hgt
+            if WORLD_V >= 2:  # the crate can't come along: the grip slips
+                self.held = torch.where(holding & ~okm, torch.full_like(self.held, -1), self.held)
+                holding = self.held >= 0
         # dropped crates fall to whatever is under them
         free_c = self.bmov & self.bact & ~(holding[:, None] & (torch.arange(NB, device=dev)[None] == self.held[:, None]))
         if True:
@@ -434,8 +465,9 @@ class World:
             cost = torch.full_like(push, d0)
         self.energy = self.energy - cost
         if STAMINA:
-            effort = 0.015 * push * push + 0.004 * turn.abs() + 0.15 * jump.float()
-            rest = 0.012 * (1 - push.abs()) + 0.002     # walking calmly still recovers a little
+            pe = drive if WORLD_V >= 2 else push                 # reversing slowly is easy
+            effort = 0.015 * pe * pe + 0.004 * turn.abs() + 0.15 * jump.float()
+            rest = 0.012 * (1 - pe.abs()) + 0.002     # walking calmly still recovers a little
             self.stamina = (self.stamina - effort + rest).clamp(0, 1)
 
         # --- food
@@ -474,8 +506,10 @@ class World:
         self.near_strange = torch.where(near, self.near_strange + 1, torch.zeros_like(self.near_strange))
         dmg_str = (self.near_strange > 30).float() * 0.02
         # blows: pressure above a threshold hurts
-        self.pressure = self.touch * 6 * push.abs() + bite.float() * 10
-        dmg_blow = (self.touch * 6 * push.abs() - 5).clamp(min=0) * 0.01
+        pf = drive.abs() if WORLD_V >= 2 else push.abs()          # a bump hurts as hard as the body really pushed
+        self.pressure = self.touch * 6 * pf + bite.float() * 10
+        self.bump_back = (push < 0) & (WORLD_V >= 2)
+        dmg_blow = (self.touch * 6 * pf - 5).clamp(min=0) * 0.01
         dmg = dmg_lava + dmg_bite + dmg_str + dmg_blow
         self.health = (self.health - dmg + 0.001).clamp(max=1.0)
 
@@ -614,7 +648,12 @@ class World:
         press = torch.zeros(B, 4, device=dev)
         blow = self.pressure - bite * 10
         press[:, :3] = bite[:, None] * 10 * gain_p
-        press[:, 2] += blow
+        if WORLD_V >= 2:      # reversing into something is felt on the back (the bottom sensor, otherwise unused)
+            back = self.bump_back.float()
+            press[:, 2] += blow * (1 - back)
+            press[:, 3] += blow * back
+        else:
+            press[:, 2] += blow
         # bands 2-3: the predator's hum and the strange being's field, through the side sensors
         hum = torch.zeros(B, 4, device=dev)
         hum[:, :3] = 2.0 / (1 + dp[:, None] ** 2) * gain_p

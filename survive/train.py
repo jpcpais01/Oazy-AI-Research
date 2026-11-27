@@ -102,6 +102,7 @@ class LongMemory:
 
     def __init__(self, C, T, res, dev):
         self.C, self.T, self.n, self.seen, self.dev = C, T, 0, 0, dev
+        self.fresh = False
         self.d = dict(img=torch.zeros(C, T, 6, res, res, dtype=torch.uint8, device=dev),
                       sen=torch.zeros(C, T, SENSES, dtype=torch.float16, device=dev),
                       act=torch.zeros(C, T, ACT, dtype=torch.float16, device=dev),
@@ -126,7 +127,14 @@ class LongMemory:
 
     def sample(self, bs):
         i = torch.randint(0, self.n, (bs,), device=self.dev)
-        return {k: (v[i] if k in ("img", "first") else v[i].float()) for k, v in self.d.items()}
+        out = {k: (v[i] if k in ("img", "first") else v[i].float()) for k, v in self.d.items()}
+        if self.fresh:
+            # the stored memory is from a mind that may be hours old: start the clip from an empty
+            # memory instead (as at birth), not from a state today's mind never makes
+            out["h0"] = torch.zeros_like(out["h0"])
+            out["first"] = out["first"].clone()
+            out["first"][:, 0] = True
+        return out
 
 
 def lambda_returns(r, c, v, gamma, lam):
@@ -464,6 +472,7 @@ class Actor:
         self.prev_a = torch.zeros(B, ACT, device=dev)
         self.first = torch.ones(B, dtype=torch.bool, device=dev)
         self.cont = torch.ones(B, dtype=torch.bool, device=dev)
+        self.ended = torch.zeros(B, dtype=torch.bool, device=dev)     # the life ended at the last step
         self.life_t = torch.zeros(B, dtype=torch.long, device=dev)
         self.life_food = torch.zeros(B, 3, device=dev)
         self.code = torch.zeros(B, max(1, mind.g_dim), device=dev)
@@ -494,7 +503,7 @@ class Actor:
     def env_step(self, a):
         """Step the worlds. Creatures whose last observation was terminal get a fresh life."""
         w = self.w
-        was_terminal = ~self.cont
+        was_terminal = self.ended
         done, trunc, cause, ate = w.step(a)
         self.life_t += 1
         okf = ate >= 0
@@ -502,7 +511,8 @@ class Actor:
         ended = []
         # finished lives (death -> next obs is terminal; truncation -> fresh life right away)
         newly_dead = done & ~was_terminal
-        stats = dict(dead=newly_dead, trunc=trunc & ~was_terminal, cause=cause, t=self.life_t.clone(), food=self.life_food.clone())
+        t_life = torch.where(newly_dead, self.life_t - 1 - _world.LIGHT, self.life_t)   # up to the moment of death
+        stats = dict(dead=newly_dead, trunc=trunc & ~was_terminal, cause=cause, t=t_life, food=self.life_food.clone())
         reset = was_terminal | (trunc & ~was_terminal)
         idx = reset.nonzero().squeeze(-1)
         if len(idx):
@@ -510,7 +520,12 @@ class Actor:
             self.life_t[idx] = 0
             self.life_food[idx] = 0
         self.first = reset
-        self.cont = ~(done & ~was_terminal)
+        self.ended = done & ~was_terminal
+        self.ended[idx] = False
+        # death counts from the first moment of the light (the light is after the end: absorbing),
+        # not from its last frame: otherwise a death lands 21 steps later, beyond every 1.5 s dream,
+        # and starving costs nothing in the moment (audit, Nov 27)
+        self.cont = ~(self.ended | (w.dying > 0))
         self.cont[idx] = True
         self.prev_a = torch.where(reset[:, None], torch.zeros_like(a), a)
         return stats
@@ -561,6 +576,9 @@ def main():
     ap.add_argument("--seq", type=int, default=32)
     ap.add_argument("--replay-gb", type=float, default=8.0)
     ap.add_argument("--long", type=float, default=0.5, help="share of replay memory kept as clips from the whole life (0 = off)")
+    ap.add_argument("--long-fresh", type=int, default=0, help="1 = long-memory clips start from an empty memory, not the hours-old stored one")
+    ap.add_argument("--world-v", type=int, default=1, help="2 = audit fixes: crates spawn free, z-aware crate overlap, failed carry drops, "
+                    "back pressure sensor, blows/stamina from the real drive, dying body stops")
     ap.add_argument("--long-offer", type=int, default=64, help="clips offered to the long memory every 10 updates")
     ap.add_argument("--every", type=int, default=1, help="env steps per learning update")
     ap.add_argument("--horizon", type=int, default=15)
@@ -614,6 +632,7 @@ def main():
     lm = None
     if a.long > 0:
         lm = LongMemory(int(a.replay_gb * a.long * 1e9 / (per * a.seq)), a.seq, a.res, dev)
+        lm.fresh = bool(a.long_fresh)
         print(f"long memory: {lm.C} clips of {a.seq} steps from the whole life", flush=True)
     learner = Learner(mind, a)
     actor = Actor(mind, world, a.res, dev, compile=a.compile)
