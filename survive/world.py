@@ -43,7 +43,7 @@ MAX_STEPS = 1000    # 100 s life cap
 NB = 24             # box slots (static boxes + crates)
 NL = 7              # lava slots
 NF = 8              # food slots
-SENSES = 31         # 5 body + 16 intensity + 8 ears + stamina + hunger
+SENSES = 33         # 5 body + 16 intensity + 8 ears + stamina + hunger + 2 nostrils (smell; 0 unless set_body(smell=1))
 BODY = 5
 ACT = 5            # push, turn, jump, grip, gaze (gaze is ignored unless set_gaze(deg) > 0)
 GAZE = 0.0         # radians the eyes can turn left/right of the body
@@ -73,9 +73,10 @@ HEAT = 1            # 1: heat felt from far (inverse square, bottom sensor x5 ev
 
 
 WORLD_V = 1         # 2: audit fixes (Nov 27), see set_body
+SMELL = False       # two nostrils smell food (any kind), stronger the closer and the more it lies to that side
 
 
-def set_body(stamina=0, metab=1.0, life_cap=100, back_speed=1.0, heat=1, world_v=1):
+def set_body(stamina=0, metab=1.0, life_cap=100, back_speed=1.0, heat=1, world_v=1, smell=0):
     """Stamina: sprinting, turning hard and jumping drain it in seconds; easy moving refills it
     in ~8 s. A tired body is weaker (top speed down to 35%, no jump below 15%); it never kills.
     metab: food-energy drain (0.2 = a full tank lasts 150 s standing still). life_cap in s.
@@ -84,8 +85,9 @@ def set_body(stamina=0, metab=1.0, life_cap=100, back_speed=1.0, heat=1, world_v
     world_v 2: crates spawn clear of other boxes and their overlap tests see height; a carry that
     can't move the crate lets go; the back sensor feels bumps when reversing; blows and stamina
     follow the real drive (slow reversing is gentle); the dying body stops sliding."""
-    global STAMINA, METAB, MAX_STEPS, BACK, HEAT, WORLD_V
+    global STAMINA, METAB, MAX_STEPS, BACK, HEAT, WORLD_V, SMELL
     WORLD_V = int(world_v or 1)
+    SMELL = bool(smell)
     HEAT = int(heat or 1)
     STAMINA, METAB, BACK = bool(stamina), float(metab or 1.0), float(back_speed if back_speed is not None else 1.0)
     MAX_STEPS = int(round(float(life_cap or 100) / DT))
@@ -695,8 +697,17 @@ class World:
                             self.on_ground.float(), holding], -1)
         stam = self.stamina if STAMINA else torch.ones_like(self.energy)
         hunger = (-torch.log(self.energy.clamp(0.005, 1.0)) / 5.3).clamp(0, 1)          # 0 full ... 1 at energy 0.005
+        nose = torch.zeros(B, 2, device=dev)
+        if SMELL:     # like the ears: nostrils 12 cm left/right of the snout, odour 2/(1+d^2) per food, a bit directional
+            sn = torch.stack([p[:, :2] + fwd * R_BODY + left * 0.12, p[:, :2] + fwd * R_BODY - left * 0.12], 1)   # B,2,2
+            to = self.fpos[:, None, :, :2] - sn[:, :, None]                                  # B,2,NF,2
+            d = to.norm(dim=-1).clamp(min=0.05)
+            u = to / d[..., None]
+            side = torch.stack([left, -left], 1)[:, :, None]                                 # B,2,1,2
+            gain = 0.5 + 0.5 * (u * side).sum(-1).clamp(min=0) + 0.25 * (u * fwd[:, None, None]).sum(-1).clamp(min=0)
+            nose = (2.0 * gain / (1 + d ** 2) * self.fup[:, None].float()).sum(-1)
         self.senses = torch.cat([body, torch.log1p(intensity.flatten(1)), torch.log1p(ears.flatten(1)),
-                                 stam[:, None], hunger[:, None]], -1)
+                                 stam[:, None], hunger[:, None], torch.log1p(nose)], -1)
 
     # ------------------------------------------------------------------ for the renderer
     def scene(self):

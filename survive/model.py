@@ -217,7 +217,7 @@ def set_drive(name):
 def wellbeing(senses):
     """The built-in drive, from (predicted) body feelings."""
     if DRIVE == "homeo" and senses.shape[-1] > 30:
-        return 0.5 * (senses[..., 1].clamp(0, 1) + 1 - senses[..., 30].clamp(0, 1))
+        return 0.5 * (senses[..., 1].clamp(0, 1) + 1 - senses[..., 30].clamp(0, 1))   # 30 = hunger
     return 0.5 * (senses[..., 0].clamp(0, 1) + senses[..., 1].clamp(0, 1))
 
 

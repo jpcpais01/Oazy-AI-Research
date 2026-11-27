@@ -46,7 +46,7 @@ def set_eyes(args):
     set_gaze(args.get("gaze", 0))
     world.set_light(args.get("light", 0))
     world.set_body(args.get("stamina", 0), args.get("metab", 1.0), args.get("life_cap", 100), args.get("back_speed", 1.0),
-                   args.get("heat", 1), args.get("world_v", 1))
+                   args.get("heat", 1), args.get("world_v", 1), args.get("smell", 0))
     from .model import set_drive
     set_drive(args.get("drive", "linear"))
     world.EYE_SEP = float(args.get("eye_sep", 0.08)) / 2

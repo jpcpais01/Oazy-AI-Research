@@ -190,7 +190,7 @@ class Learner:
         # energy, health and hunger (3 of 31 numbers, changing by ~0.001 a step), so in the plain sum
         # the loud intensity/ear numbers drown them (--body-w > 1 weights those three up)
         self.sen_w = torch.ones(SENSES, device=dev)
-        self.sen_w[[0, 1, SENSES - 1]] = float(getattr(args, "body_w", 1.0))
+        self.sen_w[[0, 1, 30]] = float(getattr(args, "body_w", 1.0))            # energy, health, hunger
         self.ret_lo = torch.zeros((), device=dev)
         self.ret_hi = torch.zeros((), device=dev)
         self.first_call = True
@@ -248,6 +248,19 @@ class Learner:
             e_all = e_all[torch.randperm(e_all.shape[0], device=e_all.device)[:rows]]
         var, cov, estd = vicreg(e_all)
         loss = l_sen + l_cont + l_kl + a.vic_var * var + a.vic_cov * cov
+        rw = getattr(a, "recon", 0.0)
+        if rw > 0:
+            # the inner state must be able to redraw what the left eye saw (Dreamer-style): small things
+            # like a food cube barely move the eye's own summary, so without this they were dropped
+            # (linear probe on v4: food direction/distance R^2 <= 0 while energy .97, predator .90).
+            # The decoder itself is the mind's eye (trained on its own below); here only the gradient
+            # into memory, moment and eye is used. Summed over pixels, every 2nd moment.
+            k = max(1, int(getattr(a, "recon_stride", 2)))
+            with self._autocast():
+                pic = m.minds_eye(feat[:, ::k].flatten(0, 1)).float()
+            tgt = img[:, ::k, :3].flatten(0, 1).float() / 255.0
+            l_rec = (pic - tgt).pow(2).sum((-1, -2, -3)).mean()
+            loss = loss + rw * l_rec
         if getattr(m, "matter", None) is not None:
             # the eye alone guesses what its body will feel within the next second: food eaten
             # (energy rises only by eating) and harm (health falls). Its own feelings are the
@@ -576,6 +589,9 @@ def main():
     ap.add_argument("--seq", type=int, default=32)
     ap.add_argument("--replay-gb", type=float, default=8.0)
     ap.add_argument("--long", type=float, default=0.5, help="share of replay memory kept as clips from the whole life (0 = off)")
+    ap.add_argument("--recon", type=float, default=0.0, help="weight of redrawing the left eye from the inner state (0 = off; 1 = Dreamer scale)")
+    ap.add_argument("--recon-stride", type=int, default=2)
+    ap.add_argument("--smell", type=int, default=0, help="1 = two nostrils smell food")
     ap.add_argument("--long-fresh", type=int, default=0, help="1 = long-memory clips start from an empty memory, not the hours-old stored one")
     ap.add_argument("--world-v", type=int, default=1, help="2 = audit fixes: crates spawn free, z-aware crate overlap, failed carry drops, "
                     "back pressure sensor, blows/stamina from the real drive, dying body stops; 3 = also the predator lunges when close, rooms half as cluttered")
