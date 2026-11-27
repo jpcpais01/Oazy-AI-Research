@@ -52,9 +52,9 @@ class Sim:
             out.append(dict(path=f, name=mind_name(f)))
         return out
 
-    def select(self, path, mode, seed):
+    def select(self, path, mode, seed, det=True):
         with self.lock:
-            self.want = dict(path=path, mode=mode, seed=seed)
+            self.want = dict(path=path, mode=mode, seed=seed, det=bool(det))
 
     def _load(self, w):
         ck = torch.load(w["path"], map_location=self.dev)
@@ -64,7 +64,7 @@ class Sim:
         load_mind(m, ck["mind"])
         m.eval()
         world = World(1, self.dev, mode=w["mode"], seed=w["seed"])
-        act = Actor(m, world, res, self.dev, deterministic=True)
+        act = Actor(m, world, res, self.dev, deterministic=w.get("det", True))   # habit, or with its training wobble
         return m, world, act, res
 
     DREAM_AT = (2, 5, 10, 20, 50, 100)          # imagined pictures at +0.2, 0.5, 1, 2, 5, 10 s
@@ -230,7 +230,8 @@ def main():
                 elif u.path == "/api/frames":
                     self.send(dict(frames=sim.take(int(q.get("since", -1))), cfg=sim.cfg))
                 elif u.path == "/api/select":
-                    sim.select(q["mind"], q.get("mode", "test"), int(q.get("seed", int(time.time()) % 100000)))
+                    sim.select(q["mind"], q.get("mode", "test"), int(q.get("seed", int(time.time()) % 100000)),
+                               det=q.get("act", "habit") != "wobble")
                     self.send(dict(ok=True))
                 elif u.path == "/api/about":
                     self.send(about(q["mind"]))

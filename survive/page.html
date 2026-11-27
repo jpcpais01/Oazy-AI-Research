@@ -296,6 +296,11 @@ html{scrollbar-width:none}html::-webkit-scrollbar,body::-webkit-scrollbar,*::-we
       <span class="knob"></span>
       <button data-m="test" role="radio">Unseen</button><button data-m="hard" role="radio">Hard</button><button data-m="train" role="radio">Like training</button>
     </div>
+    <span class="caps">Acts</span>
+    <div class="seg" id="acts" role="radiogroup" aria-label="How it acts">
+      <span class="knob"></span>
+      <button data-a="habit" role="radio" title="its single best guess every moment, no randomness (as in the exams)">On habit</button><button data-a="wobble" role="radio" title="with the little randomness it had while training">As in training</button>
+    </div>
     <span class="toast"><span class="live"></span><span id="status">waking up…</span></span>
     <button class="chip" id="neww"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"/><path d="M13.5 2.5v3h-3"/></svg>New world</button>
   </div>
@@ -395,7 +400,7 @@ html{scrollbar-width:none}html::-webkit-scrollbar,body::-webkit-scrollbar,*::-we
 <script>
 const $=id=>document.getElementById(id);
 const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
-let since=-1,queue=[],mindPath=null,cfgKey=null,mode='test';
+let since=-1,queue=[],mindPath=null,cfgKey=null,mode='test',acts='habit';
 const eyeL=$('eyeL'),eyeR=$('eyeR');
 
 /* ---------- imagination strip ---------- */
@@ -558,14 +563,17 @@ setInterval(()=>{if(!started&&queue.length<30)return;started=true;if(queue.lengt
 function setMode(m){mode=m;const seg=$('mode');[...seg.querySelectorAll('button')].forEach(b=>{const on=b.dataset.m===m;b.classList.toggle('on',on);b.setAttribute('aria-checked',on);
   if(on){const k=seg.querySelector('.knob');k.style.left=b.offsetLeft+'px';k.style.width=b.offsetWidth+'px'}})}
 document.querySelectorAll('#mode button').forEach(b=>b.onclick=()=>{setMode(b.dataset.m);select()});
-addEventListener('resize',()=>setMode(mode));document.fonts&&document.fonts.ready.then(()=>setMode(mode));
+function setActs(v){acts=v;const seg=$('acts');[...seg.querySelectorAll('button')].forEach(b=>{const on=b.dataset.a===v;b.classList.toggle('on',on);b.setAttribute('aria-checked',on);
+  if(on){const k=seg.querySelector('.knob');k.style.left=b.offsetLeft+'px';k.style.width=b.offsetWidth+'px'}})}
+document.querySelectorAll('#acts button').forEach(b=>b.onclick=()=>{setActs(b.dataset.a);select()});
+addEventListener('resize',()=>{setMode(mode);setActs(acts)});document.fonts&&document.fonts.ready.then(()=>{setMode(mode);setActs(acts)});
 async function loadMinds(){
   const r=await (await fetch('/api/minds')).json();const sel=$('mind');sel.innerHTML='';
   r.minds.slice().reverse().forEach(m=>{const o=document.createElement('option');o.value=m.path;o.textContent=m.name.replace(' · ',' — ').replace(/(\d+)min$/,'$1 min');sel.appendChild(o)});
-  const listed=r.cfg&&r.minds.some(m=>m.path===r.cfg.path);if(r.cfg)mode=r.cfg.mode;setMode(mode);
+  const listed=r.cfg&&r.minds.some(m=>m.path===r.cfg.path);if(r.cfg){mode=r.cfg.mode;acts=r.cfg.det===false?'wobble':'habit'}setMode(mode);setActs(acts);
   if(listed){sel.value=r.cfg.path;mindPath=sel.value;loadInfo()}else if(sel.options.length){sel.selectedIndex=0;select()}}
 async function select(){mindPath=$('mind').value;queue=[];started=false;$('status').textContent='opening a new world…';
-  await fetch(`/api/select?mind=${encodeURIComponent(mindPath)}&mode=${mode}`);loadInfo()}
+  await fetch(`/api/select?mind=${encodeURIComponent(mindPath)}&mode=${mode}&act=${acts}`);loadInfo()}
 $('mind').onchange=select;$('neww').onclick=select;
 
 /* ---------- learning curves ---------- */
