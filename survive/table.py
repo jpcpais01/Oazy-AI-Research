@@ -134,6 +134,25 @@ def obb_contact(p, c, ax, half):
     return dist, n, loc
 
 
+def held_pos(P, off):
+    """Where a held ball sits: fixed in the claw's frame (where it was caught), between the plates."""
+    mid = (P["pl"] + P["pr"]) / 2
+    return mid + off[..., 0:1] * P["hand"] + off[..., 1:2] * P["side"] + off[..., 2:3] * P["up"]
+
+
+def link_points(P):
+    """Spheres along the upper arm, forearm and hand that push the ball (r LINK_R)."""
+    pts = []
+    for a_, b_, k in ((P["sh"], P["el"], 3), (P["el"], P["wr"], 3), (P["wr"], P["root"], 1)):
+        for i in range(k):
+            pts.append(a_ + (b_ - a_) * ((i + 0.5) / k))
+    return torch.stack(pts, -2)
+
+
+LINK_R = 0.02
+GRIP_OFF = (LF * 0.05, 0.0, 0.0)
+
+
 class Mode:
     def __init__(self, name):
         self.name = name
@@ -153,6 +172,7 @@ class World:
         self.qv = z(B, 5)                               # the arm's real motion last step
         self.ball, self.bv = z(B, 3), z(B, 3)
         self.held = z(B, dt=torch.bool)
+        self.hold_off = torch.tensor(GRIP_OFF, device=dev).expand(B, 3).clone()   # the held ball in the claw's frame
         self.basket = z(B, 2)
         self.energy, self.health = z(B), z(B)
         self.touch = z(B, 4)
@@ -255,7 +275,9 @@ class World:
             inb = ((gxy - self.basket[idx]).abs() < B_IN + B_WALL + BALL_R + 0.02).all(-1)
             xy = torch.where((under & ~inb)[:, None], gxy, xy)
         pos = torch.cat([xy, torch.full((n, 1), BALL_R, device=dev)], -1)
-        pos = torch.where(held[:, None], P["grip"], pos)
+        off0 = torch.tensor(GRIP_OFF, device=dev).expand(n, 3)
+        pos = torch.where(held[:, None], held_pos(P, off0), pos)
+        self.hold_off[idx] = off0
         self.ball[idx] = pos
         self.bv[idx] = 0
         self.held[idx] = held
@@ -294,7 +316,13 @@ class World:
         bxy = self.basket if idx is None else self.basket[idx]
         mn, mx = self._walls(bxy)
         inw = ((pts[:, :, None] > mn[:, None] - 0.004) & (pts[:, :, None] < mx[:, None] + 0.004)).all(-1).any(-1).any(-1)
-        return ok & ~inw
+        ok = ok & ~inw
+        if idx is None:      # a ball in the claw is solid too: it can't be pushed into the table or a wall
+            bp = held_pos(P, self.hold_off)
+            qn = torch.maximum(torch.minimum(bp[:, None], mx), mn)
+            into = ((bp[:, None] - qn).norm(dim=-1) < BALL_R - 0.004).any(-1) | (bp[:, 2] < BALL_R - 0.003)
+            ok = ok & ~(self.held & into)
+        return ok
 
     # ------------------------------------------------------------------ step
     def step(self, a):
@@ -328,6 +356,7 @@ class World:
         # ---- physics substeps
         h = DT / SUB
         touch = torch.zeros(B, 4, device=dev)
+        on_ball = torch.zeros(B, 2, dtype=torch.bool, device=dev)     # the BALL on each plate's inner face (grasping)
         P_prev = fk(q0)
         mn, mx = self._walls(self.basket)
         for k in range(1, SUB + 1):
@@ -337,7 +366,7 @@ class World:
             p, v = self.ball, self.bv
             held = self.held
             # held: the ball rides in the claw
-            gp = P["grip"]
+            gp = held_pos(P, self.hold_off)
             v_h = (gp - p) / h
             p_h = gp
             # free: gravity and motion
@@ -379,7 +408,19 @@ class World:
                 near = (dist < BALL_R + 0.004).float() * ((BALL_R + 0.004 - dist) / 0.008).clamp(0.3, 1)
                 inner = loc[:, 1] > 0 if side == 0 else loc[:, 1] < 0     # left plate's inner face looks to +side
                 touch[:, 2 * side] = torch.maximum(touch[:, 2 * side], near * inner.float())
+                on_ball[:, side] |= (near > 0) & inner
                 touch[:, 2 * side + 1] = torch.maximum(touch[:, 2 * side + 1], near * (~inner).float())
+            # the arm's links push it too (no passing through the forearm)
+            lp = link_points(P)                                              # B,K,3
+            d = p[:, None] - lp
+            dist = d.norm(dim=-1).clamp(min=1e-6)
+            hit = dist < BALL_R + LINK_R
+            n = d / dist[..., None]
+            push = (n * (BALL_R + LINK_R - dist).clamp(min=0)[..., None] * hit[..., None]).sum(1)
+            p = p + push
+            nn_ = push / push.norm(dim=-1, keepdim=True).clamp(min=1e-9)
+            vn = (v * nn_).sum(-1)
+            v = torch.where((hit.any(-1) & (vn < 0))[:, None], v - vn[:, None] * nn_, v)
             p = torch.where(held[:, None], p_h, p)
             v = torch.where(held[:, None], v_h, v)
             self.ball, self.bv = p, v
@@ -391,9 +432,16 @@ class World:
         touch[:, 2:4] = torch.maximum(touch[:, 2:4], on[:, 4:].any(-1, keepdim=True).float() * 0.6)
         # grasp: both inner faces on the ball and the claw nearly closed on it
         g = self.q[:, 4]
-        both = (touch[:, 0] > 0) & (touch[:, 2] > 0)
+        both = on_ball[:, 0] & on_ball[:, 1]          # the ball itself between both inner faces (not the table)
         grab = ~self.held & both & (g < 2 * BALL_R + 0.012) & alive
         self.held = self.held | grab
+        # caught where it is: remember the ball in the claw's frame (centred between the plates)
+        Pg = fk(self.q)
+        mid = (Pg["pl"] + Pg["pr"]) / 2
+        dlt = self.ball - mid
+        off = torch.stack([(dlt * Pg["hand"]).sum(-1).clamp(-LF / 2, LF / 2), torch.zeros_like(dlt[:, 0]),
+                           (dlt * Pg["up"]).sum(-1).clamp(-PW / 2, PW / 2)], -1)
+        self.hold_off = torch.where(grab[:, None], off, self.hold_off)
         # how hard it squeezes: how far past the ball the claw is told to close
         squeeze = ((2 * BALL_R + 0.004 - target[:, 4]) / 0.03).clamp(0, 0.5)
         # it lets go when the claw opens; a weak squeeze on a fast swing slips
