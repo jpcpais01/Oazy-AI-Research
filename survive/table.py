@@ -51,13 +51,13 @@ BASE = (0.5, 0.06)
 SH_Z = 0.12                  # shoulder height (on a short post)
 L1, L2, L3, LF = 0.46, 0.44, 0.05, 0.07     # upper arm, forearm, hand, finger plates (was .30/.28: half the 1 m table was out of reach)
 PT, PW = 0.010, 0.040        # plate thickness, plate width
-G_MAX = 0.11                 # widest claw opening (gap between inner faces)
+G_MAX = max(0.11, 2 * float(os.environ.get("BALL_R", "0.035")) + 0.04)   # widest claw opening (gap between inner faces)
 LO = torch.tensor([-1.75, -0.35, 0.0, -1.9, 0.0])
 HI = torch.tensor([1.75, 1.4, 2.7, 1.9, G_MAX])      # shoulder lifts to 80 deg: the long arm still stays >= 33 cm from the eyes
 RATE = torch.tensor([0.15, 0.15, 0.18, 0.3, 0.025])   # rad/step; slower than before for the longer arm (tip ~1.4 m/s)   # per step
 # ---- things ---------------------------------------------------------------------------------------
-BALL_R = 0.035
-B_IN, B_WALL, B_H = 0.07, 0.01, 0.05        # basket inner half size, wall thickness, height
+BALL_R = float(os.environ.get("BALL_R", "0.035"))   # 0.035 = 2-3 px far away in 64 px eyes; 0.05 doubles its area
+B_IN, B_WALL, B_H = max(0.07, float(os.environ.get("BALL_R", "0.035")) + 0.035), 0.01, 0.05        # basket inner half size, wall thickness, height
 BALL_E = 1.0                 # a ball in the basket fills the tank (0.4 paid less than fetching it cost; at 0.7 a scripted arm only broke even)
 DRAIN = 1 / 600              # per step (60 s from full, resting)
 EFFORT = 0.001               # extra drain at full joint speed (all joints)
@@ -582,7 +582,7 @@ class World:
 
         # ---- the basket feeds it
         bl = self.ball
-        inb = ((bl[:, :2] - self.basket).abs() < B_IN).all(-1) & (bl[:, 2] < B_H) & ~self.held
+        inb = ((bl[:, :2] - self.basket).abs() < B_IN).all(-1) & (bl[:, 2] < max(B_H, BALL_R + 0.015)) & ~self.held
         scored = inb & (self.score_t == 0) & alive
         self.energy = torch.where(scored, (self.energy + BALL_E).clamp(max=1.0), self.energy)
         self.score_t = torch.where(scored, torch.full_like(self.score_t, 12), self.score_t)
