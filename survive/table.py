@@ -58,7 +58,7 @@ RATE = torch.tensor([0.22, 0.22, 0.25, 0.3, 0.025])   # per step
 # ---- things ---------------------------------------------------------------------------------------
 BALL_R = 0.035
 B_IN, B_WALL, B_H = 0.07, 0.01, 0.05        # basket inner half size, wall thickness, height
-BALL_E = 0.7                 # energy from a ball in the basket (0.4 paid less than fetching it cost: a scripted expert lived 47 s vs 41 s resting)
+BALL_E = 1.0                 # a ball in the basket fills the tank (0.4 paid less than fetching it cost; at 0.7 a scripted arm only broke even)
 DRAIN = 1 / 600              # per step (60 s from full, resting)
 EFFORT = 0.001               # extra drain at full joint speed (all joints)
 GRAV, REST, ROLL = 9.81, 0.35, 2.5
