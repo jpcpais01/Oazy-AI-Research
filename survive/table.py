@@ -64,6 +64,7 @@ EFFORT = 0.001               # extra drain at full joint speed (all joints)
 GRAV, REST, ROLL = 9.81, 0.35, 2.5
 P_HELD_OVER = float(os.environ.get("P_HELD_OVER", "0.2"))   # life starts: ball in the claw above the basket
 P_HELD = float(os.environ.get("P_HELD", "0.1"))             # ... ball in the claw anywhere
+CLAW_SPEED = int(os.environ.get("CLAW_SPEED", "0"))         # 1: the claw keeps its opening when relaxed (a grasp lasts without effort; letting go is a choice)
 START_E = float(os.environ.get("START_E", "0.8"))         # life starts with energy START_E..1
 HELD_D = float(os.environ.get("HELD_D", "0"))
 HELD_GROW = int(os.environ.get("HELD_GROW", "0"))           # 1: start "over" starts at 3 cm and widen toward HELD_D as the creature scores               # "over" starts: basket up to HELD_D m from the held ball (0 = right under it)
@@ -252,8 +253,8 @@ class Demo:
         err = (fk(w.q)["grip"] - tgt).norm(dim=-1)
         self.timer += 1
         t = self.timer
-        nxt = ((ph == 0) & (err < 0.03)) | ((ph == 1) & (err < 0.02)) | ((ph == 2) & (t > 3)) | \
-              ((ph == 3) & (err < 0.04)) | ((ph == 4) & (err < 0.03)) | ((ph == 5) & (t > 4)) | (t > 40)
+        nxt = ((ph == 0) & (err < 0.03)) | ((ph == 1) & (err < 0.02)) | ((ph == 2) & (t > (9 if CLAW_SPEED else 3))) | \
+              ((ph == 3) & (err < 0.04)) | ((ph == 4) & (err < 0.03)) | ((ph == 5) & (t > (9 if CLAW_SPEED else 4))) | (t > 40)
         self.phase = torch.where(nxt, (ph + 1) % 6, ph)
         self.timer = torch.where(nxt, torch.zeros_like(t), t)
         lost = (self.phase >= 3) & (self.phase <= 4) & ~w.held
@@ -476,7 +477,11 @@ class World:
         # muscles: the 4 joints are speeds (relaxed = the arm holds its pose); the claw is a spring that
         # stays open when relaxed (a <= 0) and closes as the muscle pulls (a = 1: fully shut, a firm squeeze)
         target = (self.q + a * self.rate).clamp(self.lo, self.hi)
-        target[:, 4] = G_MAX * (1 - a[:, 4].clamp(min=0))
+        if CLAW_SPEED:
+            target[:, 4] = (self.q[:, 4] - a[:, 4] * self.rate[4]).clamp(self.lo[4], self.hi[4])
+        else:
+            target[:, 4] = G_MAX * (1 - a[:, 4].clamp(min=0))
+        # CLAW_SPEED: the claw is a speed muscle like the joints (a > 0 closes, a < 0 opens, relaxed keeps its grip)
         dq = (target - self.q).clamp(-self.rate, self.rate) * alive[:, None]
         # the ball blocks the claw from closing while it is between the plates
         q_new = self.q + dq
