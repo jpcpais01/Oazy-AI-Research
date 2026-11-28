@@ -64,6 +64,7 @@ EFFORT = 0.001               # extra drain at full joint speed (all joints)
 GRAV, REST, ROLL = 9.81, 0.35, 2.5
 P_HELD_OVER = float(os.environ.get("P_HELD_OVER", "0.2"))   # life starts: ball in the claw above the basket
 P_HELD = float(os.environ.get("P_HELD", "0.1"))             # ... ball in the claw anywhere
+START_E = float(os.environ.get("START_E", "0.8"))         # life starts with energy START_E..1
 HELD_D = float(os.environ.get("HELD_D", "0"))
 HELD_GROW = int(os.environ.get("HELD_GROW", "0"))           # 1: start "over" starts at 3 cm and widen toward HELD_D as the creature scores               # "over" starts: basket up to HELD_D m from the held ball (0 = right under it)
 NEAR = float(os.environ.get("NEAR", "0"))                   # share of balls that appear right beside the basket (a gentler world;
@@ -337,7 +338,7 @@ class World:
         self.held[idx] = False
         self.bv[idx] = 0
         self._new_ball(idx, start=True)
-        self.energy[idx] = 0.8 + 0.2 * self._rand(n)
+        self.energy[idx] = START_E + (1 - START_E) * self._rand(n)   # a full tank at birth made the free first drop worth ~0.1
         self.health[idx] = 1.0
         self.t[idx] = 0
         self.dead[idx] = False

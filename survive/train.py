@@ -878,7 +878,7 @@ def main():
                     wmod = sys.modules.get(type(world).__module__)
                     if getattr(wmod, "HELD_GROW", 0) and getattr(wmod, "HELD_D", 0) > 0:
                         # a staircase: the basket starts right under the held ball and moves away as it scores
-                        world.held_d = max(0.03, wmod.HELD_D * min(1.0, lives["food"][0].item() / n / a.near_goal))
+                        world.held_d = 0.8 * world.held_d + 0.2 * max(0.03, wmod.HELD_D * min(1.0, lives["food"][0].item() / n / a.near_goal))   # smoothed: one lucky window shouldn't move it
                         row.update(held_d=round(world.held_d, 3))
                     near0 = getattr(sys.modules.get(type(world).__module__), "NEAR", 0.0)
                     if near0 > 0:
