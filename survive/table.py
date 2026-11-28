@@ -365,14 +365,6 @@ class World:
             b = self.basket[idx]
             self.basket[idx] = torch.where(ok_over[:, None], gxy, b)
         xy = self._reach_xy(n, 0.25, 0.85, 1.4)
-        if self.near > 0:
-            # a gentler world: some balls appear just outside the basket wall (3-12 cm gap), on the table
-            ang = self._rand(n) * 2 * math.pi
-            d = B_IN + B_WALL + BALL_R + 0.03 + self._rand(n) * 0.09
-            nxy = (self.basket[idx] + d[:, None] * torch.stack([ang.cos(), ang.sin()], -1)).clamp(0.08, L - 0.08)
-            r = (nxy - torch.tensor(BASE, device=dev)).norm(dim=-1)
-            ok = (self._rand(n) < self.near) & (r > 0.25) & (r < 0.85)
-            xy = torch.where(ok[:, None], nxy, xy)
         # keep loose balls out of the basket footprint
         for _ in range(4):
             inb = ((xy - self.basket[idx]).abs() < B_IN + B_WALL + BALL_R + 0.02).all(-1)
@@ -384,6 +376,16 @@ class World:
             gxy = P["grip"][:, :2].clamp(0.05, L - 0.05)
             inb = ((gxy - self.basket[idx]).abs() < B_IN + B_WALL + BALL_R + 0.02).all(-1)
             xy = torch.where((under & ~inb)[:, None], gxy, xy)
+        if self.near > 0:
+            # a gentler world: some balls appear just outside the basket wall (1-10 cm gap, any side), on the table
+            fp = B_IN + B_WALL + BALL_R + 0.02                       # the footprint kept clear above
+            side = (self._rand(n) * 4).long()
+            nrm = torch.tensor([[1., 0.], [-1., 0.], [0., 1.], [0., -1.]], device=dev)[side]
+            tan = torch.stack([-nrm[:, 1], nrm[:, 0]], -1)
+            nxy = self.basket[idx] + nrm * (fp + 0.01 + self._rand(n)[:, None] * 0.09) + tan * ((self._rand(n)[:, None] * 2 - 1) * fp)
+            r = (nxy - torch.tensor(BASE, device=dev)).norm(dim=-1)
+            ok = (self._rand(n) < self.near) & (r > 0.25) & (r < 0.85) & (nxy > 0.08).all(-1) & (nxy < L - 0.08).all(-1)
+            xy = torch.where(ok[:, None], nxy, xy)
         pos = torch.cat([xy, torch.full((n, 1), BALL_R, device=dev)], -1)
         if start and cur and P_AROUND > 0:
             # the open claw already around the ball on the table (if that pose is reachable and clear)
