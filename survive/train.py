@@ -309,16 +309,17 @@ class Learner:
         return loss, hs.detach(), zs.detach(), met, emb.detach(), dyn.detach()
 
     # ------------------------------------------------ curiosity: the guessers learn what really came next
-    def _dis(self, hs, zs, act, first, emb):
+    def _dis(self, hs, zs, act, first, emb, sen):
         m = self.m
         feat = torch.cat([hs[:, :-1], zs[:, :-1]], -1).flatten(0, 1)
         a_ = act[:, 1:].flatten(0, 1)                       # act[:, t+1] is what was done at moment t
         with torch.no_grad(), self._autocast():
             tgt = m.eye_in(emb[:, 1:].flatten(0, 1)).float()    # what the eyes will see next (not the noisy z sample)
+        tgt = torch.cat([tgt, sen[:, 1:].flatten(0, 1).float()], -1)  # ... and what the body will feel next
         ok = (~first[:, 1:]).flatten().float()             # same life
         x = torch.cat([feat, a_.to(feat.dtype)], -1)
         with self._autocast():
-            l = sum(((g(x).float() - tgt) ** 2).mean(-1) for g in m.disag)
+            l = sum((lambda e: e[:, :512].mean(-1) + e[:, 512:].mean(-1))((g(x).float() - tgt) ** 2) for g in m.disag)
         return (l * ok).sum() / ok.sum().clamp(min=1)
 
     # ------------------------------------------------ mind's eye (detached, page only)
@@ -516,7 +517,7 @@ class Learner:
 
         l_dis = torch.zeros((), device=hs.device)
         if self.dis_params:
-            l_dis = self.dis_fn(hs, zs, batch["act"], batch["first"], emb)
+            l_dis = self.dis_fn(hs, zs, batch["act"], batch["first"], emb, batch["sen"])
             self.opt_dis.zero_grad(set_to_none=True)
             l_dis.backward()
             self.opt_dis.step()

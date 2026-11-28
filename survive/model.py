@@ -155,7 +155,7 @@ class Mind(nn.Module):
         self.jump_sizes = sorted(set(self.jump_chain))
         self.jump = nn.ModuleDict({str(k): mlp(H_DIM, H_DIM + 2) for k in self.jump_sizes})
         if curious:     # curiosity (Plan2Explore): a few small guessers of the next moment; where they disagree, it doesn't know yet
-            self.disag = nn.ModuleList([mlp(FEAT + ACT, 512, hid=256) for _ in range(int(curious))])   # guess the next eye summary (eye_in(emb))
+            self.disag = nn.ModuleList([mlp(FEAT + ACT, 512 + SENSES, hid=256) for _ in range(int(curious))])   # guess the next eye summary (eye_in(emb)) AND the next body feelings (touch!)
         if matter:      # what in this picture matters to the body: will I eat / get hurt within 1 s?
             self.matter = nn.Sequential(nn.Linear(EMB, 256), nn.LayerNorm(256), nn.SiLU(), nn.Linear(256, 2))
 
@@ -181,7 +181,10 @@ class Mind(nn.Module):
     def disagree(self, feat, a):
         """How much the guessers disagree about the next moment after doing a here (N,)."""
         x = torch.cat([feat, a.to(feat.dtype)], -1)
-        return torch.stack([g(x).float() for g in self.disag]).var(0).mean(-1)
+        v = torch.stack([g(x).float() for g in self.disag]).var(0)
+        # eyes and body count equally: 512 eye numbers would drown 11 feelings (a touch on the ball was
+        # the LEAST surprising thing for curiosity v2, which guessed the picture only)
+        return v[..., :512].mean(-1) + v[..., 512:].mean(-1)
 
     def initial(self, n, dev):
         return torch.zeros(n, H_DIM, device=dev), torch.zeros(n, Z_DIM, device=dev)
