@@ -201,6 +201,44 @@ def _boxes(p, v, mn, mx):
     return p, v
 
 
+class Demo:
+    """A scripted pick-and-place arm (for optional demonstrations: it shows what the body can do;
+    the creature's pay is unchanged). Phases: above ball, down, squeeze, up, over basket, open."""
+
+    def __init__(self, B, dev, noise=0.2):
+        self.phase = torch.zeros(B, dtype=torch.long, device=dev)
+        self.timer = torch.zeros(B, device=dev)
+        self.noise = noise
+
+    def reset(self, idx):
+        self.phase[idx] = 0
+        self.timer[idx] = 0
+
+    def act(self, w):
+        B, dev = w.B, w.dev
+        b = w.ball
+        above = torch.cat([b[:, :2], torch.full((B, 1), 0.14, device=dev)], -1)
+        low = torch.cat([b[:, :2], torch.full((B, 1), BALL_R, device=dev)], -1)
+        bk = torch.cat([w.basket, torch.full((B, 1), 0.16, device=dev)], -1)
+        ph = self.phase
+        tgt = torch.where((ph == 0)[:, None], above, torch.where((ph <= 2)[:, None], low,
+                          torch.where((ph == 3)[:, None], above, bk)))
+        q = ik_down(tgt, G_MAX)
+        a = ((q - w.q) / w.rate).clamp(-1, 1)
+        a[:, 4] = torch.where((ph >= 2) & (ph <= 4), torch.ones_like(a[:, 4]), -torch.ones_like(a[:, 4]))
+        a = (a + self.noise * torch.randn_like(a)).clamp(-1, 1)
+        err = (fk(w.q)["grip"] - tgt).norm(dim=-1)
+        self.timer += 1
+        t = self.timer
+        nxt = ((ph == 0) & (err < 0.03)) | ((ph == 1) & (err < 0.02)) | ((ph == 2) & (t > 3)) | \
+              ((ph == 3) & (err < 0.04)) | ((ph == 4) & (err < 0.03)) | ((ph == 5) & (t > 4)) | (t > 40)
+        self.phase = torch.where(nxt, (ph + 1) % 6, ph)
+        self.timer = torch.where(nxt, torch.zeros_like(t), t)
+        lost = (self.phase >= 3) & (self.phase <= 4) & ~w.held
+        self.phase = torch.where(lost, torch.zeros_like(self.phase), self.phase)
+        return a
+
+
 class World:
     def __init__(self, B, dev, mode="train", seed=0, compile=False, rooms=0):
         self.B, self.dev = B, dev
@@ -322,8 +360,17 @@ class World:
             # the open claw already around the ball on the table (if that pose is reachable and clear)
             around = (u >= P_HELD_OVER + P_HELD) & (u < P_HELD_OVER + P_HELD + P_AROUND)
             qa = ik_down(pos, G_MAX)
-            fits = ((qa >= self.lo) & (qa <= self.hi)).all(-1) & ((fk(qa)["grip"] - pos).norm(dim=-1) < 0.01)
-            use = around & fits & self._ok(qa, idx)
+            use = torch.zeros_like(around)
+            for _ in range(6):                     # near balls (< 30 cm) can't be reached hand-down: redraw farther
+                fits = ((qa >= self.lo) & (qa <= self.hi)).all(-1) & ((fk(qa)["grip"] - pos).norm(dim=-1) < 0.01)
+                fits = fits & self._ok(qa, idx) & ~(((pos[:, :2] - self.basket[idx]).abs() < B_IN + B_WALL + BALL_R + 0.02).all(-1))
+                use = use | (around & fits)
+                redo = around & ~use
+                if not redo.any():
+                    break
+                p2 = torch.cat([self._reach_xy(n, 0.30, 0.55, 1.4), torch.full((n, 1), BALL_R, device=dev)], -1)
+                pos = torch.where(redo[:, None], p2, pos)
+                qa = torch.where(redo[:, None], ik_down(pos, G_MAX), qa)
             self.q[idx] = torch.where(use[:, None], qa, self.q[idx])
         off0 = torch.tensor(GRIP_OFF, device=dev).expand(n, 3)
         pos = torch.where(held[:, None], held_pos(P, off0), pos)

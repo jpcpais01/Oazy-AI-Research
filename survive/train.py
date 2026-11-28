@@ -733,6 +733,8 @@ def main():
     ap.add_argument("--start-stride", type=int, default=1, help="dream from every k-th remembered moment (2 halves the dream cost)")
     ap.add_argument("--curious", type=int, default=0, help="curiosity: number of next-moment guessers (Plan2Explore; 0 = off, 5 = usual)")
     ap.add_argument("--cur-w", type=float, default=0.1, help="pay for going where the guessers disagree (batch-mean disagreement pays this much per step)")
+    ap.add_argument("--demo-envs", type=float, default=0.0, help="share of worlds driven by the scripted arm (table only; data to watch, pay unchanged)")
+    ap.add_argument("--demo-min", type=float, default=20.0, help="minutes the scripted arm keeps showing")
     ap.add_argument("--gamma", type=float, default=0.997, help="how far ahead it cares: 1/(1-gamma) steps (0.997 = ~33 s)")
     ap.add_argument("--lam", type=float, default=0.95)
     ap.add_argument("--lr-wm", type=float, default=3e-4)
@@ -796,6 +798,11 @@ def main():
             return None
         jb = {k: rb.sample_jump(a.jump_batch, k, a.gamma) for k in mind.jump_sizes}
         return None if any(v is None for v in jb.values()) else jb
+    demo = demo_mask = None
+    if a.demo_envs > 0 and hasattr(_world, "Demo"):
+        demo = _world.Demo(a.envs, dev)
+        demo_mask = torch.arange(a.envs, device=dev) < int(a.envs * a.demo_envs)
+        print(f"demo: {int(demo_mask.sum())} worlds driven by the scripted arm for {a.demo_min} min", flush=True)
     stats_acc = torch.zeros(len(METRICS), device=dev)
     t_rate = time.time()
     while True:
@@ -803,8 +810,12 @@ def main():
         a_, rec, _ = actor.observe_act(a.bf16)
         if steps < a.prefill:
             a_ = torch.rand_like(a_) * 2 - 1
+        if demo is not None and el < a.demo_min:
+            a_ = torch.where(demo_mask[:, None], demo.act(world), a_)
         rb.add(*rec)
         st = actor.env_step(a_)
+        if demo is not None:
+            demo.reset(actor.first.nonzero().squeeze(-1))
         steps += 1
         fin = (st["dead"] | st["trunc"]).float()            # all on the GPU: nothing waits here
         lives["n"] += fin.sum()
