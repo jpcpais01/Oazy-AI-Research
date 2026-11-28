@@ -64,6 +64,7 @@ EFFORT = 0.001               # extra drain at full joint speed (all joints)
 GRAV, REST, ROLL = 9.81, 0.35, 2.5
 P_HELD_OVER = float(os.environ.get("P_HELD_OVER", "0.2"))   # life starts: ball in the claw above the basket
 P_HELD = float(os.environ.get("P_HELD", "0.1"))             # ... ball in the claw anywhere
+HELD_D = float(os.environ.get("HELD_D", "0"))               # "over" starts: basket up to HELD_D m from the held ball (0 = right under it)
 NEAR = float(os.environ.get("NEAR", "0"))                   # share of balls that appear right beside the basket (a gentler world;
                                                             # training may fade it as the creature succeeds: World.near)
 P_AROUND = float(os.environ.get("P_AROUND", "0"))   # life starts: ball on the table between the OPEN plates (one squeeze grabs it)
@@ -360,7 +361,12 @@ class World:
             over = u < P_HELD_OVER
             held = u < P_HELD_OVER + P_HELD
             # "over": move the basket under the claw (if the claw is above the table, inside the reach)
-            gxy = P["grip"][:, :2].clamp(B_IN + B_WALL + 0.02, L - B_IN - B_WALL - 0.02)
+            gxy = P["grip"][:, :2]
+            if HELD_D > 0:
+                # graded starts: the basket 0..HELD_D away from the held ball (a short carry, then a longer one)
+                ang = self._rand(n) * 2 * math.pi
+                gxy = gxy + (self._rand(n) * HELD_D)[:, None] * torch.stack([ang.cos(), ang.sin()], -1)
+            gxy = gxy.clamp(B_IN + B_WALL + 0.02, L - B_IN - B_WALL - 0.02)
             ok_over = over & (P["grip"][:, 2] > B_H + BALL_R + 0.02)
             b = self.basket[idx]
             self.basket[idx] = torch.where(ok_over[:, None], gxy, b)
