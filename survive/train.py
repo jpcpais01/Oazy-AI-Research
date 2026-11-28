@@ -171,7 +171,7 @@ def lambda_returns(r, c, v, gamma, lam):
 _MUS = ["e_push", "e_turn", "e_jump", "e_grip", "e_gaze", "e_aim", "e_reach"] if ACT == 7 else \
     (["e_yaw", "e_shoulder", "e_elbow", "e_wrist", "e_claw"] if ACT == 5 else [f"e_m{i}" for i in range(ACT)])
 METRICS = ["sen", "cont", "kl", "var", "cov", "estd", "me", "actor", "critic", "wb", "ret", "ent", "rgoal", "went", "goal", "entw", "gn",
-           *_MUS, "jv", "jr2"]
+           *_MUS, "jv", "cur", "jr2", "dis_l"]
 
 
 class Learner:
@@ -188,12 +188,15 @@ class Learner:
         dev = next(mind.parameters()).device
         fused = dict(fused=True) if dev.type == "cuda" else {}
         wm = [p for n, p in mind.named_parameters()
-              if not n.startswith(("actor", "critic", "slow_critic", "minds_eye", "goal_", "will", "jump"))]
+              if not n.startswith(("actor", "critic", "slow_critic", "minds_eye", "goal_", "will", "jump", "disag"))]
         self.wm_params = wm
         self.opt_wm = torch.optim.Adam(wm, lr=args.lr_wm, eps=1e-8, **fused)
         self.opt_actor = torch.optim.Adam(mind.actor.parameters(), lr=args.lr_ac, eps=1e-5, **fused)
         self.opt_critic = torch.optim.Adam(mind.critic.parameters(), lr=args.lr_ac, eps=1e-5, **fused)
         self.opt_me = torch.optim.Adam(mind.minds_eye.parameters(), lr=3e-4, **fused)
+        self.dis_params = list(mind.disag.parameters()) if hasattr(mind, "disag") else []
+        if self.dis_params:
+            self.opt_dis = torch.optim.Adam(self.dis_params, lr=3e-4, **fused)
         self.jump_params = list(mind.jump.parameters())
         if self.jump_params:
             self.opt_jump = torch.optim.Adam(self.jump_params, lr=3e-4, **fused)
@@ -224,6 +227,7 @@ class Learner:
         mode = getattr(args, "compile_mode", "default")
         comp = (lambda f: torch.compile(f, mode=None if mode == "default" else mode)) if getattr(args, "compile", 0) else (lambda f: f)
         self.wm_fn, self.me_fn, self.ac_fn = comp(self._wm), comp(self._me), comp(self._ac)
+        self.dis_fn = comp(self._dis)
         self.goal_fn = comp(self._goal)
 
     def _autocast(self):
@@ -304,6 +308,18 @@ class Learner:
         met = torch.stack([l_sen, l_cont, dyn.mean(), var, cov, estd]).detach()
         return loss, hs.detach(), zs.detach(), met, emb.detach(), dyn.detach()
 
+    # ------------------------------------------------ curiosity: the guessers learn what really came next
+    def _dis(self, hs, zs, act, first):
+        m = self.m
+        feat = torch.cat([hs[:, :-1], zs[:, :-1]], -1).flatten(0, 1)
+        a_ = act[:, 1:].flatten(0, 1)                       # act[:, t+1] is what was done at moment t
+        tgt = zs[:, 1:].flatten(0, 1).float()
+        ok = (~first[:, 1:]).flatten().float()             # same life
+        x = torch.cat([feat, a_.to(feat.dtype)], -1)
+        with self._autocast():
+            l = sum(((g(x).float() - tgt) ** 2).mean(-1) for g in m.disag)
+        return (l * ok).sum() / ok.sum().clamp(min=1)
+
     # ------------------------------------------------ mind's eye (detached, page only)
     def _me(self, feat, img):
         with self._autocast():
@@ -331,6 +347,8 @@ class Learner:
         h, z = hs.flatten(0, 1)[::st], zs.flatten(0, 1)[::st]
         K = m.intent
         fts, ents, xs = [torch.cat([h, z], -1)], [], []
+        cw = float(getattr(a, "cur_w", 0.0)) if hasattr(m, "disag") else 0.0
+        dis = []
         goals, rgoal, logps, wents, dec_at = [], [], [], [], []
         code = None
         for k in range(a.horizon):
@@ -348,6 +366,8 @@ class Learner:
             xs.append(x)
             with self._autocast():
                 act, ent = m.act(x, per=True)                             # N, ACT
+                if cw > 0:
+                    dis.append(m.disagree(fts[-1], act))
                 h = m.step_h(h, z, act)
                 z = m.sample(m.imagine_z(h))
             fts.append(torch.cat([h, z], -1))
@@ -364,6 +384,13 @@ class Learner:
             v_slow = m.slow_critic(x).float().squeeze(-1)
         r_ext = wellbeing(sen[1:])                                         # reward on arrival
         r = r_ext + getattr(a, "intent_w", 0.3) * torch.stack(rgoal) if K else r_ext
+        cur = torch.zeros((), device=r.device)
+        if cw > 0:
+            # curiosity: paid for going where its guessers disagree (scaled by this batch's mean, so only
+            # "more unknown than usual" matters; nothing about balls or baskets)
+            d_ = torch.stack(dis)
+            cur = d_.detach().mean()
+            r = r + cw * d_ / cur.clamp(min=1e-8)
         c = cont[1:]
         scale = 1.0 / (1 - a.gamma)
         vb = v_slow * scale
@@ -433,7 +460,7 @@ class Learner:
             l_critic = l_critic + l_wcrit
             rg, went = torch.stack(rgoal).mean(), we.mean()
         met = torch.cat([torch.stack([l_actor, l_critic, r_ext.mean(), ret.mean() / scale, ent.mean(), rg, went]),
-                         ent_m.mean((0, 1)), jv[None]]).detach()
+                         ent_m.mean((0, 1)), jv[None], cur[None]]).detach()
         return l_actor, l_critic, lo.detach(), hi.detach(), met
 
     # ------------------------------------------------ jumps: learned from real memories
@@ -474,13 +501,20 @@ class Learner:
         gn = torch.nn.utils.clip_grad_norm_(self.wm_params, 1000.0, foreach=True)
         self.opt_wm.step()
 
+        l_dis = torch.zeros((), device=hs.device)
+        if self.dis_params:
+            l_dis = self.dis_fn(hs, zs, batch["act"], batch["first"])
+            self.opt_dis.zero_grad(set_to_none=True)
+            l_dis.backward()
+            self.opt_dis.step()
+
         k = max(1, T // 4)
         l_me = self.me_fn(torch.cat([hs, zs], -1)[:, ::k].flatten(0, 1), batch["img"][:, ::k].flatten(0, 1))
         self.opt_me.zero_grad(set_to_none=True)
         l_me.backward()
         self.opt_me.step()
 
-        for p_ in self.wm_params + self.jump_params:
+        for p_ in self.wm_params + self.jump_params + self.dis_params:
             p_.requires_grad_(False)
         l_goal = g_un = torch.zeros((), device=hs.device)
         if m.intent:
@@ -515,7 +549,7 @@ class Learner:
         if m.intent:
             self.opt_will.zero_grad(set_to_none=True)
         (l_actor + l_critic).backward()          # critic sees detached states; actor never touches the critic
-        for p_ in self.wm_params + self.jump_params:
+        for p_ in self.wm_params + self.jump_params + self.dis_params:
             p_.requires_grad_(True)
         torch.nn.utils.clip_grad_norm_(m.actor.parameters(), 100.0, foreach=True)
         torch.nn.utils.clip_grad_norm_(m.critic.parameters(), 100.0, foreach=True)
@@ -529,7 +563,7 @@ class Learner:
             if m.intent:
                 torch._foreach_lerp_(list(m.will_slow.parameters()), list(m.will_critic.parameters()), 0.02)
         met = torch.cat([met_wm, l_me.detach()[None], met_ac[:7], g_un[None], ent_w.detach().float().mean().reshape(1),
-                         gn.detach().float()[None], met_ac[7:], jr2.detach()[None]])
+                         gn.detach().float()[None], met_ac[7:], jr2.detach()[None], l_dis.detach()[None]])
         return met, emb, kl
 
 
@@ -697,6 +731,8 @@ def main():
     ap.add_argument("--will-norm", type=int, default=1, help="standardise the will's advantage (0 = divide by the return range, as in will_s1)")
     ap.add_argument("--will-ent", type=float, default=1e-3, help="how much the will is paid to keep its choices varied")
     ap.add_argument("--start-stride", type=int, default=1, help="dream from every k-th remembered moment (2 halves the dream cost)")
+    ap.add_argument("--curious", type=int, default=0, help="curiosity: number of next-moment guessers (Plan2Explore; 0 = off, 5 = usual)")
+    ap.add_argument("--cur-w", type=float, default=0.1, help="pay for going where the guessers disagree (batch-mean disagreement pays this much per step)")
     ap.add_argument("--gamma", type=float, default=0.997, help="how far ahead it cares: 1/(1-gamma) steps (0.997 = ~33 s)")
     ap.add_argument("--lam", type=float, default=0.95)
     ap.add_argument("--lr-wm", type=float, default=3e-4)
@@ -727,7 +763,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     (out / "args.json").write_text(json.dumps(vars(a), indent=1))
     set_eyes(vars(a))
-    mind = Mind(a.res, a.intent, a.g_slots, a.g_cls, matter=a.matter > 0, jumps=a.jumps).to(dev)
+    mind = Mind(a.res, a.intent, a.g_slots, a.g_cls, matter=a.matter > 0, jumps=a.jumps, curious=a.curious).to(dev)
     if a.init:     # carry on from a saved mind (fresh replay and optimisers; the mind keeps what it learned)
         from .model import load_mind
         load_mind(mind, torch.load(a.init, map_location=dev)["mind"])

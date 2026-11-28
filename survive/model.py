@@ -118,7 +118,7 @@ def maxcos(a, b):
 
 
 class Mind(nn.Module):
-    def __init__(self, res=64, intent=0, g_slots=G_SLOTS, g_cls=G_CLS, matter=False, jumps=""):
+    def __init__(self, res=64, intent=0, g_slots=G_SLOTS, g_cls=G_CLS, matter=False, jumps="", curious=0):
         super().__init__()
         self.res = res
         self.intent = int(intent or 0)
@@ -154,6 +154,8 @@ class Mind(nn.Module):
         self.jump_chain = [int(x) for x in str(jumps or "").split(",") if x.strip()]
         self.jump_sizes = sorted(set(self.jump_chain))
         self.jump = nn.ModuleDict({str(k): mlp(H_DIM, H_DIM + 2) for k in self.jump_sizes})
+        if curious:     # curiosity (Plan2Explore): a few small guessers of the next moment; where they disagree, it doesn't know yet
+            self.disag = nn.ModuleList([mlp(FEAT + ACT, Z_DIM, hid=256) for _ in range(int(curious))])
         if matter:      # what in this picture matters to the body: will I eat / get hurt within 1 s?
             self.matter = nn.Sequential(nn.Linear(EMB, 256), nn.LayerNorm(256), nn.SiLU(), nn.Linear(256, 2))
 
@@ -175,6 +177,11 @@ class Mind(nn.Module):
         """Jump k steps ahead from memory h: (next memory, mean discounted wellbeing on the way, alive logit)."""
         out = self.jump[str(k)](h).float()
         return torch.tanh(h.float() + out[:, :H_DIM]), out[:, H_DIM], out[:, H_DIM + 1]
+
+    def disagree(self, feat, a):
+        """How much the guessers disagree about the next moment after doing a here (N,)."""
+        x = torch.cat([feat, a.to(feat.dtype)], -1)
+        return torch.stack([g(x).float() for g in self.disag]).var(0).mean(-1)
 
     def initial(self, n, dev):
         return torch.zeros(n, H_DIM, device=dev), torch.zeros(n, Z_DIM, device=dev)
@@ -254,7 +261,7 @@ def eff_rank(e):
 def make_mind(args, res=None):
     """A Mind shaped as the run's args say (args: dict)."""
     return Mind(res or args["res"], args.get("intent", 0), args.get("g_slots", G_SLOTS), args.get("g_cls", G_CLS),
-                bool(args.get("matter", 0)), args.get("jumps", ""))
+                bool(args.get("matter", 0)), args.get("jumps", ""), int(args.get("curious", 0)))
 
 
 def load_mind(mind, sd):

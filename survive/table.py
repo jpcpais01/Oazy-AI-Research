@@ -62,7 +62,8 @@ BALL_E = 0.4                 # energy from a ball in the basket
 DRAIN = 1 / 450              # per step (45 s from full, resting)
 EFFORT = 0.0015              # extra drain at full joint speed (all joints)
 GRAV, REST, ROLL = 9.81, 0.35, 2.5
-P_HELD_OVER, P_HELD = 0.25, 0.25             # life starts: ball in the claw above the basket / anywhere
+P_HELD_OVER, P_HELD = 0.2, 0.1               # life starts: ball in the claw above the basket / anywhere
+P_AROUND = float(os.environ.get("P_AROUND", "0"))   # life starts: ball on the table between the OPEN plates (one squeeze grabs it)
 MUSCLE_K = float(os.environ.get("MUSCLE_K", "1"))   # muscles follow the command with a lag: m += K*(a-m); 1 = no lag
 P_UNDER = 0.4                # a new ball appears just under the claw
 
@@ -115,6 +116,19 @@ def fk(q):
     off = (g / 2 + PT / 2)[..., None] * side
     return dict(sh=sh, el=el, wr=wr, root=root, tip=tip, hand=hand, side=side, up=up,
                 pl=mid - off, pr=mid + off, grip=root + hand * (LF * 0.55))
+
+
+def ik_down(xyz, g):
+    """Joint angles that put the grip point at xyz with the hand pointing straight down (claw opening g)."""
+    base = torch.tensor(BASE, device=xyz.device)
+    d = xyz[:, :2] - base
+    th0 = torch.atan2(-d[:, 0], d[:, 1])
+    R, Z = d.norm(dim=-1), xyz[:, 2] + L3 + LF * 0.55 - SH_Z
+    D = ((R ** 2 + Z ** 2 - L1 ** 2 - L2 ** 2) / (2 * L1 * L2)).clamp(-1, 1)
+    el = torch.acos(D)
+    a1 = torch.atan2(Z, R) + torch.atan2(L2 * torch.sin(el), L1 + L2 * torch.cos(el))
+    th3 = a1 - el + math.pi / 2
+    return torch.stack([th0, a1, el, th3, torch.full_like(th0, g)], -1)
 
 
 def obb_contact(p, c, ax, half):
@@ -304,6 +318,13 @@ class World:
             inb = ((gxy - self.basket[idx]).abs() < B_IN + B_WALL + BALL_R + 0.02).all(-1)
             xy = torch.where((under & ~inb)[:, None], gxy, xy)
         pos = torch.cat([xy, torch.full((n, 1), BALL_R, device=dev)], -1)
+        if start and cur and P_AROUND > 0:
+            # the open claw already around the ball on the table (if that pose is reachable and clear)
+            around = (u >= P_HELD_OVER + P_HELD) & (u < P_HELD_OVER + P_HELD + P_AROUND)
+            qa = ik_down(pos, G_MAX)
+            fits = ((qa >= self.lo) & (qa <= self.hi)).all(-1) & ((fk(qa)["grip"] - pos).norm(dim=-1) < 0.01)
+            use = around & fits & self._ok(qa, idx)
+            self.q[idx] = torch.where(use[:, None], qa, self.q[idx])
         off0 = torch.tensor(GRIP_OFF, device=dev).expand(n, 3)
         pos = torch.where(held[:, None], held_pos(P, off0), pos)
         self.hold_off[idx] = off0
