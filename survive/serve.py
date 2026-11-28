@@ -187,7 +187,7 @@ class Sim:
             self._step_for = m
         return self._step
 
-    DREAM_AT = (2, 5, 10, 20, 50, 100)          # imagined pictures at +0.2, 0.5, 1, 2, 5, 10 s
+    DREAM_AT = tuple(range(1, 16)) + (20, 30, 50)   # imagined pictures every 0.1 s up to 1.5 s, then +2, 3, 5 s
 
     @torch.no_grad()
     def imagine(self, m, act, steps=100, n=16):
