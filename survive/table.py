@@ -162,6 +162,31 @@ class Mode:
         self.far = name == "hard"
 
 
+def _boxes(p, v, mn, mx):
+    """Ball (centre p, vel v) against solid boxes mn/mx (B,K,3): pushed out, bounced. A centre that got
+    inside a box leaves along the axis of least penetration (not straight up: the post is taller than the ball)."""
+    for j in range(mn.shape[1]):
+        lo, hi = mn[:, j], mx[:, j]
+        qn = torch.maximum(torch.minimum(p, hi), lo)
+        d = p - qn
+        dist = d.norm(dim=-1)
+        inside = dist < 1e-7
+        pen = torch.cat([p - lo, hi - p], -1)                    # B,6: distance to each face
+        pen[:, 2] = 1e9                                          # never out through the bottom (the table)
+        k = pen.argmin(-1)
+        ax, sg = k % 3, torch.where(k < 3, -1.0, 1.0)
+        n_in = torch.nn.functional.one_hot(ax, 3).float() * sg[:, None]
+        face = torch.where(k[:, None] < 3, lo.gather(1, ax[:, None]), hi.gather(1, ax[:, None]))
+        q_in = p.clone().scatter(1, ax[:, None], face)
+        n = torch.where(inside[:, None], n_in, d / dist.clamp(min=1e-7)[:, None])
+        qn = torch.where(inside[:, None], q_in, qn)
+        hit = inside | (dist < BALL_R)
+        p = torch.where(hit[:, None], qn + n * BALL_R, p)
+        vn = (v * n).sum(-1)
+        v = torch.where((hit & (vn < 0))[:, None], v - (1 + REST) * vn[:, None] * n, v)
+    return p, v
+
+
 class World:
     def __init__(self, B, dev, mode="train", seed=0, compile=False, rooms=0):
         self.B, self.dev = B, dev
@@ -397,16 +422,7 @@ class World:
                 va = torch.where((lo_ & (v[:, ax] < 0)) | (hi_ & (v[:, ax] > 0)), -0.5 * v[:, ax], v[:, ax])
                 p = torch.cat([p[:, :ax], pa[:, None], p[:, ax + 1:]], -1)
                 v = torch.cat([v[:, :ax], va[:, None], v[:, ax + 1:]], -1)
-            # basket walls
-            for j in range(4):
-                qn = torch.maximum(torch.minimum(p, mx[:, j]), mn[:, j])
-                d = p - qn
-                dist = d.norm(dim=-1)
-                hit = dist < BALL_R
-                n = torch.where((dist > 1e-7)[:, None], d / dist.clamp(min=1e-7)[:, None], torch.tensor([0, 0, 1.0], device=dev))
-                p = torch.where(hit[:, None], qn + n * BALL_R, p)
-                vn = (v * n).sum(-1)
-                v = torch.where((hit & (vn < 0))[:, None], v - (1 + REST) * vn[:, None] * n, v)
+            p, v = _boxes(p, v, mn, mx)
             # the plates push the ball (kinematic)
             ax = (P["hand"], P["side"], P["up"])
             for side, (c, vp) in enumerate(((P["pl"], vpl), (P["pr"], vpr))):
@@ -432,6 +448,9 @@ class World:
             nn_ = push / push.norm(dim=-1, keepdim=True).clamp(min=1e-9)
             vn = (v * nn_).sum(-1)
             v = torch.where((hit.any(-1) & (vn < 0))[:, None], v - vn[:, None] * nn_, v)
+            # the arm can't shove it into the table, the basket or the post
+            p, v = _boxes(p, v, mn, mx)
+            p = torch.cat([p[:, :2], p[:, 2:3].clamp(min=BALL_R)], -1)
             p = torch.where(held[:, None], p_h, p)
             v = torch.where(held[:, None], v_h, v)
             self.ball, self.bv = p, v
