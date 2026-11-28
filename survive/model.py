@@ -28,6 +28,8 @@ and the end of life. Nothing points it at food, crates or anything else.
 """
 from __future__ import annotations
 
+import os
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -129,7 +131,10 @@ class Mind(nn.Module):
         self.img_in = nn.Sequential(nn.Linear(Z_DIM + ACT, 512), nn.LayerNorm(512), nn.SiLU())
         self.gru = nn.GRUCell(512, H_DIM)
         self.prior = mlp(H_DIM, Z_DIM, n=1)
-        self.post = mlp(H_DIM + 512 + SENSES, Z_DIM, n=1)
+        # SENSE_IN=1: the body feelings get their own small embedding before the posterior, so 11 numbers
+        # (energy! touch!) aren't drowned next to 512 eye + memory inputs
+        self.sense_in = nn.Sequential(nn.Linear(SENSES, 128), nn.LayerNorm(128), nn.SiLU()) if int(os.environ.get("SENSE_IN", "0")) else None
+        self.post = mlp(H_DIM + 512 + (128 if self.sense_in is not None else SENSES), Z_DIM, n=1)
         self.sense_head = mlp(FEAT, SENSES)
         self.cont_head = mlp(FEAT, 1)
         self.actor = mlp(FEAT + gin, 2 * ACT)
@@ -193,7 +198,8 @@ class Mind(nn.Module):
         return self.gru(self.img_in(torch.cat([z, a], -1)).float(), h.float())
 
     def observe(self, h, emb, senses):
-        logits = self.post(torch.cat([h, self.eye_in(emb), senses], -1))
+        sen = self.sense_in(senses) if self.sense_in is not None else senses
+        logits = self.post(torch.cat([h, self.eye_in(emb), sen], -1))
         return self.dist(logits)
 
     def imagine_z(self, h):

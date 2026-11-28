@@ -245,7 +245,8 @@ class Learner:
             # the posterior's first layer, split: the part that sees eye+senses is done for all
             # moments at once; only the memory part runs inside the loop
             W, bias = m.post[0].weight, m.post[0].bias
-            xin = F.linear(torch.cat([m.eye_in(emb), sen.to(emb.dtype)], -1), W[:, H_DIM:], bias)
+            sen_x = m.sense_in(sen.to(emb.dtype)) if getattr(m, "sense_in", None) is not None else sen.to(emb.dtype)
+            xin = F.linear(torch.cat([m.eye_in(emb), sen_x], -1), W[:, H_DIM:], bias)
         post_rest = m.post[1:]
         h = h0
         z = torch.zeros(bs, Z_DIM, device=h0.device)
