@@ -658,7 +658,7 @@ const SKY=document.querySelector('.sky');let moodW=-1,moodF=-1;
 function setMood(w,f){if(Math.abs(w-moodW)>.02){moodW=w;SKY.style.setProperty('--wb',w.toFixed(2))}if(Math.abs(f-moodF)>.02){moodF=f;SKY.style.setProperty('--fear',f.toFixed(2))}}
 function show(f){
   const res=f.res;if(f.png){drawPNG(eyeL,f.eyeL,res);drawPNG(eyeR,f.eyeR,res)}else{const e=b64(f.eyes);drawRGB(eyeL,e,res,0,6);drawRGB(eyeR,e,res,3,6)}$('resTag').textContent=res+' px · stereo';
-  const s=f.state,wbNow=(drive==='homeo'&&s.hunger!=null)?(s.health+1-s.hunger)/2:(s.energy+s.health)/2;
+  const s=f.state,wbNow=drive==='product'?s.energy*s.health:(drive==='homeo'&&s.hunger!=null)?(s.health+1-s.hunger)/2:(s.energy+s.health)/2;
   setMapMode(!!s.table);
   document.querySelectorAll('.legend .v5').forEach(e=>e.hidden=!s.v5);if($('lgPrey'))$('lgPrey').style.background=s.v6?'#4673ff':'#e9c48a';
   $('flStam').hidden=s.stamina==null;if(s.stamina!=null)$('stV').textContent=Math.round(s.stamina*100)+'%';
@@ -804,7 +804,7 @@ async function loadInfo(){
       ...(g.smell?[['Nose','two nostrils, 12 cm apart: food smell, stronger when close and on that side']]:[]),
       ['Body feelings',feel.join(', ')],
       ['Muscles',`push, turn, jump, grip${g.gaze?', gaze':''}${g.world_v>=5?', arm aim (±90°) and arm reach (0–1 m)':''}. Raw, nothing scripted`],
-      ['Drive',(a.drive==='homeo'?'wellbeing = (health + 1 − hunger) / 2: a half-full stomach is fine, an empty one hurts':'wellbeing = (energy + health) / 2')+', and staying alive'],
+      ['Drive',(a.drive==='product'?'wellbeing = energy × health: either one empty = 0':a.drive==='homeo'?'wellbeing = (health + 1 − hunger) / 2: a half-full stomach is fine, an empty one hurts':'wellbeing = (energy + health) / 2')+', and staying alive'],
       ['Learning to see',g.recon>0?`eye kept rich by VICReg, and the inner state must also redraw what the left eye saw (weight ${g.recon}), so small things like food are kept`:'eye kept rich by VICReg (vary, don\'t repeat). No picture is ever redrawn'],
       ['Memory','512 numbers carried through life + 32 × 16 “moment” slots'],
       ['Imagination',`${a.horizon} steps (${(a.horizon/10).toFixed(1)} s) ahead, horizon γ = ${a.gamma}${g.jumps?`; then jumps of ${g.jumps.split(',').map(x=>sec(+x)).join(' + ')} forecast further (weight ${g.jump_w})`:''}`],

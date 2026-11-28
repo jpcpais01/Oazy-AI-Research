@@ -226,6 +226,7 @@ DRIVE = "linear"
 
 def set_drive(name):
     """linear: wellbeing = (energy + health) / 2 (all runs before v3).
+    product: wellbeing = energy * health (either one empty = nothing left).
     homeo: wellbeing = (health + 1 - hunger) / 2, hunger being the felt -log(energy) sense: a
     half-full stomach is fine, an almost empty one hurts more and more (like real hunger)."""
     global DRIVE
@@ -234,6 +235,8 @@ def set_drive(name):
 
 def wellbeing(senses):
     """The built-in drive, from (predicted) body feelings."""
+    if DRIVE == "product":      # energy x health: empty either one = 0 (the linear mean still read 50% at an empty tank)
+        return senses[..., 0].clamp(0, 1) * senses[..., 1].clamp(0, 1)
     if DRIVE == "homeo" and senses.shape[-1] > 30:
         return 0.5 * (senses[..., 1].clamp(0, 1) + 1 - senses[..., 30].clamp(0, 1))   # 30 = hunger
     return 0.5 * (senses[..., 0].clamp(0, 1) + senses[..., 1].clamp(0, 1))
