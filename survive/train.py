@@ -309,11 +309,12 @@ class Learner:
         return loss, hs.detach(), zs.detach(), met, emb.detach(), dyn.detach()
 
     # ------------------------------------------------ curiosity: the guessers learn what really came next
-    def _dis(self, hs, zs, act, first):
+    def _dis(self, hs, zs, act, first, emb):
         m = self.m
         feat = torch.cat([hs[:, :-1], zs[:, :-1]], -1).flatten(0, 1)
         a_ = act[:, 1:].flatten(0, 1)                       # act[:, t+1] is what was done at moment t
-        tgt = zs[:, 1:].flatten(0, 1).float()
+        with torch.no_grad(), self._autocast():
+            tgt = m.eye_in(emb[:, 1:].flatten(0, 1)).float()    # what the eyes will see next (not the noisy z sample)
         ok = (~first[:, 1:]).flatten().float()             # same life
         x = torch.cat([feat, a_.to(feat.dtype)], -1)
         with self._autocast():
@@ -388,9 +389,10 @@ class Learner:
         if cw > 0:
             # curiosity: paid for going where its guessers disagree (scaled by this batch's mean, so only
             # "more unknown than usual" matters; nothing about balls or baskets)
+            # standardised: only "more unknown than usual" pays (a mean-scaled bonus was a flat +cw a step)
             d_ = torch.stack(dis)
             cur = d_.detach().mean()
-            r = r + cw * d_ / cur.clamp(min=1e-8)
+            r = r + cw * (d_ - cur) / d_.detach().std().clamp(min=1e-8)
         c = cont[1:]
         scale = 1.0 / (1 - a.gamma)
         vb = v_slow * scale
@@ -503,7 +505,7 @@ class Learner:
 
         l_dis = torch.zeros((), device=hs.device)
         if self.dis_params:
-            l_dis = self.dis_fn(hs, zs, batch["act"], batch["first"])
+            l_dis = self.dis_fn(hs, zs, batch["act"], batch["first"], emb)
             self.opt_dis.zero_grad(set_to_none=True)
             l_dis.backward()
             self.opt_dis.step()
@@ -732,7 +734,7 @@ def main():
     ap.add_argument("--will-ent", type=float, default=1e-3, help="how much the will is paid to keep its choices varied")
     ap.add_argument("--start-stride", type=int, default=1, help="dream from every k-th remembered moment (2 halves the dream cost)")
     ap.add_argument("--curious", type=int, default=0, help="curiosity: number of next-moment guessers (Plan2Explore; 0 = off, 5 = usual)")
-    ap.add_argument("--cur-w", type=float, default=0.1, help="pay for going where the guessers disagree (batch-mean disagreement pays this much per step)")
+    ap.add_argument("--cur-w", type=float, default=0.5, help="pay for going where the guessers disagree: cw x (disagreement - mean) / std per step")
     ap.add_argument("--demo-envs", type=float, default=0.0, help="share of worlds driven by the scripted arm (table only; data to watch, pay unchanged)")
     ap.add_argument("--demo-min", type=float, default=20.0, help="minutes the scripted arm keeps showing")
     ap.add_argument("--gamma", type=float, default=0.997, help="how far ahead it cares: 1/(1-gamma) steps (0.997 = ~33 s)")
