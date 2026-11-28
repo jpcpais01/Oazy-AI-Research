@@ -83,7 +83,9 @@ class Replay:
         t = (base + s[:, None] + torch.arange(T, device=self.dev)[None]) % self.cap      # bs,T
         ee = e[:, None].expand(bs, T)
         self.last_idx = (t, ee)
-        return dict(img=self.img[t, ee], sen=self.sen[t, ee].float(), act=self.act[t, ee].float(),
+        sen_ = self.sen[t, ee].float()
+        self.score_clips = (((sen_[:, 1:, 0] - sen_[:, :-1, 0]) > 0.05) & ~self.first[t[:, 1:], ee[:, 1:]]).any(1).float().mean()   # share of clips with an energy jump within a life (a ball scored)
+        return dict(img=self.img[t, ee], sen=sen_, act=self.act[t, ee].float(),
                     first=self.first[t, ee], cont=self.cont[t, ee].float(), h0=self.h[t[:, 0], e].float())
 
     def sample_jump(self, bs, k, gamma):
@@ -863,7 +865,8 @@ def main():
                 stats_acc.zero_()
                 row.update(min=round(el, 2), updates=updates, steps=steps, frames=updates * a.batch * a.seq,
                            rank=round(eff_rank(emb.flatten(0, 1)[:2048]), 1),
-                           fps=round(100 * a.batch * a.seq / max(1e-3, time.time() - t_rate)))
+                           fps=round(100 * a.batch * a.seq / max(1e-3, time.time() - t_rate)),
+                           score_clips=round(float(getattr(rb, "score_clips", 0.0)), 4))
                 t_rate = time.time()
                 n = lives["n"].item()
                 if n:
