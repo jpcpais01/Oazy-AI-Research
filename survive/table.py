@@ -62,7 +62,10 @@ BALL_E = 1.0                 # a ball in the basket fills the tank (0.4 paid les
 DRAIN = 1 / 600              # per step (60 s from full, resting)
 EFFORT = 0.001               # extra drain at full joint speed (all joints)
 GRAV, REST, ROLL = 9.81, 0.35, 2.5
-P_HELD_OVER, P_HELD = 0.2, 0.1               # life starts: ball in the claw above the basket / anywhere
+P_HELD_OVER = float(os.environ.get("P_HELD_OVER", "0.2"))   # life starts: ball in the claw above the basket
+P_HELD = float(os.environ.get("P_HELD", "0.1"))             # ... ball in the claw anywhere
+NEAR = float(os.environ.get("NEAR", "0"))                   # share of balls that appear right beside the basket (a gentler world;
+                                                            # training may fade it as the creature succeeds: World.near)
 P_AROUND = float(os.environ.get("P_AROUND", "0"))   # life starts: ball on the table between the OPEN plates (one squeeze grabs it)
 MUSCLE_K = float(os.environ.get("MUSCLE_K", "1"))   # muscles follow the command with a lag: m += K*(a-m); 1 = no lag
 P_UNDER = 0.4                # a new ball appears just under the claw
@@ -277,6 +280,7 @@ class World:
         self.cause = z(B, dt=torch.long)
         self.dying = z(B, dt=torch.long)
         self.score_t = z(B, dt=torch.long)             # >0: the ball sits in the basket, a new one soon
+        self.near = NEAR if self.mode.name == "train" else 0.0     # balls beside the basket (train worlds only, so tests stay comparable; training may fade it)
         self.ball_col = z(B, 3)
         self.basket_col = z(B, 3)
         self.floor_col = z(B, 2, 3)
@@ -361,6 +365,14 @@ class World:
             b = self.basket[idx]
             self.basket[idx] = torch.where(ok_over[:, None], gxy, b)
         xy = self._reach_xy(n, 0.25, 0.85, 1.4)
+        if self.near > 0:
+            # a gentler world: some balls appear just outside the basket wall (3-12 cm gap), on the table
+            ang = self._rand(n) * 2 * math.pi
+            d = B_IN + B_WALL + BALL_R + 0.03 + self._rand(n) * 0.09
+            nxy = (self.basket[idx] + d[:, None] * torch.stack([ang.cos(), ang.sin()], -1)).clamp(0.08, L - 0.08)
+            r = (nxy - torch.tensor(BASE, device=dev)).norm(dim=-1)
+            ok = (self._rand(n) < self.near) & (r > 0.25) & (r < 0.85)
+            xy = torch.where(ok[:, None], nxy, xy)
         # keep loose balls out of the basket footprint
         for _ in range(4):
             inb = ((xy - self.basket[idx]).abs() < B_IN + B_WALL + BALL_R + 0.02).all(-1)

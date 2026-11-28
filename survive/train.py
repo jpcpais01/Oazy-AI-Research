@@ -15,6 +15,7 @@ import math
 import os
 import time
 from pathlib import Path
+import sys
 
 import torch
 import torch.nn.functional as F
@@ -763,6 +764,7 @@ def main():
     ap.add_argument("--vic-cov", type=float, default=1.0)
     ap.add_argument("--vic-rows", type=int, default=2048, help="moments used for VICReg (0 = all)")
     ap.add_argument("--bf16", type=int, default=1)
+    ap.add_argument("--near-goal", type=float, default=1.0, help="NEAR env (table): balls beside the basket fade out as the creature's own balls/life approach this")
     ap.add_argument("--emotion", type=float, default=0.0, help="share of clips drawn around moments that mattered (surprise x importance)")
     ap.add_argument("--compile", type=int, default=1, help="torch.compile the learner and the creatures' step")
     ap.add_argument("--compile-mode", default="default", help="default | reduce-overhead | max-autotune-no-cudagraphs")
@@ -873,6 +875,11 @@ def main():
                     row.update(lives=int(n), life_steps=round(lives["t"].item() / n, 1),
                                food=[round(x / n, 2) for x in lives["food"].tolist()],
                                deaths={k: int(v) for k, v in zip(["cap"] + DEATH_CAUSES[1:], lives["cause"].tolist())})
+                    near0 = getattr(sys.modules.get(type(world).__module__), "NEAR", 0.0)
+                    if near0 > 0:
+                        # the gentle world fades as the creature succeeds on its own (world only, the pay never changes)
+                        world.near = near0 * max(0.0, 1.0 - lives["food"][0].item() / n / a.near_goal)
+                        row.update(near=round(world.near, 3))
                     lives = fresh_lives()
                 if demo_lives["n"].item():
                     row.update(demo_lives=int(demo_lives["n"].item()), demo_balls=round(demo_lives["food"].item() / demo_lives["n"].item(), 2))
