@@ -58,9 +58,9 @@ RATE = torch.tensor([0.22, 0.22, 0.25, 0.3, 0.025])   # per step
 # ---- things ---------------------------------------------------------------------------------------
 BALL_R = 0.035
 B_IN, B_WALL, B_H = 0.07, 0.01, 0.05        # basket inner half size, wall thickness, height
-BALL_E = 0.4                 # energy from a ball in the basket
-DRAIN = 1 / 450              # per step (45 s from full, resting)
-EFFORT = 0.0015              # extra drain at full joint speed (all joints)
+BALL_E = 0.7                 # energy from a ball in the basket (0.4 paid less than fetching it cost: a scripted expert lived 47 s vs 41 s resting)
+DRAIN = 1 / 600              # per step (60 s from full, resting)
+EFFORT = 0.001               # extra drain at full joint speed (all joints)
 GRAV, REST, ROLL = 9.81, 0.35, 2.5
 P_HELD_OVER, P_HELD = 0.2, 0.1               # life starts: ball in the claw above the basket / anywhere
 P_AROUND = float(os.environ.get("P_AROUND", "0"))   # life starts: ball on the table between the OPEN plates (one squeeze grabs it)
@@ -526,8 +526,10 @@ class World:
         # plates on the table or basket rim: felt on both faces
         tp = self._arm_points(P)[:, 4:]                                     # plate corners, 4 per plate
         on = (tp[..., 2] < 0.006) | blocked[:, None]
-        touch[:, 0:2] = torch.maximum(touch[:, 0:2], on[:, :4].any(-1, keepdim=True).float() * 0.6)
-        touch[:, 2:4] = torch.maximum(touch[:, 2:4], on[:, 4:].any(-1, keepdim=True).float() * 0.6)
+        # (felt on the OUTER face only: the inner faces feel only the ball, so "something between my plates"
+        #  is never confused with the table; before, table and ball both read ~0.6 on all four faces)
+        touch[:, 1:2] = torch.maximum(touch[:, 1:2], on[:, :4].any(-1, keepdim=True).float() * 0.6)
+        touch[:, 3:4] = torch.maximum(touch[:, 3:4], on[:, 4:].any(-1, keepdim=True).float() * 0.6)
         # grasp: both inner faces on the ball and the claw nearly closed on it
         g = self.q[:, 4]
         both = on_ball[:, 0] & on_ball[:, 1]          # the ball itself between both inner faces (not the table)
@@ -579,7 +581,7 @@ class World:
         return self.dead.clone(), trunc, self.cause.clone(), ate
 
     def _sense(self):
-        qn = (self.q - self.lo) / (self.hi - self.lo) * 2 - 1
+        qn = ((self.q - self.lo) / (self.hi - self.lo) * 2 - 1).clamp(-1, 1)
         self.senses = torch.cat([self.energy.clamp(0, 1)[:, None], self.health.clamp(0, 1)[:, None],
                                  self.touch, qn], -1)
 

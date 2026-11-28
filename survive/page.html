@@ -280,6 +280,7 @@ html{scrollbar-width:none}html::-webkit-scrollbar,body::-webkit-scrollbar,*::-we
   .feel{grid-template-columns:150px 1fr;gap:16px}.orb{width:150px;height:150px}.orb .core{inset:38px}.orb .core b{font-size:28px}
   .s-body{flex:1}
   .s-body .body{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:space-evenly;gap:8px}
+  .tablemode .s-body .body{justify-content:flex-start;gap:14px}
   #muscles{flex:none}.muscle{margin:3px 0;font-size:13px}.muscle .track{height:8px}
   .sense{flex:none;display:flex;flex-direction:column}
   .sense h3{margin:2px 0 6px}
@@ -599,7 +600,7 @@ function drawTable(s,tnow){
   // draw the ball under the arm when it is lower than the claw, else over it
   const clawZ=(T.pl[2]+T.pr[2])/2;if(bl[2]<clawZ){ball(above,br);arm(above,6)}else{arm(above,6);ball(above,br)}
   // ---- from the side ----
-  map.fillStyle='#5c6380';map.fillText(`from the side · claw ${Math.round(T.claw*100)}% open${T.held?' · holding the ball':''}`,ox,sTop-8);
+  map.fillStyle='#5c6380';map.fillText(`from its right side (left–right flattened) · claw ${Math.round(T.claw*100)}% open${T.held?' · holding the ball':''}`,ox,sTop-8);
   map.fillStyle='rgba(255,255,255,.5)';map.fillRect(X(Y0),Z(ZT),(Y1-Y0)*k,ZT*k);
   // what the eyes can see: the vertical 70 deg, pitched down
   {const hx=X(cam[1]),hz=Z(cam[2]);map.save();map.beginPath();map.rect(X(Y0),Z(ZT),(Y1-Y0)*k,ZT*k);map.clip();
@@ -616,7 +617,11 @@ function drawTable(s,tnow){
   map.strokeStyle=T.scored?'#5bb58a':blue;map.lineWidth=2.5;map.beginPath();map.moveTo(X(b[1]-o),Z(T.b_h));map.lineTo(X(b[1]-o),Z(0));map.lineTo(X(b[1]+o),Z(0));map.lineTo(X(b[1]+o),Z(T.b_h));map.stroke();
   map.fillStyle='rgba(70,100,210,.12)';map.fillRect(X(b[1]-o),Z(T.b_h),2*o*k,T.b_h*k);
   // the arm and ball from the side (a ball beyond the claw from us is drawn first)
-  const bs=T.ball_r*k;if(bl[0]>T.arm[3][0]){ball(side,bs);arm(side,6)}else{arm(side,6);ball(side,bs)}
+  // depth: a ball off to the side of the claw is drawn faint, with how far (the side view flattens left/right)
+  const cxm=(T.pl[0]+T.pr[0])/2,lat=bl[0]-cxm,faint=Math.abs(lat)>.06;
+  const bs=T.ball_r*k,sball=()=>{map.globalAlpha=faint?.4:1;ball(side,bs);map.globalAlpha=1;
+    if(faint){const [u,v]=side(bl),tx=`${Math.round(Math.abs(lat)*100)} cm to the claw's ${lat>0?'right':'left'}`,tw=map.measureText(tx).width,x0=Math.min(Math.max(u-tw/2,X(Y0)+4),X(Y1)-tw-4);map.fillStyle='rgba(255,255,255,.85)';map.fillRect(x0-3,v-bs-18,tw+6,14);map.fillStyle='#8a5a4c';map.fillText(tx,x0,v-bs-7)}};
+  if(bl[0]>T.arm[3][0]){sball();arm(side,6)}else{arm(side,6);sball()}
   // scale bar: 10 cm
   map.strokeStyle='#5c6380';map.lineWidth=1.5;const sx=X(Y1)-.1*k-2,sy=Z(ZT)+12;map.beginPath();map.moveTo(sx,sy-3);map.lineTo(sx,sy);map.lineTo(sx+.1*k,sy);map.lineTo(sx+.1*k,sy-3);map.stroke();
   map.fillStyle='#5c6380';map.fillText('10 cm',sx-2,sy+12)}
@@ -646,11 +651,11 @@ function renderLives(){
     (curLife?`<div class="lf now" title="this life" style="height:${Math.max(4,curLife.t/max*86)}px"></div>`:'');
   if(lives.length){const n=lives.length,mean=lives.reduce((a,l)=>a+l.t,0)/n/10,fd=lives.reduce((a,l)=>a+l.food,0)/n,best=Math.max(...lives.map(l=>l.t))/10;
     const cnt={};lives.forEach(l=>cnt[l.cause]=(cnt[l.cause]||0)+1);const top=Object.entries(cnt).sort((a,b)=>b[1]-a[1])[0];
-    $('lstats').innerHTML=`<span><b>${n}</b>lives</span><span><b>${mean.toFixed(1)}</b>s on average</span><span><b>${best.toFixed(1)}</b>s longest</span><span><b>${fd.toFixed(2)}</b>food per life</span><span><b>${top[0]==='cap'?'old age':top[0]}</b>most often ends it</span>`}
+    $('lstats').innerHTML=`<span><b>${n}</b>${n===1?'life':'lives'}</span><span><b>${mean.toFixed(1)}</b>s on average</span><span><b>${best.toFixed(1)}</b>s longest</span><span><b>${fd.toFixed(2)}</b>${mapMode?'balls':'food'} per life</span><span><b>${top[0]==='cap'?'old age':top[0]}</b>most often ends it</span>`}
   else $('lstats').innerHTML='<span>The first life is still going.</span>'}
 
 /* ---------- one moment ---------- */
-let mapMode=null;function setMapMode(t){if(t===mapMode)return;mapMode=t;$('mapBox').classList.toggle('tall',t);$('lgT').hidden=!t;$('lg1').hidden=t;$('mapNote').hidden=t;$('mapNoteT').hidden=!t;document.querySelectorAll('.sense').forEach(e=>e.hidden=t);$('fGround').hidden=t;
+let mapMode=null;function setMapMode(t){if(t===mapMode)return;mapMode=t;$('mapBox').classList.toggle('tall',t);document.body.classList.toggle('tablemode',t);$('lgT').hidden=!t;$('lg1').hidden=t;$('mapNote').hidden=t;$('mapNoteT').hidden=!t;document.querySelectorAll('.sense').forEach(e=>e.hidden=t);$('fGround').hidden=t;
   $('mapH').innerHTML=t?'Its <em>table</em>':'From <em>above</em>';$('mapSc').textContent=t?'1 m table':'11.3 m';
   if(t)$('eyesNote').textContent='Its two eyes on a tall head behind the arm, the real pixels it gets, 70° each. This is all the light it ever has.';trail=[];sizeMap()}
 let lastMU=null,lastFear=0,lastWbs=null,lastRender=0;
@@ -761,7 +766,7 @@ async function select(){queue=[];started=false;dreamPaths=null;$('status').textC
 $('neww').onclick=select;
 
 /* ---------- learning curves ---------- */
-const CH=[['test_steps','Survival in new worlds','steps',0,'#5bb58a'],['life_steps','Life length while training','steps',0,'#4fb8c8'],['meals','Meals per life while training','',0,'#e9a23b'],['sen','Body feelings + ears error','',1,'#7d8de0'],
+const CH=[['test_steps','Survival in new worlds','steps',0,'#5bb58a'],['life_steps','Life length while training','steps',0,'#4fb8c8'],['meals','Meals (balls) per life while training','',0,'#e9a23b'],['sen','Body feelings error','',1,'#7d8de0'],
   ['cont','Death prediction error','',1,'#c0506f'],['kl','Surprise (KL, guess vs look)','',0,'#8a63d2'],['estd','Eye feature spread','std',0,'#e9a23b'],
   ['rank','Eye effective rank','of 4096',0,'#b98a5a'],['wb','Imagined wellbeing','',0,'#5bb58a'],['ent','Muscle randomness (entropy)','',0,'#7c84a8'],['me',"Mind's-eye picture error",'page only',1,'#9aa0b8']];
 function fmt(v){const a=Math.abs(v);return a>=100?v.toFixed(0):a>=10?v.toFixed(1):a>=1?v.toFixed(2):v.toPrecision(2)}

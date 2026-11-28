@@ -289,7 +289,7 @@ class Learner:
             with self._autocast():
                 pic = m.minds_eye(feat[:, ::k].flatten(0, 1)).float()
             tgt = img[:, ::k, :3].flatten(0, 1).float() / 255.0
-            l_rec = (pic - tgt).pow(2).sum((-1, -2, -3)).mean()
+            l_rec = ((pic - tgt).pow(2) * self._focus(tgt)).sum((-1, -2, -3)).mean()
             loss = loss + rw * l_rec
         if getattr(m, "matter", None) is not None:
             # the eye alone guesses what its body will feel within the next second: food eaten
@@ -322,10 +322,21 @@ class Learner:
         return (l * ok).sum() / ok.sum().clamp(min=1)
 
     # ------------------------------------------------ mind's eye (detached, page only)
+    def _focus(self, tgt):
+        """Pixel weights for redrawing: where this picture differs from the batch's mean picture (the ball,
+        the arm) counts up to 1 + recon_focus times more. On the table nearly every pixel is the same beige,
+        so a plain mean error let the mind's eye settle on one constant picture with no ball and no arm."""
+        f = float(getattr(self.a, "recon_focus", 0.0))
+        if f <= 0:
+            return 1.0
+        d = (tgt - tgt.mean(0, keepdim=True)).abs().sum(1, keepdim=True)
+        return 1 + f * d / d.mean().clamp(min=1e-6)
+
     def _me(self, feat, img):
         with self._autocast():
             pic = self.m.minds_eye(feat).float()
-        return F.mse_loss(pic, img[:, :3].float() / 255.0)
+        tgt = img[:, :3].float() / 255.0
+        return ((pic - tgt).pow(2) * self._focus(tgt)).mean()
 
     # ------------------------------------------------ intentions: the code of real memories
     def _goal(self, h):
@@ -709,6 +720,7 @@ def main():
     ap.add_argument("--replay-gb", type=float, default=8.0)
     ap.add_argument("--long", type=float, default=0.5, help="share of replay memory kept as clips from the whole life (0 = off)")
     ap.add_argument("--recon", type=float, default=0.0, help="weight of redrawing the left eye from the inner state (0 = off; 1 = Dreamer scale)")
+    ap.add_argument("--recon-focus", type=float, default=0.0, help="weight pixels that differ from the batch mean picture up to 1+F times (0 = plain)")
     ap.add_argument("--recon-stride", type=int, default=2)
     ap.add_argument("--smell", type=int, default=0, help="1 = two nostrils smell food")
     ap.add_argument("--init", default="", help="start from this saved mind (to continue a run longer)")
