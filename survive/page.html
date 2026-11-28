@@ -404,6 +404,13 @@ button:focus-visible,select:focus-visible{outline-color:var(--cyan)}
 .bt .dbar{background:rgba(255,255,255,.06)}
 footer,footer .caps{color:var(--ink-3)}
 .rail .thumb{background:linear-gradient(180deg,rgba(255,255,255,.7),rgba(201,194,255,.5));box-shadow:0 0 0 1px rgba(255,255,255,.2),-1px 0 0 rgba(255,95,174,.3),1px 0 0 rgba(79,216,255,.35)}
+.tsense h3{font:500 10.5px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);margin:14px 0 6px}
+.tsense h3:first-child{margin-top:4px}
+.sb{display:grid;grid-template-columns:96px 1fr 40px;gap:10px;align-items:center;margin:5px 0;font-size:13px;color:var(--ink-2)}
+.sb .tr{position:relative;height:8px;border-radius:999px;background:rgba(255,255,255,.05);box-shadow:inset 0 1px 2px rgba(0,0,0,.4);overflow:hidden}
+.sb .tr i{position:absolute;top:0;bottom:0;left:0;border-radius:999px;transition:width .12s linear,left .12s linear}
+.sb .tr.mid::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(255,255,255,.18)}
+.sb .v{font:400 12px var(--mono);color:var(--ink-3);text-align:right}
 /* the 3D table */
 #t3d{display:none;width:100%;height:100%;touch-action:none;cursor:grab}
 #t3d.drag{cursor:grabbing}
@@ -512,6 +519,10 @@ footer,footer .caps{color:var(--ink-3)}
       <p class="note">What it does right now (raw muscle signals, −1 to 1), and what reaches it besides light.</p>
       <div class="body">
         <div id="muscles"></div>
+        <div class="tsense" id="tsense" hidden>
+          <h3>Touch · 4 faces</h3><div id="touchBars"></div>
+          <h3>Where its joints are</h3><div id="jointBars"></div>
+        </div>
         <div class="sense">
           <h3>Ears · 4 bands each</h3>
           <div class="ears"><span>L</span><div class="eq" id="earL"></div><span>R</span><div class="eq" id="earR"></div></div>
@@ -524,8 +535,8 @@ footer,footer .caps{color:var(--ink-3)}
   <div class="grid">
     <section class="panel glass s-lives">
       <div class="ph"><h2>Its <em>lives</em> in this world</h2>
-        <div class="lkey"><span><i style="background:var(--amber)"></i>hunger</span><span><i style="background:#ef7a4e"></i>lava</span><span><i style="background:var(--violet)"></i>predator</span><span><i style="background:var(--sand)"></i>strange being</span><span><i style="background:#6b6f8c"></i>blows</span><span><i style="background:linear-gradient(135deg,var(--aqua),var(--leaf))"></i>lived 100 s</span></div></div>
-      <p class="note">One bar per life, as tall as it lasted. A full life is 100 s. White dots are food eaten.</p>
+        <div class="lkey" id="lkey"><span><i style="background:var(--amber)"></i>hunger</span><span><i style="background:#ef7a4e"></i>lava</span><span><i style="background:var(--violet)"></i>predator</span><span><i style="background:var(--sand)"></i>strange being</span><span><i style="background:#6b6f8c"></i>blows</span><span><i style="background:linear-gradient(135deg,var(--aqua),var(--leaf))"></i>lived 100 s</span></div></div>
+      <p class="note" id="livesNote">One bar per life, as tall as it lasted. A full life is 100 s. White dots are food eaten.</p>
       <div class="lwrap"><div class="top" id="ltop"></div><div class="lives" id="lives"></div></div>
       <div class="lstats" id="lstats"></div>
     </section>
@@ -842,19 +853,31 @@ function drawWb(now,wb,band){const svg=$('wbCurve');if(!wb||!wb.length){svg.inne
    <path d="${d}" fill="none" stroke="#c9c2ff" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>`}
 
 /* ---------- lives ---------- */
-const CAUSEC={hunger:'var(--amber)',lava:'#ef7a4e',predator:'var(--violet)',strange:'var(--sand)',blows:'#6b6f8c',cap:'linear-gradient(180deg,var(--aqua),var(--leaf))'};
+const CAUSEC={pain:'#ff5f8a',hunger:'var(--amber)',lava:'#ef7a4e',predator:'var(--violet)',strange:'var(--sand)',blows:'#6b6f8c',cap:'linear-gradient(180deg,var(--aqua),var(--leaf))'};
 let lives=[],curLife=null;
 function renderLives(){
   const el=$('lives');const max=Math.max(200,curLife?curLife.t:0,...lives.map(l=>l.t));$('ltop').textContent=(max/10).toFixed(0)+' s';const maxBars=Math.max(10,Math.floor((el.clientWidth||600)/13));const shown=lives.slice(-(maxBars-1));
-  el.innerHTML=shown.map(l=>`<div class="lf" title="life ${l.n}: ${(l.t/10).toFixed(1)} s, ${l.food} food, ${l.cause==='cap'?'lived 100 s':'died: '+l.cause}" style="height:${Math.max(4,l.t/max*86)}px;background:${CAUSEC[l.cause]||'#999'}">${Array.from({length:Math.min(l.food,12)},(_,i)=>`<span class="fd" style="bottom:${3+i*6}px"></span>`).join('')}</div>`).join('')+
+  el.innerHTML=shown.map(l=>`<div class="lf" title="life ${l.n}: ${(l.t/10).toFixed(1)} s, ${l.food} food, ${l.cause==='cap'?'lived the full '+lifeCap+' s':'died: '+l.cause}" style="height:${Math.max(4,l.t/max*86)}px;background:${CAUSEC[l.cause]||'#999'}">${Array.from({length:Math.min(l.food,12)},(_,i)=>`<span class="fd" style="bottom:${3+i*6}px"></span>`).join('')}</div>`).join('')+
     (curLife?`<div class="lf now" title="this life" style="height:${Math.max(4,curLife.t/max*86)}px"></div>`:'');
   if(lives.length){const n=lives.length,mean=lives.reduce((a,l)=>a+l.t,0)/n/10,fd=lives.reduce((a,l)=>a+l.food,0)/n,best=Math.max(...lives.map(l=>l.t))/10;
     const cnt={};lives.forEach(l=>cnt[l.cause]=(cnt[l.cause]||0)+1);const top=Object.entries(cnt).sort((a,b)=>b[1]-a[1])[0];
     $('lstats').innerHTML=`<span><b>${n}</b>${n===1?'life':'lives'}</span><span><b>${mean.toFixed(1)}</b>s on average</span><span><b>${best.toFixed(1)}</b>s longest</span><span><b>${fd.toFixed(2)}</b>${mapMode?'balls':'food'} per life</span><span><b>${top[0]==='cap'?'old age':top[0]}</b>most often ends it</span>`}
   else $('lstats').innerHTML='<span>The first life is still going.</span>'}
 
+
+/* ---------- creature two's senses: the 4 touch faces and where its 5 joints are (its own body feelings, live) ---------- */
+const TOUCHN=['left · inside','left · outside','right · inside','right · outside'],JOINTN=['yaw','shoulder','elbow','wrist','claw gap'];
+function sbRows(id,names,mid){const el=$(id);if(el.children.length===names.length)return;el.innerHTML=names.map((n,i)=>`<div class="sb"><span>${n}</span><div class="tr${mid?' mid':''}"><i id="${id}${i}"></i></div><span class="v" id="${id}v${i}">–</span></div>`).join('')}
+function showTableSenses(T){const S=T.sens;if(!S)return;sbRows('touchBars',TOUCHN,false);sbRows('jointBars',JOINTN,true);
+  for(let i=0;i<4;i++){const v=clamp(S[2+i]),el=$('touchBars'+i);el.style.width=(v*100)+'%';el.style.background=v>.2?'linear-gradient(90deg,#ff8fb0,#ff5f8a)':'linear-gradient(90deg,#6c6a80,#9a98b0)';el.style.boxShadow=v>.2?'0 0 10px #ff5f8a':'none';$('touchBarsv'+i).textContent=v.toFixed(2)}
+  for(let i=0;i<5;i++){const v=Math.max(-1,Math.min(1,S[6+i])),el=$('jointBars'+i),a=Math.abs(v)*50;el.style.left=(v<0?50-a:50)+'%';el.style.width=a+'%';el.style.background='linear-gradient(90deg,#8f7bff,#4fd8ff)';$('jointBarsv'+i).textContent=(v>=0?'+':'−')+Math.abs(v).toFixed(2)}}
+
 /* ---------- one moment ---------- */
-let mapMode=null;function setMapMode(t){if(t===mapMode)return;mapMode=t;$('mapBox').classList.toggle('t3',t);['t3cap','t3hint','t3reset'].forEach(i=>$(i).hidden=!t);document.body.classList.toggle('tablemode',t);$('lgT').hidden=!t;$('lg1').hidden=t;$('mapNote').hidden=t;$('mapNoteT').hidden=!t;document.querySelectorAll('.sense').forEach(e=>e.hidden=t);$('fGround').hidden=t;
+let lifeCap=100,lkey1=null;
+function tableLives(t){const k=$('lkey');if(lkey1===null)lkey1=k.innerHTML;
+  k.innerHTML=t?`<span><i style="background:var(--amber)"></i>hunger</span><span><i style="background:#ff5f8a"></i>pain (a hard blow)</span><span><i style="background:linear-gradient(135deg,var(--aqua),var(--leaf))"></i>lived the full ${lifeCap} s</span>`:lkey1;
+  $('livesNote').textContent=t?`One bar per life, as tall as it lasted. A full life is ${lifeCap} s. White dots are balls it put in the basket.`:'One bar per life, as tall as it lasted. A full life is 100 s. White dots are food eaten.'}
+let mapMode=null;function setMapMode(t){if(t===mapMode)return;mapMode=t;tableLives(t);$('tsense').hidden=!t;$('mapBox').classList.toggle('t3',t);['t3cap','t3hint','t3reset'].forEach(i=>$(i).hidden=!t);document.body.classList.toggle('tablemode',t);$('lgT').hidden=!t;$('lg1').hidden=t;$('mapNote').hidden=t;$('mapNoteT').hidden=!t;document.querySelectorAll('.sense').forEach(e=>e.hidden=t);$('fGround').hidden=t;
   $('mapH').innerHTML=t?'Its <em>table</em>':'From <em>above</em>';$('mapSc').textContent=t?'1 m table':'11.3 m';
   if(t)$('eyesNote').textContent='Its two eyes on a tall head behind the arm, the real pixels it gets, 70° each. This is all the light it ever has.';trail=[];sizeMap()}
 let lastDriveNote=null,lastMU=null,lastFear=0,lastWbs=null,lastRender=0;
@@ -864,7 +887,7 @@ function show(f){
   const res=f.res;if(f.png){drawPNG(eyeL,f.eyeL,res);drawPNG(eyeR,f.eyeR,res)}else{const e=b64(f.eyes);drawRGB(eyeL,e,res,0,6);drawRGB(eyeR,e,res,3,6)}$('resTag').textContent=res+' px · stereo';
   if(drive!==lastDriveNote){lastDriveNote=drive;$('feelNote').textContent='Its body feelings. Wellbeing, the only thing it cares about, is '+(drive==='product'?'energy × health: an empty tank is 0.':drive==='homeo'?'health plus the absence of hunger.':'their mean.')}
   const s=f.state,wbNow=drive==='product'?s.energy*s.health:(drive==='homeo'&&s.hunger!=null)?(s.health+1-s.hunger)/2:(s.energy+s.health)/2;
-  setMapMode(!!s.table);
+  setMapMode(!!s.table);if(s.table)showTableSenses(s.table);
   document.querySelectorAll('.legend .v5').forEach(e=>e.hidden=!s.v5);if($('lgPrey'))$('lgPrey').style.background=s.v6?'#4673ff':'#e9c48a';
   $('flStam').hidden=s.stamina==null;if(s.stamina!=null)$('stV').textContent=Math.round(s.stamina*100)+'%';
   $('flHung').hidden=s.hunger==null;if(s.hunger!=null)$('huV').textContent=Math.round(s.hunger*100)+'%';
@@ -992,7 +1015,7 @@ function chart(rows,[key,name,unit,log,col]){
     tip.textContent=`${fmt(pts[bi][1])} · ${pts[bi][0].toFixed(1)} min`;tip.style.left=(16+px*r.width)+'px';tip.style.top=(r.top-el.getBoundingClientRect().top+Y(sm[bi])/H*r.height)+'px';el.classList.add('hover')});
   svg.addEventListener('pointerleave',()=>{el.classList.remove('hover');hl.setAttribute('opacity',0)});
   return el}
-const DC={hunger:'var(--amber)',lava:'#ef7a4e',predator:'var(--violet)',strange:'var(--sand)',blows:'#6b6f8c'};
+const DC={pain:'#ff5f8a',hunger:'var(--amber)',lava:'#ef7a4e',predator:'var(--violet)',strange:'var(--sand)',blows:'#6b6f8c'};
 async function loadInfo(){
   try{const c=await (await fetch('/api/curves?mind='+encodeURIComponent(mindPath))).json();const rows=(c.rows||[]).map(r=>Array.isArray(r.food)?{...r,meals:r.food.reduce((x,y)=>x+y,0)}:r);
     const box=$('charts');box.innerHTML='';CH.forEach(spec=>{const el=chart(rows,spec);if(el)box.appendChild(el)});
@@ -1015,12 +1038,24 @@ async function loadInfo(){
       ['Imagination',`${a.horizon} steps (${(a.horizon/10).toFixed(1)} s) ahead, horizon γ = ${a.gamma}${g.jumps?`; then jumps of ${g.jumps.split(',').map(x=>sec(+x)).join(' + ')} forecast further (weight ${g.jump_w})`:''}`],
       ['World',`version ${g.world_v}${g.world_v>=6?' (as 5, with prey easier to notice: bigger, bright blue, a rustle loudest when they run, 6 of them, fleeing only within 1.3 m at 1.3 m/s)':''}${g.world_v>=5?' (an arm that hits; small prey that flee, die after 3 hits and are eaten in 3 s for 5 fruits; the dasher, a fast erratic second predator; fruit eaten in 1 s for a third of the energy; stamina as v4)':g.world_v>=4?' (bigger stamina tank, walking refills it, a tired predator gives up)':g.world_v>=3?' (predator lunges, open rooms)':''}; lives up to ${g.life_cap} s${g.light?`; ${sec(g.light)} of white light at death`:''}`],
       ['Trained',`${a.minutes} min${a.frames?`, ${(a.frames/1e6).toFixed(1)}M frames learned`:''}, ${a.params}M parameters${cont?`, continued from ${cont}`:''}`]];
+    if(a.table){const t=a.table,pc=v=>Math.round(v*100)+'%';lifeCap=Math.round(t.max_steps/10);if(mapMode)tableLives(true);
+      rows.length=0;rows.push(
+      ['Eyes',`two, stereo, ${t.fov}° each, ${a.res} px${g.fovea>1?`, sharp centre ×${g.fovea}`:''}, on a tall head ${Math.round(t.cam[2]*100)} cm up behind the arm, looking ${t.pitch}° down`],
+      ['Body feelings','energy, health, 4 touch faces (inside and outside of each plate: the inside feels only the ball, the outside the table and rim), and where its 5 joints are'],
+      ['Muscles',`yaw, shoulder, elbow, wrist: speeds (relaxed = hold the pose); claw: a spring, open at rest, closing as its muscle pulls. ${t.muscle_k<1?`Muscles follow the command with a lag (k = ${t.muscle_k}), like real ones. `:''}Raw, nothing scripted`],
+      ['Drive',(a.drive==='product'?'wellbeing = energy × health: an empty tank is 0':a.drive==='homeo'?'wellbeing = (health + 1 − hunger) / 2':'wellbeing = (energy + health) / 2')+`. A ball in the basket gives ${t.ball_e>=1?'a full tank':'+'+t.ball_e+' energy'}; resting the tank lasts ${Math.round(1/t.drain/10)} s, moving costs more`],
+      ['Curiosity',g.curious?`${g.curious} small guessers of the next moment; it is paid ${g.cur_w} for going where they disagree more than usual (nothing about balls or baskets)`:'none: only wellbeing'],
+      ['Learning to see',g.recon>0?`eye kept rich by VICReg, and the inner state must redraw what the left eye saw (weight ${g.recon}${g.recon_focus?`, pixels that differ from the usual picture count up to ${1+g.recon_focus}×`:''})`:'eye kept rich by VICReg; no picture is redrawn'],
+      ['Memory','512 numbers carried through life + 32 × 16 “moment” slots'],
+      ['Imagination',`${a.horizon} steps (${(a.horizon/10).toFixed(1)} s) ahead, horizon γ = ${a.gamma}`],
+      ['World',`a 1 m table, one ${Math.round(t.ball_r*200)} cm ball, a basket; lives up to ${lifeCap} s. Kind starts while learning: ${pc(t.p_held_over)} with the ball in the claw over the basket, ${pc(t.p_held)} in the claw elsewhere${t.p_around?`, ${pc(t.p_around)} with the open claw around it`:''}; a new ball lands under the claw ${pc(t.p_under)} of the time. “Hard” worlds: no kind starts, baskets farther away`],
+      ['Trained',`${a.minutes} min${a.frames?`, ${(a.frames/1e6).toFixed(1)}M frames learned`:''}, ${a.params}M parameters${cont?`, continued from ${cont}`:''}`])}
     const half=Math.ceil(rows.length/2),dl=rs=>'<dl>'+rs.map(r=>`<div class="row"><dt>${r[0]}</dt><dd>${r[1]}</dd></div>`).join('')+'</dl>';
     $('about').innerHTML=dl(rows.slice(0,half))+dl(rows.slice(half));
     const names={test:'New worlds',hard:'Hard worlds',train:'Like training'};
     $('bench').innerHTML=a.bench?['test','hard','train'].filter(m=>a.bench[m]).map(m=>{const b=a.bench[m],dp=b.deaths_pct||{};
       return `<div class="bt"><span class="caps">${names[m]} · ${b.lives} lives</span><b>${b.steps} <small style="font:300 14px var(--sans);color:var(--ink-3)">steps</small></b>
-        <p>${b.food} food a life · ${b.cap_pct}% live the full ${(a.cfg&&a.cfg.life_cap)||100} s</p><div class="dbar">${Object.entries(dp).map(([k,v])=>`<i title="${k} ${v}%" style="width:${v}%;background:${DC[k]||'#aaa'}"></i>`).join('')}</div>
+        <p>${b.food} ${a.table?'balls':'food'} a life · ${b.cap_pct}% live the full ${a.table?lifeCap:((a.cfg&&a.cfg.life_cap)||100)} s</p><div class="dbar">${Object.entries(dp).map(([k,v])=>`<i title="${k} ${v}%" style="width:${v}%;background:${DC[k]||'#aaa'}"></i>`).join('')}</div>
         <p style="margin-top:6px">${Object.entries(dp).filter(([,v])=>v>0).map(([k,v])=>`${k} ${v}%`).join(' · ')}</p></div>`}).join(''):''}catch(e){}
 }
 

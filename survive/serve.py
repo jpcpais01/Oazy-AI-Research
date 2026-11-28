@@ -367,7 +367,7 @@ class Sim:
             health=round(float(w.health[0].clamp(0, 1)), 3),
             body=[0, 0, float(max(t) > 0.2), 0, float(w.held[0])], intensity=[0] * 16, ears=[0] * 8, stamina=None, hunger=None, v5=False,
             table=dict(arm=[r(p) for p in pts], pl=r(P["pl"][0].tolist()), pr=r(P["pr"][0].tolist()), side=r(P["side"][0].tolist()),
-                       hand=r(P["hand"][0].tolist()), ball=r(w.ball[0].tolist()), ball_r=BALL_R, held=bool(w.held[0]),
+                       hand=r(P["hand"][0].tolist()), sens=r(w.senses[0].tolist()), ball=r(w.ball[0].tolist()), ball_r=BALL_R, held=bool(w.held[0]),
                        basket=r(w.basket[0].tolist()), b_in=B_IN, b_wall=B_WALL, b_h=B_H, touch=r(t),
                        claw=round(float(w.q[0, 4]) / G_MAX, 3), scored=int(w.score_t[0]) > 0,
                        cam=cam, pitch=round(math.degrees(getattr(_tw, "CAM_PITCH", 0.82)), 1), fov=getattr(_tw, "FOV_DEG", 70),
@@ -427,7 +427,15 @@ def about(path):
     # how this mind was built (what the About card describes); missing keys = the old default
     keys = dict(recon=0, smell=0, stamina=0, metab=1, world_v=1, jumps="", jump_w=0, init="", gaze=0, fovea=0, eye_sep=0.08,
                 life_cap=100, light=0, matter=0, intent=0, heat=1, back_speed=1, ent_per=0, long_fresh=0, seed=0)
+    keys.update(curious=0, cur_w=0, recon_focus=0, drive="linear")
     out["cfg"] = {k: a.get(k, v) for k, v in keys.items()}
+    from . import world as _w
+    if hasattr(_w, "BALL_E"):      # creature two: the table world's own numbers (as this viewer runs it)
+        g = lambda k, v=None: getattr(_w, k, v)
+        out["table"] = dict(fov=g("FOV_DEG"), max_steps=g("MAX_STEPS"), causes=list(g("DEATH_CAUSES", [])), ball_e=g("BALL_E"),
+                            drain=g("DRAIN"), effort=g("EFFORT"), muscle_k=g("MUSCLE_K", 1.0), p_around=g("P_AROUND", 0.0),
+                            p_held_over=g("P_HELD_OVER", 0.0), p_held=g("P_HELD", 0.0), p_under=g("P_UNDER", 0.0),
+                            ball_r=g("BALL_R"), g_max=g("G_MAX"), cam=list(g("CAM", ())), pitch=round(math.degrees(g("CAM_PITCH", 0.0)), 1))
     b = d.with_suffix(".bench.json")
     if b.exists():
         bb = {k: v for k, v in json.loads(b.read_text()).items() if isinstance(v, dict) and v.get("lives", 0) >= 32}
