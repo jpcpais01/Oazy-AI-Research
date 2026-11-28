@@ -290,8 +290,8 @@ class World:
         self.q[idx] = q
 
     # ------------------------------------------------------------------ geometry
-    def _walls(self, bxy):
-        """The basket's 4 walls as AABBs: (B,4,3) min and max."""
+    def _walls(self, bxy, post=True):
+        """The basket's 4 walls (+ the arm's post, solid for the ball and the arm) as AABBs: (B,4|5,3) min and max."""
         dev = bxy.device
         o, w, h = B_IN + B_WALL / 2, B_WALL / 2, B_H
         c = torch.tensor([[-o, 0], [o, 0], [0, -o], [0, o]], device=dev)
@@ -299,6 +299,10 @@ class World:
         cen = bxy[:, None] + c
         mn = torch.cat([cen - hx, torch.zeros(*cen.shape[:2], 1, device=dev)], -1)
         mx = torch.cat([cen + hx, torch.full((*cen.shape[:2], 1), h, device=dev)], -1)
+        if post:
+            n = bxy.shape[0]
+            mn = torch.cat([mn, torch.tensor([BASE[0] - 0.03, BASE[1] - 0.03, 0.0], device=dev).expand(n, 1, 3)], 1)
+            mx = torch.cat([mx, torch.tensor([BASE[0] + 0.03, BASE[1] + 0.03, SH_Z - 0.02], device=dev).expand(n, 1, 3)], 1)
         return mn, mx
 
     def _arm_points(self, P):
@@ -495,7 +499,7 @@ class World:
     # ------------------------------------------------------------------ the eyes
     def scene(self):
         B, dev = self.B, self.dev
-        mn, mx = self._walls(self.basket)
+        mn, mx = self._walls(self.basket, post=False)
         post_mn = torch.tensor([BASE[0] - 0.03, BASE[1] - 0.03, 0.0], device=dev).expand(B, 1, 3)
         post_mx = torch.tensor([BASE[0] + 0.03, BASE[1] + 0.03, SH_Z - 0.02], device=dev).expand(B, 1, 3)
         amin = torch.cat([mn, post_mn], 1)
