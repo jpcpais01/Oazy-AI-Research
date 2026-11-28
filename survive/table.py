@@ -49,12 +49,12 @@ OUTSIDE = (0.30, 0.30, 0.34) # the floor far below, beyond the table
 # ---- body -----------------------------------------------------------------------------------------
 BASE = (0.5, 0.06)
 SH_Z = 0.12                  # shoulder height (on a short post)
-L1, L2, L3, LF = 0.30, 0.28, 0.05, 0.07     # upper arm, forearm, hand, finger plates
+L1, L2, L3, LF = 0.46, 0.44, 0.05, 0.07     # upper arm, forearm, hand, finger plates (was .30/.28: half the 1 m table was out of reach)
 PT, PW = 0.010, 0.040        # plate thickness, plate width
 G_MAX = 0.11                 # widest claw opening (gap between inner faces)
 LO = torch.tensor([-1.75, -0.35, 0.0, -1.9, 0.0])
-HI = torch.tensor([1.75, 1.0, 2.7, 1.9, G_MAX])      # shoulder lifts to 57 deg (arm top ~0.6 m, eyes at 0.82 m)
-RATE = torch.tensor([0.22, 0.22, 0.25, 0.3, 0.025])   # per step
+HI = torch.tensor([1.75, 1.4, 2.7, 1.9, G_MAX])      # shoulder lifts to 80 deg: the long arm still stays >= 33 cm from the eyes
+RATE = torch.tensor([0.15, 0.15, 0.18, 0.3, 0.025])   # rad/step; slower than before for the longer arm (tip ~1.4 m/s)   # per step
 # ---- things ---------------------------------------------------------------------------------------
 BALL_R = 0.035
 B_IN, B_WALL, B_H = 0.07, 0.01, 0.05        # basket inner half size, wall thickness, height
@@ -118,17 +118,33 @@ def fk(q):
                 pl=mid - off, pr=mid + off, grip=root + hand * (LF * 0.55))
 
 
-def ik_down(xyz, g):
-    """Joint angles that put the grip point at xyz with the hand pointing straight down (claw opening g)."""
+def ik_pitch(xyz, g, phi):
+    """Joint angles that put the grip point at xyz with the hand pitched phi (rad, -pi/2 = straight down)."""
     base = torch.tensor(BASE, device=xyz.device)
     d = xyz[:, :2] - base
     th0 = torch.atan2(-d[:, 0], d[:, 1])
-    R, Z = d.norm(dim=-1), xyz[:, 2] + L3 + LF * 0.55 - SH_Z
+    reach = L3 + LF * 0.55
+    R = d.norm(dim=-1) - reach * math.cos(phi)
+    Z = xyz[:, 2] - reach * math.sin(phi) - SH_Z
     D = ((R ** 2 + Z ** 2 - L1 ** 2 - L2 ** 2) / (2 * L1 * L2)).clamp(-1, 1)
     el = torch.acos(D)
     a1 = torch.atan2(Z, R) + torch.atan2(L2 * torch.sin(el), L1 + L2 * torch.cos(el))
-    th3 = a1 - el + math.pi / 2
+    th3 = a1 - el - phi
     return torch.stack([th0, a1, el, th3, torch.full_like(th0, g)], -1)
+
+
+def ik_down(xyz, g):
+    """Grip at xyz, hand as close to straight down as the joint limits allow (tries -90 deg, then flatter)."""
+    lo, hi = LO.to(xyz.device), HI.to(xyz.device)
+    best = ik_pitch(xyz, g, -math.pi / 2)
+    done = ((best >= lo) & (best <= hi)).all(-1) & ((fk(best)["grip"] - xyz).norm(dim=-1) < 0.01)
+    for deg in (-75, -60, -45, -30, -15):
+        q = ik_pitch(xyz, g, math.radians(deg))
+        fit = ((q >= lo) & (q <= hi)).all(-1) & ((fk(q)["grip"] - xyz).norm(dim=-1) < 0.01)
+        use = fit & ~done
+        best = torch.where(use[:, None], q, best)
+        done = done | fit
+    return best
 
 
 def obb_contact(p, c, ax, half):
@@ -159,7 +175,7 @@ def held_pos(P, off):
 def link_points(P):
     """Spheres along the upper arm, forearm and hand that push the ball (r LINK_R)."""
     pts = []
-    for a_, b_, k in ((P["sh"], P["el"], 3), (P["el"], P["wr"], 3), (P["wr"], P["root"], 1)):
+    for a_, b_, k in ((P["sh"], P["el"], 6), (P["el"], P["wr"], 6), (P["wr"], P["root"], 1)):
         for i in range(k):
             pts.append(a_ + (b_ - a_) * ((i + 0.5) / k))
     return torch.stack(pts, -2)
@@ -280,7 +296,8 @@ class World:
         r = rmin + self._rand(n) * (rmax - rmin)
         th = (self._rand(n) * 2 - 1) * yaw
         f, _ = _dirs(th)
-        return torch.tensor(BASE, device=self.dev) + f * (r[:, None] + 0.0)
+        xy = torch.tensor(BASE, device=self.dev) + f * (r[:, None] + 0.0)
+        return xy.clamp(0.08, L - 0.08)                  # on the table, clear of the rim
 
     def _pose(self, n):
         """A random arm pose with the claw 8-25 cm above the table, pointing down-ish."""
@@ -297,7 +314,7 @@ class World:
             return
         n, dev = len(idx), self.dev
         far = self.mode.far
-        self.basket[idx] = self._reach_xy(n, 0.38 if far else 0.30, 0.58 if far else 0.52, 1.3)
+        self.basket[idx] = self._reach_xy(n, 0.50 if far else 0.32, 0.82 if far else 0.70, 1.3)
         q = self._pose(n)
         # the arm must clear the table; redraw bad poses a few times, else a safe default
         for _ in range(4):
@@ -343,13 +360,13 @@ class World:
             ok_over = over & (P["grip"][:, 2] > B_H + BALL_R + 0.02)
             b = self.basket[idx]
             self.basket[idx] = torch.where(ok_over[:, None], gxy, b)
-        xy = self._reach_xy(n, 0.22, 0.55, 1.4)
+        xy = self._reach_xy(n, 0.25, 0.85, 1.4)
         # keep loose balls out of the basket footprint
         for _ in range(4):
             inb = ((xy - self.basket[idx]).abs() < B_IN + B_WALL + BALL_R + 0.02).all(-1)
             if not inb.any():
                 break
-            xy = torch.where(inb[:, None], self._reach_xy(n, 0.22, 0.55, 1.4), xy)
+            xy = torch.where(inb[:, None], self._reach_xy(n, 0.25, 0.85, 1.4), xy)
         if cur and not start:
             under = (self._rand(n) < P_UNDER) & (P["grip"][:, 2] > 0.02)
             gxy = P["grip"][:, :2].clamp(0.05, L - 0.05)
@@ -368,7 +385,7 @@ class World:
                 redo = around & ~use
                 if not redo.any():
                     break
-                p2 = torch.cat([self._reach_xy(n, 0.30, 0.55, 1.4), torch.full((n, 1), BALL_R, device=dev)], -1)
+                p2 = torch.cat([self._reach_xy(n, 0.30, 0.80, 1.4), torch.full((n, 1), BALL_R, device=dev)], -1)
                 pos = torch.where(redo[:, None], p2, pos)
                 qa = torch.where(redo[:, None], ik_down(pos, G_MAX), qa)
             self.q[idx] = torch.where(use[:, None], qa, self.q[idx])
@@ -614,10 +631,11 @@ class World:
         joint = self.arm_col * 0.75
         for pnt in (P["sh"], P["el"], P["wr"]):
             beads.append(pnt); rad.append(0.026); col.append(joint)
-        chain(P["sh"], P["el"], 10, 0.02, self.arm_col)          # beads closer than their size: a solid limb, not dots
-        chain(P["el"], P["wr"], 10, 0.018, self.arm_col)
+        chain(P["sh"], P["el"], 14, 0.022, self.arm_col)          # beads closer than their size: a solid limb, not dots
+        chain(P["el"], P["wr"], 14, 0.019, self.arm_col)
         chain(P["wr"], P["root"], 2, 0.018, self.arm_col)
         plate_col = torch.tensor([0.12, 0.12, 0.16], device=dev).expand(B, 3)
+        chain(P["pl"] - P["hand"] * (LF / 2), P["pr"] - P["hand"] * (LF / 2), 5, PT * 1.4, plate_col)   # the palm: plates hang from it (one claw, not two floating prongs)
         for c in (P["pl"], P["pr"]):
             a_, b_ = c - P["hand"] * (LF / 2), c + P["hand"] * (LF / 2)
             chain(a_, b_, 5, PT * 1.2, plate_col)

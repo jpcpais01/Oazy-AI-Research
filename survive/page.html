@@ -752,7 +752,7 @@ function draw3D(s,tnow){
        c.beginPath();c.moveTo(q[0],q[1]);c.lineTo(e[0],e[1]);c.stroke()}c.setLineDash([])}})}
   // the arm: three links as lit tubes, joints as small spheres
   const A=T.arm,LR=[.024,.02,.016];
-  for(let i=0;i<3;i++){const a=A[i],bq=A[i+1];items.push({z:zOf([a,bq]),d:()=>{const p=P(a),q=P(bq),wd=LR[i]*2*F/((p[2]+q[2])/2);
+  for(let i=0;i<3;i++){const a=A[i],bq=A[i+1];items.push({z:Math.min(P(a)[2],P(bq)[2])-.01,d:()=>{const p=P(a),q=P(bq),wd=LR[i]*2*F/((p[2]+q[2])/2);
       c.lineCap='round';c.strokeStyle='#2b3170';c.lineWidth=wd;c.beginPath();c.moveTo(p[0],p[1]);c.lineTo(q[0],q[1]);c.stroke();
       c.strokeStyle='#5866d6';c.lineWidth=wd*.62;c.beginPath();c.moveTo(p[0],p[1]);c.lineTo(q[0],q[1]);c.stroke();
       c.strokeStyle='rgba(200,210,255,.55)';c.lineWidth=wd*.18;const o2=wd*.16;c.beginPath();c.moveTo(p[0]-o2,p[1]-o2);c.lineTo(q[0]-o2,q[1]-o2);c.stroke()}})}
@@ -761,6 +761,10 @@ function draw3D(s,tnow){
   const hd=T.hand,sd=T.side||[1,0,0],upv=v3.norm(v3.cross(hd,sd)),L=.035,PWh=.018;
   [[T.pl,0],[T.pr,2]].forEach(([cc,ti])=>{const on=Math.max(T.touch[ti],T.touch[ti+1])>.2,pts=[[1,1],[1,-1],[-1,-1],[-1,1]].map(([a,bb])=>v3.add(cc,v3.add(v3.mul(hd,a*L),v3.mul(upv,bb*PWh))));
     items.push({z:zOf(pts)-.002,d:()=>{c.save();if(on){c.shadowColor='#ff5f8a';c.shadowBlur=14}poly(pts,on?'#ff5f8a':'#7f8cff','rgba(255,255,255,.5)',.8);c.restore()}})});
+  // the palm: a bar across the wrist joining the two plates' roots, so the claw is one piece with the arm
+  {const a=v3.sub(T.pl,v3.mul(hd,L)),b=v3.sub(T.pr,v3.mul(hd,L));items.push({z:zOf([a,b])+.001,d:()=>{const p=P(a),q=P(b),r0=P(A[3]),wd=.018*F/((p[2]+q[2])/2);
+    c.lineCap='round';c.strokeStyle='#2b3170';c.lineWidth=wd;c.beginPath();c.moveTo(p[0],p[1]);c.lineTo(q[0],q[1]);c.stroke();
+    c.strokeStyle='#5866d6';c.lineWidth=wd*.6;c.beginPath();c.moveTo(p[0],p[1]);c.lineTo(q[0],q[1]);c.stroke()}})}
   // the ball
   {const bl=T.ball;items.push({z:P(bl)[2],d:()=>{const q=P(bl),rr=T.ball_r*F/q[2];c.save();c.shadowColor='#ff6a3d';c.shadowBlur=T.held?26:8;
      const g=c.createRadialGradient(q[0]-rr*.35,q[1]-rr*.4,rr*.05,q[0],q[1],rr);g.addColorStop(0,'#ffd2b8');g.addColorStop(.35,'#ff6a3d');g.addColorStop(1,'#a8240f');
