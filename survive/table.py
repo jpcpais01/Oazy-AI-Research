@@ -64,7 +64,8 @@ EFFORT = 0.001               # extra drain at full joint speed (all joints)
 GRAV, REST, ROLL = 9.81, 0.35, 2.5
 P_HELD_OVER = float(os.environ.get("P_HELD_OVER", "0.2"))   # life starts: ball in the claw above the basket
 P_HELD = float(os.environ.get("P_HELD", "0.1"))             # ... ball in the claw anywhere
-HELD_D = float(os.environ.get("HELD_D", "0"))               # "over" starts: basket up to HELD_D m from the held ball (0 = right under it)
+HELD_D = float(os.environ.get("HELD_D", "0"))
+HELD_GROW = int(os.environ.get("HELD_GROW", "0"))           # 1: start "over" starts at 3 cm and widen toward HELD_D as the creature scores               # "over" starts: basket up to HELD_D m from the held ball (0 = right under it)
 NEAR = float(os.environ.get("NEAR", "0"))                   # share of balls that appear right beside the basket (a gentler world;
                                                             # training may fade it as the creature succeeds: World.near)
 P_AROUND = float(os.environ.get("P_AROUND", "0"))   # life starts: ball on the table between the OPEN plates (one squeeze grabs it)
@@ -281,6 +282,7 @@ class World:
         self.cause = z(B, dt=torch.long)
         self.dying = z(B, dt=torch.long)
         self.score_t = z(B, dt=torch.long)             # >0: the ball sits in the basket, a new one soon
+        self.held_d = min(HELD_D, 0.03) if (HELD_GROW and self.mode.name == "train") else HELD_D                          # basket distance for "over" starts (HELD_GROW: training widens it as it succeeds)
         self.near = NEAR if self.mode.name == "train" else 0.0     # balls beside the basket (train worlds only, so tests stay comparable; training may fade it)
         self.ball_col = z(B, 3)
         self.basket_col = z(B, 3)
@@ -362,10 +364,10 @@ class World:
             held = u < P_HELD_OVER + P_HELD
             # "over": move the basket under the claw (if the claw is above the table, inside the reach)
             gxy = P["grip"][:, :2]
-            if HELD_D > 0:
+            if self.held_d > 0:
                 # graded starts: the basket 0..HELD_D away from the held ball (a short carry, then a longer one)
                 ang = self._rand(n) * 2 * math.pi
-                gxy = gxy + (self._rand(n) * HELD_D)[:, None] * torch.stack([ang.cos(), ang.sin()], -1)
+                gxy = gxy + (self._rand(n) * self.held_d)[:, None] * torch.stack([ang.cos(), ang.sin()], -1)
             gxy = gxy.clamp(B_IN + B_WALL + 0.02, L - B_IN - B_WALL - 0.02)
             ok_over = over & (P["grip"][:, 2] > B_H + BALL_R + 0.02)
             b = self.basket[idx]

@@ -875,6 +875,11 @@ def main():
                     row.update(lives=int(n), life_steps=round(lives["t"].item() / n, 1),
                                food=[round(x / n, 2) for x in lives["food"].tolist()],
                                deaths={k: int(v) for k, v in zip(["cap"] + DEATH_CAUSES[1:], lives["cause"].tolist())})
+                    wmod = sys.modules.get(type(world).__module__)
+                    if getattr(wmod, "HELD_GROW", 0) and getattr(wmod, "HELD_D", 0) > 0:
+                        # a staircase: the basket starts right under the held ball and moves away as it scores
+                        world.held_d = max(0.03, wmod.HELD_D * min(1.0, lives["food"][0].item() / n / a.near_goal))
+                        row.update(held_d=round(world.held_d, 3))
                     near0 = getattr(sys.modules.get(type(world).__module__), "NEAR", 0.0)
                     if near0 > 0:
                         # the gentle world fades as the creature succeeds on its own (world only, the pay never changes)
