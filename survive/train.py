@@ -814,6 +814,7 @@ def main():
         jb = {k: rb.sample_jump(a.jump_batch, k, a.gamma) for k in mind.jump_sizes}
         return None if any(v is None for v in jb.values()) else jb
     demo = demo_mask = None
+    demo_lives = dict(n=torch.zeros((), device=dev), food=torch.zeros((), device=dev))
     if a.demo_envs > 0 and hasattr(_world, "Demo"):
         demo = _world.Demo(a.envs, dev)
         demo_mask = torch.arange(a.envs, device=dev) < int(a.envs * a.demo_envs)
@@ -833,6 +834,10 @@ def main():
             demo.reset(actor.first.nonzero().squeeze(-1))
         steps += 1
         fin = (st["dead"] | st["trunc"]).float()            # all on the GPU: nothing waits here
+        if demo is not None and el < a.demo_min:              # the scripted arm's lives are not the creature's: kept apart
+            fd = fin * demo_mask.float()
+            demo_lives["n"] += fd.sum(); demo_lives["food"] += (st["food"][:, 0] * fd).sum()
+            fin = fin * (~demo_mask).float()
         lives["n"] += fin.sum()
         lives["t"] += (st["t"].float() * fin).sum()
         lives["food"] += (st["food"] * fin[:, None]).sum(0)
@@ -866,6 +871,9 @@ def main():
                                food=[round(x / n, 2) for x in lives["food"].tolist()],
                                deaths={k: int(v) for k, v in zip(["cap"] + DEATH_CAUSES[1:], lives["cause"].tolist())})
                     lives = fresh_lives()
+                if demo_lives["n"].item():
+                    row.update(demo_lives=int(demo_lives["n"].item()), demo_balls=round(demo_lives["food"].item() / demo_lives["n"].item(), 2))
+                    demo_lives = dict(n=torch.zeros((), device=dev), food=torch.zeros((), device=dev))
                 log.write(json.dumps(row) + "\n"); log.flush()
                 print(json.dumps(row), flush=True)
         now = time.time()
