@@ -23,6 +23,7 @@ under the claw. Test worlds ("test") use the same mix; "hard" never starts it wi
 from __future__ import annotations
 
 import math
+import os
 
 import torch
 
@@ -62,6 +63,7 @@ DRAIN = 1 / 450              # per step (45 s from full, resting)
 EFFORT = 0.0015              # extra drain at full joint speed (all joints)
 GRAV, REST, ROLL = 9.81, 0.35, 2.5
 P_HELD_OVER, P_HELD = 0.25, 0.25             # life starts: ball in the claw above the basket / anywhere
+MUSCLE_K = float(os.environ.get("MUSCLE_K", "1"))   # muscles follow the command with a lag: m += K*(a-m); 1 = no lag
 P_UNDER = 0.4                # a new ball appears just under the claw
 
 
@@ -170,6 +172,7 @@ class World:
         self.lo, self.hi, self.rate = LO.to(dev), HI.to(dev), RATE.to(dev)
         self.q = z(B, 5)
         self.qv = z(B, 5)                               # the arm's real motion last step
+        self.m = z(B, 5)                                # muscle activation (follows the command with a lag)
         self.ball, self.bv = z(B, 3), z(B, 3)
         self.held = z(B, dt=torch.bool)
         self.hold_off = torch.tensor(GRIP_OFF, device=dev).expand(B, 3).clone()   # the held ball in the claw's frame
@@ -229,6 +232,7 @@ class World:
         q[bad] = torch.tensor([0.0, 0.7, 1.5, 0.6, G_MAX], device=dev)
         self.q[idx] = q
         self.qv[idx] = 0
+        self.m[idx] = 0
         self.held[idx] = False
         self.bv[idx] = 0
         self._new_ball(idx, start=True)
@@ -329,6 +333,9 @@ class World:
         B, dev = self.B, self.dev
         a = a.clamp(-1, 1)
         alive = ~self.dead
+        # a real muscle can't flip every 0.1 s: activation follows the command with a lag (body, not shaping)
+        self.m = self.m + MUSCLE_K * (a - self.m)
+        a = self.m
         # muscles: the 4 joints are speeds (relaxed = the arm holds its pose); the claw is a spring that
         # stays open when relaxed (a <= 0) and closes as the muscle pulls (a = 1: fully shut, a firm squeeze)
         target = (self.q + a * self.rate).clamp(self.lo, self.hi)
