@@ -6,7 +6,7 @@
 <title>Creature · Oazy</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Outfit:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 /* The creature's page, in the Oazy site's dawn: glass over a living sky.
    The sky follows how the creature feels: calm lilac when it is well, warmer as wellbeing falls,
@@ -308,6 +308,112 @@ html{scrollbar-width:none}html::-webkit-scrollbar,body::-webkit-scrollbar,*::-we
   .bench{grid-template-columns:1fr}
 }
 </style>
+<style id="lab">
+/* ===== Oazy lab: one black stage, streaks of light behind clear liquid glass (oazy/web lab.css language) =====
+   Loaded after the old dawn styles; same class names, so the page logic is untouched. */
+:root{
+  --display:"Outfit","Avenir Next","Segoe UI",system-ui,sans-serif;
+  --serif:var(--display);--sans:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;--mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  --ink:#ecebf3;--ink-2:#b4b3c4;--ink-3:#7d7c8f;--line:rgba(236,235,243,.09);--hair:rgba(236,235,243,.07);
+  --violet:#8f7bff;--lilac:#c9c2ff;--ice:#a6f0ff;--cyan:#4fd8ff;--pink:#ff5fae;--teal:#4cf2c4;
+  --rose:#ff5f8a;--amber:#ffb35c;--aqua:#4fd8ff;--leaf:#5ef2a6;--sand:#d9cf9e;--wood:#c9a27a;--coral:#ff7a6b;
+  --glass:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.025) 45%,rgba(255,255,255,.04));
+  --glass-edge:rgba(255,255,255,.14);
+  --glass-shadow:inset 0 1px 0 rgba(255,255,255,.22),inset 0 -1px 0 rgba(255,255,255,.04),-0.75px 0 0 rgba(255,95,174,.18),0.75px 0 0 rgba(79,216,255,.2),0 20px 50px -30px rgba(0,0,0,.8);
+  color-scheme:dark;
+}
+body{background:#050507;color:var(--ink);font:400 14.5px/1.6 var(--sans)}
+::selection{background:rgba(143,123,255,.35)}
+p{color:var(--ink-2)}
+/* the stage: black, two soft streaks of light, mood tints */
+.sky{background:#050507}
+.sky i{opacity:.55;filter:blur(10px)}
+.sky .a{background:radial-gradient(circle,rgba(106,77,255,.38),transparent 62%)}
+.sky .b{background:radial-gradient(circle,rgba(79,216,255,.20),transparent 62%)}
+.sky .c{background:radial-gradient(circle,rgba(255,95,174,.13),transparent 64%)}
+.sky .warm{background:linear-gradient(180deg,transparent,rgba(255,140,60,.22))}
+.sky .fear{background:radial-gradient(120% 80% at 50% 0%,rgba(255,60,110,.28),transparent 60%)}
+.sky .grain{opacity:.035}
+.sky::after{content:"";position:absolute;inset:0;background:radial-gradient(rgba(220,218,255,.07) 1px,transparent 1.2px) 0 0/24px 24px;-webkit-mask-image:linear-gradient(180deg,#000,transparent 80%);mask-image:linear-gradient(180deg,#000,transparent 80%)}
+/* type */
+h1,h2,h3{font-family:var(--display);font-weight:500;letter-spacing:-.02em}
+.panel h2{font-size:24px}
+.panel h2 em{font-style:normal;background:linear-gradient(100deg,var(--lilac),var(--ice));-webkit-background-clip:text;background-clip:text;color:transparent}
+.caps{font:500 10.5px/1.4 var(--mono);letter-spacing:.14em;color:var(--ink-3)}
+.panel .note{color:var(--ink-3)}
+.num,.fl .v,.muscle .v,.wbnums{font-family:var(--mono)}
+/* glass panes */
+.glass{background:var(--glass),rgba(12,12,18,.55);border:1px solid var(--glass-edge);box-shadow:var(--glass-shadow);backdrop-filter:blur(6px) saturate(140%);-webkit-backdrop-filter:blur(6px) saturate(140%)}
+.glass::after{box-shadow:-1px 0 0 rgba(255,95,174,.16),1px 0 0 rgba(79,216,255,.18)}
+/* bar and controls */
+.barname{font:600 22px/1 var(--display);letter-spacing:-.01em;color:#fff}
+.barname .mark{box-shadow:0 0 0 3px rgba(255,255,255,.08),0 0 14px rgba(143,123,255,.6)}
+.ddb{color:var(--ink);background:rgba(255,255,255,.05);border:1px solid var(--glass-edge);box-shadow:inset 0 1px 0 rgba(255,255,255,.12);font-family:var(--sans)}
+.ddb:hover,.ddb[aria-expanded="true"]{background:rgba(255,255,255,.1);box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 8px 24px -12px rgba(0,0,0,.8)}
+.ddc{border-color:var(--ink-2)}
+.dds{color:var(--teal);background:rgba(76,242,196,.1);font-family:var(--mono);font-weight:500}
+.ddl{background:rgba(14,14,20,.97);box-shadow:0 24px 60px -24px rgba(0,0,0,.9),inset 0 0 0 1px rgba(255,255,255,.1)}
+.ddt{background:rgba(255,255,255,.16)}.ddl:hover .ddt{background:rgba(255,255,255,.3)}
+.ddg{color:var(--ink-3);font-family:var(--mono);letter-spacing:.14em}
+.ddo{color:var(--ink-2)}.ddo b{color:var(--ink)}
+.ddo .sc{color:var(--teal);font-family:var(--mono)}.ddo .sc.q{color:var(--ink-3)}.ddo .sc.none{color:rgba(255,255,255,.2)}
+.ddo:hover,.ddo.act{background:rgba(143,123,255,.12)}.ddo[aria-selected="true"]{background:rgba(143,123,255,.22)}
+.seg{background:rgba(255,255,255,.04);border:1px solid var(--glass-edge)}
+.seg button{color:var(--ink-2);font-family:var(--sans)}.seg button.on{color:#fff}
+.seg .knob{background:linear-gradient(180deg,rgba(255,255,255,.2),rgba(255,255,255,.08));border:.5px solid rgba(255,255,255,.3);box-shadow:inset 0 1px 0 rgba(255,255,255,.45),-.5px 0 0 rgba(255,95,174,.4),.5px 0 0 rgba(79,216,255,.45)}
+.chip{color:#0a0a0f;background:var(--ink);font:500 11.5px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;box-shadow:-1.5px 0 0 var(--pink),1.5px 0 0 var(--teal)}
+.chip:hover{background:#fff;box-shadow:-3px 0 0 var(--pink),3px 0 0 var(--teal),0 10px 40px -10px rgba(143,123,255,.6)}
+.toast{color:var(--ink-3);font-family:var(--mono);font-size:12px}
+.toast .live{background:var(--teal);box-shadow:0 0 8px var(--teal);animation:none}
+button:focus-visible,select:focus-visible{outline-color:var(--cyan)}
+/* eyes, dreams */
+.lens,.frame .img,.mapbox,.intent .iimg{background:#0b0b10;box-shadow:0 0 0 1px rgba(255,255,255,.1),0 18px 40px -24px rgba(0,0,0,.9)}
+.lens::before{background:linear-gradient(160deg,rgba(255,255,255,.14),rgba(255,255,255,0) 28%),radial-gradient(130% 130% at 50% 50%,transparent 62%,rgba(0,0,0,.45));box-shadow:inset 0 1px 0 rgba(255,255,255,.25)}
+.lens .tagl{font-family:var(--mono);letter-spacing:.16em}
+.frame .img::after{background:linear-gradient(160deg,rgba(255,255,255,.12),transparent 30%)}
+.frame .t{color:var(--ink-3);font-family:var(--mono)}.frame .t b{font:500 15px/1 var(--display);color:var(--ink)}
+.fearbox b,.near b,.lstats b,.ch .v b,.bt b,.orb .core b{font-family:var(--display);font-weight:400;letter-spacing:-.02em}
+.fearbox b small,.near b small{color:var(--ink-3)}
+.s-eyes.light .lens{box-shadow:0 0 0 1px rgba(255,255,255,.9),0 0 40px 8px rgba(255,255,255,.6)}
+/* map / table view */
+.legend{color:var(--ink-2)}.legend i{box-shadow:0 0 0 2px rgba(255,255,255,.08)}
+.compass{color:rgba(255,255,255,.35)}
+.near div,.ch,.bt{background:rgba(255,255,255,.03);border:1px solid var(--line)}
+.near .caps{font-size:9.5px}
+/* feelings */
+.orb .core{background:radial-gradient(circle at 35% 30%,rgba(255,255,255,.55),rgba(255,255,255,.08) 45%,transparent 70%),var(--orb,#8f7bff);box-shadow:inset 0 -10px 24px rgba(0,0,0,.35),0 0 40px -6px var(--orb,#8f7bff)}
+.orb .core b{color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.4)}.orb .core span{color:rgba(255,255,255,.85);font-family:var(--mono);letter-spacing:.14em}
+.fl{color:var(--ink)}
+.flag{color:var(--ink-3);background:rgba(255,255,255,.04);border:1px solid var(--line);font-family:var(--mono);letter-spacing:.1em}
+.flag.on{color:#0a0a0f;background:linear-gradient(135deg,var(--ice),var(--lilac));box-shadow:0 0 18px -4px rgba(166,240,255,.7)}
+/* muscles */
+.muscle{color:var(--ink-2)}
+.muscle .track{background:rgba(255,255,255,.05);box-shadow:inset 0 1px 2px rgba(0,0,0,.4)}
+.muscle .track::before{background:rgba(255,255,255,.18)}
+.muscle .fill{box-shadow:0 0 10px -2px currentColor}
+.sense h3{color:var(--ink-3);font-family:var(--mono);letter-spacing:.14em}
+.ears,.heat{color:var(--ink-3)}
+/* lives, charts, about */
+.lives .lf.now{background:repeating-linear-gradient(135deg,rgba(143,123,255,.5) 0 4px,rgba(143,123,255,.2) 4px 8px)}
+.lwrap .top{border-top-color:rgba(255,255,255,.12);color:var(--ink-3)}
+.lstats,.lkey{color:var(--ink-3)}.lstats b{color:var(--ink)}
+.ch .n{color:var(--ink-2)}.ch .ax{color:var(--ink-3)}
+.ch .tip{background:rgba(236,235,243,.94);color:#0a0a0f}
+.about dt{color:var(--ink-3);font-family:var(--mono);letter-spacing:.12em}.about dd{color:var(--ink)}
+.about .row{border-bottom-color:var(--line)}
+.bt .dbar{background:rgba(255,255,255,.06)}
+footer,footer .caps{color:var(--ink-3)}
+.rail .thumb{background:linear-gradient(180deg,rgba(255,255,255,.7),rgba(201,194,255,.5));box-shadow:0 0 0 1px rgba(255,255,255,.2),-1px 0 0 rgba(255,95,174,.3),1px 0 0 rgba(79,216,255,.35)}
+/* the 3D table */
+#t3d{display:none;width:100%;height:100%;touch-action:none;cursor:grab}
+#t3d.drag{cursor:grabbing}
+.mapbox.t3 #map{display:none}.mapbox.t3 #t3d{display:block;aspect-ratio:1/1.05}
+.mapbox.t3 .compass{display:none}
+.t3hint{position:absolute;left:12px;bottom:10px;font:500 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.4);pointer-events:none}
+.t3cap{position:absolute;left:12px;top:10px;font:500 10.5px var(--mono);letter-spacing:.08em;color:rgba(255,255,255,.7);pointer-events:none}
+.t3reset{position:absolute;right:10px;top:8px;font:500 10px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);background:rgba(255,255,255,.06);border:1px solid var(--glass-edge);border-radius:999px;padding:5px 10px;cursor:pointer}
+@media (min-width:1100px) and (min-height:620px){.mapbox.t3{width:min(100cqw,calc(100cqh / 1.05));height:min(calc(100cqw * 1.05),100cqh)}.mapbox.t3 #t3d{aspect-ratio:auto}}
+</style>
 </head>
 <body>
 <div class="rail" id="rail" aria-hidden="true"><div class="thumb" id="thumb"></div></div>
@@ -356,15 +462,15 @@ html{scrollbar-width:none}html::-webkit-scrollbar,body::-webkit-scrollbar,*::-we
     <div class="c2">
     <section class="panel glass s-map">
       <div class="ph"><h2 id="mapH">From <em>above</em></h2><span class="caps" id="mapSc">11.3 m</span></div>
-      <p class="note" id="mapNoteT" hidden>Our view of its table, from above and, below, from the side, to scale. It never sees this: it only has the two eyes on its tall head. Blue haze: where those eyes look. A plate turns pink when it touches something.</p>
+      <p class="note" id="mapNoteT" hidden>Its table in 3D, to scale, live. It never sees this: it only has the two eyes on its tall head (blue haze: where they look). A plate turns pink when it touches something; the ball glows while held.</p>
       <p class="note" id="mapNote">Our view of its world. It never sees this. The faint line is where it has been this life; the thin coloured lines are 16 futures it dreams, coloured by how good each feels (white dot: a dream that ends in the light). <span id="pathErr"></span></p>
-      <div class="mapwrap"><div class="mapbox" id="mapBox"><canvas id="map"></canvas><span class="compass">N</span></div></div>
+      <div class="mapwrap"><div class="mapbox" id="mapBox"><canvas id="map"></canvas><canvas id="t3d"></canvas><span class="t3cap" id="t3cap" hidden></span><span class="t3hint" id="t3hint" hidden>drag to turn · pinch or scroll to zoom</span><button class="t3reset" id="t3reset" type="button" hidden>reset view</button><span class="compass">N</span></div></div>
       <div class="legend" id="lgT" hidden>
-        <span><i style="background:#2c3577"></i>arm and claw</span>
-        <span><i style="background:#c0506f"></i>plate touching</span>
-        <span><i style="background:#e2583f"></i>ball</span>
-        <span><i class="sq" style="background:#4664d2"></i>basket</span>
-        <span><i style="background:#7d8de0;opacity:.6"></i>where its eyes look</span>
+        <span><i style="background:#5866d6"></i>arm and claw</span>
+        <span><i style="background:#ff5f8a"></i>plate touching</span>
+        <span><i style="background:#ff6a3d"></i>ball</span>
+        <span><i class="sq" style="background:#4f7dff"></i>basket</span>
+        <span><i style="background:#a6f0ff;opacity:.7"></i>its eyes and where they look</span>
       </div>
       <div class="legend" id="lg1">
         <span><i style="background:#2c3577"></i>creature</span>
@@ -385,7 +491,7 @@ html{scrollbar-width:none}html::-webkit-scrollbar,body::-webkit-scrollbar,*::-we
     <div class="c3">
     <section class="panel glass s-feel">
       <div class="ph"><h2>How it <em>feels</em></h2></div>
-      <p class="note">Its body feelings. Wellbeing, the only thing it cares about, is their mean.</p>
+      <p class="note" id="feelNote">Its body feelings. Wellbeing, the only thing it cares about, is their mean.</p>
       <div class="feel">
         <div class="orb"><svg viewBox="0 0 200 200" id="orbSvg"></svg><div class="core"><b id="wbV">–</b><span>wellbeing</span></div></div>
         <div class="flist">
@@ -460,7 +566,7 @@ const BANDS=['heat','press','hum','field'],BCOL=[[239,122,78],[125,141,224],[79,
 $('heat').innerHTML='<span></span>'+BANDS.map(b=>`<span class="hd">${b}</span>`).join('')+[0,1,2,3].map(k=>`<span>s${k+1}</span>`+[0,1,2,3].map(b=>`<i id="h${k}${b}"></i>`).join('')).join('');
 
 /* ---------- orb ---------- */
-function arc(r,frac,stroke,w,id){const c=2*Math.PI*r;return `<circle cx="100" cy="100" r="${r}" fill="none" stroke="rgba(27,33,71,.07)" stroke-width="${w}"/>
+function arc(r,frac,stroke,w,id){const c=2*Math.PI*r;return `<circle cx="100" cy="100" r="${r}" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="${w}"/>
   <circle id="${id}" cx="100" cy="100" r="${r}" fill="none" stroke="${stroke}" stroke-width="${w}" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${c*(1-frac)}" transform="rotate(-90 100 100)" style="transition:stroke-dashoffset .35s ease"/>`}
 $('orbSvg').innerHTML=`<defs><linearGradient id="gE" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f6d38a"/><stop offset="1" stop-color="#e9a23b"/></linearGradient>
   <linearGradient id="gH" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8fe0d3"/><stop offset="1" stop-color="#4fb8c8"/></linearGradient>
@@ -488,7 +594,7 @@ const mapC=$('map'),map=mapC.getContext('2d');let trail=[],lastState=null,dreamP
 function sizeMap(){const dpr=devicePixelRatio||1,W=mapC.clientWidth,H=mapC.clientHeight||W;if(W&&(mapC.width!==Math.round(W*dpr)||mapC.height!==Math.round(H*dpr))){mapC.width=Math.round(W*dpr);mapC.height=Math.round(H*dpr)}}
 const FOODC=['#e8593e','#e9c92f','#5fcf4a'];
 function drawMap(s,tnow){
-  if(s.table){drawTable(s,tnow);return}
+  if(s.table){draw3D(s,tnow);return}
   sizeMap();const dpr=devicePixelRatio||1,W=mapC.width/dpr;if(!W)return;map.setTransform(dpr,0,0,dpr,0,0);
   const k=W/s.L,X=v=>v*k,Y=v=>W-v*k;
   // floor: warm paper with a 1 m grid
@@ -559,7 +665,100 @@ function drawMap(s,tnow){
   map.strokeStyle='rgba(255,255,255,.9)';map.lineWidth=1.5;map.beginPath();map.arc(cx,cy,.26*k,0,7);map.stroke();
   // vignette
   const vv=map.createRadialGradient(W/2,W/2,W*.45,W/2,W/2,W*.78);vv.addColorStop(0,'rgba(27,33,71,0)');vv.addColorStop(1,'rgba(27,33,71,.10)');map.fillStyle=vv;map.fillRect(0,0,W,W)}
-/* creature two: one drawing in two views that share the across axis (distance from the robot, left to right):
+/* ---------- creature two in 3D: the table, basket, post, arm, claw, ball and its eyes, drawn with a small
+   hand-written perspective renderer (no library): faces and limbs depth-sorted, soft shadows on the table,
+   orbit by dragging, zoom by wheel or pinch, double-click to reset. Everything is the live world state. ---------- */
+const t3=$('t3d'),t3c=t3.getContext('2d');
+const T3_HOME={yaw:-2.3,pitch:.5,dist:1.6};let t3v={...T3_HOME};const T3_TGT=[.5,.32,.2];
+(function(){const ptr=new Map();let pinch0=0,dist0=0;
+  t3.addEventListener('pointerdown',e=>{t3.setPointerCapture(e.pointerId);ptr.set(e.pointerId,[e.clientX,e.clientY]);t3.classList.add('drag');
+    if(ptr.size===2){const [a,b]=[...ptr.values()];pinch0=Math.hypot(a[0]-b[0],a[1]-b[1]);dist0=t3v.dist}});
+  t3.addEventListener('pointermove',e=>{if(!ptr.has(e.pointerId))return;const p=ptr.get(e.pointerId),dx=e.clientX-p[0],dy=e.clientY-p[1];ptr.set(e.pointerId,[e.clientX,e.clientY]);
+    if(ptr.size===1){t3v.yaw-=dx*.008;t3v.pitch=Math.min(1.45,Math.max(.05,t3v.pitch+dy*.006))}
+    else if(ptr.size===2){const [a,b]=[...ptr.values()],d=Math.hypot(a[0]-b[0],a[1]-b[1]);if(pinch0)t3v.dist=Math.min(4,Math.max(.7,dist0*pinch0/d))}});
+  const up=e=>{ptr.delete(e.pointerId);if(!ptr.size)t3.classList.remove('drag');pinch0=0};
+  t3.addEventListener('pointerup',up);t3.addEventListener('pointercancel',up);
+  t3.addEventListener('wheel',e=>{e.preventDefault();t3v.dist=Math.min(4,Math.max(.7,t3v.dist*Math.exp(e.deltaY*.001)))},{passive:false});
+  t3.addEventListener('dblclick',()=>{t3v={...T3_HOME}});
+  $('t3reset').addEventListener('click',()=>{t3v={...T3_HOME}});})();
+function sizeT3(){const dpr=devicePixelRatio||1,W=t3.clientWidth,H=t3.clientHeight;if(W&&H&&(t3.width!==Math.round(W*dpr)||t3.height!==Math.round(H*dpr))){t3.width=Math.round(W*dpr);t3.height=Math.round(H*dpr)}return [W,H,dpr]}
+const v3={sub:(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],add:(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]],mul:(a,k)=>[a[0]*k,a[1]*k,a[2]*k],
+  dot:(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2],cross:(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],
+  norm:a=>{const l=Math.hypot(a[0],a[1],a[2])||1;return [a[0]/l,a[1]/l,a[2]/l]}};
+const LIGHT=v3.norm([-.4,-.7,1]);
+function shade(rgb,n){const k=.42+.58*Math.max(0,v3.dot(n,LIGHT));return `rgb(${rgb.map(c=>Math.round(c*k)).join(',')})`}
+function draw3D(s,tnow){
+  const [W,H,dpr]=sizeT3();if(!W||!H)return;const c=t3c;c.setTransform(dpr,0,0,dpr,0,0);
+  const T=s.table,cam=T.cam||[.5,-.22,.82],pitchE=(T.pitch||47)*Math.PI/180,half=(T.fov||70)*Math.PI/360,base=T.base||[.5,.06],shz=T.sh_z||.12;
+  // camera
+  const cp=Math.cos(t3v.pitch),eye=[T3_TGT[0]+t3v.dist*cp*Math.cos(t3v.yaw),T3_TGT[1]+t3v.dist*cp*Math.sin(t3v.yaw),T3_TGT[2]+t3v.dist*Math.sin(t3v.pitch)];
+  const f=v3.norm(v3.sub(T3_TGT,eye)),r=v3.norm(v3.cross(f,[0,0,1])),u=v3.cross(r,f),F=Math.min(W,H)*1.05;
+  const P=p=>{const d=v3.sub(p,eye),z=Math.max(.02,v3.dot(d,f));return [W/2+F*v3.dot(d,r)/z,H*.54-F*v3.dot(d,u)/z,z]};
+  // the stage
+  const bg=c.createRadialGradient(W/2,H*.45,0,W/2,H*.45,Math.max(W,H)*.8);bg.addColorStop(0,'#15131f');bg.addColorStop(1,'#060609');c.fillStyle=bg;c.fillRect(0,0,W,H);
+  const FZ=-.72;   // the floor far below the table: a faint grid
+  c.strokeStyle='rgba(201,194,255,.06)';c.lineWidth=1;c.beginPath();
+  for(let i=-6;i<=7;i++){const a=P([i*.25,-1.2,FZ]),b=P([i*.25,2.2,FZ]),a2=P([-1.5,i*.25,FZ]),b2=P([2.5,i*.25,FZ]);c.moveTo(a[0],a[1]);c.lineTo(b[0],b[1]);c.moveTo(a2[0],a2[1]);c.lineTo(b2[0],b2[1])}c.stroke();
+  const items=[];   // depth-sorted things: {z, draw}
+  const poly=(pts,fill,stroke,lw)=>{const q=pts.map(P);c.beginPath();q.forEach((p,i)=>i?c.lineTo(p[0],p[1]):c.moveTo(p[0],p[1]));c.closePath();if(fill){c.fillStyle=fill;c.fill()}if(stroke){c.strokeStyle=stroke;c.lineWidth=lw||1;c.stroke()}};
+  const zOf=pts=>pts.reduce((a,p)=>a+P(p)[2],0)/pts.length;
+  function box(mn,mx,rgb,alpha=1,glow=null){
+    const [x0,y0,z0]=mn,[x1,y1,z1]=mx,V=[[x0,y0,z0],[x1,y0,z0],[x1,y1,z0],[x0,y1,z0],[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]];
+    const faces=[[[0,1,2,3],[0,0,-1]],[[4,5,6,7],[0,0,1]],[[0,1,5,4],[0,-1,0]],[[2,3,7,6],[0,1,0]],[[1,2,6,5],[1,0,0]],[[3,0,4,7],[-1,0,0]]];
+    faces.forEach(([ix,n])=>{const pts=ix.map(i=>V[i]),ctr=v3.mul(pts.reduce((a,p)=>v3.add(a,p),[0,0,0]),.25);if(v3.dot(n,v3.sub(eye,ctr))<=0)return;
+      items.push({z:zOf(pts),d:()=>{c.globalAlpha=alpha;if(glow){c.save();c.shadowColor=glow;c.shadowBlur=14}poly(pts,shade(rgb,n),'rgba(255,255,255,.10)',.6);if(glow)c.restore();c.globalAlpha=1}})})}
+  // table: slab, legs, tiled top
+  const TH=.035;box([0,0,-TH],[1,1,0],[150,128,98]);[[.04,.04],[.92,.04],[.04,.92],[.92,.92]].forEach(([x,y])=>box([x,y,FZ],[x+.04,y+.04,-TH],[90,78,64]));
+  // draw slab + legs now (they are always behind what stands on the table)
+  items.sort((a,b)=>b.z-a.z).forEach(it=>it.d());items.length=0;
+  if(eye[2]>0){for(let i=0;i<10;i++)for(let j=0;j<10;j++){const x=i/10,y=j/10;poly([[x,y,0],[x+.1,y,0],[x+.1,y+.1,0],[x,y+.1,0]],(i+j)%2?'#d9c7a5':'#cdb994')}
+    const rim=c.createLinearGradient(0,0,W,H);rim.addColorStop(0,'rgba(255,255,255,.35)');rim.addColorStop(1,'rgba(255,255,255,.1)');poly([[0,0,0],[1,0,0],[1,1,0],[0,1,0]],null,rim,1.2);
+    // where its eyes look: the footprint of its view on the table, faint
+    const look=[];for(const [sx,sy] of [[-1,-1],[1,-1],[1,1],[-1,1]]){const pitch=pitchE+sy*half,yawd=sx*half,d=[Math.sin(yawd)*Math.cos(pitch),Math.cos(yawd)*Math.cos(pitch),-Math.sin(pitch)];
+      const t=d[2]<-1e-3?Math.min(3,-cam[2]/d[2]):3;look.push([cam[0]+d[0]*t,cam[1]+d[1]*t,Math.max(0,cam[2]+d[2]*t)])}
+    c.save();c.beginPath();const tq=[[0,0,0],[1,0,0],[1,1,0],[0,1,0]].map(P);tq.forEach((p,i)=>i?c.lineTo(p[0],p[1]):c.moveTo(p[0],p[1]));c.closePath();c.clip();
+    poly(look,'rgba(120,140,255,.13)');c.restore();
+    // shadows on the table (straight down, soft)
+    const A=T.arm,sh=p=>[p[0]+p[2]*.25,p[1]+p[2]*.35,0];
+    c.save();c.filter='blur(2px)';c.lineCap='round';c.strokeStyle='rgba(40,25,10,.28)';
+    c.beginPath();A.slice(0,4).forEach((p,i)=>{const q=P(sh(p));i?c.lineTo(q[0],q[1]):c.moveTo(q[0],q[1])});c.lineWidth=Math.max(2,.03*F/P(A[1])[2]);c.stroke();
+    const bl=T.ball,bs=P(sh(bl)),br=T.ball_r*F/bs[2];c.fillStyle=`rgba(40,25,10,${.35/(1+bl[2]*6)})`;c.beginPath();c.ellipse(bs[0],bs[1],br*1.1,br*.6,0,0,7);c.fill();c.restore()}
+  // basket: four walls, glowing green when it just fed it
+  const b=T.basket,o=T.b_in+T.b_wall,w=T.b_wall,bh=T.b_h,bcol=T.scored?[94,242,166]:[79,125,255],bg_=T.scored?'#5ef2a6':null;
+  box([b[0]-o,b[1]-o,0],[b[0]+o,b[1]-o+w,bh],bcol,1,bg_);box([b[0]-o,b[1]+o-w,0],[b[0]+o,b[1]+o,bh],bcol,1,bg_);
+  box([b[0]-o,b[1]-o+w,0],[b[0]-o+w,b[1]+o-w,bh],bcol,1,bg_);box([b[0]+o-w,b[1]-o+w,0],[b[0]+o,b[1]+o-w,bh],bcol,1,bg_);
+  if(T.scored)items.push({z:P([b[0],b[1],bh+.06])[2]-1,d:()=>{const q=P([b[0],b[1],bh+.08]);c.font='600 13px var(--display)';c.fillStyle='#5ef2a6';c.textAlign='center';c.fillText('fed!',q[0],q[1]);c.textAlign='left'}});
+  // the post
+  box([base[0]-.03,base[1]-.03,0],[base[0]+.03,base[1]+.03,shz-.02],[120,124,150]);
+  // the head on its pole, with two eyes and its view
+  {const pole0=[cam[0],cam[1],FZ],pole1=[cam[0],cam[1],cam[2]-.04];items.push({z:zOf([pole0,pole1]),d:()=>{const a=P(pole0),q=P(pole1);c.strokeStyle='rgba(150,150,175,.7)';c.lineWidth=Math.max(1.5,.012*F/q[2]);c.beginPath();c.moveTo(a[0],a[1]);c.lineTo(q[0],q[1]);c.stroke()}});
+   const hz=P(cam)[2];items.push({z:hz,d:()=>{const q=P(cam),rr=.045*F/q[2];const g=c.createRadialGradient(q[0]-rr*.35,q[1]-rr*.4,rr*.1,q[0],q[1],rr);g.addColorStop(0,'#6c79c9');g.addColorStop(1,'#1d2246');
+     c.fillStyle=g;c.beginPath();c.arc(q[0],q[1],rr,0,7);c.fill();
+     [-1,1].forEach(sg=>{const ep=[cam[0]+sg*.022,cam[1]+.035*Math.cos(pitchE),cam[2]-.035*Math.sin(pitchE)],e=P(ep);if(e[2]<q[2]+.01){c.fillStyle='#fff';c.shadowColor='#a6f0ff';c.shadowBlur=8;c.beginPath();c.arc(e[0],e[1],Math.max(1.5,.009*F/e[2]),0,7);c.fill();c.shadowBlur=0}})}});
+   // its view: four rays out to the table plane, faint
+   items.push({z:hz+.3,d:()=>{const q=P(cam);c.strokeStyle='rgba(166,240,255,.22)';c.lineWidth=1;c.setLineDash([3,5]);
+     for(const [sx,sy] of [[-1,-1],[1,-1],[1,1],[-1,1]]){const pitch=pitchE+sy*half,yawd=sx*half,d=[Math.sin(yawd)*Math.cos(pitch),Math.cos(yawd)*Math.cos(pitch),-Math.sin(pitch)],t=Math.min(.5/Math.max(.2,Math.cos(pitch)),d[2]<0?-cam[2]/d[2]:.5),e=P([cam[0]+d[0]*t,cam[1]+d[1]*t,cam[2]+d[2]*t]);
+       c.beginPath();c.moveTo(q[0],q[1]);c.lineTo(e[0],e[1]);c.stroke()}c.setLineDash([])}})}
+  // the arm: three links as lit tubes, joints as small spheres
+  const A=T.arm,LR=[.024,.02,.016];
+  for(let i=0;i<3;i++){const a=A[i],bq=A[i+1];items.push({z:zOf([a,bq]),d:()=>{const p=P(a),q=P(bq),wd=LR[i]*2*F/((p[2]+q[2])/2);
+      c.lineCap='round';c.strokeStyle='#2b3170';c.lineWidth=wd;c.beginPath();c.moveTo(p[0],p[1]);c.lineTo(q[0],q[1]);c.stroke();
+      c.strokeStyle='#5866d6';c.lineWidth=wd*.62;c.beginPath();c.moveTo(p[0],p[1]);c.lineTo(q[0],q[1]);c.stroke();
+      c.strokeStyle='rgba(200,210,255,.55)';c.lineWidth=wd*.18;const o2=wd*.16;c.beginPath();c.moveTo(p[0]-o2,p[1]-o2);c.lineTo(q[0]-o2,q[1]-o2);c.stroke()}})}
+  A.slice(0,4).forEach((p,i)=>items.push({z:P(p)[2]-.001,d:()=>{const q=P(p),rr=(i===3?.018:.028)*F/q[2];const g=c.createRadialGradient(q[0]-rr*.3,q[1]-rr*.35,rr*.1,q[0],q[1],rr);g.addColorStop(0,'#c9d0ff');g.addColorStop(1,'#3a43a0');c.fillStyle=g;c.beginPath();c.arc(q[0],q[1],rr,0,7);c.fill()}}));
+  // the two plates: thin quads along the hand, pink when a face touches something
+  const hd=T.hand,sd=T.side||[1,0,0],upv=v3.norm(v3.cross(hd,sd)),L=.035,PWh=.018;
+  [[T.pl,0],[T.pr,2]].forEach(([cc,ti])=>{const on=Math.max(T.touch[ti],T.touch[ti+1])>.2,pts=[[1,1],[1,-1],[-1,-1],[-1,1]].map(([a,bb])=>v3.add(cc,v3.add(v3.mul(hd,a*L),v3.mul(upv,bb*PWh))));
+    items.push({z:zOf(pts)-.002,d:()=>{c.save();if(on){c.shadowColor='#ff5f8a';c.shadowBlur=14}poly(pts,on?'#ff5f8a':'#7f8cff','rgba(255,255,255,.5)',.8);c.restore()}})});
+  // the ball
+  {const bl=T.ball;items.push({z:P(bl)[2],d:()=>{const q=P(bl),rr=T.ball_r*F/q[2];c.save();c.shadowColor='#ff6a3d';c.shadowBlur=T.held?26:8;
+     const g=c.createRadialGradient(q[0]-rr*.35,q[1]-rr*.4,rr*.05,q[0],q[1],rr);g.addColorStop(0,'#ffd2b8');g.addColorStop(.35,'#ff6a3d');g.addColorStop(1,'#a8240f');
+     c.fillStyle=g;c.beginPath();c.arc(q[0],q[1],rr,0,7);c.fill();c.restore();
+     if(T.held){c.strokeStyle='rgba(255,210,184,.6)';c.lineWidth=1.2;c.beginPath();c.arc(q[0],q[1],rr*1.6+Math.sin(tnow/200)*1.5,0,7);c.stroke()}}})}
+  items.sort((a,b)=>b.z-a.z).forEach(it=>it.d());
+  $('t3cap').textContent=`claw ${Math.round(T.claw*100)}% open${T.held?' · holding the ball':''}`}
+
+/* creature two (old 2D drawing, kept for reference): one drawing in two views that share the across axis (distance from the robot, left to right):
    from above (its right is down) and, below it, from the side; true scale, the head and where its eyes look included */
 function drawTable(s,tnow){
   sizeMap();const dpr=devicePixelRatio||1,W=mapC.width/dpr,H=mapC.height/dpr;if(!W||!H)return;map.setTransform(dpr,0,0,dpr,0,0);
@@ -637,10 +836,10 @@ function drawWb(now,wb,band){const svg=$('wbCurve');if(!wb||!wb.length){svg.inne
   let bandPath='';if(band&&band[0]&&band[0].length===wb.length){const lo=[now,...band[0]],hi=[now,...band[1]];
     bandPath='M'+hi.map((v,i)=>xs(i).toFixed(1)+','+ys(v).toFixed(1)).join('L')+'L'+lo.map((v,i)=>[xs(i),ys(v)]).reverse().map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join('L')+'Z'}
   const c=wbColor(wb[wb.length-1]);
-  svg.innerHTML=`${[0,.5,1].map(g=>`<line x1="${L0}" x2="${W}" y1="${ys(g)}" y2="${ys(g)}" stroke="rgba(27,33,71,.08)" vector-effect="non-scaling-stroke"/><text x="${L0-4}" y="${ys(g)+3}" text-anchor="end" style="font:9px var(--mono);fill:var(--ink-3)">${g}</text>`).join('')}
-   ${[10,20,50,100].filter(i=>i<n).map(i=>`<line x1="${xs(i)}" x2="${xs(i)}" y1="0" y2="${H}" stroke="rgba(27,33,71,.1)" stroke-dasharray="2 3" vector-effect="non-scaling-stroke"/>`).join('')}
+  svg.innerHTML=`${[0,.5,1].map(g=>`<line x1="${L0}" x2="${W}" y1="${ys(g)}" y2="${ys(g)}" stroke="rgba(255,255,255,.08)" vector-effect="non-scaling-stroke"/><text x="${L0-4}" y="${ys(g)+3}" text-anchor="end" style="font:9px var(--mono);fill:var(--ink-3)">${g}</text>`).join('')}
+   ${[10,20,50,100].filter(i=>i<n).map(i=>`<line x1="${xs(i)}" x2="${xs(i)}" y1="0" y2="${H}" stroke="rgba(255,255,255,.1)" stroke-dasharray="2 3" vector-effect="non-scaling-stroke"/>`).join('')}
    ${bandPath?`<path d="${bandPath}" fill="rgb(${c})" fill-opacity=".22"/>`:''}
-   <path d="${d}" fill="none" stroke="#2c3577" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>`}
+   <path d="${d}" fill="none" stroke="#c9c2ff" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>`}
 
 /* ---------- lives ---------- */
 const CAUSEC={hunger:'var(--amber)',lava:'#ef7a4e',predator:'var(--violet)',strange:'var(--sand)',blows:'#6b6f8c',cap:'linear-gradient(180deg,var(--aqua),var(--leaf))'};
@@ -655,14 +854,15 @@ function renderLives(){
   else $('lstats').innerHTML='<span>The first life is still going.</span>'}
 
 /* ---------- one moment ---------- */
-let mapMode=null;function setMapMode(t){if(t===mapMode)return;mapMode=t;$('mapBox').classList.toggle('tall',t);document.body.classList.toggle('tablemode',t);$('lgT').hidden=!t;$('lg1').hidden=t;$('mapNote').hidden=t;$('mapNoteT').hidden=!t;document.querySelectorAll('.sense').forEach(e=>e.hidden=t);$('fGround').hidden=t;
+let mapMode=null;function setMapMode(t){if(t===mapMode)return;mapMode=t;$('mapBox').classList.toggle('t3',t);['t3cap','t3hint','t3reset'].forEach(i=>$(i).hidden=!t);document.body.classList.toggle('tablemode',t);$('lgT').hidden=!t;$('lg1').hidden=t;$('mapNote').hidden=t;$('mapNoteT').hidden=!t;document.querySelectorAll('.sense').forEach(e=>e.hidden=t);$('fGround').hidden=t;
   $('mapH').innerHTML=t?'Its <em>table</em>':'From <em>above</em>';$('mapSc').textContent=t?'1 m table':'11.3 m';
   if(t)$('eyesNote').textContent='Its two eyes on a tall head behind the arm, the real pixels it gets, 70° each. This is all the light it ever has.';trail=[];sizeMap()}
-let lastMU=null,lastFear=0,lastWbs=null,lastRender=0;
+let lastDriveNote=null,lastMU=null,lastFear=0,lastWbs=null,lastRender=0;
 const SKY=document.querySelector('.sky');let moodW=-1,moodF=-1;
 function setMood(w,f){if(Math.abs(w-moodW)>.02){moodW=w;SKY.style.setProperty('--wb',w.toFixed(2))}if(Math.abs(f-moodF)>.02){moodF=f;SKY.style.setProperty('--fear',f.toFixed(2))}}
 function show(f){
   const res=f.res;if(f.png){drawPNG(eyeL,f.eyeL,res);drawPNG(eyeR,f.eyeR,res)}else{const e=b64(f.eyes);drawRGB(eyeL,e,res,0,6);drawRGB(eyeR,e,res,3,6)}$('resTag').textContent=res+' px · stereo';
+  if(drive!==lastDriveNote){lastDriveNote=drive;$('feelNote').textContent='Its body feelings. Wellbeing, the only thing it cares about, is '+(drive==='product'?'energy × health: an empty tank is 0.':drive==='homeo'?'health plus the absence of hunger.':'their mean.')}
   const s=f.state,wbNow=drive==='product'?s.energy*s.health:(drive==='homeo'&&s.hunger!=null)?(s.health+1-s.hunger)/2:(s.energy+s.health)/2;
   setMapMode(!!s.table);
   document.querySelectorAll('.legend .v5').forEach(e=>e.hidden=!s.v5);if($('lgPrey'))$('lgPrey').style.background=s.v6?'#4673ff':'#e9c48a';
@@ -783,7 +983,7 @@ function chart(rows,[key,name,unit,log,col]){
   el.innerHTML=`<div class="n">${name}</div><div class="v"><b>${fmt(last[1])}</b><span>${unit?unit+' · ':''}at ${last[0].toFixed(0)} min</span></div>
    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${col}" stop-opacity=".28"/><stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>
    <path d="${d}L${W},${H}L0,${H}Z" fill="url(#${id})"/><path d="${d}" fill="none" stroke="${col}" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>
-   <line class="hl" x1="0" x2="0" y1="0" y2="${H}" stroke="rgba(27,33,71,.25)" stroke-dasharray="2 3" vector-effect="non-scaling-stroke" opacity="0"/></svg>
+   <line class="hl" x1="0" x2="0" y1="0" y2="${H}" stroke="rgba(255,255,255,.3)" stroke-dasharray="2 3" vector-effect="non-scaling-stroke" opacity="0"/></svg>
    <div class="ax"><span>${x0.toFixed(0)} min</span><span>${log?'log':''}</span><span>${x1.toFixed(0)} min</span></div><div class="tip"></div>`;
   const svg=el.querySelector('svg'),tip=el.querySelector('.tip'),hl=el.querySelector('.hl');
   svg.addEventListener('pointermove',ev=>{const r=svg.getBoundingClientRect(),fx=(ev.clientX-r.left)/r.width,xm=x0+fx*(x1-x0);
