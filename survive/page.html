@@ -138,7 +138,10 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--lilac);outline
 /* map */
 .mapbox{position:relative;border-radius:20px;overflow:hidden;box-shadow:0 18px 36px -24px rgba(30,40,100,.5),0 0 0 1px rgba(255,255,255,.7)}
 #map{display:block;width:100%;aspect-ratio:1}
+.mapbox.tall #map{aspect-ratio:1/1.5}
+.mapbox.tall .compass{display:none}
 .legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:12.5px;color:var(--ink-2);margin-top:14px}
+[hidden]{display:none!important}
 .legend span{display:inline-flex;align-items:center;gap:7px}
 .legend i{width:9px;height:9px;border-radius:50%;display:inline-block;box-shadow:0 0 0 2px rgba(255,255,255,.7)}
 .legend i.sq{border-radius:2px}
@@ -269,7 +272,8 @@ html{scrollbar-width:none}html::-webkit-scrollbar,body::-webkit-scrollbar,*::-we
   .s-map{flex:1}
   .mapwrap{flex:1;min-height:0;container-type:size;display:flex;justify-content:center;align-items:center}
   .mapbox{width:min(100cqw,100cqh);height:min(100cqw,100cqh);flex:none}
-  #map{width:100%;height:100%}
+  #map,.mapbox.tall #map{width:100%;height:100%;aspect-ratio:auto}
+  .mapbox.tall{width:min(100cqw,calc(100cqh / 1.5));height:min(calc(100cqw * 1.5),100cqh)}
   .legend{margin-top:8px;gap:4px 12px;font-size:11.5px}
   .near{margin-top:8px}.near div{padding:6px 10px}.near b{font-size:18px}
   .s-feel{flex:none}
@@ -350,10 +354,18 @@ html{scrollbar-width:none}html::-webkit-scrollbar,body::-webkit-scrollbar,*::-we
     </div>
     <div class="c2">
     <section class="panel glass s-map">
-      <div class="ph"><h2>From <em>above</em></h2><span class="caps" id="mapSize">11.3 m</span></div>
+      <div class="ph"><h2 id="mapH">From <em>above</em></h2><span class="caps" id="mapSc">11.3 m</span></div>
+      <p class="note" id="mapNoteT" hidden>Our view of its table, from above and, below, from the side, to scale. It never sees this: it only has the two eyes on its tall head. Blue haze: where those eyes look. A plate turns pink when it touches something.</p>
       <p class="note" id="mapNote">Our view of its world. It never sees this. The faint line is where it has been this life; the thin coloured lines are 16 futures it dreams, coloured by how good each feels (white dot: a dream that ends in the light). <span id="pathErr"></span></p>
-      <div class="mapwrap"><div class="mapbox"><canvas id="map"></canvas><span class="compass">N</span></div></div>
-      <div class="legend" id="legend">
+      <div class="mapwrap"><div class="mapbox" id="mapBox"><canvas id="map"></canvas><span class="compass">N</span></div></div>
+      <div class="legend" id="lgT" hidden>
+        <span><i style="background:#2c3577"></i>arm and claw</span>
+        <span><i style="background:#c0506f"></i>plate touching</span>
+        <span><i style="background:#e2583f"></i>ball</span>
+        <span><i class="sq" style="background:#4664d2"></i>basket</span>
+        <span><i style="background:#7d8de0;opacity:.6"></i>where its eyes look</span>
+      </div>
+      <div class="legend" id="lg1">
         <span><i style="background:#2c3577"></i>creature</span>
         <span><i style="background:#e8593e"></i><i style="background:#e9c92f;margin-left:-4px"></i><i style="background:#5fcf4a;margin-left:-4px"></i>food</span>
         <span><i class="sq" style="background:#ef7a4e"></i>lava</span>
@@ -472,7 +484,7 @@ function drawRGB(cv,data,res,off,stride){if(cv.width!==res){cv.width=res;cv.heig
 
 /* ---------- map ---------- */
 const mapC=$('map'),map=mapC.getContext('2d');let trail=[],lastState=null,dreamPaths=null;
-function sizeMap(){const dpr=devicePixelRatio||1,W=mapC.clientWidth;if(W&&mapC.width!==Math.round(W*dpr)){mapC.width=mapC.height=Math.round(W*dpr)}}
+function sizeMap(){const dpr=devicePixelRatio||1,W=mapC.clientWidth,H=mapC.clientHeight||W;if(W&&(mapC.width!==Math.round(W*dpr)||mapC.height!==Math.round(H*dpr))){mapC.width=Math.round(W*dpr);mapC.height=Math.round(H*dpr)}}
 const FOODC=['#e8593e','#e9c92f','#5fcf4a'];
 function drawMap(s,tnow){
   if(s.table){drawTable(s,tnow);return}
@@ -546,41 +558,68 @@ function drawMap(s,tnow){
   map.strokeStyle='rgba(255,255,255,.9)';map.lineWidth=1.5;map.beginPath();map.arc(cx,cy,.26*k,0,7);map.stroke();
   // vignette
   const vv=map.createRadialGradient(W/2,W/2,W*.45,W/2,W/2,W*.78);vv.addColorStop(0,'rgba(27,33,71,0)');vv.addColorStop(1,'rgba(27,33,71,.10)');map.fillStyle=vv;map.fillRect(0,0,W,W)}
-/* creature two: its table from above (left) and from the side (right strip) */
+/* creature two: one drawing in two views that share the across axis (distance from the robot, left to right):
+   from above (its right is down) and, below it, from the side; true scale, the head and where its eyes look included */
 function drawTable(s,tnow){
-  sizeMap();const dpr=devicePixelRatio||1,W=mapC.width/dpr;if(!W)return;map.setTransform(dpr,0,0,dpr,0,0);
-  const T=s.table,S=W*.55,k=S/1.0,ox=(W-S)/2,X=v=>ox+v*k,Y=v=>8+S-v*k;
-  map.fillStyle='#ece7de';map.fillRect(0,0,W,W);
-  // the table: 10 cm tiles
-  for(let i=0;i<10;i++)for(let j=0;j<10;j++){map.fillStyle=(i+j)%2?'#e2cfaf':'#d9c4a2';map.fillRect(X(i/10),Y((j+1)/10),k/10+.5,k/10+.5)}
-  map.strokeStyle='#8a6d4c';map.lineWidth=3;map.strokeRect(X(0),Y(1),k,k);
+  sizeMap();const dpr=devicePixelRatio||1,W=mapC.width/dpr,H=mapC.height/dpr;if(!W||!H)return;map.setTransform(dpr,0,0,dpr,0,0);
+  const T=s.table,cam=T.cam||[.5,-.22,.82],pitch=(T.pitch||47)*Math.PI/180,half=(T.fov||70)*Math.PI/360,base=T.base||[.5,.06],shz=T.sh_z||.12;
+  const Y0=-.34,Y1=1.05,ZT=.92,m=12,gap=30,top=22;
+  const k=Math.min((W-2*m)/(Y1-Y0),(H-top-gap-12)/(1+ZT)),ox=(W-(Y1-Y0)*k)/2;
+  const X=y=>ox+(y-Y0)*k, A_=x=>top+x*k, sTop=top+k+gap, Z=z=>sTop+ZT*k-z*k;     // X: across; A_: from above (x down); Z: from the side
+  const ink='#2c3577',edge='#8a6d4c',red='#e2583f',touchC='#c0506f',blue='#4664d2';
+  map.fillStyle='#ece7de';map.fillRect(0,0,W,H);
+  map.font='10px var(--mono)';map.fillStyle='#5c6380';
+  // ---- from above ----
+  map.fillText('from above',ox,top-8);
+  for(let i=0;i<10;i++)for(let j=0;j<10;j++){map.fillStyle=(i+j)%2?'#e2cfaf':'#d9c4a2';map.fillRect(X(i/10),A_(j/10),k/10+.5,k/10+.5)}
+  map.strokeStyle=edge;map.lineWidth=3;map.strokeRect(X(0),A_(0),k,k);
+  // where the eyes look (the horizontal span of the 70 deg view, faint)
+  {const hx=X(cam[1]),hy=A_(cam[0]),R=(Y1-cam[1])*k;map.save();map.beginPath();map.rect(X(0),A_(0),k,k);map.clip();
+   const g=map.createRadialGradient(hx,hy,0,hx,hy,R);g.addColorStop(0,'rgba(125,141,224,.28)');g.addColorStop(1,'rgba(125,141,224,.05)');map.fillStyle=g;
+   map.beginPath();map.moveTo(hx,hy);map.arc(hx,hy,R*1.4,-half,half);map.closePath();map.fill();map.restore()}
   // the basket
-  const b=T.basket,o=T.b_in+T.b_wall;map.fillStyle='rgba(70,100,210,.18)';map.fillRect(X(b[0]-T.b_in),Y(b[1]+T.b_in),2*T.b_in*k,2*T.b_in*k);
-  map.strokeStyle=T.scored?'#5bb58a':'#4664d2';map.lineWidth=Math.max(2,T.b_wall*k);map.strokeRect(X(b[0]-o+T.b_wall/2),Y(b[1]+o-T.b_wall/2),(2*o-T.b_wall)*k,(2*o-T.b_wall)*k);
-  if(T.scored){map.fillStyle='#2f8f62';map.font='600 12px var(--sans)';map.fillText('fed!',X(b[0])-12,Y(b[1]+o)-6)}
-  // the ball (its shadow on the table)
-  const bl=T.ball;map.fillStyle='rgba(40,30,20,.18)';map.beginPath();map.arc(X(bl[0])+2,Y(bl[1])+2,T.ball_r*k,0,7);map.fill();
-  map.save();map.shadowColor='#e2583f';map.shadowBlur=T.held?14:6;map.fillStyle='#e2583f';map.beginPath();map.arc(X(bl[0]),Y(bl[1]),T.ball_r*k,0,7);map.fill();map.restore();
-  // the arm from above
-  const A=T.arm;map.lineCap='round';map.lineJoin='round';
-  map.strokeStyle='rgba(44,53,119,.85)';map.lineWidth=6;map.beginPath();A.slice(0,4).forEach((p,i)=>i?map.lineTo(X(p[0]),Y(p[1])):map.moveTo(X(p[0]),Y(p[1])));map.stroke();
-  [[T.pl,0],[T.pr,2]].forEach(([c,ti])=>{const h=T.hand,on=Math.max(T.touch[ti],T.touch[ti+1]);map.strokeStyle=on>.2?'#c0506f':'#2c3577';map.lineWidth=4;
-    map.beginPath();map.moveTo(X(c[0]-h[0]*.035),Y(c[1]-h[1]*.035));map.lineTo(X(c[0]+h[0]*.035),Y(c[1]+h[1]*.035));map.stroke()});
-  A.slice(0,3).forEach(p=>{map.fillStyle='#fff';map.strokeStyle='#2c3577';map.lineWidth=1.5;map.beginPath();map.arc(X(p[0]),Y(p[1]),4,0,7);map.fill();map.stroke()});
-  map.fillStyle='#5c6380';map.font='10px var(--mono)';map.fillText('from above',ox,S+22);
-  // from the side: along the arm's direction (across) and height (up), true scale
-  const top=S+30,hgt=W-top-8,zk=Math.min((hgt-22)/0.8,(W-24)/0.85),gx=8+0.06*zk,gy=top+hgt-4,SX=v=>gx+v*zk,SZ=v=>gy-v*zk;
-  const B0=A[0],ux=-T.side[1],uy=T.side[0];
-  const along=p=>(p[0]-B0[0])*ux+(p[1]-B0[1])*uy;
-  map.fillStyle='rgba(255,255,255,.55)';map.fillRect(4,top-4,W-8,hgt+4);
-  map.strokeStyle='#8a6d4c';map.lineWidth=3;map.beginPath();map.moveTo(SX(-0.05),SZ(0));map.lineTo(SX(0.78),SZ(0));map.stroke();
-  const ba=along([b[0],b[1]]),lat=Math.abs((b[0]-B0[0])*uy-(b[1]-B0[1])*ux);if(lat<0.15&&ba>0)map.strokeStyle='rgba(70,100,210,.75)';map.lineWidth=2;map.beginPath();map.moveTo(SX(ba-o),SZ(T.b_h));map.lineTo(SX(ba-o),SZ(0));map.lineTo(SX(ba+o),SZ(0));map.lineTo(SX(ba+o),SZ(T.b_h));if(lat<0.15&&ba>0)map.stroke();
-  map.fillStyle='rgba(120,120,140,.5)';map.fillRect(SX(-0.03),SZ(A[0][2]),0.06*zk,A[0][2]*zk);
-  map.strokeStyle='rgba(44,53,119,.85)';map.lineWidth=6;map.beginPath();A.slice(0,4).forEach((p,i)=>i?map.lineTo(SX(along(p)),SZ(p[2])):map.moveTo(SX(along(p)),SZ(p[2])));map.stroke();
-  map.strokeStyle=(T.touch[0]>.2||T.touch[2]>.2)?'#c0506f':'#2c3577';map.lineWidth=4;map.beginPath();map.moveTo(SX(along(A[3])),SZ(A[3][2]));map.lineTo(SX(along(A[4])),SZ(A[4][2]));map.stroke();
-  A.slice(0,3).forEach(p=>{map.fillStyle='#fff';map.strokeStyle='#2c3577';map.lineWidth=1.5;map.beginPath();map.arc(SX(along(p)),SZ(p[2]),4,0,7);map.fill();map.stroke()});
-  map.save();map.shadowColor='#e2583f';map.shadowBlur=T.held?14:4;map.fillStyle='#e2583f';map.beginPath();map.arc(SX(along(bl)),SZ(bl[2]),Math.max(3,T.ball_r*zk),0,7);map.fill();map.restore();
-  map.fillStyle='#5c6380';map.fillText(`from the side · claw ${Math.round(T.claw*100)}% open${T.held?' · holding the ball':''}`,10,top+10)}
+  const b=T.basket,o=T.b_in+T.b_wall;map.fillStyle='rgba(70,100,210,.16)';map.fillRect(X(b[1]-T.b_in),A_(b[0]-T.b_in),2*T.b_in*k,2*T.b_in*k);
+  map.strokeStyle=T.scored?'#5bb58a':blue;map.lineWidth=Math.max(2,T.b_wall*k);map.strokeRect(X(b[1]-o+T.b_wall/2),A_(b[0]-o+T.b_wall/2),(2*o-T.b_wall)*k,(2*o-T.b_wall)*k);
+  if(T.scored){map.fillStyle='#2f8f62';map.font='600 12px var(--sans)';map.fillText('fed!',X(b[1])-12,A_(b[0]-o)-6);map.font='10px var(--mono)'}
+  // the post and the head behind it
+  map.fillStyle='rgba(110,110,135,.75)';map.fillRect(X(base[1]-.03),A_(base[0]-.03),.06*k,.06*k);
+  const head=(hx,hy)=>{map.save();map.shadowColor='rgba(27,33,71,.35)';map.shadowBlur=6;map.fillStyle=ink;map.beginPath();map.arc(hx,hy,.045*k+2,0,7);map.fill();map.restore();
+    map.fillStyle='#fff';[-1,1].forEach(sg=>{map.beginPath();map.arc(hx+.02*k,hy+sg*.022*k,Math.max(1.6,.011*k),0,7);map.fill()})};
+  head(X(cam[1]),A_(cam[0]));
+  // the ball: shadow on the table, then the ball (bigger when high: it is nearer to us)
+  const bl=T.ball,br=T.ball_r*k*(1+bl[2]*.6);map.fillStyle='rgba(40,30,20,.18)';map.beginPath();map.arc(X(bl[1])+bl[2]*k*.25,A_(bl[0])+bl[2]*k*.25,T.ball_r*k,0,7);map.fill();
+  // the arm from above: shoulder, elbow, wrist, claw root; the two plates
+  const AR=T.arm,above=p=>[X(p[1]),A_(p[0])],side=p=>[X(p[1]),Z(p[2])];
+  const arm=(pr,lw)=>{map.lineCap='round';map.lineJoin='round';map.strokeStyle='rgba(44,53,119,.88)';map.lineWidth=lw;map.beginPath();AR.slice(0,4).forEach((p,i)=>{const [u,v]=pr(p);i?map.lineTo(u,v):map.moveTo(u,v)});map.stroke();
+    [[T.pl,0],[T.pr,2]].forEach(([c,ti])=>{const h=T.hand,on=Math.max(T.touch[ti],T.touch[ti+1])>.2,[u0,v0]=pr([c[0]-h[0]*.035,c[1]-h[1]*.035,c[2]-h[2]*.035]),[u1,v1]=pr([c[0]+h[0]*.035,c[1]+h[1]*.035,c[2]+h[2]*.035]);
+      map.strokeStyle=on?touchC:ink;map.lineWidth=on?4.5:3.5;map.beginPath();map.moveTo(u0,v0);map.lineTo(u1,v1);map.stroke()});
+    AR.slice(0,3).forEach(p=>{const [u,v]=pr(p);map.fillStyle='#fff';map.strokeStyle=ink;map.lineWidth=1.5;map.beginPath();map.arc(u,v,3.5,0,7);map.fill();map.stroke()})};
+  const ball=(pr,r)=>{const [u,v]=pr(bl);map.save();map.shadowColor=red;map.shadowBlur=T.held?14:5;map.fillStyle=red;map.beginPath();map.arc(u,v,Math.max(3,r),0,7);map.fill();map.restore();
+    map.fillStyle='rgba(255,255,255,.7)';map.beginPath();map.arc(u-r*.3,v-r*.3,Math.max(1,r*.28),0,7);map.fill()};
+  // draw the ball under the arm when it is lower than the claw, else over it
+  const clawZ=(T.pl[2]+T.pr[2])/2;if(bl[2]<clawZ){ball(above,br);arm(above,6)}else{arm(above,6);ball(above,br)}
+  // ---- from the side ----
+  map.fillStyle='#5c6380';map.fillText(`from the side · claw ${Math.round(T.claw*100)}% open${T.held?' · holding the ball':''}`,ox,sTop-8);
+  map.fillStyle='rgba(255,255,255,.5)';map.fillRect(X(Y0),Z(ZT),(Y1-Y0)*k,ZT*k);
+  // what the eyes can see: the vertical 70 deg, pitched down
+  {const hx=X(cam[1]),hz=Z(cam[2]);map.save();map.beginPath();map.rect(X(Y0),Z(ZT),(Y1-Y0)*k,ZT*k);map.clip();
+   const a0=pitch-half,a1=pitch+half,R=2*k;map.fillStyle='rgba(125,141,224,.16)';map.beginPath();map.moveTo(hx,hz);map.lineTo(hx+Math.cos(a0)*R,hz+Math.sin(a0)*R);map.lineTo(hx+Math.cos(a1)*R,hz+Math.sin(a1)*R);map.closePath();map.fill();
+   map.strokeStyle='rgba(125,141,224,.45)';map.setLineDash([3,4]);map.lineWidth=1;map.beginPath();map.moveTo(hx,hz);map.lineTo(hx+Math.cos(pitch)*R,hz+Math.sin(pitch)*R);map.stroke();map.setLineDash([]);map.restore()}
+  // the table top and its edge
+  map.fillStyle='#d9c4a2';map.fillRect(X(0),Z(0),k,.025*k);map.strokeStyle=edge;map.lineWidth=2;map.strokeRect(X(0),Z(0),k,.025*k);
+  // the head on its pole, the post
+  map.strokeStyle='rgba(110,110,135,.75)';map.lineWidth=3;map.beginPath();map.moveTo(X(cam[1]),Z(cam[2]));map.lineTo(X(cam[1]),Z(-.02));map.stroke();
+  map.fillStyle='rgba(110,110,135,.75)';map.fillRect(X(base[1]-.03),Z(shz),.06*k,shz*k);
+  {const hx=X(cam[1]),hz=Z(cam[2]);map.save();map.shadowColor='rgba(27,33,71,.35)';map.shadowBlur=6;map.fillStyle=ink;map.beginPath();map.arc(hx,hz,.045*k+2,0,7);map.fill();map.restore();
+   map.fillStyle='#fff';map.beginPath();map.arc(hx+Math.cos(pitch)*.03*k,hz+Math.sin(pitch)*.03*k,Math.max(1.8,.012*k),0,7);map.fill()}
+  // the basket from the side
+  map.strokeStyle=T.scored?'#5bb58a':blue;map.lineWidth=2.5;map.beginPath();map.moveTo(X(b[1]-o),Z(T.b_h));map.lineTo(X(b[1]-o),Z(0));map.lineTo(X(b[1]+o),Z(0));map.lineTo(X(b[1]+o),Z(T.b_h));map.stroke();
+  map.fillStyle='rgba(70,100,210,.12)';map.fillRect(X(b[1]-o),Z(T.b_h),2*o*k,T.b_h*k);
+  // the arm and ball from the side (a ball beyond the claw from us is drawn first)
+  const bs=T.ball_r*k;if(bl[0]>T.arm[3][0]){ball(side,bs);arm(side,6)}else{arm(side,6);ball(side,bs)}
+  // scale bar: 10 cm
+  map.strokeStyle='#5c6380';map.lineWidth=1.5;const sx=X(Y1)-.1*k-2,sy=Z(ZT)+12;map.beginPath();map.moveTo(sx,sy-3);map.lineTo(sx,sy);map.lineTo(sx+.1*k,sy);map.lineTo(sx+.1*k,sy-3);map.stroke();
+  map.fillStyle='#5c6380';map.fillText('10 cm',sx-2,sy+12)}
 function rr(x,y,w,h,r){r=Math.min(r,w/2,h/2);map.beginPath();map.moveTo(x+r,y);map.arcTo(x+w,y,x+w,y+h,r);map.arcTo(x+w,y+h,x,y+h,r);map.arcTo(x,y+h,x,y,r);map.arcTo(x,y,x+w,y,r);map.closePath()}
 let mapT=0;function mapLoop(t){if(lastState&&t-mapT>32){mapT=t;drawMap(lastState,t)}requestAnimationFrame(mapLoop)}requestAnimationFrame(mapLoop);
 addEventListener('resize',()=>{sizeMap()});
@@ -611,12 +650,16 @@ function renderLives(){
   else $('lstats').innerHTML='<span>The first life is still going.</span>'}
 
 /* ---------- one moment ---------- */
+let mapMode=null;function setMapMode(t){if(t===mapMode)return;mapMode=t;$('mapBox').classList.toggle('tall',t);$('lgT').hidden=!t;$('lg1').hidden=t;$('mapNote').hidden=t;$('mapNoteT').hidden=!t;document.querySelectorAll('.sense').forEach(e=>e.hidden=t);$('fGround').hidden=t;
+  $('mapH').innerHTML=t?'Its <em>table</em>':'From <em>above</em>';$('mapSc').textContent=t?'1 m table':'11.3 m';
+  if(t)$('eyesNote').textContent='Its two eyes on a tall head behind the arm, the real pixels it gets, 70° each. This is all the light it ever has.';trail=[];sizeMap()}
 let lastMU=null,lastFear=0,lastWbs=null,lastRender=0;
 const SKY=document.querySelector('.sky');let moodW=-1,moodF=-1;
 function setMood(w,f){if(Math.abs(w-moodW)>.02){moodW=w;SKY.style.setProperty('--wb',w.toFixed(2))}if(Math.abs(f-moodF)>.02){moodF=f;SKY.style.setProperty('--fear',f.toFixed(2))}}
 function show(f){
   const res=f.res;if(f.png){drawPNG(eyeL,f.eyeL,res);drawPNG(eyeR,f.eyeR,res)}else{const e=b64(f.eyes);drawRGB(eyeL,e,res,0,6);drawRGB(eyeR,e,res,3,6)}$('resTag').textContent=res+' px · stereo';
   const s=f.state,wbNow=(drive==='homeo'&&s.hunger!=null)?(s.health+1-s.hunger)/2:(s.energy+s.health)/2;
+  setMapMode(!!s.table);
   document.querySelectorAll('.legend .v5').forEach(e=>e.hidden=!s.v5);if($('lgPrey'))$('lgPrey').style.background=s.v6?'#4673ff':'#e9c48a';
   $('flStam').hidden=s.stamina==null;if(s.stamina!=null)$('stV').textContent=Math.round(s.stamina*100)+'%';
   $('flHung').hidden=s.hunger==null;if(s.hunger!=null)$('huV').textContent=Math.round(s.hunger*100)+'%';
@@ -631,10 +674,7 @@ function show(f){
   $('enV').textContent=Math.round(s.energy*100)+'%';$('hpV').textContent=Math.round(s.health*100)+'%';
   $('fTouch').classList.toggle('on',s.body[2]>.5);$('fGround').classList.toggle('on',s.body[3]>.5);$('fHold').classList.toggle('on',s.body[4]>.5);
   // muscles
-  const MU=s.table?MUS_T:MUS;if(MU!==lastMU){lastMU=MU;MU.forEach(([n],i)=>{const r=$('mr'+i);if(r)r.querySelector('span').textContent=n});
-    $('legend').hidden=!!s.table;$('mapSize').textContent=s.table?'1 m table':'11.3 m';
-    if(s.table){$('mapNote').textContent='Our view of its table. It never sees this. Top: from above (basket blue, ball red, plates turn red when they touch). Bottom: the arm from the side, along the direction it points.';
-      $('eyesNote').textContent='Its two eyes on a tall head behind the arm, the real pixels it gets, 70° each. This is all the light it ever has.'}}
+  const MU=s.table?MUS_T:MUS;if(MU!==lastMU){lastMU=MU;MU.forEach(([n],i)=>{const r=$('mr'+i);if(r)r.querySelector('span').textContent=n})}
   MUS.forEach((_,i)=>{const r=$('mr'+i);if(r)r.hidden=i>=(f.act||[]).length});
   (f.act||[]).slice(0,MUS.length).forEach((v,i)=>{const el=$('m'+i);if(!el)return;const a=clamp(Math.abs(v));el.style.left=(v<0?50-a*50:50)+'%';el.style.width=a*50+'%';
     el.style.background=`linear-gradient(90deg,${MU[i][1]},${MU[i][2]})`;$('mv'+i).textContent=(v>=0?'+':'−')+Math.abs(v).toFixed(2)});
@@ -656,7 +696,7 @@ function show(f){
     $('iage').textContent=`chosen ${(it.age/10).toFixed(1)} s ago · a new one every ${(it.every/10).toFixed(1)} s`;
     if(it.pic)pic($('intentPic'),f,it.pic,res)}else $('intent').hidden=true;
   const dying=s.dying||0;document.querySelector('.s-eyes').classList.toggle('light',dying>0);
-  $('status').textContent=f.end?(f.end.startsWith('lived')?'it lived the full 100 s':f.end.replace('died:','it died:')):dying>0?`the light… (${(dying/10).toFixed(1)} s)`:`life ${f.life} · ${(f.t/10).toFixed(1)} s · ${f.food} eaten`;
+  $('status').textContent=f.end?(f.end.startsWith('lived')?'it lived its full life':f.end.replace('died:','it died:')):dying>0?`the light… (${(dying/10).toFixed(1)} s)`:`life ${f.life} · ${(f.t/10).toFixed(1)} s · ${f.food} eaten`;
 }
 
 /* ---------- feed ---------- */

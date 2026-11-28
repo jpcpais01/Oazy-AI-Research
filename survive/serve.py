@@ -354,6 +354,8 @@ class Sim:
     def table_state(self, w):
         """Creature two (the tabletop arm), in the same shape the page reads, plus a 'table' block."""
         from .world import fk, BALL_R, B_IN, B_WALL, B_H, G_MAX
+        from . import world as _tw
+        cam = list(getattr(_tw, "CAM", (0.5, -0.22, 0.82)))
         P = fk(w.q[:1])
         pts = [P[k][0].tolist() for k in ("sh", "el", "wr", "root", "tip")]
         r = lambda xs: [round(v, 3) for v in xs]
@@ -367,7 +369,9 @@ class Sim:
             table=dict(arm=[r(p) for p in pts], pl=r(P["pl"][0].tolist()), pr=r(P["pr"][0].tolist()), side=r(P["side"][0].tolist()),
                        hand=r(P["hand"][0].tolist()), ball=r(w.ball[0].tolist()), ball_r=BALL_R, held=bool(w.held[0]),
                        basket=r(w.basket[0].tolist()), b_in=B_IN, b_wall=B_WALL, b_h=B_H, touch=r(t),
-                       claw=round(float(w.q[0, 4]) / G_MAX, 3), scored=int(w.score_t[0]) > 0))
+                       claw=round(float(w.q[0, 4]) / G_MAX, 3), scored=int(w.score_t[0]) > 0,
+                       cam=cam, pitch=round(math.degrees(getattr(_tw, "CAM_PITCH", 0.82)), 1), fov=getattr(_tw, "FOV_DEG", 70),
+                       base=list(getattr(_tw, "BASE", (0.5, 0.06))), sh_z=getattr(_tw, "SH_Z", 0.12)))
 
     def state(self, w):
         if hasattr(w, "basket"):
