@@ -332,7 +332,7 @@ html{scrollbar-width:none}html::-webkit-scrollbar,body::-webkit-scrollbar,*::-we
     <div class="c1">
     <section class="panel glass s-eyes">
       <div class="ph"><h2>What it <em>sees</em></h2><span class="caps" id="resTag"></span></div>
-      <p class="note">Its two eyes, the real pixels it gets, 120° each. This is all the light it ever has.</p>
+      <p class="note" id="eyesNote">Its two eyes, the real pixels it gets, 120° each. This is all the light it ever has.</p>
       <div class="eyes">
         <div class="lens"><canvas id="eyeL"></canvas><span class="tagl">Left</span></div>
         <div class="lens"><canvas id="eyeR"></canvas><span class="tagl">Right</span></div>
@@ -350,10 +350,10 @@ html{scrollbar-width:none}html::-webkit-scrollbar,body::-webkit-scrollbar,*::-we
     </div>
     <div class="c2">
     <section class="panel glass s-map">
-      <div class="ph"><h2>From <em>above</em></h2><span class="caps">11.3 m</span></div>
-      <p class="note">Our view of its world. It never sees this. The faint line is where it has been this life; the thin coloured lines are 16 futures it dreams, coloured by how good each feels (white dot: a dream that ends in the light). <span id="pathErr"></span></p>
+      <div class="ph"><h2>From <em>above</em></h2><span class="caps" id="mapSize">11.3 m</span></div>
+      <p class="note" id="mapNote">Our view of its world. It never sees this. The faint line is where it has been this life; the thin coloured lines are 16 futures it dreams, coloured by how good each feels (white dot: a dream that ends in the light). <span id="pathErr"></span></p>
       <div class="mapwrap"><div class="mapbox"><canvas id="map"></canvas><span class="compass">N</span></div></div>
-      <div class="legend">
+      <div class="legend" id="legend">
         <span><i style="background:#2c3577"></i>creature</span>
         <span><i style="background:#e8593e"></i><i style="background:#e9c92f;margin-left:-4px"></i><i style="background:#5fcf4a;margin-left:-4px"></i>food</span>
         <span><i class="sq" style="background:#ef7a4e"></i>lava</span>
@@ -549,7 +549,7 @@ function drawMap(s,tnow){
 /* creature two: its table from above (left) and from the side (right strip) */
 function drawTable(s,tnow){
   sizeMap();const dpr=devicePixelRatio||1,W=mapC.width/dpr;if(!W)return;map.setTransform(dpr,0,0,dpr,0,0);
-  const T=s.table,S=W*.6,k=S/1.0,ox=(W-S)/2,X=v=>ox+v*k,Y=v=>8+S-v*k;
+  const T=s.table,S=W*.55,k=S/1.0,ox=(W-S)/2,X=v=>ox+v*k,Y=v=>8+S-v*k;
   map.fillStyle='#ece7de';map.fillRect(0,0,W,W);
   // the table: 10 cm tiles
   for(let i=0;i<10;i++)for(let j=0;j<10;j++){map.fillStyle=(i+j)%2?'#e2cfaf':'#d9c4a2';map.fillRect(X(i/10),Y((j+1)/10),k/10+.5,k/10+.5)}
@@ -569,12 +569,12 @@ function drawTable(s,tnow){
   A.slice(0,3).forEach(p=>{map.fillStyle='#fff';map.strokeStyle='#2c3577';map.lineWidth=1.5;map.beginPath();map.arc(X(p[0]),Y(p[1]),4,0,7);map.fill();map.stroke()});
   map.fillStyle='#5c6380';map.font='10px var(--mono)';map.fillText('from above',ox,S+22);
   // from the side: along the arm's direction (across) and height (up), true scale
-  const top=S+30,hgt=W-top-8,zk=Math.min(hgt/0.55,(W-16)/0.9),gx=8,gy=top+hgt-4,SX=v=>gx+v*zk,SZ=v=>gy-v*zk;
-  const B0=A[0],dir=[T.hand[0],T.hand[1]],dn=Math.hypot(dir[0],dir[1])||1,ux=dir[0]/dn,uy=dir[1]/dn;
+  const top=S+30,hgt=W-top-8,zk=Math.min((hgt-22)/0.8,(W-24)/0.85),gx=8+0.06*zk,gy=top+hgt-4,SX=v=>gx+v*zk,SZ=v=>gy-v*zk;
+  const B0=A[0],ux=-T.side[1],uy=T.side[0];
   const along=p=>(p[0]-B0[0])*ux+(p[1]-B0[1])*uy;
   map.fillStyle='rgba(255,255,255,.55)';map.fillRect(4,top-4,W-8,hgt+4);
-  map.strokeStyle='#8a6d4c';map.lineWidth=3;map.beginPath();map.moveTo(SX(-0.05),SZ(0));map.lineTo(SX(0.85),SZ(0));map.stroke();
-  const ba=along([b[0],b[1]]);map.strokeStyle='rgba(70,100,210,.75)';map.lineWidth=2;map.beginPath();map.moveTo(SX(ba-o),SZ(T.b_h));map.lineTo(SX(ba-o),SZ(0));map.lineTo(SX(ba+o),SZ(0));map.lineTo(SX(ba+o),SZ(T.b_h));map.stroke();
+  map.strokeStyle='#8a6d4c';map.lineWidth=3;map.beginPath();map.moveTo(SX(-0.05),SZ(0));map.lineTo(SX(0.78),SZ(0));map.stroke();
+  const ba=along([b[0],b[1]]),lat=Math.abs((b[0]-B0[0])*uy-(b[1]-B0[1])*ux);if(lat<0.15&&ba>0)map.strokeStyle='rgba(70,100,210,.75)';map.lineWidth=2;map.beginPath();map.moveTo(SX(ba-o),SZ(T.b_h));map.lineTo(SX(ba-o),SZ(0));map.lineTo(SX(ba+o),SZ(0));map.lineTo(SX(ba+o),SZ(T.b_h));if(lat<0.15&&ba>0)map.stroke();
   map.fillStyle='rgba(120,120,140,.5)';map.fillRect(SX(-0.03),SZ(A[0][2]),0.06*zk,A[0][2]*zk);
   map.strokeStyle='rgba(44,53,119,.85)';map.lineWidth=6;map.beginPath();A.slice(0,4).forEach((p,i)=>i?map.lineTo(SX(along(p)),SZ(p[2])):map.moveTo(SX(along(p)),SZ(p[2])));map.stroke();
   map.strokeStyle=(T.touch[0]>.2||T.touch[2]>.2)?'#c0506f':'#2c3577';map.lineWidth=4;map.beginPath();map.moveTo(SX(along(A[3])),SZ(A[3][2]));map.lineTo(SX(along(A[4])),SZ(A[4][2]));map.stroke();
@@ -631,7 +631,10 @@ function show(f){
   $('enV').textContent=Math.round(s.energy*100)+'%';$('hpV').textContent=Math.round(s.health*100)+'%';
   $('fTouch').classList.toggle('on',s.body[2]>.5);$('fGround').classList.toggle('on',s.body[3]>.5);$('fHold').classList.toggle('on',s.body[4]>.5);
   // muscles
-  const MU=s.table?MUS_T:MUS;if(MU!==lastMU){lastMU=MU;MU.forEach(([n],i)=>{const r=$('mr'+i);if(r)r.querySelector('span').textContent=n})}
+  const MU=s.table?MUS_T:MUS;if(MU!==lastMU){lastMU=MU;MU.forEach(([n],i)=>{const r=$('mr'+i);if(r)r.querySelector('span').textContent=n});
+    $('legend').hidden=!!s.table;$('mapSize').textContent=s.table?'1 m table':'11.3 m';
+    if(s.table){$('mapNote').textContent='Our view of its table. It never sees this. Top: from above (basket blue, ball red, plates turn red when they touch). Bottom: the arm from the side, along the direction it points.';
+      $('eyesNote').textContent='Its two eyes on a tall head behind the arm, the real pixels it gets, 70° each. This is all the light it ever has.'}}
   MUS.forEach((_,i)=>{const r=$('mr'+i);if(r)r.hidden=i>=(f.act||[]).length});
   (f.act||[]).slice(0,MUS.length).forEach((v,i)=>{const el=$('m'+i);if(!el)return;const a=clamp(Math.abs(v));el.style.left=(v<0?50-a*50:50)+'%';el.style.width=a*50+'%';
     el.style.background=`linear-gradient(90deg,${MU[i][1]},${MU[i][2]})`;$('mv'+i).textContent=(v>=0?'+':'−')+Math.abs(v).toFixed(2)});
