@@ -306,7 +306,7 @@ class World:
                 break
             q[bad] = self._pose(int(bad.sum()))
         bad = ~self._ok(q, idx)
-        q[bad] = torch.tensor([0.0, 0.7, 1.5, 0.6, G_MAX], device=dev)
+        q[bad] = torch.tensor([0.0, 0.8, 1.3, 0.5, G_MAX], device=dev)   # claw 13 cm above the table (the old one had a plate 9 mm inside it)
         self.q[idx] = q
         self.qv[idx] = 0
         self.m[idx] = 0
@@ -477,7 +477,8 @@ class World:
             v = v - torch.tensor([0, 0, GRAV * h], device=dev)
             p = p + v * h
             # table
-            low = p[:, 2] < BALL_R
+            on_tab = ((p[:, :2] > 0) & (p[:, :2] < L)).all(-1)
+            low = (p[:, 2] < BALL_R) & on_tab & (p[:, 2] > -0.05)
             vz = torch.where(low & (v[:, 2] < 0), -REST * v[:, 2], v[:, 2])
             vz = torch.where(low & (vz.abs() < 0.15), torch.zeros_like(vz), vz)
             p = torch.cat([p[:, :2], torch.where(low, torch.full_like(p[:, 2], BALL_R), p[:, 2:3].squeeze(-1))[:, None]], -1)
@@ -485,8 +486,12 @@ class World:
             v = torch.cat([v[:, :2] * roll[:, None], vz[:, None]], -1)
             # rim
             for ax in (0, 1):
-                lo_, hi_ = p[:, ax] < BALL_R, p[:, ax] > L - BALL_R
-                pa = p[:, ax].clamp(BALL_R, L - BALL_R)
+                # the rim stops a ball rolling on the table; one carried higher than the rim passes over it
+                # (and falls off the table: lost, a new one appears)
+                rim = p[:, 2] < WALL_H + BALL_R
+                lo_ = rim & (p[:, ax] < BALL_R) & (p[:, ax] > -0.05)
+                hi_ = rim & (p[:, ax] > L - BALL_R) & (p[:, ax] < L + 0.05)
+                pa = torch.where(lo_ | hi_, p[:, ax].clamp(BALL_R, L - BALL_R), p[:, ax])
                 va = torch.where((lo_ & (v[:, ax] < 0)) | (hi_ & (v[:, ax] > 0)), -0.5 * v[:, ax], v[:, ax])
                 p = torch.cat([p[:, :ax], pa[:, None], p[:, ax + 1:]], -1)
                 v = torch.cat([v[:, :ax], va[:, None], v[:, ax + 1:]], -1)
@@ -518,7 +523,8 @@ class World:
             v = torch.where((hit.any(-1) & (vn < 0))[:, None], v - vn[:, None] * nn_, v)
             # the arm can't shove it into the table, the basket or the post
             p, v = _boxes(p, v, mn, mx)
-            p = torch.cat([p[:, :2], p[:, 2:3].clamp(min=BALL_R)], -1)
+            on_tab = ((p[:, :2] > 0) & (p[:, :2] < L)).all(-1)
+            p = torch.cat([p[:, :2], torch.where(on_tab[:, None], p[:, 2:3].clamp(min=BALL_R), p[:, 2:3])], -1)
             p = torch.where(held[:, None], p_h, p)
             v = torch.where(held[:, None], v_h, v)
             self.ball, self.bv = p, v
@@ -549,6 +555,9 @@ class World:
         slip = self.held & ~grab & (squeeze < 0.12) & (swing > 1.2)
         drop = self.held & ((g > 2 * BALL_R + 0.015) | slip)
         self.held = self.held & ~drop
+        # a ball let go a few mm low (the held-ball check allows 3 mm) sits on the table, not in it
+        on_tab = ((self.ball[:, :2] > 0) & (self.ball[:, :2] < L)).all(-1) & ~self.held & (self.ball[:, 2] > -0.05)
+        self.ball = torch.cat([self.ball[:, :2], torch.where(on_tab[:, None], self.ball[:, 2:3].clamp(min=BALL_R), self.ball[:, 2:3])], -1)
         self.q[:, 4] = torch.where(self.held, g.clamp(min=2 * BALL_R - 0.004), g)
         touch[:, 0] = torch.where(self.held, 0.5 + squeeze, touch[:, 0])
         touch[:, 2] = torch.where(self.held, 0.5 + squeeze, touch[:, 2])
@@ -562,8 +571,9 @@ class World:
         self.score_t = torch.where(scored, torch.full_like(self.score_t, 12), self.score_t)
         due = (self.score_t == 1)
         self.score_t = (self.score_t - 1).clamp(min=0)
-        # a ball lost off the table (it can't fall: the rim) or long gone: nothing; new ball after scoring
-        idx = due.nonzero().squeeze(-1)
+        # a ball dropped off the table is lost: a new one appears; also a new ball after scoring
+        lost = ~self.held & (self.ball[:, 2] < -0.1) & (self.score_t == 0)
+        idx = (due | lost).nonzero().squeeze(-1)
         if len(idx):
             self._new_ball(idx)
 
