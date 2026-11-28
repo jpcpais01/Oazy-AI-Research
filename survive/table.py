@@ -321,11 +321,11 @@ class World:
         self.score_t[idx] = 0
         self.touch[idx] = 0
         jit = lambda *s: 1 + (self._rand(n, *s) * 2 - 1) * 0.08
-        self.ball_col[idx] = torch.tensor([0.92, 0.30, 0.22], device=dev) * jit(3)
+        self.ball_col[idx] = torch.tensor([1.0, 0.25, 0.12], device=dev) * jit(3)
         self.basket_col[idx] = torch.tensor([0.45, 0.55, 0.85], device=dev) * jit(3)
         self.floor_col[idx] = torch.tensor([[0.80, 0.72, 0.58], [0.76, 0.68, 0.54]], device=dev) * jit(1, 3)
         self.wall_col[idx] = torch.tensor([0.55, 0.45, 0.35], device=dev) * jit(4, 3)
-        self.arm_col[idx] = torch.tensor([0.85, 0.85, 0.88], device=dev) * jit(3)
+        self.arm_col[idx] = torch.tensor([0.22, 0.26, 0.45], device=dev) * jit(3)   # dark blue: stands out on the beige table (light grey nearly vanished)
         self._sense()
 
     def _new_ball(self, idx, start=False):
@@ -602,13 +602,13 @@ class World:
         joint = self.arm_col * 0.75
         for pnt in (P["sh"], P["el"], P["wr"]):
             beads.append(pnt); rad.append(0.026); col.append(joint)
-        chain(P["sh"], P["el"], 4, 0.02, self.arm_col)
-        chain(P["el"], P["wr"], 4, 0.018, self.arm_col)
-        chain(P["wr"], P["root"], 1, 0.018, self.arm_col)
-        plate_col = torch.tensor([0.25, 0.25, 0.3], device=dev).expand(B, 3)
+        chain(P["sh"], P["el"], 10, 0.02, self.arm_col)          # beads closer than their size: a solid limb, not dots
+        chain(P["el"], P["wr"], 10, 0.018, self.arm_col)
+        chain(P["wr"], P["root"], 2, 0.018, self.arm_col)
+        plate_col = torch.tensor([0.12, 0.12, 0.16], device=dev).expand(B, 3)
         for c in (P["pl"], P["pr"]):
             a_, b_ = c - P["hand"] * (LF / 2), c + P["hand"] * (LF / 2)
-            chain(a_, b_, 4, PT * 0.9, plate_col)
+            chain(a_, b_, 5, PT * 1.2, plate_col)
         beads.append(self.ball); rad.append(BALL_R); col.append(self.ball_col)
         xyz = torch.stack(beads, 1)
         sph_r = torch.tensor(rad, device=dev).expand(B, len(rad))
